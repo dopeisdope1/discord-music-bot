@@ -12,7 +12,7 @@ const { DisTube } = require("distube");
 const { SpotifyPlugin } = require("@distube/spotify");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
 const { buildNowPlayingPanel } = require("./utils/nowPlayingPanel");
-const { handleTextCommand } = require("./utils/textCommands");
+const { handleTextCommand, rememberSnipe } = require("./utils/textCommands");
 
 const client = new Client({
   intents: [
@@ -49,6 +49,9 @@ client.distube = new DisTube(client, {
 
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
+
+// Stocke le dernier message supprimé par salon (commande -snipe)
+client.snipes = new Collection();
 
 // ---- Événements DisTube ----
 client.distube
@@ -161,6 +164,12 @@ client.on("messageCreate", (message) => {
     console.error(err);
     message.reply("❌ Une erreur est survenue lors du traitement de la commande.").catch(() => {});
   });
+});
+
+// ---- Mémorise les messages supprimés pour la commande -snipe ----
+client.on("messageDelete", (message) => {
+  if (!message.guild) return;
+  rememberSnipe(client, message.channelId, message, "deleted");
 });
 
 client.once("ready", () => {
