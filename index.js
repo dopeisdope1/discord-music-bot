@@ -9,7 +9,12 @@ const {
   MessageFlags,
 } = require("discord.js");
 const ffmpegPath = require("ffmpeg-static");
+const { generateDependencyReport } = require("@discordjs/voice");
 const { DisTube } = require("distube");
+
+// Diagnostic : liste au démarrage les dépendances voix détectées (opus,
+// chiffrement, ffmpeg) pour aider à déboguer les problèmes de connexion vocale.
+console.log(generateDependencyReport());
 const { SpotifyPlugin } = require("@distube/spotify");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
