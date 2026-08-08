@@ -97,25 +97,6 @@ async function clearMessages(client, channel, { targetMemberId, maxCount = Infin
   return deletedTotal;
 }
 
-/**
- * Vide tout le salon (déclencheur "uo clear", sans préfixe).
- */
-async function wipeChannel(client, message) {
-  if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
-    return message.reply({
-      embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
-    });
-  }
-  const channel = message.channel;
-  message.delete().catch(() => {});
-  const deletedTotal = await clearMessages(client, channel, { maxCount: Infinity });
-  await sendTempReply(
-    channel,
-    { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
-    5000
-  );
-}
-
 const handlers = {
   // ---- Musique ----
   async play(client, message, args) {
@@ -462,11 +443,11 @@ async function handleTextCommand(client, message) {
 
   const content = message.content.trim();
 
-  // Déclencheur spécial sans préfixe : "uo clear" vide tout le salon (même
-  // permission que -clear)
+  // Déclencheur spécial sans préfixe : "uo clear" = "-clear me" (supprime tes
+  // propres messages), même permission que -clear
   if (content.toLowerCase() === "uo clear") {
     if (!canUseDashCommand(message, "clear").allowed) return;
-    return wipeChannel(client, message);
+    return handlers.clear(client, message, ["me"]);
   }
 
   // Préfixe "-" : commandes membres + modération

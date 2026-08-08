@@ -94,10 +94,9 @@ function adminDashSections(prefix) {
     {
       heading: "Messages",
       lines: [
-        `\`${prefix}clear me\` — Supprime tes propres messages récents`,
+        `\`${prefix}clear me\` — Supprime tes propres messages récents (aussi accessible via \`uo clear\`, sans préfixe)`,
         `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
         `\`${prefix}clear @membre\` — Supprime les messages récents d'un membre`,
-        `\`uo clear\` (sans préfixe) — Vide tout le salon`,
       ],
     },
     {
