@@ -86,7 +86,7 @@ function memberDashSection(prefix) {
       `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
       `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
-      `\`${prefix}ban\` — Ouvre le panel **Zinki Tueur** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
+      `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
     ],
   };
 }

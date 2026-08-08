@@ -10,21 +10,21 @@ const { buildStatusEmbed } = require("./statusEmbed");
 
 const PANEL_TIMEOUT_MS = 60_000;
 
-function buildZinkiTueurPanel() {
+function buildZinkiAssassiniPanel() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("## Zinki Tueur\n> Choisis qui bannir du serveur.")
+    new TextDisplayBuilder().setContent("## Zinki Assassini\n> Choisis qui bannir du serveur.")
   );
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder().setCustomId("zinki_tueur_select").setPlaceholder("Choisir un membre à bannir")
+      new UserSelectMenuBuilder().setCustomId("zinki_assassini_select").setPlaceholder("Choisir un membre à bannir")
     )
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 /**
- * Ouvre le panel "Zinki Tueur" (`-ban`, réservé aux administrateurs — la
+ * Ouvre le panel "Zinki Assassini" (`-ban`, réservé aux administrateurs — la
  * vérification se fait avant l'appel de cette fonction).
  * @param {import('discord.js').Message} message
  */
@@ -34,7 +34,7 @@ async function handleBanPanel(message) {
     return;
   }
 
-  const panelMessage = await message.reply(buildZinkiTueurPanel());
+  const panelMessage = await message.reply(buildZinkiAssassiniPanel());
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
@@ -71,7 +71,7 @@ async function handleBanPanel(message) {
     }
 
     const banResult = await message.guild.members
-      .ban(targetId, { reason: `Zinki Tueur — banni par ${message.author.tag}` })
+      .ban(targetId, { reason: `Zinki Assassini — banni par ${message.author.tag}` })
       .catch((err) => {
         console.error(err);
         return null;
@@ -93,7 +93,7 @@ async function handleBanPanel(message) {
     await i.update({
       embeds: [
         buildStatusEmbed("success", `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni.`, {
-          title: "Zinki Tueur",
+          title: "Zinki Assassini",
         }),
       ],
       components: [],
