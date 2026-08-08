@@ -1,6 +1,12 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const dns = require("dns");
+
+// Certains environnements conteneurisés résolvent les hôtes voix Discord en
+// IPv6 en priorité alors que seul l'IPv4 sortant fonctionne correctement,
+// ce qui peut faire échouer/expirer la négociation UDP de la voix.
+dns.setDefaultResultOrder("ipv4first");
 const {
   Client,
   GatewayIntentBits,
