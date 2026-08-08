@@ -49,8 +49,8 @@ les services applicatifs classiques.
 ## 3. Intents & permissions à activer
 
 Sur le portail développeur Discord, dans l'onglet **Bot** :
-- ✅ SERVER MEMBERS INTENT — nécessaire pour `!join`/`/join` (lit la présence des membres)
-- ✅ PRESENCE INTENT — nécessaire pour `!join`/`/join` (détecte l'activité "écoute Spotify")
+- ✅ SERVER MEMBERS INTENT — nécessaire pour `!join` (lit la présence des membres)
+- ✅ PRESENCE INTENT — nécessaire pour `!join` (détecte l'activité "écoute Spotify")
 - ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`!play`, `-clear`...)
 
 Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
@@ -75,7 +75,6 @@ npm start
 | Commande      | Description                                   |
 |---------------|------------------------------------------------|
 | `/play`       | Joue une musique (nom/artiste, ou lien YouTube/Spotify) |
-| `/join`       | Rejoint et suit en direct ce que tu (ou un membre choisi) écoutes sur Spotify |
 | `/pause`      | Met en pause                                  |
 | `/resume`     | Reprend la lecture                            |
 | `/skip`       | Passe au titre suivant                        |
@@ -117,7 +116,9 @@ Une fois un titre choisi, le bot le recherche sur YouTube via Lavalink pour la
 lecture réelle (Spotify ne fournit pas l'audio brut, et les nœuds Lavalink publics
 n'ont pas toujours le plugin nécessaire pour lire les liens Spotify directement).
 
-## 7bis. `!join [@membre]` / `/join [membre]` — écouter le Spotify de quelqu'un en direct
+## 7bis. `!join [@membre]` — écouter le Spotify de quelqu'un en direct
+
+Commande textuelle uniquement (pas de `/join`).
 
 `!join` (tout court) regarde TON activité Discord "écoute Spotify" (visible sur ton
 profil quand tu as connecté ton compte Spotify dans Discord > Paramètres >

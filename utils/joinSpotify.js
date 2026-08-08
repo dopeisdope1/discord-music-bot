@@ -9,7 +9,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
  * direct (voir le listener "presenceUpdate" dans index.js) jusqu'à ce que le
  * player soit détruit.
  *
- * Utilisé à la fois par `!join`/`/join` (listenerMember === playerMember) et
+ * Utilisé à la fois par `!join` (listenerMember === playerMember) et
  * par le bouton "Écouter avec lui" posté en réponse (listenerMember = la
  * personne suivie, playerMember = la personne qui clique et dont on rejoint
  * le salon vocal).

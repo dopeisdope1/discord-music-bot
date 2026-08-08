@@ -22,7 +22,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
-    // Nécessaires pour détecter l'activité "écoute Spotify" (!join / /join).
+    // Nécessaires pour détecter l'activité "écoute Spotify" (!join).
     // À activer manuellement sur le portail développeur Discord (Bot > intents
     // privilégiés), comme MESSAGE CONTENT.
     GatewayIntentBits.GuildPresences,
