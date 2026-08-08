@@ -62,27 +62,36 @@ async function searchArtist(query) {
   return data.artists?.items?.[0] || null;
 }
 
-async function getArtistTopTracks(artistId, market = "FR") {
-  const data = await spotifyGet(`/artists/${artistId}/top-tracks`, { market });
-  return data.tracks || [];
-}
-
 async function searchTracks(query, limit = 10) {
   const data = await spotifyGet("/search", { q: query, type: "track", limit: String(limit) });
   return data.tracks?.items || [];
 }
 
 /**
+ * Recherche les titres d'un artiste via le filtre `artist:` de l'endpoint
+ * /search. Remplace l'ancien endpoint /artists/{id}/top-tracks, supprimé par
+ * Spotify en février 2026.
+ */
+async function searchTracksByArtist(artistName, limit = 10) {
+  const data = await spotifyGet("/search", {
+    q: `artist:"${artistName}"`,
+    type: "track",
+    limit: String(limit),
+  });
+  return data.tracks?.items || [];
+}
+
+/**
  * Résout une recherche texte ("!play <texte>") en une liste de titres Spotify.
- * Si la requête correspond exactement au nom d'un artiste, renvoie son top titres
- * ({ mode: "artist" }). Sinon, renvoie les résultats de recherche de titres
- * ({ mode: "track" }).
+ * Si la requête correspond exactement au nom d'un artiste, renvoie ses titres
+ * les plus pertinents ({ mode: "artist" }). Sinon, renvoie les résultats de
+ * recherche de titres ({ mode: "track" }).
  */
 async function resolveSpotifyQuery(query) {
   const artist = await searchArtist(query);
   if (artist && artist.name.trim().toLowerCase() === query.trim().toLowerCase()) {
-    const tracks = await getArtistTopTracks(artist.id);
-    return { mode: "artist", artist, tracks: tracks.slice(0, 10) };
+    const tracks = await searchTracksByArtist(artist.name, 10);
+    return { mode: "artist", artist, tracks };
   }
   const tracks = await searchTracks(query, 10);
   return { mode: "track", tracks };
