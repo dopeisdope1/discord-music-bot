@@ -1,7 +1,11 @@
 const { buildNowPlayingPanel } = require("./nowPlayingPanel");
 const { startTracking, setPaused, getElapsedMs, stopTracking } = require("./playbackTimer");
 
-const NOW_PLAYING_REFRESH_MS = 10_000;
+// Discord limite l'édition d'un message à ~5 requêtes / 5s par salon. 5s est
+// donc la cadence la plus rapide possible sans risquer des 429 (voire un
+// signalement pour abus) sur un salon un peu actif ; impossible de faire du
+// vrai "temps réel" seconde par seconde via des éditions de message.
+const NOW_PLAYING_REFRESH_MS = 5_000;
 
 /**
  * Récupère le player Kazagumo existant pour un serveur, ou en crée un.
