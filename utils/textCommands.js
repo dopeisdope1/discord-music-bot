@@ -28,7 +28,17 @@ const DASH_PREFIX = "-";
 const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-const CLEAR_JOKES = ["cbn tg", "mini zizi", "j'ai tout vidé zinki"];
+const CLEAR_JOKES = [
+  "cbn tg",
+  "mini zizi",
+  "j'ai tout vidé zinki",
+  "zinki goumini",
+  "el kenchef",
+  "zoubini",
+  "moro",
+  "zambouli",
+  "machini",
+];
 const randomClearJoke = () => CLEAR_JOKES[Math.floor(Math.random() * CLEAR_JOKES.length)];
 
 function getPlayerOrReply(client, message) {
@@ -286,7 +296,7 @@ const handlers = {
               ),
             ],
           },
-          5000
+          15000
         );
       }
       maxCount = amount;
@@ -297,7 +307,7 @@ const handlers = {
     await sendTempReply(
       channel,
       { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
-      5000
+      15000
     );
   },
 
