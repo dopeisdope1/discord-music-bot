@@ -49,8 +49,9 @@ les services applicatifs classiques.
 ## 3. Intents & permissions à activer
 
 Sur le portail développeur Discord, dans l'onglet **Bot** :
-- ✅ SERVER MEMBERS INTENT (optionnel)
-- ✅ MESSAGE CONTENT INTENT
+- ✅ SERVER MEMBERS INTENT — nécessaire pour `!join`/`/join` (lit la présence des membres)
+- ✅ PRESENCE INTENT — nécessaire pour `!join`/`/join` (détecte l'activité "écoute Spotify")
+- ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`!play`, `-clear`...)
 
 Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - `bot`, `applications.commands`
@@ -74,6 +75,7 @@ npm start
 | Commande      | Description                                   |
 |---------------|------------------------------------------------|
 | `/play`       | Joue une musique (nom/artiste, ou lien YouTube/Spotify) |
+| `/join`       | Rejoint et joue ce que tu écoutes actuellement sur Spotify |
 | `/pause`      | Met en pause                                  |
 | `/resume`     | Reprend la lecture                            |
 | `/skip`       | Passe au titre suivant                        |
@@ -91,7 +93,7 @@ nouveau morceau, avec des boutons interactifs : ⏸️/▶️ ⏭️ ⏹️ 🔁
 En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 
 - **`!`** : préfixe principal, pour toutes les commandes musique
-  (`!play`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
+  (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
 - **`-`** : préfixe réservé aux commandes de modération (rôle configuré via
   `/modconfig`, ou administrateur du serveur)
   - `-clear <nombre>` / `-clear @membre` → supprime des messages
@@ -115,6 +117,20 @@ le portail développeur (voir section 3).
 Une fois un titre choisi, le bot le recherche sur YouTube via Lavalink pour la
 lecture réelle (Spotify ne fournit pas l'audio brut, et les nœuds Lavalink publics
 n'ont pas toujours le plugin nécessaire pour lire les liens Spotify directement).
+
+## 7bis. `!join` / `/join` — écouter le Spotify de quelqu'un
+
+`!join` regarde ton activité Discord "écoute Spotify" (visible sur ton profil quand
+tu as connecté ton compte Spotify dans Discord > Paramètres > Connexions) et fait
+jouer le même titre au bot. Si tu n'écoutes rien sur Spotify, il te le dit.
+
+Le message de confirmation inclut un bouton **"Écouter avec lui"** : n'importe qui
+peut cliquer dessus pour que le bot rejoigne SON salon vocal et joue ce que la
+personne suivie écoute au moment du clic (pas une capture figée du morceau initial).
+
+Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
+sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
+systématiquement "n'écoute rien sur Spotify", même si c'est faux.
 
 ## 8. Notes sur Components V2
 

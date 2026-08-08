@@ -56,6 +56,7 @@ function buildMusicHelpPanel(prefix = "!") {
         heading: "Lecture",
         lines: [
           `\`${prefix}play <recherche | lien YouTube/Spotify>\` — Joue un titre ou l'ajoute à la file`,
+          `\`${prefix}join\` — Rejoint et joue ce que tu écoutes actuellement sur Spotify`,
           `\`${prefix}pause\` — Met la lecture en pause`,
           `\`${prefix}resume\` — Reprend la lecture`,
           `\`${prefix}skip\` — Passe au titre suivant`,

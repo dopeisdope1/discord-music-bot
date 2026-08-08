@@ -13,6 +13,7 @@ const {
   setPlayerPaused,
   getElapsedMs,
 } = require("./utils/musicPlayer");
+const { handleJoinSpotify } = require("./utils/joinSpotify");
 
 const client = new Client({
   intents: [
@@ -20,6 +21,11 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
+    // Nécessaires pour détecter l'activité "écoute Spotify" (!join / /join).
+    // À activer manuellement sur le portail développeur Discord (Bot > intents
+    // privilégiés), comme MESSAGE CONTENT.
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildMembers,
   ],
   // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de musique
   // ou message sniped contenant littéralement "@everyone"). Les mentions
@@ -138,6 +144,34 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.isButton()) {
+    if (interaction.customId.startsWith("spotify_join:")) {
+      const targetId = interaction.customId.split(":")[1];
+      const voiceChannel = interaction.member.voice.channel;
+      if (!voiceChannel) {
+        return interaction.reply({
+          embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")],
+          ephemeral: true,
+        });
+      }
+      const listenerMember = interaction.guild.members.cache.get(targetId);
+      if (!listenerMember) {
+        return interaction.reply({
+          embeds: [buildStatusEmbed("error", "Membre introuvable.")],
+          ephemeral: true,
+        });
+      }
+      await interaction.deferReply({ ephemeral: true });
+      await handleJoinSpotify({
+        kazagumo: client.kazagumo,
+        voiceChannel,
+        textChannel: interaction.channel,
+        listenerMember,
+        playerMember: interaction.member,
+        send: (payload) => interaction.editReply(payload),
+      });
+      return;
+    }
+
     const player = client.kazagumo.players.get(interaction.guildId);
     if (!player) {
       return interaction.reply({

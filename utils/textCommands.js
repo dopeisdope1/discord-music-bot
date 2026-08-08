@@ -5,6 +5,7 @@ const { hasModRole, MOD_ROLE_NAME } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
+const { handleJoinSpotify } = require("./joinSpotify");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -98,6 +99,21 @@ const handlers = {
       member: message.member,
       query,
       requesterId: message.author.id,
+      send: (payload) => message.reply(payload),
+    });
+  },
+
+  async join(client, message) {
+    const vc = message.member.voice.channel;
+    if (!vc)
+      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
+
+    await handleJoinSpotify({
+      kazagumo: client.kazagumo,
+      voiceChannel: vc,
+      textChannel: message.channel,
+      listenerMember: message.member,
+      playerMember: message.member,
       send: (payload) => message.reply(payload),
     });
   },
