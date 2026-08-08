@@ -61,9 +61,14 @@ async function handleBanPanel(message) {
       return;
     }
 
+    // Accuse réception tout de suite (dans les 3s imposées par Discord) : le
+    // fetch du membre + le ban lui-même sont de vraies requêtes réseau qui
+    // peuvent facilement dépasser ce délai, d'où le "n'a pas répondu à temps".
+    await i.deferUpdate();
+
     const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
     if (targetMember && !targetMember.bannable) {
-      await i.update({
+      await i.editReply({
         embeds: [buildStatusEmbed("error", "Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")],
         components: [],
       });
@@ -78,7 +83,7 @@ async function handleBanPanel(message) {
       });
 
     if (!banResult) {
-      await i.update({
+      await i.editReply({
         embeds: [
           buildStatusEmbed(
             "error",
@@ -90,7 +95,7 @@ async function handleBanPanel(message) {
       return;
     }
 
-    await i.update({
+    await i.editReply({
       embeds: [
         buildStatusEmbed("success", `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni.`, {
           title: "Zinki Assassini",
