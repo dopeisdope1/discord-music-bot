@@ -62,11 +62,7 @@ async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, 
 
   if (tracks.length === 1) {
     await send({
-      embeds: [
-        buildStatusEmbed("info", `Lancement de **${tracks[0].name}** — ${trackArtists(tracks[0])}`, {
-          icon: "🟢",
-        }),
-      ],
+      embeds: [buildStatusEmbed("info", `Lancement de **${tracks[0].name}** — ${trackArtists(tracks[0])}`)],
     });
     await playTrack(tracks[0]);
     return;
@@ -89,7 +85,7 @@ async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, 
     }
     const chosen = tracks.find((t) => t.id === i.values[0]);
     await i.update({
-      embeds: [buildStatusEmbed("info", `Lancement de **${chosen.name}** — ${trackArtists(chosen)}`, { icon: "🟢" })],
+      embeds: [buildStatusEmbed("info", `Lancement de **${chosen.name}** — ${trackArtists(chosen)}`)],
       components: [],
     });
     await playTrack(chosen);
@@ -98,7 +94,7 @@ async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, 
   collector.on("end", (collected) => {
     if (collected.size === 0) {
       choiceMessage
-        .edit({ embeds: [buildStatusEmbed("warning", "Sélection expirée.", { icon: "⏱️" })], components: [] })
+        .edit({ embeds: [buildStatusEmbed("warning", "Sélection expirée.")], components: [] })
         .catch(() => {});
     }
   });

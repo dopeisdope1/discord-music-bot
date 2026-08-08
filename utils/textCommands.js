@@ -82,7 +82,7 @@ const handlers = {
         }
         const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
         await message.reply({
-          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`, { icon: "🔎" })],
+          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
         });
       } catch (err) {
         console.error(err);
@@ -109,7 +109,7 @@ const handlers = {
       return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
     }
     player.skip();
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.", { icon: "⏭️" })] });
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
   },
 
   async stop(client, message) {
@@ -118,7 +118,7 @@ const handlers = {
     client.nowPlayingMessages.delete(message.guildId);
     player.destroy();
     await message.reply({
-      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.", { icon: "⏹️" })],
+      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
     });
   },
 
@@ -126,14 +126,14 @@ const handlers = {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
     player.pause(true);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.", { icon: "⏸️" })] });
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
   },
 
   async resume(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
     player.pause(false);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.", { icon: "▶️" })] });
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
   },
 
   async queue(client, message) {
@@ -144,11 +144,11 @@ const handlers = {
       return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
     const list = tracks
       .slice(0, 15)
-      .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} **${t.title}**`)
+      .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} **${t.title}**`)
       .join("\n");
     await message.reply({
       embeds: [
-        buildStatusEmbed("info", list, { title: `📜 File d'attente (${tracks.length} titres)`, icon: "" }),
+        buildStatusEmbed("info", list, { title: `File d'attente (${tracks.length} titres)` }),
       ],
     });
   },
@@ -164,7 +164,7 @@ const handlers = {
     }
     player.setVolume(niveau);
     await message.reply({
-      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`, { icon: "🔊" })],
+      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`)],
     });
   },
 
@@ -179,7 +179,7 @@ const handlers = {
     }
     player.setLoop(mode);
     await message.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`, { icon: "🔁" })],
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`)],
     });
   },
 
@@ -252,7 +252,7 @@ const handlers = {
     }
 
     await sendTempReply(channel, {
-      embeds: [buildStatusEmbed("success", `**${deletedTotal}** message(s) supprimé(s).`, { icon: "🧹" })],
+      embeds: [buildStatusEmbed("success", `**${deletedTotal}** message(s) supprimé(s).`)],
     });
   },
 
@@ -268,7 +268,7 @@ const handlers = {
       const clone = await channel.clone({ reason: `Salon renouvelé par ${message.author.tag}` });
       await clone.setPosition(channel.position).catch(() => {});
       await channel.delete().catch(() => {});
-      await clone.send({ embeds: [buildStatusEmbed("success", "Salon renouvelé.", { icon: "♻️" })] });
+      await clone.send({ embeds: [buildStatusEmbed("success", "Salon renouvelé.")] });
     } catch (err) {
       console.error(err);
       await message.channel.send({
@@ -288,7 +288,7 @@ const handlers = {
       .edit(message.guild.roles.everyone, { ViewChannel: false })
       .catch(() => {});
     await message.channel.send({
-      embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.", { icon: "🙈" })],
+      embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.")],
       allowedMentions: { parse: [] },
     });
   },
@@ -304,7 +304,7 @@ const handlers = {
       .edit(message.guild.roles.everyone, { ViewChannel: null })
       .catch(() => {});
     await message.channel.send({
-      embeds: [buildStatusEmbed("success", "Salon de nouveau visible pour @everyone.", { icon: "👁️" })],
+      embeds: [buildStatusEmbed("success", "Salon de nouveau visible pour @everyone.")],
       allowedMentions: { parse: [] },
     });
   },
@@ -321,7 +321,7 @@ const handlers = {
       .catch(() => {});
     await message.channel.send({
       embeds: [
-        buildStatusEmbed("warning", "Salon verrouillé : @everyone ne peut plus écrire ici.", { icon: "🔒" }),
+        buildStatusEmbed("warning", "Salon verrouillé : @everyone ne peut plus écrire ici."),
       ],
       allowedMentions: { parse: [] },
     });
@@ -339,7 +339,7 @@ const handlers = {
       .catch(() => {});
     await message.channel.send({
       embeds: [
-        buildStatusEmbed("success", "Salon déverrouillé : @everyone peut de nouveau écrire.", { icon: "🔓" }),
+        buildStatusEmbed("success", "Salon déverrouillé : @everyone peut de nouveau écrire."),
       ],
       allowedMentions: { parse: [] },
     });
@@ -359,7 +359,7 @@ const handlers = {
           `Par **${data.authorTag}**, <t:${Math.floor(data.timestamp / 1000)}:R> — ${label}\n> ${
             data.content || "*[contenu vide ou non textuel]*"
           }`,
-          { title: "🔍 Message sniped", icon: "" }
+          { title: "Message sniped" }
         ),
       ],
       allowedMentions: { parse: [] },

@@ -15,7 +15,7 @@ const LOOP_LABELS = { none: "Désactivée", track: "Chanson", queue: "File d'att
  * Convertit des secondes en mm:ss / hh:mm:ss
  */
 function formatDuration(seconds) {
-  if (!seconds || seconds === Infinity) return "🔴 LIVE";
+  if (!seconds || seconds === Infinity) return "LIVE";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -27,14 +27,15 @@ function formatDuration(seconds) {
  * Construit une barre de progression textuelle simple
  */
 function buildProgressBar(current, total, size = 18) {
-  if (!total || total === Infinity) return "▬".repeat(size);
+  if (!total || total === Infinity) return "-".repeat(size);
   const ratio = Math.min(current / total, 1);
   const filled = Math.round(ratio * size);
-  return "▬".repeat(filled) + "🔘" + "▬".repeat(Math.max(size - filled, 0));
+  return "-".repeat(filled) + "o" + "-".repeat(Math.max(size - filled, 0));
 }
 
 /**
- * Construit le panel "En cours de lecture" en Components V2.
+ * Construit le panel "En cours de lecture" en Components V2, sans couleur
+ * d'accent ni emoji.
  * @param {import('kazagumo').KazagumoPlayer} player
  * @returns {{ flags: number, components: any[] }}
  */
@@ -42,12 +43,12 @@ function buildNowPlayingPanel(player) {
   const track = player.queue.current;
   const durationSeconds = Math.floor((track.length || 0) / 1000);
 
-  const container = new ContainerBuilder().setAccentColor(0x1db954);
+  const container = new ContainerBuilder();
 
   // Titre + source
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## 🎶 En cours de lecture\n**[${track.title}](${track.uri})**\n🔎 ${
+      `## En cours de lecture\n**[${track.title}](${track.uri})**\n${
         track.author || "Source inconnue"
       } • Demandé par <@${track.requester?.id ?? ""}>`
     )
@@ -70,10 +71,10 @@ function buildNowPlayingPanel(player) {
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       [
-        `🔊 Volume : **${player.volume}%**`,
-        `🔁 Boucle : **${LOOP_LABELS[player.loop] ?? "Désactivée"}**`,
-        `📜 File d'attente : **${player.queue.length}** titre(s)`,
-        nextTrack ? `⏭️ Suivant : **${nextTrack.title}**` : null,
+        `Volume : **${player.volume}%**`,
+        `Boucle : **${LOOP_LABELS[player.loop] ?? "Désactivée"}**`,
+        `File d'attente : **${player.queue.length}** titre(s)`,
+        nextTrack ? `Suivant : **${nextTrack.title}**` : null,
       ]
         .filter(Boolean)
         .join("\n")
@@ -88,23 +89,23 @@ function buildNowPlayingPanel(player) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("music_pauseresume")
-      .setEmoji(player.paused ? "▶️" : "⏸️")
-      .setStyle(ButtonStyle.Primary),
+      .setLabel(player.paused ? "Reprendre" : "Pause")
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("music_skip")
-      .setEmoji("⏭️")
+      .setLabel("Suivant")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("music_stop")
-      .setEmoji("⏹️")
-      .setStyle(ButtonStyle.Danger),
+      .setLabel("Stop")
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("music_loop")
-      .setEmoji("🔁")
+      .setLabel("Boucle")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("music_queue")
-      .setEmoji("📜")
+      .setLabel("File")
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -122,9 +123,9 @@ function buildNowPlayingPanel(player) {
  * IS_COMPONENTS_V2 ne peut pas être retiré via une édition).
  */
 function buildStoppedPanel() {
-  const container = new ContainerBuilder().setAccentColor(0xed4245);
+  const container = new ContainerBuilder();
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("⏹️ **Lecture arrêtée** — file d'attente vidée.")
+    new TextDisplayBuilder().setContent("**Lecture arrêtée** — file d'attente vidée.")
   );
   return {
     flags: MessageFlags.IsComponentsV2,

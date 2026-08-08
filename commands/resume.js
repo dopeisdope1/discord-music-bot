@@ -12,6 +12,6 @@ module.exports = {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
     player.pause(false);
-    await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.", { icon: "▶️" })] });
+    await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
   },
 };

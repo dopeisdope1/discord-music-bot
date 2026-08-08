@@ -1,8 +1,6 @@
 const { EmbedBuilder, StringSelectMenuBuilder, ActionRowBuilder } = require("discord.js");
 const { formatTrackDuration, trackArtists } = require("./spotifySearch");
 
-const SPOTIFY_GREEN = 0x1db954;
-
 /**
  * Construit le panel (embed + menu déroulant) listant les titres Spotify parmi
  * lesquels choisir.
@@ -12,8 +10,7 @@ const SPOTIFY_GREEN = 0x1db954;
  */
 function buildTrackChoicePanel(mode, query, { artist, tracks }) {
   const embed = new EmbedBuilder()
-    .setColor(SPOTIFY_GREEN)
-    .setTitle(mode === "artist" ? `🟢 Titres de ${artist.name}` : `🟢 Résultats pour "${query}"`)
+    .setTitle(mode === "artist" ? `Titres de ${artist.name}` : `Résultats pour "${query}"`)
     .setDescription(
       tracks
         .map(
@@ -21,7 +18,7 @@ function buildTrackChoicePanel(mode, query, { artist, tracks }) {
         )
         .join("\n")
     )
-    .setFooter({ text: "Choisis une musique dans le menu ci-dessous ⬇️" });
+    .setFooter({ text: "Choisis une musique dans le menu ci-dessous" });
 
   const thumbnail = mode === "artist" ? artist.images?.[0]?.url : tracks[0]?.album?.images?.[0]?.url;
   if (thumbnail) embed.setThumbnail(thumbnail);
@@ -40,4 +37,4 @@ function buildTrackChoicePanel(mode, query, { artist, tracks }) {
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] };
 }
 
-module.exports = { buildTrackChoicePanel, SPOTIFY_GREEN };
+module.exports = { buildTrackChoicePanel };

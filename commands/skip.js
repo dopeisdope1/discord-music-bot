@@ -12,6 +12,6 @@ module.exports = {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")], ephemeral: true });
     }
     player.skip();
-    await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique passée.", { icon: "⏭️" })] });
+    await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
   },
 };

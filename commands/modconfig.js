@@ -37,7 +37,7 @@ module.exports = {
             "Sélectionne les rôles autorisés à utiliser les commandes de modération " +
             "(`-clear`, `-lock`, `-unlock`, `-hide`, `-unhide`, `-renew`, `-snipe`). " +
             "Ne rien sélectionner retire tous les rôles configurés.",
-          { title: "🛠️ Configuration — Modération", icon: "" }
+          { title: "Configuration — Modération" }
         ),
       ],
       components: [new ActionRowBuilder().addComponents(menu)],
@@ -62,8 +62,7 @@ module.exports = {
       await i.update({
         embeds: [
           buildStatusEmbed("success", `Rôle(s) modérateur mis à jour : ${formatRoleList(i.values)}`, {
-            title: "🛠️ Configuration — Modération",
-            icon: "",
+            title: "Configuration — Modération",
           }),
         ],
         components: [],

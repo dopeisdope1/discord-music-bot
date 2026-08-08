@@ -15,13 +15,11 @@ module.exports = {
 
     const list = tracks
       .slice(0, 15)
-      .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} **${t.title}**`)
+      .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} **${t.title}**`)
       .join("\n");
 
     await interaction.reply({
-      embeds: [
-        buildStatusEmbed("info", list, { title: `📜 File d'attente (${tracks.length} titres)`, icon: "" }),
-      ],
+      embeds: [buildStatusEmbed("info", list, { title: `File d'attente (${tracks.length} titres)` })],
     });
   },
 };

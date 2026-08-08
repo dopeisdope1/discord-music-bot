@@ -14,7 +14,7 @@ module.exports = {
     interaction.client.nowPlayingMessages.delete(interaction.guildId);
     player.destroy();
     await interaction.reply({
-      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.", { icon: "⏹️" })],
+      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
     });
   },
 };

@@ -91,7 +91,7 @@ client.kazagumo
     client.nowPlayingMessages.delete(player.guildId);
     if (textChannel) {
       textChannel.send({
-        embeds: [buildStatusEmbed("info", "File d'attente terminée.", { icon: "🏁" })],
+        embeds: [buildStatusEmbed("info", "File d'attente terminée.")],
       });
     }
   })
@@ -171,10 +171,10 @@ client.on("interactionCreate", async (interaction) => {
         const tracks = [player.queue.current, ...player.queue].filter(Boolean);
         const list = tracks
           .slice(0, 10)
-          .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} ${t.title}`)
+          .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} ${t.title}`)
           .join("\n");
         return interaction.reply({
-          embeds: [buildStatusEmbed("info", list || "Vide.", { title: "📜 File d'attente", icon: "" })],
+          embeds: [buildStatusEmbed("info", list || "Vide.", { title: "File d'attente" })],
           ephemeral: true,
         });
       }
@@ -221,11 +221,7 @@ client.on("voiceStateUpdate", (oldState) => {
     player.destroy();
     if (textChannel) {
       textChannel.send({
-        embeds: [
-          buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.", {
-            icon: "👋",
-          }),
-        ],
+        embeds: [buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.")],
       });
     }
   }

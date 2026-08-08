@@ -26,7 +26,7 @@ module.exports = {
     const mode = interaction.options.getString("mode");
     player.setLoop(mode);
     await interaction.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`, { icon: "🔁" })],
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`)],
     });
   },
 };

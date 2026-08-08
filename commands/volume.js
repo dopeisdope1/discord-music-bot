@@ -22,7 +22,7 @@ module.exports = {
     const niveau = interaction.options.getInteger("niveau");
     player.setVolume(niveau);
     await interaction.reply({
-      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`, { icon: "🔊" })],
+      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`)],
     });
   },
 };

@@ -44,7 +44,7 @@ module.exports = {
         }
         const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
         await interaction.editReply({
-          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`, { icon: "🔎" })],
+          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
         });
       } catch (err) {
         console.error(err);
