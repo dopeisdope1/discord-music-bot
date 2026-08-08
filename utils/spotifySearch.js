@@ -4,6 +4,12 @@ let tokenExpiresAt = 0;
 async function getAccessToken() {
   if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
 
+  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+    throw new Error(
+      "SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET manquant(s) dans les variables d'environnement."
+    );
+  }
+
   const basic = Buffer.from(
     `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
   ).toString("base64");
@@ -16,7 +22,10 @@ async function getAccessToken() {
     },
     body: "grant_type=client_credentials",
   });
-  if (!res.ok) throw new Error(`Authentification Spotify échouée (${res.status})`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Authentification Spotify échouée (${res.status}): ${body}`);
+  }
 
   const data = await res.json();
   cachedToken = data.access_token;
@@ -30,7 +39,10 @@ async function spotifyGet(endpoint, params = {}) {
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Erreur API Spotify (${res.status})`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Erreur API Spotify (${res.status}) sur ${endpoint}: ${body}`);
+  }
   return res.json();
 }
 
