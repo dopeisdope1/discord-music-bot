@@ -1,7 +1,7 @@
 const { PermissionFlagsBits, EmbedBuilder } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
 const { buildMusicHelpPanel, buildMemberDashHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
-const { hasModPermission } = require("./permissions");
+const { hasModPermission, hasBanPermission } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
@@ -535,7 +535,16 @@ async function handleTextCommand(client, message) {
       return handlers.panel(client, message, args);
     }
     if (cmd === "ban") {
-      if (!requireModPermission(message)) return;
+      if (!hasBanPermission(message)) {
+        return message.reply({
+          embeds: [
+            buildStatusEmbed(
+              "error",
+              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
+            ),
+          ],
+        });
+      }
       return handlers.ban(client, message, args);
     }
     if (cmd === "clear") {

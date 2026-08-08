@@ -86,6 +86,7 @@ function memberDashSection(prefix) {
       `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
       `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
+      `\`${prefix}ban\` — Ouvre le panel **Zinki Tueur** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
     ],
   };
 }
@@ -108,12 +109,6 @@ function adminDashSections(prefix) {
         `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
         `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
         `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
-      ],
-    },
-    {
-      heading: "Sanctions",
-      lines: [
-        `\`${prefix}ban\` — Ouvre le panel **Zinki Tueur** pour bannir un membre`,
       ],
     },
     {
