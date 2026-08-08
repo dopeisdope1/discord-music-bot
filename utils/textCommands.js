@@ -265,22 +265,28 @@ const handlers = {
     message.delete().catch(() => {});
 
     const targetMember = message.mentions.members?.first();
-    let maxCount = Infinity; // -clear seul (ni membre ni nombre) : tout le salon
+    let maxCount = Infinity;
 
-    if (!targetMember && args[0]) {
-      const amount = parseInt(args[0], 10);
-      if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-        return sendTempReply(
-          channel,
-          {
-            embeds: [
-              buildStatusEmbed("error", "Utilisation : `-clear` (tout), `-clear @membre` ou `-clear <nombre>`"),
-            ],
-          },
-          5000
-        );
+    if (!targetMember) {
+      const arg = (args[0] || "").toLowerCase();
+      if (arg !== "me") {
+        const amount = parseInt(args[0], 10);
+        if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
+          return sendTempReply(
+            channel,
+            {
+              embeds: [
+                buildStatusEmbed(
+                  "error",
+                  "Utilisation : `-clear me` (tout), `-clear @membre` ou `-clear <nombre>`"
+                ),
+              ],
+            },
+            5000
+          );
+        }
+        maxCount = amount;
       }
-      maxCount = amount;
     }
 
     const deletedTotal = await clearMessages(client, channel, { targetMemberId: targetMember?.id, maxCount });
@@ -438,7 +444,7 @@ async function handleTextCommand(client, message) {
   // permission que -clear)
   if (content.toLowerCase() === "uo clear") {
     if (!canUseDashCommand(message, "clear").allowed) return;
-    return handlers.clear(client, message, []);
+    return handlers.clear(client, message, ["me"]);
   }
 
   // Préfixe "-" : commandes membres + modération
