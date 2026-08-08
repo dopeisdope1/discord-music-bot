@@ -84,6 +84,8 @@ function memberDashSection(prefix) {
       `\`${prefix}pic [@membre]\` — Affiche la photo de profil (la tienne par défaut)`,
       `\`${prefix}avatar [@membre]\` — Alias de ${prefix}pic`,
       `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
+      `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
+      `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
     ],
   };
 }
@@ -94,9 +96,8 @@ function adminDashSections(prefix) {
     {
       heading: "Messages",
       lines: [
-        `\`${prefix}clear me\` — Supprime tes propres messages récents (aussi accessible via \`uo clear\`, sans préfixe)`,
         `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
-        `\`${prefix}clear @membre\` — Supprime les messages récents d'un membre`,
+        `\`${prefix}clear @membre\` ou \`${prefix}clear <id>\` — Supprime les messages récents d'un membre`,
       ],
     },
     {
@@ -107,6 +108,12 @@ function adminDashSections(prefix) {
         `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
         `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
         `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
+      ],
+    },
+    {
+      heading: "Sanctions",
+      lines: [
+        `\`${prefix}ban\` — Ouvre le panel **Zinki Tueur** pour bannir un membre`,
       ],
     },
     {

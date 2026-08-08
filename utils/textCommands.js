@@ -8,6 +8,8 @@ const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./mus
 const { handleJoinSpotify } = require("./joinSpotify");
 const { canUseDashCommand } = require("./commandPermissions");
 const { handleCommandPanel, CONFIGURABLE_COMMANDS } = require("./commandPanelWizard");
+const { handleBanPanel } = require("./banPanel");
+const { createRateLimiter } = require("./rateLimiter");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -40,6 +42,8 @@ const CLEAR_JOKES = [
   "machini",
 ];
 const randomClearJoke = () => CLEAR_JOKES[Math.floor(Math.random() * CLEAR_JOKES.length)];
+// "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
+const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
 
 function getPlayerOrReply(client, message) {
   const player = client.kazagumo.players.get(message.guildId);
@@ -275,16 +279,67 @@ const handlers = {
     message.delete().catch(() => {});
 
     const mentioned = message.mentions.members?.first();
-    const arg = (args[0] || "").toLowerCase();
+    const rawArg = args[0] || "";
+    const arg = rawArg.toLowerCase();
+
     let targetMemberId;
     let maxCount = Infinity;
+    let isSelfClear = false;
 
     if (mentioned) {
       targetMemberId = mentioned.id;
     } else if (arg === "me") {
       targetMemberId = message.author.id;
+      isSelfClear = true;
+    } else if (/^\d{15,}$/.test(rawArg)) {
+      // ID brut d'un membre (pas de mention)
+      targetMemberId = rawArg;
+    }
+
+    if (isSelfClear) {
+      // Ouvert à tout le monde, mais limité à 5 utilisations / 25 min
+      const { allowed, retryAfterMs } = clearMeLimiter.check(message.author.id);
+      if (!allowed) {
+        const minutes = Math.ceil(retryAfterMs / 60000);
+        return sendTempReply(
+          channel,
+          {
+            embeds: [
+              buildStatusEmbed(
+                "error",
+                `Tu as atteint la limite (5 utilisations / 25 min). Réessaie dans ${minutes} min.`
+              ),
+            ],
+          },
+          15000
+        );
+      }
+    } else if (targetMemberId) {
+      // Cible quelqu'un d'autre (@membre ou ID) : réservé aux administrateurs
+      if (!hasModPermission(message)) {
+        return sendTempReply(
+          channel,
+          {
+            embeds: [
+              buildStatusEmbed(
+                "error",
+                "Tu dois être administrateur pour supprimer les messages d'un autre membre."
+              ),
+            ],
+          },
+          15000
+        );
+      }
     } else {
-      const amount = parseInt(args[0], 10);
+      // -clear <nombre> : accès configurable via -panel
+      if (!canUseDashCommand(message, "clear").allowed) {
+        return sendTempReply(
+          channel,
+          { embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")] },
+          15000
+        );
+      }
+      const amount = parseInt(rawArg, 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
         return sendTempReply(
           channel,
@@ -292,7 +347,7 @@ const handlers = {
             embeds: [
               buildStatusEmbed(
                 "error",
-                "Utilisation : `-clear me` (tes messages), `-clear @membre` ou `-clear <nombre>`"
+                "Utilisation : `-clear me` (tes messages), `-clear @membre`/`<id>` ou `-clear <nombre>`"
               ),
             ],
           },
@@ -309,6 +364,10 @@ const handlers = {
       { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
       15000
     );
+  },
+
+  async ban(client, message) {
+    await handleBanPanel(message);
   },
 
   async renew(client, message) {
@@ -454,9 +513,8 @@ async function handleTextCommand(client, message) {
   const content = message.content.trim();
 
   // Déclencheur spécial sans préfixe : "uo clear" = "-clear me" (supprime tes
-  // propres messages), même permission que -clear
+  // propres messages), ouvert à tout le monde (limite gérée dans le handler)
   if (content.toLowerCase() === "uo clear") {
-    if (!canUseDashCommand(message, "clear").allowed) return;
     return handlers.clear(client, message, ["me"]);
   }
 
@@ -471,6 +529,15 @@ async function handleTextCommand(client, message) {
     if (cmd === "panel") {
       if (!requireModPermission(message)) return;
       return handlers.panel(client, message, args);
+    }
+    if (cmd === "ban") {
+      if (!requireModPermission(message)) return;
+      return handlers.ban(client, message, args);
+    }
+    if (cmd === "clear") {
+      // Permission gérée dans le handler : dépend de la cible (soi-même,
+      // quelqu'un d'autre, ou un nombre).
+      return handlers.clear(client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;
 
