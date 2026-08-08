@@ -28,6 +28,8 @@ const DASH_PREFIX = "-";
 const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const CLEAR_JOKES = ["cbn tg", "mini zizi", "j'ai tout vidé zinki"];
+const randomClearJoke = () => CLEAR_JOKES[Math.floor(Math.random() * CLEAR_JOKES.length)];
 
 function getPlayerOrReply(client, message) {
   const player = client.kazagumo.players.get(message.guildId);
@@ -223,7 +225,7 @@ const handlers = {
     }
 
     const channel = message.channel;
-    await message.delete().catch(() => {});
+    message.delete().catch(() => {});
 
     const targetMember = message.mentions.members?.first();
     let deletedTotal = 0;
@@ -276,9 +278,11 @@ const handlers = {
       }
     }
 
-    await sendTempReply(channel, {
-      embeds: [buildStatusEmbed("success", `**${deletedTotal}** message(s) supprimé(s).`)],
-    });
+    await sendTempReply(
+      channel,
+      { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
+      3000
+    );
   },
 
   async renew(client, message) {

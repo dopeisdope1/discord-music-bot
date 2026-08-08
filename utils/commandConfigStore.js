@@ -41,4 +41,11 @@ function resetCommandConfig(guildId, command) {
   saveAll(all);
 }
 
-module.exports = { getCommandConfig, updateCommandConfig, resetCommandConfig };
+/**
+ * @returns {Record<string, { allowedRoleIds: string[], deniedRoleIds: string[], allowedChannelIds: string[] }>}
+ */
+function getGuildCommandConfigs(guildId) {
+  return loadAll()[guildId] || {};
+}
+
+module.exports = { getCommandConfig, updateCommandConfig, resetCommandConfig, getGuildCommandConfigs };
