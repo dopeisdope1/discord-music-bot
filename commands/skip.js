@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
+const { buildStatusEmbed } = require("../utils/statusEmbed");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,13 +9,13 @@ module.exports = {
   async execute(interaction) {
     const queue = interaction.client.distube.getQueue(interaction.guildId);
     if (!queue) {
-      return interaction.reply({ content: "❌ Aucune musique en cours.", ephemeral: true });
+      return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
     try {
       const song = await queue.skip();
-      await interaction.reply(`⏭️ Passé à : **${song.name}**`);
+      await interaction.reply({ embeds: [buildStatusEmbed("success", `Passé à : **${song.name}**`, { icon: "⏭️" })] });
     } catch {
-      await interaction.reply({ content: "❌ Rien à passer.", ephemeral: true });
+      await interaction.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")], ephemeral: true });
     }
   },
 };

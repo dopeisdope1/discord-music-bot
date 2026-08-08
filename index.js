@@ -11,8 +11,9 @@ const {
 const { DisTube } = require("distube");
 const { SpotifyPlugin } = require("@distube/spotify");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
-const { buildNowPlayingPanel } = require("./utils/nowPlayingPanel");
+const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleTextCommand, rememberSnipe } = require("./utils/textCommands");
+const { buildStatusEmbed } = require("./utils/statusEmbed");
 
 const client = new Client({
   intents: [
@@ -21,6 +22,10 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
   ],
+  // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de musique
+  // ou message sniped contenant littéralement "@everyone"). Les mentions
+  // d'utilisateurs restent autorisées.
+  allowedMentions: { parse: ["users"], repliedUser: true },
 });
 
 // ---- Chargement des commandes slash ----
@@ -62,27 +67,43 @@ client.distube
   })
   .on("addSong", (queue, song) => {
     queue.textChannel.send({
-      content: `✅ Ajouté à la file d'attente : **${song.name}** (${song.formattedDuration})`,
+      embeds: [
+        buildStatusEmbed(
+          "success",
+          `Ajouté à la file d'attente : **${song.name}** (${song.formattedDuration})`
+        ),
+      ],
     });
   })
   .on("addList", (queue, playlist) => {
     queue.textChannel.send({
-      content: `✅ Playlist ajoutée : **${playlist.name}** (${playlist.songs.length} titres)`,
+      embeds: [
+        buildStatusEmbed(
+          "success",
+          `Playlist ajoutée : **${playlist.name}** (${playlist.songs.length} titres)`
+        ),
+      ],
     });
   })
   .on("finish", (queue) => {
-    queue.textChannel.send("🏁 File d'attente terminée.");
+    queue.textChannel.send({ embeds: [buildStatusEmbed("info", "File d'attente terminée.", { icon: "🏁" })] });
   })
   .on("disconnect", (queue) => {
     client.nowPlayingMessages.delete(queue.id);
   })
   .on("empty", (queue) => {
-    queue.textChannel.send("👋 Tout le monde a quitté le salon vocal, je me déconnecte.");
+    queue.textChannel.send({
+      embeds: [
+        buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.", {
+          icon: "👋",
+        }),
+      ],
+    });
   })
   .on("error", (channel, error) => {
     console.error(error);
     if (channel?.send) {
-      channel.send("❌ Une erreur est survenue : " + error.message.slice(0, 1800));
+      channel.send({ embeds: [buildStatusEmbed("error", error.message.slice(0, 1800))] });
     }
   });
 
@@ -95,7 +116,10 @@ client.on("interactionCreate", async (interaction) => {
       await command.execute(interaction);
     } catch (err) {
       console.error(err);
-      const payload = { content: "❌ Erreur lors de l'exécution de la commande.", ephemeral: true };
+      const payload = {
+        embeds: [buildStatusEmbed("error", "Erreur lors de l'exécution de la commande.")],
+        ephemeral: true,
+      };
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp(payload);
       } else {
@@ -108,13 +132,16 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
     const queue = client.distube.getQueue(interaction.guildId);
     if (!queue) {
-      return interaction.reply({ content: "❌ Aucune musique en cours.", ephemeral: true });
+      return interaction.reply({
+        embeds: [buildStatusEmbed("error", "Aucune musique en cours.")],
+        ephemeral: true,
+      });
     }
 
     const memberVoiceChannel = interaction.member.voice.channel;
     if (!memberVoiceChannel || memberVoiceChannel.id !== queue.voiceChannel.id) {
       return interaction.reply({
-        content: "❌ Tu dois être dans le même salon vocal que le bot.",
+        embeds: [buildStatusEmbed("error", "Tu dois être dans le même salon vocal que le bot.")],
         ephemeral: true,
       });
     }
@@ -127,7 +154,10 @@ client.on("interactionCreate", async (interaction) => {
         try {
           await queue.skip();
         } catch {
-          return interaction.reply({ content: "❌ Rien à passer.", ephemeral: true });
+          return interaction.reply({
+            embeds: [buildStatusEmbed("error", "Rien à passer.")],
+            ephemeral: true,
+          });
         }
         break;
       case "music_stop":
@@ -142,7 +172,7 @@ client.on("interactionCreate", async (interaction) => {
           .map((s, i) => `${i === 0 ? "▶️" : `${i}.`} ${s.name} - ${s.formattedDuration}`)
           .join("\n");
         return interaction.reply({
-          content: "📜 **File d'attente :**\n" + list,
+          embeds: [buildStatusEmbed("info", list, { title: "📜 File d'attente", icon: "" })],
           ephemeral: true,
         });
       }
@@ -153,7 +183,7 @@ client.on("interactionCreate", async (interaction) => {
       const panel = buildNowPlayingPanel(client.distube.getQueue(interaction.guildId));
       await interaction.update(panel);
     } else {
-      await interaction.update({ content: "⏹️ Lecture arrêtée.", embeds: [], components: [] });
+      await interaction.update(buildStoppedPanel());
     }
   }
 });
@@ -162,7 +192,9 @@ client.on("interactionCreate", async (interaction) => {
 client.on("messageCreate", (message) => {
   handleTextCommand(client, message).catch((err) => {
     console.error(err);
-    message.reply("❌ Une erreur est survenue lors du traitement de la commande.").catch(() => {});
+    message
+      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
+      .catch(() => {});
   });
 });
 

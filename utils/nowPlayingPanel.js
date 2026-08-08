@@ -123,4 +123,20 @@ function buildNowPlayingPanel(queue) {
   };
 }
 
-module.exports = { buildNowPlayingPanel, formatDuration };
+/**
+ * Construit un petit panel Components V2 confirmant l'arrêt de la lecture.
+ * Doit rester en Components V2 : le message édité l'était déjà (le flag
+ * IS_COMPONENTS_V2 ne peut pas être retiré via une édition).
+ */
+function buildStoppedPanel() {
+  const container = new ContainerBuilder().setAccentColor(0xed4245);
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent("⏹️ **Lecture arrêtée** — file d'attente vidée.")
+  );
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+  };
+}
+
+module.exports = { buildNowPlayingPanel, buildStoppedPanel, formatDuration };

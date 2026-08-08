@@ -100,6 +100,8 @@ function buildAdminHelpPanel(prefix = "-") {
           `\`${prefix}renew\` — Recrée le salon à l'identique (vide)`,
           `\`${prefix}hide\` — Cache le salon à @everyone`,
           `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
+          `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
+          `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
         ],
       },
     ],

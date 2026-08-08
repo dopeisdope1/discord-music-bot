@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
+const { buildStatusEmbed } = require("../utils/statusEmbed");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,11 +20,13 @@ module.exports = {
   async execute(interaction) {
     const queue = interaction.client.distube.getQueue(interaction.guildId);
     if (!queue) {
-      return interaction.reply({ content: "❌ Aucune musique en cours.", ephemeral: true });
+      return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
     const mode = parseInt(interaction.options.getString("mode"), 10);
     queue.setRepeatMode(mode);
     const labels = ["Désactivée", "Chanson", "File d'attente"];
-    await interaction.reply(`🔁 Mode de répétition : **${labels[mode]}**`);
+    await interaction.reply({
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${labels[mode]}**`, { icon: "🔁" })],
+    });
   },
 };

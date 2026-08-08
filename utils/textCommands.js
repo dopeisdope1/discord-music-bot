@@ -2,18 +2,22 @@ const { PermissionFlagsBits } = require("discord.js");
 const { buildNowPlayingPanel } = require("./nowPlayingPanel");
 const { buildMusicHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
 const { hasModRole, MOD_ROLE_NAME } = require("./permissions");
+const { buildStatusEmbed } = require("./statusEmbed");
+const { handleSpotifyPlay } = require("./spotifyPlay");
+
+const URL_REGEX = /^https?:\/\//i;
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
 // Commandes disponibles avec le préfixe "-" (modération)
-const DASH_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "snipe", "help"]);
+const DASH_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "lock", "unlock", "snipe", "help"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 function getQueueOrReply(client, message) {
   const queue = client.distube.getQueue(message.guildId);
   if (!queue) {
-    message.reply("❌ Aucune musique en cours.");
+    message.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")] });
     return null;
   }
   return queue;
@@ -21,7 +25,11 @@ function getQueueOrReply(client, message) {
 
 function requireModRole(message) {
   if (!hasModRole(message)) {
-    message.reply(`❌ Tu dois avoir le rôle **${MOD_ROLE_NAME}** pour utiliser cette commande.`);
+    message.reply({
+      embeds: [
+        buildStatusEmbed("error", `Tu dois avoir le rôle **${MOD_ROLE_NAME}** pour utiliser cette commande.`),
+      ],
+    });
     return false;
   }
   return true;
@@ -29,7 +37,8 @@ function requireModRole(message) {
 
 async function sendTempReply(channel, content, ms = 5000) {
   try {
-    const msg = await channel.send(content);
+    const payload = typeof content === "string" ? { content } : content;
+    const msg = await channel.send(payload);
     setTimeout(() => msg.delete().catch(() => {}), ms);
   } catch {
     /* ignore */
@@ -40,16 +49,36 @@ const handlers = {
   // ---- Musique ----
   async play(client, message, args) {
     const query = args.join(" ");
-    if (!query) return message.reply("❌ Indique une recherche, un lien YouTube ou Spotify.");
+    if (!query)
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Indique un nom de musique/artiste, ou un lien YouTube/Spotify.")],
+      });
     const vc = message.member.voice.channel;
-    if (!vc) return message.reply("❌ Tu dois être dans un salon vocal.");
-    try {
-      await client.distube.play(vc, query, { textChannel: message.channel, member: message.member });
-      await message.reply(`🔎 Recherche en cours pour : **${query}**`);
-    } catch (err) {
-      console.error(err);
-      await message.reply("❌ Impossible de jouer ce titre.");
+    if (!vc)
+      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
+
+    if (URL_REGEX.test(query)) {
+      try {
+        await client.distube.play(vc, query, { textChannel: message.channel, member: message.member });
+        await message.reply({
+          embeds: [buildStatusEmbed("info", `Recherche en cours pour : **${query}**`, { icon: "🔎" })],
+        });
+      } catch (err) {
+        console.error(err);
+        await message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
+      }
+      return;
     }
+
+    await handleSpotifyPlay({
+      distube: client.distube,
+      voiceChannel: vc,
+      textChannel: message.channel,
+      member: message.member,
+      query,
+      requesterId: message.author.id,
+      send: (payload) => message.reply(payload),
+    });
   },
 
   async skip(client, message) {
@@ -57,9 +86,11 @@ const handlers = {
     if (!queue) return;
     try {
       const song = await queue.skip();
-      await message.reply(`⏭️ Passé à : **${song.name}**`);
+      await message.reply({
+        embeds: [buildStatusEmbed("success", `Passé à : **${song.name}**`, { icon: "⏭️" })],
+      });
     } catch {
-      await message.reply("❌ Rien à passer.");
+      await message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
     }
   },
 
@@ -67,32 +98,39 @@ const handlers = {
     const queue = getQueueOrReply(client, message);
     if (!queue) return;
     queue.stop();
-    await message.reply("⏹️ Musique arrêtée et file d'attente vidée.");
+    await message.reply({
+      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.", { icon: "⏹️" })],
+    });
   },
 
   async pause(client, message) {
     const queue = getQueueOrReply(client, message);
     if (!queue) return;
     queue.pause();
-    await message.reply("⏸️ Musique en pause.");
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.", { icon: "⏸️" })] });
   },
 
   async resume(client, message) {
     const queue = getQueueOrReply(client, message);
     if (!queue) return;
     queue.resume();
-    await message.reply("▶️ Musique reprise.");
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.", { icon: "▶️" })] });
   },
 
   async queue(client, message) {
     const queue = getQueueOrReply(client, message);
     if (!queue) return;
-    if (queue.songs.length === 0) return message.reply("❌ La file d'attente est vide.");
+    if (queue.songs.length === 0)
+      return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
     const list = queue.songs
       .slice(0, 15)
       .map((s, i) => `${i === 0 ? "▶️" : `${i}.`} **${s.name}** - ${s.formattedDuration}`)
       .join("\n");
-    await message.reply(`📜 **File d'attente (${queue.songs.length} titres) :**\n${list}`);
+    await message.reply({
+      embeds: [
+        buildStatusEmbed("info", list, { title: `📜 File d'attente (${queue.songs.length} titres)`, icon: "" }),
+      ],
+    });
   },
 
   async volume(client, message, args) {
@@ -100,10 +138,14 @@ const handlers = {
     if (!queue) return;
     const niveau = parseInt(args[0], 10);
     if (isNaN(niveau) || niveau < 0 || niveau > 150) {
-      return message.reply("❌ Indique un volume entre 0 et 150. Ex : `!volume 80`");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Indique un volume entre 0 et 150. Ex : `!volume 80`")],
+      });
     }
     queue.setVolume(niveau);
-    await message.reply(`🔊 Volume réglé sur **${niveau}%**.`);
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`, { icon: "🔊" })],
+    });
   },
 
   async loop(client, message, args) {
@@ -113,11 +155,15 @@ const handlers = {
     const key = (args[0] || "").toLowerCase();
     const mode = map[key];
     if (mode === undefined) {
-      return message.reply("❌ Mode invalide. Utilise : `!loop off|song|queue`");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Mode invalide. Utilise : `!loop off|song|queue`")],
+      });
     }
     queue.setRepeatMode(mode);
     const labels = ["Désactivée", "Chanson", "File d'attente"];
-    await message.reply(`🔁 Mode de répétition : **${labels[mode]}**`);
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${labels[mode]}**`, { icon: "🔁" })],
+    });
   },
 
   // ---- Aide ----
@@ -129,7 +175,9 @@ const handlers = {
   async clear(client, message, args) {
     if (!requireModRole(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return message.reply("❌ Il me manque la permission **Gérer les messages**.");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
+      });
     }
 
     const channel = message.channel;
@@ -161,10 +209,11 @@ const handlers = {
     } else {
       const amount = parseInt(args[0], 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-        return sendTempReply(
-          channel,
-          "❌ Utilisation : `-clear @membre` ou `-clear <nombre entier positif>`"
-        );
+        return sendTempReply(channel, {
+          embeds: [
+            buildStatusEmbed("error", "Utilisation : `-clear @membre` ou `-clear <nombre entier positif>`"),
+          ],
+        });
       }
 
       let remaining = amount;
@@ -185,58 +234,119 @@ const handlers = {
       }
     }
 
-    await sendTempReply(channel, `🧹 **${deletedTotal}** message(s) supprimé(s).`);
+    await sendTempReply(channel, {
+      embeds: [buildStatusEmbed("success", `**${deletedTotal}** message(s) supprimé(s).`, { icon: "🧹" })],
+    });
   },
 
   async renew(client, message) {
     if (!requireModRole(message)) return;
     const channel = message.channel;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      return message.reply("❌ Il me manque la permission **Gérer les salons**.");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")],
+      });
     }
     try {
       const clone = await channel.clone({ reason: `Salon renouvelé par ${message.author.tag}` });
       await clone.setPosition(channel.position).catch(() => {});
       await channel.delete().catch(() => {});
-      await clone.send("♻️ Salon renouvelé.");
+      await clone.send({ embeds: [buildStatusEmbed("success", "Salon renouvelé.", { icon: "♻️" })] });
     } catch (err) {
       console.error(err);
-      await message.channel.send("❌ Impossible de renouveler le salon.");
+      await message.channel.send({
+        embeds: [buildStatusEmbed("error", "Impossible de renouveler le salon.")],
+      });
     }
   },
 
   async hide(client, message) {
     if (!requireModRole(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return message.reply("❌ Il me manque la permission **Gérer les rôles**.");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
+      });
     }
     await message.channel.permissionOverwrites
       .edit(message.guild.roles.everyone, { ViewChannel: false })
       .catch(() => {});
-    await message.channel.send("🙈 Salon caché pour @everyone.");
+    await message.channel.send({
+      embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.", { icon: "🙈" })],
+      allowedMentions: { parse: [] },
+    });
   },
 
   async unhide(client, message) {
     if (!requireModRole(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return message.reply("❌ Il me manque la permission **Gérer les rôles**.");
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
+      });
     }
     await message.channel.permissionOverwrites
       .edit(message.guild.roles.everyone, { ViewChannel: null })
       .catch(() => {});
-    await message.channel.send("👁️ Salon de nouveau visible pour @everyone.");
+    await message.channel.send({
+      embeds: [buildStatusEmbed("success", "Salon de nouveau visible pour @everyone.", { icon: "👁️" })],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async lock(client, message) {
+    if (!requireModRole(message)) return;
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
+      });
+    }
+    await message.channel.permissionOverwrites
+      .edit(message.guild.roles.everyone, { SendMessages: false })
+      .catch(() => {});
+    await message.channel.send({
+      embeds: [
+        buildStatusEmbed("warning", "Salon verrouillé : @everyone ne peut plus écrire ici.", { icon: "🔒" }),
+      ],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async unlock(client, message) {
+    if (!requireModRole(message)) return;
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
+      });
+    }
+    await message.channel.permissionOverwrites
+      .edit(message.guild.roles.everyone, { SendMessages: null })
+      .catch(() => {});
+    await message.channel.send({
+      embeds: [
+        buildStatusEmbed("success", "Salon déverrouillé : @everyone peut de nouveau écrire.", { icon: "🔓" }),
+      ],
+      allowedMentions: { parse: [] },
+    });
   },
 
   async snipe(client, message) {
     if (!requireModRole(message)) return;
     const data = client.snipes.get(message.channel.id);
     if (!data) {
-      return message.reply("❌ Rien à sniper dans ce salon.");
+      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à sniper dans ce salon.")] });
     }
     const label = data.type === "cleared" ? "supprimé via une commande clear" : "supprimé";
-    await message.channel.send(
-      `🔍 Dernier message ${label} (par **${data.authorTag}**, <t:${Math.floor(data.timestamp / 1000)}:R>) :\n> ${data.content || "*[contenu vide ou non textuel]*"}`
-    );
+    await message.channel.send({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          `Par **${data.authorTag}**, <t:${Math.floor(data.timestamp / 1000)}:R> — ${label}\n> ${
+            data.content || "*[contenu vide ou non textuel]*"
+          }`,
+          { title: "🔍 Message sniped", icon: "" }
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    });
   },
 };
 
