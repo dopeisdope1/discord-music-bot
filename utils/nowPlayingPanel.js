@@ -42,7 +42,8 @@ function buildProgressBar(current, total, size = 18) {
  */
 function buildNowPlayingPanel(player, elapsedMs = 0) {
   const track = player.queue.current;
-  const durationSeconds = Math.floor((track.length || 0) / 1000);
+  const durationMs = track.length || 0;
+  const durationSeconds = Math.floor(durationMs / 1000);
   const elapsedSeconds = Math.min(Math.floor(elapsedMs / 1000), durationSeconds || Infinity);
 
   const container = new ContainerBuilder();
@@ -60,13 +61,21 @@ function buildNowPlayingPanel(player, elapsedMs = 0) {
     new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
   );
 
-  // Barre de progression, mise à jour périodiquement pendant la lecture
+  // Barre de progression (approximative, rafraîchie toutes les 5s) + horaire
+  // de fin en timestamp Discord natif : le client Discord le fait défiler
+  // tout seul en temps réel, sans qu'on ait besoin d'éditer le message.
   const bar = buildProgressBar(elapsedSeconds, durationSeconds);
   const totalLabel = durationSeconds > 0 ? formatDuration(durationSeconds) : "LIVE";
+  const progressLine = [`\`${bar}\``, `\`${totalLabel}\``].join(" ");
+  const timeLine =
+    durationMs === 0
+      ? null
+      : player.paused
+      ? `En pause à \`${formatDuration(elapsedSeconds)}\``
+      : `Fin <t:${Math.floor((Date.now() + (durationMs - elapsedMs)) / 1000)}:R>`;
+
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `\`${formatDuration(elapsedSeconds)}\` ${bar} \`${totalLabel}\``
-    )
+    new TextDisplayBuilder().setContent([progressLine, timeLine].filter(Boolean).join("\n"))
   );
 
   // Infos complémentaires
