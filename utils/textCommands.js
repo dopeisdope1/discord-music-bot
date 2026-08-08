@@ -353,13 +353,21 @@ const handlers = {
       maxCount = amount;
     }
 
-    const deletedTotal = await clearMessages(client, channel, { targetMemberId, maxCount });
+    // Envoie la confirmation tout de suite, sans attendre la fin de la
+    // suppression (qui peut prendre plusieurs secondes à cause du
+    // rate-limit Discord sur bulkDelete) ; le nombre exact est ajouté par
+    // une édition une fois le nettoyage terminé.
+    const joke = randomClearJoke();
+    const tempMessage = await channel.send({ embeds: [buildStatusEmbed("success", joke)] }).catch(() => null);
+    if (tempMessage) setTimeout(() => tempMessage.delete().catch(() => {}), 15000);
 
-    await sendTempReply(
-      channel,
-      { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
-      15000
-    );
+    clearMessages(client, channel, { targetMemberId, maxCount })
+      .then((deletedTotal) => {
+        tempMessage
+          ?.edit({ embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${joke}`)] })
+          .catch(() => {});
+      })
+      .catch((err) => console.error(err));
   },
 
   async ban(client, message) {
