@@ -97,6 +97,25 @@ async function clearMessages(client, channel, { targetMemberId, maxCount = Infin
   return deletedTotal;
 }
 
+/**
+ * Vide tout le salon (déclencheur "uo clear", sans préfixe).
+ */
+async function wipeChannel(client, message) {
+  if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
+    return message.reply({
+      embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
+    });
+  }
+  const channel = message.channel;
+  message.delete().catch(() => {});
+  const deletedTotal = await clearMessages(client, channel, { maxCount: Infinity });
+  await sendTempReply(
+    channel,
+    { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
+    5000
+  );
+}
+
 const handlers = {
   // ---- Musique ----
   async play(client, message, args) {
@@ -264,32 +283,35 @@ const handlers = {
     const channel = message.channel;
     message.delete().catch(() => {});
 
-    const targetMember = message.mentions.members?.first();
+    const mentioned = message.mentions.members?.first();
+    const arg = (args[0] || "").toLowerCase();
+    let targetMemberId;
     let maxCount = Infinity;
 
-    if (!targetMember) {
-      const arg = (args[0] || "").toLowerCase();
-      if (arg !== "me") {
-        const amount = parseInt(args[0], 10);
-        if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-          return sendTempReply(
-            channel,
-            {
-              embeds: [
-                buildStatusEmbed(
-                  "error",
-                  "Utilisation : `-clear me` (tout), `-clear @membre` ou `-clear <nombre>`"
-                ),
-              ],
-            },
-            5000
-          );
-        }
-        maxCount = amount;
+    if (mentioned) {
+      targetMemberId = mentioned.id;
+    } else if (arg === "me") {
+      targetMemberId = message.author.id;
+    } else {
+      const amount = parseInt(args[0], 10);
+      if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
+        return sendTempReply(
+          channel,
+          {
+            embeds: [
+              buildStatusEmbed(
+                "error",
+                "Utilisation : `-clear me` (tes messages), `-clear @membre` ou `-clear <nombre>`"
+              ),
+            ],
+          },
+          5000
+        );
       }
+      maxCount = amount;
     }
 
-    const deletedTotal = await clearMessages(client, channel, { targetMemberId: targetMember?.id, maxCount });
+    const deletedTotal = await clearMessages(client, channel, { targetMemberId, maxCount });
 
     await sendTempReply(
       channel,
@@ -440,11 +462,11 @@ async function handleTextCommand(client, message) {
 
   const content = message.content.trim();
 
-  // Déclencheur spécial sans préfixe : "uo clear" vide le salon (même
+  // Déclencheur spécial sans préfixe : "uo clear" vide tout le salon (même
   // permission que -clear)
   if (content.toLowerCase() === "uo clear") {
     if (!canUseDashCommand(message, "clear").allowed) return;
-    return handlers.clear(client, message, ["me"]);
+    return wipeChannel(client, message);
   }
 
   // Préfixe "-" : commandes membres + modération
