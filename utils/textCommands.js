@@ -60,6 +60,43 @@ async function sendTempReply(channel, content, ms = 5000) {
   }
 }
 
+/**
+ * Supprime des messages du salon par lots de 100 (limite Discord), jusqu'à
+ * `maxCount` (ou tout le salon si non précisé) et jusqu'à 14 jours d'ancienneté
+ * (limite du bulk delete). Si `targetMemberId` est fourni, ne supprime que ses
+ * messages ; sinon, supprime tout ce qui passe (le plus récent en premier).
+ */
+async function clearMessages(client, channel, { targetMemberId, maxCount = Infinity } = {}) {
+  let deletedTotal = 0;
+  let beforeId;
+
+  for (let i = 0; i < 10 && deletedTotal < maxCount; i++) {
+    const fetchLimit = Math.min(100, maxCount - deletedTotal);
+    const fetched = await channel.messages.fetch({ limit: fetchLimit, before: beforeId });
+    if (fetched.size === 0) break;
+
+    const eligible = fetched.filter((m) => Date.now() - m.createdTimestamp < FOURTEEN_DAYS_MS);
+    const toDelete = targetMemberId ? eligible.filter((m) => m.author.id === targetMemberId) : eligible;
+
+    if (toDelete.size > 0) {
+      const deleted = await channel.bulkDelete(toDelete, true).catch(() => null);
+      if (deleted) {
+        deletedTotal += deleted.size;
+        const last = [...deleted.values()][0];
+        if (last) rememberSnipe(client, channel.id, last, "cleared");
+      }
+    }
+
+    // Sans filtre par membre, les messages supprimés libèrent naturellement
+    // la place : on peut re-fetcher "les plus récents" sans curseur. Avec un
+    // filtre, il faut avancer le curseur pour dépasser les messages ignorés.
+    beforeId = targetMemberId ? fetched.last().id : undefined;
+    if (fetched.size < fetchLimit) break;
+  }
+
+  return deletedTotal;
+}
+
 const handlers = {
   // ---- Musique ----
   async play(client, message, args) {
@@ -228,60 +265,30 @@ const handlers = {
     message.delete().catch(() => {});
 
     const targetMember = message.mentions.members?.first();
-    let deletedTotal = 0;
+    let maxCount = Infinity; // -clear seul (ni membre ni nombre) : tout le salon
 
-    if (targetMember) {
-      let beforeId;
-      for (let i = 0; i < 10; i++) {
-        const fetched = await channel.messages.fetch({ limit: 100, before: beforeId });
-        if (fetched.size === 0) break;
-        beforeId = fetched.last().id;
-
-        const fromMember = fetched.filter(
-          (m) => m.author.id === targetMember.id && Date.now() - m.createdTimestamp < FOURTEEN_DAYS_MS
-        );
-        if (fromMember.size > 0) {
-          const deleted = await channel.bulkDelete(fromMember, true).catch(() => null);
-          if (deleted) {
-            deletedTotal += deleted.size;
-            const last = [...deleted.values()][0];
-            if (last) rememberSnipe(client, channel.id, last, "cleared");
-          }
-        }
-        if (fetched.size < 100) break;
-      }
-    } else {
+    if (!targetMember && args[0]) {
       const amount = parseInt(args[0], 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-        return sendTempReply(channel, {
-          embeds: [
-            buildStatusEmbed("error", "Utilisation : `-clear @membre` ou `-clear <nombre entier positif>`"),
-          ],
-        });
+        return sendTempReply(
+          channel,
+          {
+            embeds: [
+              buildStatusEmbed("error", "Utilisation : `-clear` (tout), `-clear @membre` ou `-clear <nombre>`"),
+            ],
+          },
+          5000
+        );
       }
-
-      let remaining = amount;
-      while (remaining > 0) {
-        const batch = Math.min(remaining, 100);
-        const fetched = await channel.messages.fetch({ limit: batch });
-        if (fetched.size === 0) break;
-
-        const deletable = fetched.filter((m) => Date.now() - m.createdTimestamp < FOURTEEN_DAYS_MS);
-        const deleted = await channel.bulkDelete(deletable, true).catch(() => null);
-        if (deleted) {
-          deletedTotal += deleted.size;
-          const last = [...deleted.values()][0];
-          if (last) rememberSnipe(client, channel.id, last, "cleared");
-        }
-        remaining -= fetched.size;
-        if (fetched.size < batch) break;
-      }
+      maxCount = amount;
     }
+
+    const deletedTotal = await clearMessages(client, channel, { targetMemberId: targetMember?.id, maxCount });
 
     await sendTempReply(
       channel,
       { embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${randomClearJoke()}`)] },
-      3000
+      5000
     );
   },
 
@@ -426,6 +433,13 @@ async function handleTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
+
+  // Déclencheur spécial sans préfixe : "uo clear" vide le salon (même
+  // permission que -clear)
+  if (content.toLowerCase() === "uo clear") {
+    if (!canUseDashCommand(message, "clear").allowed) return;
+    return handlers.clear(client, message, []);
+  }
 
   // Préfixe "-" : commandes membres + modération
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
