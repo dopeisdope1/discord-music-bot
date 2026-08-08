@@ -31,15 +31,11 @@ const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const CLEAR_JOKES = [
-  "cbn tg",
-  "mini zizi",
-  "j'ai tout vidé zinki",
-  "zinki goumini",
-  "el kenchef",
-  "zoubini",
-  "moro",
-  "zambouli",
-  "machini",
+  "el kenchef t'as vidé",
+  "zoubini t'as sucé",
+  "machini t'as gobé",
+  "zambouli t'as aspiré",
+  "moro t'as mangé tout tes morts",
 ];
 const randomClearJoke = () => CLEAR_JOKES[Math.floor(Math.random() * CLEAR_JOKES.length)];
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
