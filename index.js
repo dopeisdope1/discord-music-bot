@@ -8,6 +8,7 @@ const {
   EmbedBuilder,
   MessageFlags,
 } = require("discord.js");
+const ffmpegPath = require("ffmpeg-static");
 const { DisTube } = require("distube");
 const { SpotifyPlugin } = require("@distube/spotify");
 const { YtDlpPlugin } = require("@distube/yt-dlp");
@@ -41,6 +42,7 @@ client.distube = new DisTube(client, {
   emitNewSongOnly: true,
   emitAddSongWhenCreatingQueue: false,
   emitAddListWhenCreatingQueue: false,
+  ffmpeg: { path: ffmpegPath },
   plugins: [
     new SpotifyPlugin({
       api: {
