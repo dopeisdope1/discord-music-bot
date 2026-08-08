@@ -12,6 +12,17 @@ const { randomClearJoke } = require("./jokes");
 
 const PANEL_TIMEOUT_MS = 60_000;
 
+// Le panel initial est envoyé en Components V2 (flag IS_COMPONENTS_V2) : ce
+// flag ne peut pas être retiré/mélangé avec un `embeds` classique lors d'une
+// édition ultérieure du même message, donc toutes les mises à jour de ce
+// panel doivent elles aussi rester en Components V2, sous peine d'échouer en
+// silence (le ban/débannissement se fait, mais rien ne s'affiche).
+function buildStatusPanel(text) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
 function buildZinkiAssassiniPanel() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
@@ -48,18 +59,12 @@ async function handleBanPanel(message) {
     const targetId = i.values[0];
 
     if (targetId === message.author.id) {
-      await i.update({
-        embeds: [buildStatusEmbed("error", "Tu ne peux pas te bannir toi-même.")],
-        components: [],
-      });
+      await i.update(buildStatusPanel("Tu ne peux pas te bannir toi-même."));
       return;
     }
 
     if (targetId === message.client.user.id) {
-      await i.update({
-        embeds: [buildStatusEmbed("error", "Je ne vais pas me bannir moi-même.")],
-        components: [],
-      });
+      await i.update(buildStatusPanel("Je ne vais pas me bannir moi-même."));
       return;
     }
 
@@ -70,10 +75,9 @@ async function handleBanPanel(message) {
 
     const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
     if (targetMember && !targetMember.bannable) {
-      await i.editReply({
-        embeds: [buildStatusEmbed("error", "Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")],
-        components: [],
-      });
+      await i.editReply(
+        buildStatusPanel("Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")
+      );
       return;
     }
 
@@ -85,28 +89,19 @@ async function handleBanPanel(message) {
       });
 
     if (!banResult) {
-      await i.editReply({
-        embeds: [
-          buildStatusEmbed(
-            "error",
-            `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
-          ),
-        ],
-        components: [],
-      });
+      await i.editReply(
+        buildStatusPanel(
+          `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+        )
+      );
       return;
     }
 
-    await i.editReply({
-      embeds: [
-        buildStatusEmbed(
-          "success",
-          `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`,
-          { title: "Zinki Assassini" }
-        ),
-      ],
-      components: [],
-    });
+    await i.editReply(
+      buildStatusPanel(
+        `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
+      )
+    );
   });
 
   collector.on("end", (collected) => {
@@ -210,24 +205,17 @@ async function handleUnbanPanel(message) {
       });
 
     if (!result) {
-      await i.editReply({
-        embeds: [
-          buildStatusEmbed("error", `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`),
-        ],
-        components: [],
-      });
+      await i.editReply(
+        buildStatusPanel(
+          `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+        )
+      );
       return;
     }
 
-    await i.editReply({
-      embeds: [
-        buildStatusEmbed(
-          "success",
-          `${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`
-        ),
-      ],
-      components: [],
-    });
+    await i.editReply(
+      buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
+    );
   });
 
   collector.on("end", (collected) => {
