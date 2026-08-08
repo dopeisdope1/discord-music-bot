@@ -83,7 +83,6 @@ npm start
 | `/queue`      | Affiche la file d'attente                     |
 | `/volume`     | Change le volume (0-150)                      |
 | `/loop`       | Change le mode de répétition                  |
-| `/modconfig`  | (admin) Configure les rôles de modération via un menu déroulant |
 
 Le panel **"En cours de lecture"** (Components V2) apparaît automatiquement à chaque
 nouveau morceau, avec des boutons interactifs : ⏸️/▶️ ⏭️ ⏹️ 🔁 📜.
@@ -94,8 +93,8 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 
 - **`!`** : préfixe principal, pour toutes les commandes musique
   (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
-- **`-`** : préfixe réservé aux commandes de modération (rôle configuré via
-  `/modconfig`, ou administrateur du serveur)
+- **`-`** : préfixe réservé aux commandes de modération, uniquement pour les
+  administrateurs du serveur (permission Discord **Administrateur**)
   - `-clear <nombre>` / `-clear @membre` → supprime des messages
   - `-snipe` → affiche le dernier message supprimé du salon
   - `-renew` → recrée le salon à l'identique (vide)

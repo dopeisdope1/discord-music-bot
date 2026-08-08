@@ -5,7 +5,6 @@ const {
   SeparatorSpacingSize,
   MessageFlags,
 } = require("discord.js");
-const { MOD_ROLE_NAME } = require("./permissions");
 
 /**
  * Construit un panel d'aide en Components V2, sans couleur d'accent.
@@ -83,7 +82,7 @@ function buildMusicHelpPanel(prefix = "!") {
 function buildAdminHelpPanel(prefix = "-") {
   return buildHelpPanel({
     title: "Aide — Commandes de modération",
-    intro: `Préfixe : \`${prefix}\` — réservé au rôle **${MOD_ROLE_NAME}** (et aux administrateurs).`,
+    intro: `Préfixe : \`${prefix}\` — réservé aux administrateurs du serveur.`,
     sections: [
       {
         heading: "Messages",

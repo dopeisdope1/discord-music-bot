@@ -1,7 +1,7 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
 const { buildMusicHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
-const { hasModRole, MOD_ROLE_NAME } = require("./permissions");
+const { hasModPermission } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
@@ -36,12 +36,10 @@ function getPlayerOrReply(client, message) {
   return player;
 }
 
-function requireModRole(message) {
-  if (!hasModRole(message)) {
+function requireModPermission(message) {
+  if (!hasModPermission(message)) {
     message.reply({
-      embeds: [
-        buildStatusEmbed("error", `Tu dois avoir le rôle **${MOD_ROLE_NAME}** pour utiliser cette commande.`),
-      ],
+      embeds: [buildStatusEmbed("error", "Tu dois être administrateur du serveur pour utiliser cette commande.")],
     });
     return false;
   }
@@ -206,7 +204,7 @@ const handlers = {
 
   // ---- Modération (préfixe "-") ----
   async clear(client, message, args) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
@@ -273,7 +271,7 @@ const handlers = {
   },
 
   async renew(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     const channel = message.channel;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
       return message.reply({
@@ -294,7 +292,7 @@ const handlers = {
   },
 
   async hide(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -310,7 +308,7 @@ const handlers = {
   },
 
   async unhide(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -326,7 +324,7 @@ const handlers = {
   },
 
   async lock(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -344,7 +342,7 @@ const handlers = {
   },
 
   async unlock(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -362,7 +360,7 @@ const handlers = {
   },
 
   async snipe(client, message) {
-    if (!requireModRole(message)) return;
+    if (!requireModPermission(message)) return;
     const data = client.snipes.get(message.channel.id);
     if (!data) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Rien à sniper dans ce salon.")] });
