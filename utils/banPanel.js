@@ -8,6 +8,7 @@ const {
   PermissionFlagsBits,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { randomClearJoke } = require("./jokes");
 
 const PANEL_TIMEOUT_MS = 60_000;
 
@@ -98,9 +99,11 @@ async function handleBanPanel(message) {
 
     await i.editReply({
       embeds: [
-        buildStatusEmbed("success", `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni.`, {
-          title: "Zinki Assassini",
-        }),
+        buildStatusEmbed(
+          "success",
+          `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`,
+          { title: "Zinki Assassini" }
+        ),
       ],
       components: [],
     });
@@ -138,7 +141,9 @@ async function unbanById(message, userId) {
     return;
   }
 
-  await message.reply({ embeds: [buildStatusEmbed("success", `<@${userId}> a été débanni.`)] });
+  await message.reply({
+    embeds: [buildStatusEmbed("success", `<@${userId}> a été débanni — ${randomClearJoke()}`)],
+  });
 }
 
 /**
@@ -215,7 +220,12 @@ async function handleUnbanPanel(message) {
     }
 
     await i.editReply({
-      embeds: [buildStatusEmbed("success", `${target ? target.user.tag : `<@${targetId}>`} a été débanni.`)],
+      embeds: [
+        buildStatusEmbed(
+          "success",
+          `${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`
+        ),
+      ],
       components: [],
     });
   });

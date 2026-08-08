@@ -10,6 +10,7 @@ const { canUseDashCommand } = require("./commandPermissions");
 const { handleCommandPanel, CONFIGURABLE_COMMANDS } = require("./commandPanelWizard");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { createRateLimiter } = require("./rateLimiter");
+const { randomClearJoke } = require("./jokes");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -30,14 +31,6 @@ const DASH_PREFIX = "-";
 const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-const CLEAR_JOKES = [
-  "el kenchef t'as vidé",
-  "zoubini t'as sucé",
-  "machini t'as gobé",
-  "zambouli t'as aspiré",
-  "moro t'as mangé tout tes morts",
-];
-const randomClearJoke = () => CLEAR_JOKES[Math.floor(Math.random() * CLEAR_JOKES.length)];
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
 const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
 
