@@ -8,7 +8,7 @@ const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./mus
 const { handleJoinSpotify } = require("./joinSpotify");
 const { canUseDashCommand } = require("./commandPermissions");
 const { handleCommandPanel, CONFIGURABLE_COMMANDS } = require("./commandPanelWizard");
-const { handleBanPanel } = require("./banPanel");
+const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { createRateLimiter } = require("./rateLimiter");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -374,6 +374,14 @@ const handlers = {
     await handleBanPanel(message);
   },
 
+  async unban(client, message, args) {
+    const rawArg = args[0];
+    if (rawArg && /^\d{15,}$/.test(rawArg)) {
+      return unbanById(message, rawArg);
+    }
+    await handleUnbanPanel(message);
+  },
+
   async renew(client, message) {
     const channel = message.channel;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -546,6 +554,19 @@ async function handleTextCommand(client, message) {
         });
       }
       return handlers.ban(client, message, args);
+    }
+    if (cmd === "unban") {
+      if (!hasBanPermission(message)) {
+        return message.reply({
+          embeds: [
+            buildStatusEmbed(
+              "error",
+              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
+            ),
+          ],
+        });
+      }
+      return handlers.unban(client, message, args);
     }
     if (cmd === "clear") {
       // Permission gérée dans le handler : dépend de la cible (soi-même,
