@@ -22,6 +22,14 @@ const { buildStatusEmbed } = require("./statusEmbed");
  * @param {(payload: object) => Promise<unknown>} params.send
  */
 async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMember, playerMember, send }) {
+  // Rafraîchit la présence de la personne visée en direct (plutôt que de se
+  // fier au cache) : sur un serveur avec beaucoup de membres, Discord ne
+  // pousse pas forcément la présence de tout le monde par défaut, donc le
+  // cache peut être manquant ou périmé pour quelqu'un qui vient d'arriver.
+  listenerMember = await voiceChannel.guild.members
+    .fetch({ user: listenerMember.id, withPresences: true })
+    .catch(() => listenerMember);
+
   const activity = getSpotifyActivity(listenerMember);
   if (!activity) {
     const who = listenerMember.id === playerMember.id ? "Tu n'écoutes" : `${listenerMember.displayName} n'écoute`;

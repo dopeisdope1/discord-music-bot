@@ -335,6 +335,24 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+
+  // Sur un serveur avec beaucoup de membres, Discord ne pousse pas forcément
+  // les présences de tout le monde par défaut (limite du "large_threshold").
+  // On demande explicitement la liste complète des membres + présences pour
+  // que la présence Spotify de n'importe qui soit fiable dès le premier
+  // !join, pas seulement pour les membres déjà "connus" du bot.
+  for (const guild of client.guilds.cache.values()) {
+    guild.members.fetch({ withPresences: true }).catch((err) => {
+      console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
+    });
+  }
+});
+
+// Fait la même chose quand le bot rejoint un nouveau serveur en cours de route.
+client.on("guildCreate", (guild) => {
+  guild.members.fetch({ withPresences: true }).catch((err) => {
+    console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
+  });
 });
 
 client.login(process.env.DISCORD_TOKEN);
