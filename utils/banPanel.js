@@ -70,9 +70,25 @@ async function handleBanPanel(message) {
       return;
     }
 
-    await message.guild.members
+    const banResult = await message.guild.members
       .ban(targetId, { reason: `Zinki Tueur — banni par ${message.author.tag}` })
-      .catch(() => null);
+      .catch((err) => {
+        console.error(err);
+        return null;
+      });
+
+    if (!banResult) {
+      await i.update({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+          ),
+        ],
+        components: [],
+      });
+      return;
+    }
 
     await i.update({
       embeds: [
