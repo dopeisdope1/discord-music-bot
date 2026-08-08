@@ -7,11 +7,12 @@ module.exports = {
     .setDescription("Arrête la musique et vide la file d'attente"),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue) {
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
-    queue.stop();
+    interaction.client.nowPlayingMessages.delete(interaction.guildId);
+    player.destroy();
     await interaction.reply({
       embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.", { icon: "⏹️" })],
     });

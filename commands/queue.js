@@ -7,19 +7,20 @@ module.exports = {
     .setDescription("Affiche la file d'attente"),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue || queue.songs.length === 0) {
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    const tracks = player ? [player.queue.current, ...player.queue].filter(Boolean) : [];
+    if (tracks.length === 0) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")], ephemeral: true });
     }
 
-    const list = queue.songs
+    const list = tracks
       .slice(0, 15)
-      .map((s, i) => `${i === 0 ? "▶️" : `${i}.`} **${s.name}** - ${s.formattedDuration}`)
+      .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} **${t.title}**`)
       .join("\n");
 
     await interaction.reply({
       embeds: [
-        buildStatusEmbed("info", list, { title: `📜 File d'attente (${queue.songs.length} titres)`, icon: "" }),
+        buildStatusEmbed("info", list, { title: `📜 File d'attente (${tracks.length} titres)`, icon: "" }),
       ],
     });
   },

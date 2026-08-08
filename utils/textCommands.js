@@ -1,11 +1,23 @@
 const { PermissionFlagsBits } = require("discord.js");
-const { buildNowPlayingPanel } = require("./nowPlayingPanel");
+const { LOOP_LABELS } = require("./nowPlayingPanel");
 const { buildMusicHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
 const { hasModRole, MOD_ROLE_NAME } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
+const { queueAndPlay } = require("./musicPlayer");
 
 const URL_REGEX = /^https?:\/\//i;
+const LOOP_KEYWORDS = {
+  off: "none",
+  désactivé: "none",
+  "0": "none",
+  song: "track",
+  chanson: "track",
+  "1": "track",
+  queue: "queue",
+  file: "queue",
+  "2": "queue",
+};
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
@@ -14,13 +26,13 @@ const DASH_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "lock", "unlo
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
-function getQueueOrReply(client, message) {
-  const queue = client.distube.getQueue(message.guildId);
-  if (!queue) {
+function getPlayerOrReply(client, message) {
+  const player = client.kazagumo.players.get(message.guildId);
+  if (!player) {
     message.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")] });
     return null;
   }
-  return queue;
+  return player;
 }
 
 function requireModRole(message) {
@@ -59,9 +71,18 @@ const handlers = {
 
     if (URL_REGEX.test(query)) {
       try {
-        await client.distube.play(vc, query, { textChannel: message.channel, member: message.member });
+        const outcome = await queueAndPlay(client.kazagumo, {
+          voiceChannel: vc,
+          textChannel: message.channel,
+          member: message.member,
+          query,
+        });
+        if (!outcome) {
+          return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
+        }
+        const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
         await message.reply({
-          embeds: [buildStatusEmbed("info", `Recherche en cours pour : **${query}**`, { icon: "🔎" })],
+          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`, { icon: "🔎" })],
         });
       } catch (err) {
         console.error(err);
@@ -71,7 +92,7 @@ const handlers = {
     }
 
     await handleSpotifyPlay({
-      distube: client.distube,
+      kazagumo: client.kazagumo,
       voiceChannel: vc,
       textChannel: message.channel,
       member: message.member,
@@ -82,87 +103,83 @@ const handlers = {
   },
 
   async skip(client, message) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    try {
-      const song = await queue.skip();
-      await message.reply({
-        embeds: [buildStatusEmbed("success", `Passé à : **${song.name}**`, { icon: "⏭️" })],
-      });
-    } catch {
-      await message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    if (!player.queue.current) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
     }
+    player.skip();
+    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.", { icon: "⏭️" })] });
   },
 
   async stop(client, message) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    queue.stop();
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    client.nowPlayingMessages.delete(message.guildId);
+    player.destroy();
     await message.reply({
       embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.", { icon: "⏹️" })],
     });
   },
 
   async pause(client, message) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    queue.pause();
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    player.pause(true);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.", { icon: "⏸️" })] });
   },
 
   async resume(client, message) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    queue.resume();
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    player.pause(false);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.", { icon: "▶️" })] });
   },
 
   async queue(client, message) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    if (queue.songs.length === 0)
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    const tracks = [player.queue.current, ...player.queue].filter(Boolean);
+    if (tracks.length === 0)
       return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
-    const list = queue.songs
+    const list = tracks
       .slice(0, 15)
-      .map((s, i) => `${i === 0 ? "▶️" : `${i}.`} **${s.name}** - ${s.formattedDuration}`)
+      .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} **${t.title}**`)
       .join("\n");
     await message.reply({
       embeds: [
-        buildStatusEmbed("info", list, { title: `📜 File d'attente (${queue.songs.length} titres)`, icon: "" }),
+        buildStatusEmbed("info", list, { title: `📜 File d'attente (${tracks.length} titres)`, icon: "" }),
       ],
     });
   },
 
   async volume(client, message, args) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
     const niveau = parseInt(args[0], 10);
     if (isNaN(niveau) || niveau < 0 || niveau > 150) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Indique un volume entre 0 et 150. Ex : `!volume 80`")],
       });
     }
-    queue.setVolume(niveau);
+    player.setVolume(niveau);
     await message.reply({
       embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`, { icon: "🔊" })],
     });
   },
 
   async loop(client, message, args) {
-    const queue = getQueueOrReply(client, message);
-    if (!queue) return;
-    const map = { off: 0, désactivé: 0, "0": 0, song: 1, chanson: 1, "1": 1, queue: 2, file: 2, "2": 2 };
-    const key = (args[0] || "").toLowerCase();
-    const mode = map[key];
-    if (mode === undefined) {
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
+    if (!mode) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Mode invalide. Utilise : `!loop off|song|queue`")],
       });
     }
-    queue.setRepeatMode(mode);
-    const labels = ["Désactivée", "Chanson", "File d'attente"];
+    player.setLoop(mode);
     await message.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${labels[mode]}**`, { icon: "🔁" })],
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`, { icon: "🔁" })],
     });
   },
 

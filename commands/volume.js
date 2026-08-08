@@ -15,12 +15,12 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue) {
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
     const niveau = interaction.options.getInteger("niveau");
-    queue.setVolume(niveau);
+    player.setVolume(niveau);
     await interaction.reply({
       embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`, { icon: "🔊" })],
     });

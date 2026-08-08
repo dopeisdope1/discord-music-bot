@@ -1,15 +1,18 @@
 const { resolveSpotifyQuery, trackArtists } = require("./spotifySearch");
 const { buildTrackChoicePanel } = require("./spotifyPlayPanel");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { queueAndPlay } = require("./musicPlayer");
 
 const SELECTION_TIMEOUT_MS = 30_000;
 
 /**
  * Résout une recherche `!play <texte>` / `/play <texte>` via Spotify (sans lien)
  * et lance la lecture — directement si un seul titre correspond, sinon via un
- * menu déroulant pour laisser l'utilisateur choisir.
+ * menu déroulant pour laisser l'utilisateur choisir. La piste choisie est
+ * ensuite recherchée sur YouTube via Lavalink pour la lecture réelle (les
+ * nœuds Lavalink publics n'ont pas forcément le plugin Spotify).
  * @param {object} params
- * @param {import('distube').DisTube} params.distube
+ * @param {import('kazagumo').Kazagumo} params.kazagumo
  * @param {import('discord.js').VoiceBasedChannel} params.voiceChannel
  * @param {import('discord.js').TextBasedChannel} params.textChannel
  * @param {import('discord.js').GuildMember} params.member
@@ -18,7 +21,7 @@ const SELECTION_TIMEOUT_MS = 30_000;
  * @param {(payload: object) => Promise<import('discord.js').Message>} params.send
  *   Envoie le message initial et renvoie l'objet Message créé.
  */
-async function handleSpotifyPlay({ distube, voiceChannel, textChannel, member, query, requesterId, send }) {
+async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, query, requesterId, send }) {
   let resolved;
   try {
     resolved = await resolveSpotifyQuery(query);
@@ -37,7 +40,18 @@ async function handleSpotifyPlay({ distube, voiceChannel, textChannel, member, q
 
   const playTrack = async (track) => {
     try {
-      await distube.play(voiceChannel, track.external_urls.spotify, { textChannel, member });
+      const outcome = await queueAndPlay(kazagumo, {
+        voiceChannel,
+        textChannel,
+        member,
+        query: `${track.name} ${trackArtists(track)}`,
+        engine: "youtube",
+      });
+      if (!outcome) {
+        await textChannel.send({
+          embeds: [buildStatusEmbed("error", `Impossible de trouver **${track.name}** sur YouTube.`)],
+        });
+      }
     } catch (err) {
       console.error(err);
       await textChannel.send({

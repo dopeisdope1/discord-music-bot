@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
+const { LOOP_LABELS } = require("../utils/nowPlayingPanel");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,22 +12,21 @@ module.exports = {
         .setDescription("Mode de répétition")
         .setRequired(true)
         .addChoices(
-          { name: "Désactivée", value: "0" },
-          { name: "Chanson", value: "1" },
-          { name: "File d'attente", value: "2" }
+          { name: "Désactivée", value: "none" },
+          { name: "Chanson", value: "track" },
+          { name: "File d'attente", value: "queue" }
         )
     ),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue) {
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
-    const mode = parseInt(interaction.options.getString("mode"), 10);
-    queue.setRepeatMode(mode);
-    const labels = ["Désactivée", "Chanson", "File d'attente"];
+    const mode = interaction.options.getString("mode");
+    player.setLoop(mode);
     await interaction.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${labels[mode]}**`, { icon: "🔁" })],
+      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`, { icon: "🔁" })],
     });
   },
 };

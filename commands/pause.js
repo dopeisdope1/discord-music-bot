@@ -7,11 +7,11 @@ module.exports = {
     .setDescription("Met la musique en pause"),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue) {
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
-    queue.pause();
+    player.pause(true);
     await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.", { icon: "⏸️" })] });
   },
 };

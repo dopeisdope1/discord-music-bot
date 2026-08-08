@@ -9,8 +9,10 @@ const {
   MessageFlags,
 } = require("discord.js");
 
+const LOOP_LABELS = { none: "Désactivée", track: "Chanson", queue: "File d'attente" };
+
 /**
- * Convertit des millisecondes en mm:ss / hh:mm:ss
+ * Convertit des secondes en mm:ss / hh:mm:ss
  */
 function formatDuration(seconds) {
   if (!seconds || seconds === Infinity) return "🔴 LIVE";
@@ -33,24 +35,21 @@ function buildProgressBar(current, total, size = 18) {
 
 /**
  * Construit le panel "En cours de lecture" en Components V2.
- * @param {import('distube').Queue} queue - la queue DisTube
+ * @param {import('kazagumo').KazagumoPlayer} player
  * @returns {{ flags: number, components: any[] }}
  */
-function buildNowPlayingPanel(queue) {
-  const song = queue.songs[0];
-  const source =
-    song.source === "spotify"
-      ? "🟢 Spotify"
-      : song.source === "youtube"
-      ? "🔴 YouTube"
-      : "🎵 " + (song.source || "Source inconnue");
+function buildNowPlayingPanel(player) {
+  const track = player.queue.current;
+  const durationSeconds = Math.floor((track.length || 0) / 1000);
 
   const container = new ContainerBuilder().setAccentColor(0x1db954);
 
   // Titre + source
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## 🎶 En cours de lecture\n**[${song.name}](${song.url})**\n${source} • Demandé par <@${song.user?.id ?? queue.textChannel?.guild?.ownerId}>`
+      `## 🎶 En cours de lecture\n**[${track.title}](${track.uri})**\n🔎 ${
+        track.author || "Source inconnue"
+      } • Demandé par <@${track.requester?.id ?? ""}>`
     )
   );
 
@@ -59,28 +58,22 @@ function buildNowPlayingPanel(queue) {
   );
 
   // Barre de progression (position réelle non trackée en live, on affiche la durée totale)
-  const bar = buildProgressBar(0, song.duration);
+  const bar = buildProgressBar(0, durationSeconds);
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `\`00:00\` ${bar} \`${formatDuration(song.duration)}\``
+      `\`00:00\` ${bar} \`${formatDuration(durationSeconds)}\``
     )
   );
 
   // Infos complémentaires
-  const nextSong = queue.songs[1];
+  const nextTrack = player.queue[0];
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       [
-        `🔊 Volume : **${queue.volume}%**`,
-        `🔁 Boucle : **${
-          queue.repeatMode === 0
-            ? "Désactivée"
-            : queue.repeatMode === 1
-            ? "Chanson"
-            : "File d'attente"
-        }**`,
-        `📜 File d'attente : **${queue.songs.length - 1}** titre(s)`,
-        nextSong ? `⏭️ Suivant : **${nextSong.name}**` : null,
+        `🔊 Volume : **${player.volume}%**`,
+        `🔁 Boucle : **${LOOP_LABELS[player.loop] ?? "Désactivée"}**`,
+        `📜 File d'attente : **${player.queue.length}** titre(s)`,
+        nextTrack ? `⏭️ Suivant : **${nextTrack.title}**` : null,
       ]
         .filter(Boolean)
         .join("\n")
@@ -95,7 +88,7 @@ function buildNowPlayingPanel(queue) {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("music_pauseresume")
-      .setEmoji(queue.paused ? "▶️" : "⏸️")
+      .setEmoji(player.paused ? "▶️" : "⏸️")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("music_skip")
@@ -139,4 +132,4 @@ function buildStoppedPanel() {
   };
 }
 
-module.exports = { buildNowPlayingPanel, buildStoppedPanel, formatDuration };
+module.exports = { buildNowPlayingPanel, buildStoppedPanel, formatDuration, LOOP_LABELS };

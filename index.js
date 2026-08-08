@@ -1,29 +1,10 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const dns = require("dns");
-
-// Certains environnements conteneurisés résolvent les hôtes voix Discord en
-// IPv6 en priorité alors que seul l'IPv4 sortant fonctionne correctement,
-// ce qui peut faire échouer/expirer la négociation UDP de la voix.
-dns.setDefaultResultOrder("ipv4first");
-const {
-  Client,
-  GatewayIntentBits,
-  Collection,
-  EmbedBuilder,
-  MessageFlags,
-} = require("discord.js");
-const ffmpegPath = require("ffmpeg-static");
-const { generateDependencyReport } = require("@discordjs/voice");
-const { DisTube } = require("distube");
-
-// Diagnostic : liste au démarrage les dépendances voix détectées (opus,
-// chiffrement, ffmpeg) pour aider à déboguer les problèmes de connexion vocale.
-console.log(generateDependencyReport());
-const { SpotifyPlugin } = require("@distube/spotify");
-const { YtDlpPlugin } = require("@distube/yt-dlp");
-const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Kazagumo } = require("kazagumo");
+const { Connectors } = require("shoukaku");
+const { buildNowPlayingPanel, buildStoppedPanel, LOOP_LABELS } = require("./utils/nowPlayingPanel");
 const { handleTextCommand, rememberSnipe } = require("./utils/textCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 
@@ -48,22 +29,47 @@ for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))
   client.commands.set(command.data.name, command);
 }
 
-// ---- Initialisation de DisTube (YouTube + Spotify) ----
-client.distube = new DisTube(client, {
-  emitNewSongOnly: true,
-  emitAddSongWhenCreatingQueue: false,
-  emitAddListWhenCreatingQueue: false,
-  ffmpeg: { path: ffmpegPath },
-  plugins: [
-    new SpotifyPlugin({
-      api: {
-        clientId: process.env.SPOTIFY_CLIENT_ID,
-        clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-      },
-    }),
-    new YtDlpPlugin({ update: false }),
-  ],
-});
+// ---- Initialisation de Kazagumo/Lavalink (YouTube + recherche Spotify) ----
+// Le nœud Lavalink fait tout le travail audio (y compris la connexion UDP à
+// Discord), ce qui contourne le blocage de l'UDP sortant sur certains hébergeurs
+// (Railway inclus) : le bot ne parle au nœud qu'en WebSocket/HTTP classique.
+// Configurable via LAVALINK_HOST/PORT/PASSWORD/SECURE ; valeur par défaut =
+// un nœud public gratuit (peut tomber, voir README pour en changer).
+const LavalinkNodes = [
+  {
+    name: "main",
+    url: `${process.env.LAVALINK_HOST || "lava-v4.ajieblogs.eu.org"}:${
+      process.env.LAVALINK_PORT || "443"
+    }`,
+    auth: process.env.LAVALINK_PASSWORD || "https://dsc.gg/ajidevserver",
+    secure: process.env.LAVALINK_SECURE
+      ? process.env.LAVALINK_SECURE === "true"
+      : true,
+  },
+];
+
+client.kazagumo = new Kazagumo(
+  {
+    defaultSearchEngine: "youtube",
+    send: (guildId, payload) => {
+      const guild = client.guilds.cache.get(guildId);
+      if (guild) guild.shard.send(payload);
+    },
+  },
+  new Connectors.DiscordJS(client),
+  LavalinkNodes
+);
+
+client.kazagumo.shoukaku.on("ready", (name) => console.log(`✅ Nœud Lavalink "${name}" connecté.`));
+client.kazagumo.shoukaku.on("error", (name, error) =>
+  console.error(`❌ Erreur du nœud Lavalink "${name}":`, error)
+);
+client.kazagumo.shoukaku.on("close", (name, code, reason) =>
+  console.warn(`⚠️ Nœud Lavalink "${name}" fermé (code ${code}): ${reason}`)
+);
+client.kazagumo.shoukaku.on("disconnect", (name) =>
+  console.warn(`⚠️ Nœud Lavalink "${name}" déconnecté.`)
+);
 
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
@@ -71,52 +77,31 @@ client.nowPlayingMessages = new Collection();
 // Stocke le dernier message supprimé par salon (commande -snipe)
 client.snipes = new Collection();
 
-// ---- Événements DisTube ----
-client.distube
-  .on("playSong", async (queue) => {
-    const panel = buildNowPlayingPanel(queue);
-    const msg = await queue.textChannel.send(panel);
-    client.nowPlayingMessages.set(queue.id, msg);
+// ---- Événements Kazagumo ----
+client.kazagumo
+  .on("playerStart", async (player) => {
+    const textChannel = client.channels.cache.get(player.textId);
+    if (!textChannel) return;
+    const panel = buildNowPlayingPanel(player);
+    const msg = await textChannel.send(panel);
+    client.nowPlayingMessages.set(player.guildId, msg);
   })
-  .on("addSong", (queue, song) => {
-    queue.textChannel.send({
-      embeds: [
-        buildStatusEmbed(
-          "success",
-          `Ajouté à la file d'attente : **${song.name}** (${song.formattedDuration})`
-        ),
-      ],
-    });
+  .on("playerEmpty", (player) => {
+    const textChannel = client.channels.cache.get(player.textId);
+    client.nowPlayingMessages.delete(player.guildId);
+    if (textChannel) {
+      textChannel.send({
+        embeds: [buildStatusEmbed("info", "File d'attente terminée.", { icon: "🏁" })],
+      });
+    }
   })
-  .on("addList", (queue, playlist) => {
-    queue.textChannel.send({
-      embeds: [
-        buildStatusEmbed(
-          "success",
-          `Playlist ajoutée : **${playlist.name}** (${playlist.songs.length} titres)`
-        ),
-      ],
-    });
-  })
-  .on("finish", (queue) => {
-    queue.textChannel.send({ embeds: [buildStatusEmbed("info", "File d'attente terminée.", { icon: "🏁" })] });
-  })
-  .on("disconnect", (queue) => {
-    client.nowPlayingMessages.delete(queue.id);
-  })
-  .on("empty", (queue) => {
-    queue.textChannel.send({
-      embeds: [
-        buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.", {
-          icon: "👋",
-        }),
-      ],
-    });
-  })
-  .on("error", (channel, error) => {
+  .on("playerException", (player, error) => {
     console.error(error);
-    if (channel?.send) {
-      channel.send({ embeds: [buildStatusEmbed("error", error.message.slice(0, 1800))] });
+    const textChannel = client.channels.cache.get(player.textId);
+    if (textChannel) {
+      textChannel.send({
+        embeds: [buildStatusEmbed("error", String(error?.message ?? error).slice(0, 1800))],
+      });
     }
   });
 
@@ -143,8 +128,8 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.isButton()) {
-    const queue = client.distube.getQueue(interaction.guildId);
-    if (!queue) {
+    const player = client.kazagumo.players.get(interaction.guildId);
+    if (!player) {
       return interaction.reply({
         embeds: [buildStatusEmbed("error", "Aucune musique en cours.")],
         ephemeral: true,
@@ -152,7 +137,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     const memberVoiceChannel = interaction.member.voice.channel;
-    if (!memberVoiceChannel || memberVoiceChannel.id !== queue.voiceChannel.id) {
+    if (!memberVoiceChannel || memberVoiceChannel.id !== player.voiceId) {
       return interaction.reply({
         embeds: [buildStatusEmbed("error", "Tu dois être dans le même salon vocal que le bot.")],
         ephemeral: true,
@@ -161,39 +146,43 @@ client.on("interactionCreate", async (interaction) => {
 
     switch (interaction.customId) {
       case "music_pauseresume":
-        queue.paused ? queue.resume() : queue.pause();
+        player.pause(!player.paused);
         break;
       case "music_skip":
-        try {
-          await queue.skip();
-        } catch {
+        if (!player.queue.current) {
           return interaction.reply({
             embeds: [buildStatusEmbed("error", "Rien à passer.")],
             ephemeral: true,
           });
         }
+        player.skip();
         break;
       case "music_stop":
-        queue.stop();
+        client.nowPlayingMessages.delete(interaction.guildId);
+        player.destroy();
         break;
-      case "music_loop":
-        queue.setRepeatMode((queue.repeatMode + 1) % 3);
+      case "music_loop": {
+        const order = ["none", "track", "queue"];
+        const next = order[(order.indexOf(player.loop) + 1) % order.length];
+        player.setLoop(next);
         break;
+      }
       case "music_queue": {
-        const list = queue.songs
+        const tracks = [player.queue.current, ...player.queue].filter(Boolean);
+        const list = tracks
           .slice(0, 10)
-          .map((s, i) => `${i === 0 ? "▶️" : `${i}.`} ${s.name} - ${s.formattedDuration}`)
+          .map((t, i) => `${i === 0 ? "▶️" : `${i}.`} ${t.title}`)
           .join("\n");
         return interaction.reply({
-          embeds: [buildStatusEmbed("info", list, { title: "📜 File d'attente", icon: "" })],
+          embeds: [buildStatusEmbed("info", list || "Vide.", { title: "📜 File d'attente", icon: "" })],
           ephemeral: true,
         });
       }
     }
 
-    // Met à jour le panel après action (sauf stop, qui supprime la queue)
-    if (interaction.customId !== "music_stop" && client.distube.getQueue(interaction.guildId)) {
-      const panel = buildNowPlayingPanel(client.distube.getQueue(interaction.guildId));
+    // Met à jour le panel après action (sauf stop, qui détruit le player)
+    if (interaction.customId !== "music_stop" && client.kazagumo.players.get(interaction.guildId)) {
+      const panel = buildNowPlayingPanel(client.kazagumo.players.get(interaction.guildId));
       await interaction.update(panel);
     } else {
       await interaction.update(buildStoppedPanel());
@@ -201,7 +190,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---- Commandes textuelles préfixées (m! pour tout, - pour -clear / -renew) ----
+// ---- Commandes textuelles préfixées (! pour tout, - pour -clear / -renew) ----
 client.on("messageCreate", (message) => {
   handleTextCommand(client, message).catch((err) => {
     console.error(err);
@@ -215,6 +204,31 @@ client.on("messageCreate", (message) => {
 client.on("messageDelete", (message) => {
   if (!message.guild) return;
   rememberSnipe(client, message.channelId, message, "deleted");
+});
+
+// ---- Déconnecte le bot si tout le monde quitte le salon vocal ----
+client.on("voiceStateUpdate", (oldState) => {
+  const player = client.kazagumo.players.get(oldState.guild.id);
+  if (!player || oldState.channelId !== player.voiceId) return;
+
+  const voiceChannel = oldState.guild.channels.cache.get(player.voiceId);
+  if (!voiceChannel) return;
+
+  const humanCount = voiceChannel.members.filter((m) => !m.user.bot).size;
+  if (humanCount === 0) {
+    const textChannel = client.channels.cache.get(player.textId);
+    client.nowPlayingMessages.delete(player.guildId);
+    player.destroy();
+    if (textChannel) {
+      textChannel.send({
+        embeds: [
+          buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.", {
+            icon: "👋",
+          }),
+        ],
+      });
+    }
+  }
 });
 
 client.once("ready", () => {

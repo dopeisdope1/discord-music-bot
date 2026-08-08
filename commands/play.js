@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
 const { handleSpotifyPlay } = require("../utils/spotifyPlay");
+const { queueAndPlay } = require("../utils/musicPlayer");
 
 const URL_REGEX = /^https?:\/\//i;
 
@@ -30,12 +31,20 @@ module.exports = {
 
     if (URL_REGEX.test(query)) {
       try {
-        await interaction.client.distube.play(voiceChannel, query, {
+        const outcome = await queueAndPlay(interaction.client.kazagumo, {
+          voiceChannel,
           textChannel: interaction.channel,
           member: interaction.member,
+          query,
         });
+        if (!outcome) {
+          return interaction.editReply({
+            embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")],
+          });
+        }
+        const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
         await interaction.editReply({
-          embeds: [buildStatusEmbed("info", `Recherche en cours pour : **${query}**`, { icon: "🔎" })],
+          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`, { icon: "🔎" })],
         });
       } catch (err) {
         console.error(err);
@@ -47,7 +56,7 @@ module.exports = {
     }
 
     await handleSpotifyPlay({
-      distube: interaction.client.distube,
+      kazagumo: interaction.client.kazagumo,
       voiceChannel,
       textChannel: interaction.channel,
       member: interaction.member,

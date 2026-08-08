@@ -7,15 +7,11 @@ module.exports = {
     .setDescription("Passe à la musique suivante"),
 
   async execute(interaction) {
-    const queue = interaction.client.distube.getQueue(interaction.guildId);
-    if (!queue) {
-      return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
+    const player = interaction.client.kazagumo.players.get(interaction.guildId);
+    if (!player || !player.queue.current) {
+      return interaction.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")], ephemeral: true });
     }
-    try {
-      const song = await queue.skip();
-      await interaction.reply({ embeds: [buildStatusEmbed("success", `Passé à : **${song.name}**`, { icon: "⏭️" })] });
-    } catch {
-      await interaction.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")], ephemeral: true });
-    }
+    player.skip();
+    await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique passée.", { icon: "⏭️" })] });
   },
 };
