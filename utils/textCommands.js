@@ -140,6 +140,14 @@ const handlers = {
     });
   },
 
+  async leave(client, message) {
+    const player = getPlayerOrReply(client, message);
+    if (!player) return;
+    stopNowPlayingTracking(client, message.guildId);
+    player.destroy();
+    await message.reply({ embeds: [buildStatusEmbed("success", "J'ai quitté le salon vocal.")] });
+  },
+
   async pause(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;

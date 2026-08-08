@@ -60,6 +60,7 @@ function buildMusicHelpPanel(prefix = "!") {
           `\`${prefix}resume\` — Reprend la lecture`,
           `\`${prefix}skip\` — Passe au titre suivant`,
           `\`${prefix}stop\` — Arrête tout et vide la file d'attente`,
+          `\`${prefix}leave\` — Fait quitter le salon vocal au bot`,
         ],
       },
       {
