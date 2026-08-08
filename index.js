@@ -103,8 +103,10 @@ client.kazagumo
     const textChannel = client.channels.cache.get(player.textId);
     if (!textChannel) return;
 
-    // Si ce serveur suit quelqu'un via !join, cale la position de lecture
-    // sur celle, en direct, du morceau Spotify suivi.
+    // Si ce serveur suit quelqu'un via !join, la position a déjà été envoyée
+    // dans l'appel de lecture (player.play(track, { position })) — on relit
+    // juste la présence ici pour afficher la bonne valeur dans le panel,
+    // aucun aller-retour réseau supplémentaire n'est nécessaire.
     let elapsedMs = 0;
     const follow = client.spotifyFollows.get(player.guildId);
     if (follow) {
@@ -114,9 +116,6 @@ client.kazagumo
       if (activity) {
         follow.lastSyncId = activity.syncId;
         elapsedMs = spotifyActivityElapsedMs(activity);
-        if (elapsedMs > 0) {
-          await player.seek(elapsedMs).catch(() => {});
-        }
       }
     }
 
@@ -321,7 +320,14 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
       engine: "youtube",
     });
     if (!result || !result.tracks.length) return;
-    await player.play(result.tracks[0], { replaceCurrent: true });
+    // Position envoyée directement dans l'appel de lecture (recalculée juste
+    // avant, au cas où la recherche ci-dessus ait pris du temps) : Lavalink
+    // démarre la piste déjà à la bonne seconde en un seul aller-retour réseau.
+    const freshActivity = findSpotifyActivity(member?.presence?.activities) ?? activity;
+    await player.play(result.tracks[0], {
+      replaceCurrent: true,
+      position: spotifyActivityElapsedMs(freshActivity),
+    });
   } catch (err) {
     console.error(err);
   }

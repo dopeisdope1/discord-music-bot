@@ -1,5 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { getSpotifyActivity, spotifyActivityQuery } = require("./spotifyPresence");
+const { getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./spotifyPresence");
 const { getOrCreatePlayer } = require("./musicPlayer");
 const { buildStatusEmbed } = require("./statusEmbed");
 
@@ -45,13 +45,21 @@ async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMe
   });
 
   // Enregistre le suivi AVANT de lancer la lecture : le handler "playerStart"
-  // s'en sert pour caler la position de lecture sur celle du morceau suivi.
+  // s'en sert pour afficher la bonne position dans le panel.
   client.spotifyFollows.set(voiceChannel.guild.id, {
     targetUserId: listenerMember.id,
     lastSyncId: activity.syncId,
   });
 
-  await player.play(result.tracks[0], { replaceCurrent: true });
+  // Position envoyée directement dans l'appel de lecture (recalculée juste
+  // avant, au cas où la recherche ci-dessus ait pris du temps) : Lavalink
+  // démarre la piste déjà à la bonne seconde en un seul aller-retour réseau,
+  // sans passer par un seek() séparé après coup.
+  const freshActivity = getSpotifyActivity(listenerMember) ?? activity;
+  await player.play(result.tracks[0], {
+    replaceCurrent: true,
+    position: spotifyActivityElapsedMs(freshActivity),
+  });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
