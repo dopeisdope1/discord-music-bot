@@ -55,9 +55,9 @@ async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query
  * (position de lecture en direct). Doit être appelé une fois par nouveau
  * morceau (typiquement dans le handler "playerStart").
  */
-function startNowPlayingTracking(client, player) {
+function startNowPlayingTracking(client, player, initialElapsedMs = 0) {
   stopNowPlayingTracking(client, player.guildId);
-  startTracking(player.guildId);
+  startTracking(player.guildId, initialElapsedMs);
 
   const intervalId = setInterval(() => {
     const message = client.nowPlayingMessages.get(player.guildId);
@@ -79,6 +79,7 @@ function stopNowPlayingTracking(client, guildId) {
   if (intervalId) clearInterval(intervalId);
   client.nowPlayingIntervals.delete(guildId);
   client.nowPlayingMessages.delete(guildId);
+  client.spotifyFollows?.delete(guildId);
   stopTracking(guildId);
 }
 

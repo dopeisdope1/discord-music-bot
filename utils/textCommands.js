@@ -1,6 +1,6 @@
-const { PermissionFlagsBits } = require("discord.js");
+const { PermissionFlagsBits, EmbedBuilder } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
+const { buildMusicHelpPanel, buildMemberDashHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
 const { hasModPermission } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
@@ -22,8 +22,11 @@ const LOOP_KEYWORDS = {
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
-// Commandes disponibles avec le préfixe "-" (modération)
-const DASH_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "lock", "unlock", "snipe", "help"]);
+// Commandes "-" accessibles à tout le monde, sans permission particulière
+const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
+// Commandes "-" réservées aux administrateurs (voir requireModPermission)
+const DASH_ADMIN_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "lock", "unlock"]);
+const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -106,11 +109,13 @@ const handlers = {
     if (!vc)
       return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
 
+    const listenerMember = message.mentions.members?.first() || message.member;
+
     await handleJoinSpotify({
-      kazagumo: client.kazagumo,
+      client,
       voiceChannel: vc,
       textChannel: message.channel,
-      listenerMember: message.member,
+      listenerMember,
       playerMember: message.member,
       send: (payload) => message.reply(payload),
     });
@@ -204,7 +209,6 @@ const handlers = {
 
   // ---- Modération (préfixe "-") ----
   async clear(client, message, args) {
-    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
@@ -271,7 +275,6 @@ const handlers = {
   },
 
   async renew(client, message) {
-    if (!requireModPermission(message)) return;
     const channel = message.channel;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
       return message.reply({
@@ -292,7 +295,6 @@ const handlers = {
   },
 
   async hide(client, message) {
-    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -308,7 +310,6 @@ const handlers = {
   },
 
   async unhide(client, message) {
-    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -324,7 +325,6 @@ const handlers = {
   },
 
   async lock(client, message) {
-    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -342,7 +342,6 @@ const handlers = {
   },
 
   async unlock(client, message) {
-    if (!requireModPermission(message)) return;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
@@ -359,8 +358,19 @@ const handlers = {
     });
   },
 
+  async pic(client, message) {
+    const target = message.mentions.members?.first() || message.member;
+    const avatarUrl = target.displayAvatarURL({ size: 1024 });
+    await message.reply({
+      embeds: [new EmbedBuilder().setTitle(`Photo de profil de ${target.displayName}`).setImage(avatarUrl)],
+    });
+  },
+
+  async avatar(client, message, args) {
+    return handlers.pic(client, message, args);
+  },
+
   async snipe(client, message) {
-    if (!requireModPermission(message)) return;
     const data = client.snipes.get(message.channel.id);
     if (!data) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Rien à sniper dans ce salon.")] });
@@ -402,13 +412,15 @@ async function handleTextCommand(client, message) {
 
   const content = message.content.trim();
 
-  // Préfixe "-" : commandes de modération
+  // Préfixe "-" : commandes membres + modération
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdRaw || "").toLowerCase();
     if (cmd === "help") {
-      return message.channel.send(buildAdminHelpPanel());
+      const panel = hasModPermission(message) ? buildAdminHelpPanel() : buildMemberDashHelpPanel();
+      return message.channel.send(panel);
     }
+    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireModPermission(message)) return;
     if (DASH_COMMANDS.has(cmd)) {
       return handlers[cmd](client, message, args);
     }

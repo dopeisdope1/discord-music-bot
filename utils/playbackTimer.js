@@ -3,8 +3,8 @@
 // le panel "En cours de lecture".
 const timers = new Map();
 
-function startTracking(guildId) {
-  timers.set(guildId, { startedAt: Date.now(), pausedAt: null, pausedMs: 0 });
+function startTracking(guildId, initialElapsedMs = 0) {
+  timers.set(guildId, { startedAt: Date.now() - initialElapsedMs, pausedAt: null, pausedMs: 0 });
 }
 
 function setPaused(guildId, paused) {

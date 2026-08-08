@@ -14,6 +14,7 @@ const {
   getElapsedMs,
 } = require("./utils/musicPlayer");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
+const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 
 const client = new Client({
   intents: [
@@ -92,15 +93,37 @@ client.nowPlayingIntervals = new Collection();
 // Stocke le dernier message supprimé par salon (commande -snipe)
 client.snipes = new Collection();
 
+// Stocke qui chaque serveur suit actuellement via !join/spotify_join (voir
+// utils/joinSpotify.js) : Map<guildId, { targetUserId, lastSyncId }>
+client.spotifyFollows = new Collection();
+
 // ---- Événements Kazagumo ----
 client.kazagumo
   .on("playerStart", async (player) => {
     const textChannel = client.channels.cache.get(player.textId);
     if (!textChannel) return;
-    const panel = buildNowPlayingPanel(player, 0);
+
+    // Si ce serveur suit quelqu'un via !join, cale la position de lecture
+    // sur celle, en direct, du morceau Spotify suivi.
+    let elapsedMs = 0;
+    const follow = client.spotifyFollows.get(player.guildId);
+    if (follow) {
+      const guild = client.guilds.cache.get(player.guildId);
+      const listenerMember = guild?.members.cache.get(follow.targetUserId);
+      const activity = listenerMember ? getSpotifyActivity(listenerMember) : null;
+      if (activity) {
+        follow.lastSyncId = activity.syncId;
+        elapsedMs = spotifyActivityElapsedMs(activity);
+        if (elapsedMs > 0) {
+          await player.seek(elapsedMs).catch(() => {});
+        }
+      }
+    }
+
+    const panel = buildNowPlayingPanel(player, elapsedMs);
     const msg = await textChannel.send(panel);
     client.nowPlayingMessages.set(player.guildId, msg);
-    startNowPlayingTracking(client, player);
+    startNowPlayingTracking(client, player, elapsedMs);
   })
   .on("playerEmpty", (player) => {
     const textChannel = client.channels.cache.get(player.textId);
@@ -162,7 +185,7 @@ client.on("interactionCreate", async (interaction) => {
       }
       await interaction.deferReply({ ephemeral: true });
       await handleJoinSpotify({
-        kazagumo: client.kazagumo,
+        client,
         voiceChannel,
         textChannel: interaction.channel,
         listenerMember,
@@ -269,6 +292,38 @@ client.on("voiceStateUpdate", (oldState) => {
         embeds: [buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.")],
       });
     }
+  }
+});
+
+// ---- Suit en direct les changements de morceau Spotify de la personne suivie
+// via !join/spotify_join, et bascule la lecture instantanément dessus ----
+client.on("presenceUpdate", async (oldPresence, newPresence) => {
+  const guild = newPresence?.guild;
+  if (!guild) return;
+
+  const follow = client.spotifyFollows.get(guild.id);
+  if (!follow || follow.targetUserId !== newPresence.userId) return;
+
+  const player = client.kazagumo.players.get(guild.id);
+  if (!player) {
+    client.spotifyFollows.delete(guild.id);
+    return;
+  }
+
+  const activity = findSpotifyActivity(newPresence.activities);
+  if (!activity || activity.syncId === follow.lastSyncId) return;
+  follow.lastSyncId = activity.syncId;
+
+  try {
+    const member = newPresence.member ?? guild.members.cache.get(newPresence.userId);
+    const result = await client.kazagumo.search(spotifyActivityQuery(activity), {
+      requester: member,
+      engine: "youtube",
+    });
+    if (!result || !result.tracks.length) return;
+    await player.play(result.tracks[0], { replaceCurrent: true });
+  } catch (err) {
+    console.error(err);
   }
 });
 

@@ -55,7 +55,7 @@ function buildMusicHelpPanel(prefix = "!") {
         heading: "Lecture",
         lines: [
           `\`${prefix}play <recherche | lien YouTube/Spotify>\` — Joue un titre ou l'ajoute à la file`,
-          `\`${prefix}join\` — Rejoint et joue ce que tu écoutes actuellement sur Spotify`,
+          `\`${prefix}join [@membre]\` — Rejoint et suit en direct ce que tu (ou @membre) écoutes sur Spotify`,
           `\`${prefix}pause\` — Met la lecture en pause`,
           `\`${prefix}resume\` — Reprend la lecture`,
           `\`${prefix}skip\` — Passe au titre suivant`,
@@ -75,37 +75,67 @@ function buildMusicHelpPanel(prefix = "!") {
   });
 }
 
+// Commandes "-" accessibles à tout le monde, sans permission particulière.
+function memberDashSection(prefix) {
+  return {
+    heading: "Membres",
+    lines: [
+      `\`${prefix}pic [@membre]\` — Affiche la photo de profil (la tienne par défaut)`,
+      `\`${prefix}avatar [@membre]\` — Alias de ${prefix}pic`,
+      `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
+    ],
+  };
+}
+
+// Commandes "-" réservées aux administrateurs du serveur.
+function adminDashSections(prefix) {
+  return [
+    {
+      heading: "Messages",
+      lines: [
+        `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
+        `\`${prefix}clear @membre\` — Supprime les messages récents d'un membre`,
+      ],
+    },
+    {
+      heading: "Salon",
+      lines: [
+        `\`${prefix}renew\` — Recrée le salon à l'identique (vide)`,
+        `\`${prefix}hide\` — Cache le salon à @everyone`,
+        `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
+        `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
+        `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
+      ],
+    },
+  ];
+}
+
 /**
- * Panel d'aide des commandes de modération (préfixe "-").
+ * Panel d'aide "-help" pour un membre sans permission particulière : ne
+ * liste que les commandes qu'il peut réellement utiliser.
+ * @param {string} prefix
+ */
+function buildMemberDashHelpPanel(prefix = "-") {
+  return buildHelpPanel({
+    title: "Aide — Commandes",
+    intro: `Préfixe : \`${prefix}\` — commandes disponibles pour tout le monde.`,
+    sections: [memberDashSection(prefix)],
+  });
+}
+
+/**
+ * Panel d'aide "-help" pour un administrateur : liste tout (commandes
+ * membres + commandes de modération).
  * @param {string} prefix
  */
 function buildAdminHelpPanel(prefix = "-") {
   return buildHelpPanel({
-    title: "Aide — Commandes de modération",
-    intro: `Préfixe : \`${prefix}\` — réservé aux administrateurs du serveur.`,
-    sections: [
-      {
-        heading: "Messages",
-        lines: [
-          `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
-          `\`${prefix}clear @membre\` — Supprime les messages récents d'un membre`,
-          `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
-        ],
-      },
-      {
-        heading: "Salon",
-        lines: [
-          `\`${prefix}renew\` — Recrée le salon à l'identique (vide)`,
-          `\`${prefix}hide\` — Cache le salon à @everyone`,
-          `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
-          `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
-          `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
-        ],
-      },
-    ],
+    title: "Aide — Commandes",
+    intro: `Préfixe : \`${prefix}\` — en tant qu'administrateur, tu as accès à tout.`,
+    sections: [memberDashSection(prefix), ...adminDashSections(prefix)],
     footer:
       "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord).",
   });
 }
 
-module.exports = { buildMusicHelpPanel, buildAdminHelpPanel, buildHelpPanel };
+module.exports = { buildMusicHelpPanel, buildMemberDashHelpPanel, buildAdminHelpPanel, buildHelpPanel };

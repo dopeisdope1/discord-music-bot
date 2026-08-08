@@ -1,23 +1,27 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { getSpotifyActivity, spotifyActivityQuery } = require("./spotifyPresence");
-const { queueAndPlay } = require("./musicPlayer");
+const { getOrCreatePlayer } = require("./musicPlayer");
 const { buildStatusEmbed } = require("./statusEmbed");
 
 /**
  * Rejoint un salon vocal et joue ce que `listenerMember` écoute actuellement
- * sur Spotify (présence Discord). Utilisé à la fois par `!join`/`/join`
- * (listenerMember === playerMember) et par le bouton "Écouter avec lui"
- * posté en réponse (listenerMember = la personne suivie, playerMember =
- * la personne qui clique et dont on rejoint le salon vocal).
+ * sur Spotify, à la même position, puis suit ses changements de morceau en
+ * direct (voir le listener "presenceUpdate" dans index.js) jusqu'à ce que le
+ * player soit détruit.
+ *
+ * Utilisé à la fois par `!join`/`/join` (listenerMember === playerMember) et
+ * par le bouton "Écouter avec lui" posté en réponse (listenerMember = la
+ * personne suivie, playerMember = la personne qui clique et dont on rejoint
+ * le salon vocal).
  * @param {object} params
- * @param {import('kazagumo').Kazagumo} params.kazagumo
+ * @param {import('discord.js').Client} params.client
  * @param {import('discord.js').VoiceBasedChannel} params.voiceChannel
  * @param {import('discord.js').TextBasedChannel} params.textChannel
  * @param {import('discord.js').GuildMember} params.listenerMember
  * @param {import('discord.js').GuildMember} params.playerMember
  * @param {(payload: object) => Promise<unknown>} params.send
  */
-async function handleJoinSpotify({ kazagumo, voiceChannel, textChannel, listenerMember, playerMember, send }) {
+async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMember, playerMember, send }) {
   const activity = getSpotifyActivity(listenerMember);
   if (!activity) {
     const who = listenerMember.id === playerMember.id ? "Tu n'écoutes" : `${listenerMember.displayName} n'écoute`;
@@ -25,18 +29,29 @@ async function handleJoinSpotify({ kazagumo, voiceChannel, textChannel, listener
     return;
   }
 
-  const outcome = await queueAndPlay(kazagumo, {
-    voiceChannel,
-    textChannel,
-    member: playerMember,
-    query: spotifyActivityQuery(activity),
+  const result = await client.kazagumo.search(spotifyActivityQuery(activity), {
+    requester: playerMember,
     engine: "youtube",
   });
-
-  if (!outcome) {
+  if (!result || !result.tracks.length) {
     await send({ embeds: [buildStatusEmbed("error", `Impossible de trouver **${activity.details}** sur YouTube.`)] });
     return;
   }
+
+  const player = await getOrCreatePlayer(client.kazagumo, {
+    guildId: voiceChannel.guild.id,
+    voiceChannel,
+    textChannel,
+  });
+
+  // Enregistre le suivi AVANT de lancer la lecture : le handler "playerStart"
+  // s'en sert pour caler la position de lecture sur celle du morceau suivi.
+  client.spotifyFollows.set(voiceChannel.guild.id, {
+    targetUserId: listenerMember.id,
+    lastSyncId: activity.syncId,
+  });
+
+  await player.play(result.tracks[0], { replaceCurrent: true });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -51,7 +66,7 @@ async function handleJoinSpotify({ kazagumo, voiceChannel, textChannel, listener
         "info",
         `${listenerMember.displayName} écoute **${activity.details}**${
           activity.state ? ` — ${activity.state}` : ""
-        } sur Spotify.\n\`!join\` pour rejoindre, ou clique sur le bouton pour écouter avec lui.`
+        } sur Spotify.\n\`!join\` pour rejoindre, ou clique sur le bouton pour écouter avec lui. La lecture suit automatiquement ses changements de musique.`
       ),
     ],
     components: [row],

@@ -75,7 +75,7 @@ npm start
 | Commande      | Description                                   |
 |---------------|------------------------------------------------|
 | `/play`       | Joue une musique (nom/artiste, ou lien YouTube/Spotify) |
-| `/join`       | Rejoint et joue ce que tu écoutes actuellement sur Spotify |
+| `/join`       | Rejoint et suit en direct ce que tu (ou un membre choisi) écoutes sur Spotify |
 | `/pause`      | Met en pause                                  |
 | `/resume`     | Reprend la lecture                            |
 | `/skip`       | Passe au titre suivant                        |
@@ -117,15 +117,22 @@ Une fois un titre choisi, le bot le recherche sur YouTube via Lavalink pour la
 lecture réelle (Spotify ne fournit pas l'audio brut, et les nœuds Lavalink publics
 n'ont pas toujours le plugin nécessaire pour lire les liens Spotify directement).
 
-## 7bis. `!join` / `/join` — écouter le Spotify de quelqu'un
+## 7bis. `!join [@membre]` / `/join [membre]` — écouter le Spotify de quelqu'un en direct
 
-`!join` regarde ton activité Discord "écoute Spotify" (visible sur ton profil quand
-tu as connecté ton compte Spotify dans Discord > Paramètres > Connexions) et fait
-jouer le même titre au bot. Si tu n'écoutes rien sur Spotify, il te le dit.
+`!join` (tout court) regarde TON activité Discord "écoute Spotify" (visible sur ton
+profil quand tu as connecté ton compte Spotify dans Discord > Paramètres >
+Connexions) et fait jouer le même titre au bot, à la même position (secondes
+comprises). `!join @membre` fait pareil mais suit **quelqu'un d'autre**. Si la
+personne visée n'écoute rien sur Spotify, le bot le dit clairement.
 
-Le message de confirmation inclut un bouton **"Écouter avec lui"** : n'importe qui
-peut cliquer dessus pour que le bot rejoigne SON salon vocal et joue ce que la
-personne suivie écoute au moment du clic (pas une capture figée du morceau initial).
+Une fois lancé, la lecture **suit automatiquement** la personne suivie : dès qu'elle
+change de morceau sur Spotify, le bot bascule instantanément dessus (même position),
+sans qu'il faille retaper la commande. Ça dure jusqu'à `!stop`/`/stop` ou jusqu'à ce
+que tout le monde quitte le salon vocal.
+
+Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'importe
+qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
+la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
