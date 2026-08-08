@@ -15,7 +15,7 @@ const LOOP_LABELS = { none: "Désactivée", track: "Chanson", queue: "File d'att
  * Convertit des secondes en mm:ss / hh:mm:ss
  */
 function formatDuration(seconds) {
-  if (!seconds || seconds === Infinity) return "LIVE";
+  if (seconds === Infinity) return "LIVE";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -37,11 +37,13 @@ function buildProgressBar(current, total, size = 18) {
  * Construit le panel "En cours de lecture" en Components V2, sans couleur
  * d'accent ni emoji.
  * @param {import('kazagumo').KazagumoPlayer} player
+ * @param {number} [elapsedMs] - position de lecture actuelle, en millisecondes
  * @returns {{ flags: number, components: any[] }}
  */
-function buildNowPlayingPanel(player) {
+function buildNowPlayingPanel(player, elapsedMs = 0) {
   const track = player.queue.current;
   const durationSeconds = Math.floor((track.length || 0) / 1000);
+  const elapsedSeconds = Math.min(Math.floor(elapsedMs / 1000), durationSeconds || Infinity);
 
   const container = new ContainerBuilder();
 
@@ -58,11 +60,12 @@ function buildNowPlayingPanel(player) {
     new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
   );
 
-  // Barre de progression (position réelle non trackée en live, on affiche la durée totale)
-  const bar = buildProgressBar(0, durationSeconds);
+  // Barre de progression, mise à jour périodiquement pendant la lecture
+  const bar = buildProgressBar(elapsedSeconds, durationSeconds);
+  const totalLabel = durationSeconds > 0 ? formatDuration(durationSeconds) : "LIVE";
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `\`00:00\` ${bar} \`${formatDuration(durationSeconds)}\``
+      `\`${formatDuration(elapsedSeconds)}\` ${bar} \`${totalLabel}\``
     )
   );
 

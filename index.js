@@ -7,6 +7,12 @@ const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel, LOOP_LABELS } = require("./utils/nowPlayingPanel");
 const { handleTextCommand, rememberSnipe } = require("./utils/textCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
+const {
+  startNowPlayingTracking,
+  stopNowPlayingTracking,
+  setPlayerPaused,
+  getElapsedMs,
+} = require("./utils/musicPlayer");
 
 const client = new Client({
   intents: [
@@ -74,6 +80,9 @@ client.kazagumo.shoukaku.on("disconnect", (name) =>
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
 
+// Stocke l'intervalle de rafraîchissement du panel (position en direct) par serveur
+client.nowPlayingIntervals = new Collection();
+
 // Stocke le dernier message supprimé par salon (commande -snipe)
 client.snipes = new Collection();
 
@@ -82,13 +91,14 @@ client.kazagumo
   .on("playerStart", async (player) => {
     const textChannel = client.channels.cache.get(player.textId);
     if (!textChannel) return;
-    const panel = buildNowPlayingPanel(player);
+    const panel = buildNowPlayingPanel(player, 0);
     const msg = await textChannel.send(panel);
     client.nowPlayingMessages.set(player.guildId, msg);
+    startNowPlayingTracking(client, player);
   })
   .on("playerEmpty", (player) => {
     const textChannel = client.channels.cache.get(player.textId);
-    client.nowPlayingMessages.delete(player.guildId);
+    stopNowPlayingTracking(client, player.guildId);
     if (textChannel) {
       textChannel.send({
         embeds: [buildStatusEmbed("info", "File d'attente terminée.")],
@@ -146,7 +156,7 @@ client.on("interactionCreate", async (interaction) => {
 
     switch (interaction.customId) {
       case "music_pauseresume":
-        player.pause(!player.paused);
+        setPlayerPaused(player, !player.paused);
         break;
       case "music_skip":
         if (!player.queue.current) {
@@ -158,7 +168,7 @@ client.on("interactionCreate", async (interaction) => {
         player.skip();
         break;
       case "music_stop":
-        client.nowPlayingMessages.delete(interaction.guildId);
+        stopNowPlayingTracking(client, interaction.guildId);
         player.destroy();
         break;
       case "music_loop": {
@@ -181,8 +191,9 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     // Met à jour le panel après action (sauf stop, qui détruit le player)
-    if (interaction.customId !== "music_stop" && client.kazagumo.players.get(interaction.guildId)) {
-      const panel = buildNowPlayingPanel(client.kazagumo.players.get(interaction.guildId));
+    const updatedPlayer = client.kazagumo.players.get(interaction.guildId);
+    if (interaction.customId !== "music_stop" && updatedPlayer) {
+      const panel = buildNowPlayingPanel(updatedPlayer, getElapsedMs(interaction.guildId));
       await interaction.update(panel);
     } else {
       await interaction.update(buildStoppedPanel());
@@ -217,7 +228,7 @@ client.on("voiceStateUpdate", (oldState) => {
   const humanCount = voiceChannel.members.filter((m) => !m.user.bot).size;
   if (humanCount === 0) {
     const textChannel = client.channels.cache.get(player.textId);
-    client.nowPlayingMessages.delete(player.guildId);
+    stopNowPlayingTracking(client, player.guildId);
     player.destroy();
     if (textChannel) {
       textChannel.send({

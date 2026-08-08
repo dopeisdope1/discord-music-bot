@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
+const { stopNowPlayingTracking } = require("../utils/musicPlayer");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,7 +12,7 @@ module.exports = {
     if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
-    interaction.client.nowPlayingMessages.delete(interaction.guildId);
+    stopNowPlayingTracking(interaction.client, interaction.guildId);
     player.destroy();
     await interaction.reply({
       embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],

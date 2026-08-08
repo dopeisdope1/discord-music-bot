@@ -4,7 +4,7 @@ const { buildMusicHelpPanel, buildAdminHelpPanel } = require("./helpPanels");
 const { hasModRole, MOD_ROLE_NAME } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
-const { queueAndPlay } = require("./musicPlayer");
+const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -115,7 +115,7 @@ const handlers = {
   async stop(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
-    client.nowPlayingMessages.delete(message.guildId);
+    stopNowPlayingTracking(client, message.guildId);
     player.destroy();
     await message.reply({
       embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
@@ -125,14 +125,14 @@ const handlers = {
   async pause(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
-    player.pause(true);
+    setPlayerPaused(player, true);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
   },
 
   async resume(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
-    player.pause(false);
+    setPlayerPaused(player, false);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
   },
 

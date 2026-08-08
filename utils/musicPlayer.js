@@ -1,3 +1,8 @@
+const { buildNowPlayingPanel } = require("./nowPlayingPanel");
+const { startTracking, setPaused, getElapsedMs, stopTracking } = require("./playbackTimer");
+
+const NOW_PLAYING_REFRESH_MS = 10_000;
+
 /**
  * Récupère le player Kazagumo existant pour un serveur, ou en crée un.
  */
@@ -41,4 +46,51 @@ async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query
   return { result, alreadyPlaying };
 }
 
-module.exports = { getOrCreatePlayer, queueAndPlay };
+/**
+ * Démarre le rafraîchissement périodique du panel "En cours de lecture"
+ * (position de lecture en direct). Doit être appelé une fois par nouveau
+ * morceau (typiquement dans le handler "playerStart").
+ */
+function startNowPlayingTracking(client, player) {
+  stopNowPlayingTracking(client, player.guildId);
+  startTracking(player.guildId);
+
+  const intervalId = setInterval(() => {
+    const message = client.nowPlayingMessages.get(player.guildId);
+    const current = client.kazagumo.players.get(player.guildId);
+    if (!message || !current || !current.queue.current) return;
+    message.edit(buildNowPlayingPanel(current, getElapsedMs(player.guildId))).catch(() => {});
+  }, NOW_PLAYING_REFRESH_MS);
+
+  client.nowPlayingIntervals.set(player.guildId, intervalId);
+}
+
+/**
+ * Arrête le rafraîchissement et nettoie tout l'état associé au panel
+ * "En cours de lecture" d'un serveur (à appeler à chaque fois qu'on détruit
+ * le player : stop, déconnexion, file terminée...).
+ */
+function stopNowPlayingTracking(client, guildId) {
+  const intervalId = client.nowPlayingIntervals.get(guildId);
+  if (intervalId) clearInterval(intervalId);
+  client.nowPlayingIntervals.delete(guildId);
+  client.nowPlayingMessages.delete(guildId);
+  stopTracking(guildId);
+}
+
+/**
+ * Met en pause/reprend un player en gardant le suivi de position à jour.
+ */
+function setPlayerPaused(player, paused) {
+  player.pause(paused);
+  setPaused(player.guildId, paused);
+}
+
+module.exports = {
+  getOrCreatePlayer,
+  queueAndPlay,
+  startNowPlayingTracking,
+  stopNowPlayingTracking,
+  setPlayerPaused,
+  getElapsedMs,
+};
