@@ -92,14 +92,16 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 
 - **`!`** : préfixe principal, pour toutes les commandes musique
   (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
-- **`-`** : préfixe réservé aux commandes de modération, uniquement pour les
-  administrateurs du serveur (permission Discord **Administrateur**)
-  - `-clear <nombre>` / `-clear @membre` → supprime des messages
-  - `-snipe` → affiche le dernier message supprimé du salon
-  - `-renew` → recrée le salon à l'identique (vide)
-  - `-hide` / `-unhide` → cache/affiche le salon pour @everyone
-  - `-lock` / `-unlock` → empêche/autorise @everyone à écrire dans le salon
-  - `-help` → affiche le panel d'aide modération
+- **`-`** : préfixe pour les commandes membres et de modération
+  - Ouvertes à tout le monde par défaut : `-pic [@membre]` / `-avatar` (photo de
+    profil), `-snipe` (dernier message supprimé du salon)
+  - Réservées aux administrateurs par défaut : `-clear`, `-renew`, `-hide`,
+    `-unhide`, `-lock`, `-unlock`
+  - `-help` → affiche les commandes disponibles pour toi (liste complète si tu
+    es administrateur)
+  - `-panel` → (admin uniquement) panel interactif pour autoriser/interdire un
+    rôle sur une commande précise, ou la restreindre à certains salons — voir
+    section 7ter
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
@@ -134,6 +136,28 @@ que tout le monde quitte le salon vocal.
 Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'importe
 qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
 la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
+
+## 7ter. `-panel` — configurer les permissions par commande
+
+Réservé aux administrateurs. Ouvre un panel avec des menus déroulants pour
+configurer finement l'accès aux commandes `-` (voir section 6bis) :
+
+1. Choisis une commande (`-clear`, `-snipe`, `-lock`, etc.)
+2. Choisis une action :
+   - **Autoriser un rôle** — donne accès à la commande à un rôle qui ne
+     l'aurait pas par défaut (ex. donner `-clear` à un rôle "Modérateur"
+     sans lui donner la permission Administrateur complète)
+   - **Interdire un rôle** — retire l'accès à un rôle précis, même pour une
+     commande normalement ouverte à tout le monde (ex. interdire `-snipe`
+     à un rôle "Muet")
+   - **Restreindre à des salons** — la commande ne fonctionne plus que dans
+     les salons choisis (aucun salon choisi = de nouveau utilisable partout)
+   - **Réinitialiser** — efface toute la configuration de cette commande
+3. Sélectionne le rôle ou les salons concernés selon l'action choisie
+
+Les administrateurs du serveur gardent toujours accès à tout, quelle que soit
+la configuration — impossible de se bloquer soi-même par erreur. Les réglages
+sont sauvegardés par serveur dans `data/commandConfig.json` (non versionné).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra

@@ -6,6 +6,8 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
+const { canUseDashCommand } = require("./commandPermissions");
+const { handleCommandPanel, CONFIGURABLE_COMMANDS } = require("./commandPanelWizard");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -22,11 +24,8 @@ const LOOP_KEYWORDS = {
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
-// Commandes "-" accessibles à tout le monde, sans permission particulière
-const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
-// Commandes "-" réservées aux administrateurs (voir requireModPermission)
-const DASH_ADMIN_COMMANDS = new Set(["clear", "renew", "hide", "unhide", "lock", "unlock"]);
-const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
+// Commandes "-" dont l'accès se configure via -panel (voir commandPermissions.js)
+const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -389,6 +388,10 @@ const handlers = {
       allowedMentions: { parse: [] },
     });
   },
+
+  async panel(client, message) {
+    await handleCommandPanel(message);
+  },
 };
 
 /**
@@ -420,11 +423,21 @@ async function handleTextCommand(client, message) {
       const panel = hasModPermission(message) ? buildAdminHelpPanel() : buildMemberDashHelpPanel();
       return message.channel.send(panel);
     }
-    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireModPermission(message)) return;
-    if (DASH_COMMANDS.has(cmd)) {
-      return handlers[cmd](client, message, args);
+    if (cmd === "panel") {
+      if (!requireModPermission(message)) return;
+      return handlers.panel(client, message, args);
     }
-    return;
+    if (!DASH_COMMANDS.has(cmd)) return;
+
+    const { allowed, reason } = canUseDashCommand(message, cmd);
+    if (!allowed) {
+      const text =
+        reason === "channel"
+          ? "Cette commande n'est pas autorisée dans ce salon."
+          : "Tu n'as pas la permission d'utiliser cette commande.";
+      return message.reply({ embeds: [buildStatusEmbed("error", text)] });
+    }
+    return handlers[cmd](client, message, args);
   }
 
   // Préfixe principal "m!"
