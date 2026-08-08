@@ -47,7 +47,8 @@ function buildProgressBar(current, total, size = 18) {
  */
 function buildNowPlayingPanel(player, elapsedMs = 0) {
   const track = player.queue.current;
-  const durationSeconds = Math.floor((track.length || 0) / 1000);
+  const durationMs = track.length || 0;
+  const durationSeconds = Math.floor(durationMs / 1000);
   const elapsedSeconds = Math.min(Math.floor(elapsedMs / 1000), durationSeconds || Infinity);
 
   const container = new ContainerBuilder();
@@ -73,10 +74,16 @@ function buildNowPlayingPanel(player, elapsedMs = 0) {
   );
 
   // Barre de progression, mise à jour toutes les 5s (le maximum sans risquer
-  // un rate-limit Discord sur l'édition de message)
+  // un rate-limit Discord sur l'édition de message), + timestamp Discord natif
+  // pour la fin du morceau (défile tout seul côté client, sans coût d'édition).
   const bar = buildProgressBar(elapsedSeconds, durationSeconds);
   const totalLabel = durationSeconds > 0 ? formatDuration(durationSeconds) : "LIVE";
-  const statusLine = player.paused ? "En pause" : null;
+  const statusLine =
+    durationMs === 0
+      ? null
+      : player.paused
+      ? "En pause"
+      : `Fin <t:${Math.floor((Date.now() + (durationMs - elapsedMs)) / 1000)}:R>`;
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       [`\`${formatDuration(elapsedSeconds)}\` \`${bar}\` \`${totalLabel}\``, statusLine]
