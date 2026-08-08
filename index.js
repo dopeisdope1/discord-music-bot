@@ -42,8 +42,6 @@ client.distube = new DisTube(client, {
         clientId: process.env.SPOTIFY_CLIENT_ID,
         clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
       },
-      // Convertit automatiquement les pistes Spotify en recherche YouTube
-      emitEventsAfterFetching: true,
     }),
     new YtDlpPlugin({ update: false }),
   ],
