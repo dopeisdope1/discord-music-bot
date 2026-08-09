@@ -56,7 +56,8 @@ Sur le portail développeur Discord, dans l'onglet **Bot** :
 Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - `bot`, `applications.commands`
 - Connect, Speak, Send Messages, Embed Links, Use Slash Commands, Manage Roles,
-  Manage Channels, Manage Messages (pour les commandes de modération)
+  Manage Channels, Manage Messages (pour les commandes de modération), View
+  Audit Log (pour attribuer les changements de rôle manuels dans "Logs rôles")
 
 ## 4. Déployer les commandes slash
 
@@ -110,10 +111,19 @@ si aucun volume persistant n'est monté sur `data/`.
 
 Le même panel `.panel` propose aussi une section **Logs** : un menu déroulant
 par catégorie (**Logs modération** = `.clear`/`.ban`/`.unban`, **Logs salon** =
-`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`, **Logs rôles** = `.massrole`) où
-tu choisis, en tapant pour rechercher, le salon où le bot doit poster un
-message à chaque utilisation de ces commandes. Laisser une catégorie vide
-désactive simplement ses logs.
+`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`, **Logs rôles** = `.massrole` ET
+tout ajout/retrait de rôle fait à la main sur le profil d'un membre) où tu
+choisis, en tapant pour rechercher, le salon où le bot doit poster un message.
+Laisser une catégorie vide désactive simplement ses logs. Pour "Logs rôles",
+un changement fait via `.massrole`/le panel donne un seul message résumé
+(nombre de membres touchés) ; un changement fait à la main donne un message
+par membre avec le nom de la personne qui a fait le changement (nécessite la
+permission **View Audit Log**, voir section 3).
+
+Le bouton **"Gérer les rôles en masse"** du panel `.panel` fait la même chose
+que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les membres
+non-bot du serveur), mais via deux menus déroulants de rôles au lieu de taper
+la commande.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).

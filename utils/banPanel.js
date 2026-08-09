@@ -24,6 +24,22 @@ function buildStatusPanel(text) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
+// Filet de sécurité : sans ça, une exception dans un handler de collector part
+// en promesse non gérée, ce qui peut faire planter tout le process (donc
+// redémarrer le bot) et laisse l'utilisateur avec le message d'erreur générique
+// de Discord ("Une erreur s'est produite. Réessaie.") sans aucune réponse réelle.
+async function safeErrorReply(i) {
+  try {
+    if (i.deferred || i.replied) {
+      await i.editReply(buildStatusPanel("Une erreur est survenue, réessaie."));
+    } else {
+      await i.reply({ content: "Une erreur est survenue, réessaie.", ephemeral: true });
+    }
+  } catch {
+    /* rien de plus possible côté Discord */
+  }
+}
+
 function buildZinkiAssassiniPanel() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
@@ -52,63 +68,68 @@ async function handleBanPanel(message) {
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
-    if (i.user.id !== message.author.id) {
-      await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
-      return;
-    }
+    try {
+      if (i.user.id !== message.author.id) {
+        await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
+        return;
+      }
 
-    const targetId = i.values[0];
+      const targetId = i.values[0];
 
-    if (targetId === message.author.id) {
-      await i.update(buildStatusPanel("Tu ne peux pas te bannir toi-même."));
-      return;
-    }
+      if (targetId === message.author.id) {
+        await i.update(buildStatusPanel("Tu ne peux pas te bannir toi-même."));
+        return;
+      }
 
-    if (targetId === message.client.user.id) {
-      await i.update(buildStatusPanel("Je ne vais pas me bannir moi-même."));
-      return;
-    }
+      if (targetId === message.client.user.id) {
+        await i.update(buildStatusPanel("Je ne vais pas me bannir moi-même."));
+        return;
+      }
 
-    // Accuse réception tout de suite (dans les 3s imposées par Discord) : le
-    // fetch du membre + le ban lui-même sont de vraies requêtes réseau qui
-    // peuvent facilement dépasser ce délai, d'où le "n'a pas répondu à temps".
-    await i.deferUpdate();
+      // Accuse réception tout de suite (dans les 3s imposées par Discord) : le
+      // fetch du membre + le ban lui-même sont de vraies requêtes réseau qui
+      // peuvent facilement dépasser ce délai, d'où le "n'a pas répondu à temps".
+      await i.deferUpdate();
 
-    const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
-    if (targetMember && !targetMember.bannable) {
-      await i.editReply(
-        buildStatusPanel("Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")
-      );
-      return;
-    }
+      const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
+      if (targetMember && !targetMember.bannable) {
+        await i.editReply(
+          buildStatusPanel("Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")
+        );
+        return;
+      }
 
-    const banResult = await message.guild.members
-      .ban(targetId, { reason: `Zinki Assassini — banni par ${message.author.tag}` })
-      .catch((err) => {
-        console.error(err);
-        return null;
-      });
+      const banResult = await message.guild.members
+        .ban(targetId, { reason: `Zinki Assassini — banni par ${message.author.tag}` })
+        .catch((err) => {
+          console.error(err);
+          return null;
+        });
 
-    if (!banResult) {
+      if (!banResult) {
+        await i.editReply(
+          buildStatusPanel(
+            `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+          )
+        );
+        return;
+      }
+
       await i.editReply(
         buildStatusPanel(
-          `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+          `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
         )
       );
-      return;
+      sendLog(
+        message.client,
+        message.guild.id,
+        "moderation",
+        `**${message.author.tag}** a banni **${targetMember ? targetMember.user.tag : targetId}** via Zinki Assassini.`
+      );
+    } catch (err) {
+      console.error("[banPanel] Erreur dans le panel Zinki Assassini :", err);
+      await safeErrorReply(i);
     }
-
-    await i.editReply(
-      buildStatusPanel(
-        `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
-      )
-    );
-    sendLog(
-      message.client,
-      message.guild.id,
-      "moderation",
-      `**${message.author.tag}** a banni **${targetMember ? targetMember.user.tag : targetId}** via Zinki Assassini.`
-    );
   });
 
   collector.on("end", (collected) => {
@@ -195,41 +216,46 @@ async function handleUnbanPanel(message) {
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
-    if (i.user.id !== message.author.id) {
-      await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
-      return;
-    }
+    try {
+      if (i.user.id !== message.author.id) {
+        await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
+        return;
+      }
 
-    await i.deferUpdate();
+      await i.deferUpdate();
 
-    const targetId = i.values[0];
-    const target = entries.find((ban) => ban.user.id === targetId);
+      const targetId = i.values[0];
+      const target = entries.find((ban) => ban.user.id === targetId);
 
-    const result = await message.guild.bans
-      .remove(targetId, `Débanni par ${message.author.tag}`)
-      .catch((err) => {
-        console.error(err);
-        return null;
-      });
+      const result = await message.guild.bans
+        .remove(targetId, `Débanni par ${message.author.tag}`)
+        .catch((err) => {
+          console.error(err);
+          return null;
+        });
 
-    if (!result) {
+      if (!result) {
+        await i.editReply(
+          buildStatusPanel(
+            `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+          )
+        );
+        return;
+      }
+
       await i.editReply(
-        buildStatusPanel(
-          `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
-        )
+        buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
       );
-      return;
+      sendLog(
+        message.client,
+        message.guild.id,
+        "moderation",
+        `**${message.author.tag}** a débanni **${target ? target.user.tag : targetId}**.`
+      );
+    } catch (err) {
+      console.error("[banPanel] Erreur dans le panel de débannissement :", err);
+      await safeErrorReply(i);
     }
-
-    await i.editReply(
-      buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
-    );
-    sendLog(
-      message.client,
-      message.guild.id,
-      "moderation",
-      `**${message.author.tag}** a débanni **${target ? target.user.tag : targetId}**.`
-    );
   });
 
   collector.on("end", (collected) => {

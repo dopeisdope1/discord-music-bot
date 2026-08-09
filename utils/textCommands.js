@@ -10,6 +10,7 @@ const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
+const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
@@ -492,12 +493,6 @@ const handlers = {
   },
 
   async massrole(client, message, args) {
-    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
-      return message.reply({
-        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
-      });
-    }
-
     const action = (args[0] || "").toLowerCase();
     const roleArg = (args[1] || "").replace(/[<>]/g, "");
     const role =
@@ -512,25 +507,15 @@ const handlers = {
         embeds: [
           buildStatusEmbed(
             "error",
-            `Utilisation : \`${dash}massrole add @role\`/\`<id>\` ou \`${dash}massrole remove @role\`/\`<id>\` (utilise l'ID pour ne pas ping tout le rôle)`
+            `Utilisation : \`${dash}massrole add @role\`/\`<id>\` ou \`${dash}massrole remove @role\`/\`<id>\` (utilise l'ID pour ne pas ping tout le rôle). Aussi disponible dans \`${dash}panel\`.`
           ),
         ],
       });
     }
 
-    if (role.managed) {
-      return message.reply({
-        embeds: [
-          buildStatusEmbed("error", "Ce rôle est géré automatiquement (bot/intégration), impossible de le modifier en masse."),
-        ],
-      });
-    }
-
-    const botMember = message.guild.members.me;
-    if (role.position >= botMember.roles.highest.position) {
-      return message.reply({
-        embeds: [buildStatusEmbed("error", "Ce rôle est plus haut que le mien dans la hiérarchie, je ne peux pas le modifier.")],
-      });
+    const invalidReason = validateMassRoleTarget(message.guild, role);
+    if (invalidReason) {
+      return message.reply({ embeds: [buildStatusEmbed("error", invalidReason)] });
     }
 
     await message.reply({
@@ -542,23 +527,13 @@ const handlers = {
       ],
     });
 
-    const members = await message.guild.members.fetch();
-    const targets = members.filter(
-      (m) => !m.user.bot && (action === "add" ? !m.roles.cache.has(role.id) : m.roles.cache.has(role.id))
-    );
-
-    let success = 0;
-    let failed = 0;
-    for (const member of targets.values()) {
-      try {
-        if (action === "add") await member.roles.add(role, `Massrole par ${message.author.tag}`);
-        else await member.roles.remove(role, `Massrole par ${message.author.tag}`);
-        success += 1;
-      } catch (err) {
-        console.error(err);
-        failed += 1;
-      }
-    }
+    const { success, failed } = await runMassRole({
+      client,
+      guild: message.guild,
+      actorTag: message.author.tag,
+      action,
+      role,
+    });
 
     await message.channel.send({
       embeds: [
@@ -570,14 +545,6 @@ const handlers = {
         ),
       ],
     });
-    sendLog(
-      client,
-      message.guild.id,
-      "roles",
-      `**${message.author.tag}** a ${action === "add" ? "ajouté" : "retiré"} le rôle **${role.name}** ${
-        action === "add" ? "à" : "de"
-      } **${success}** membre(s)${failed ? ` (${failed} échec(s))` : ""}.`
-    );
   },
 
   async pic(client, message) {

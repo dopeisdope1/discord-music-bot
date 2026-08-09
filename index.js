@@ -1,7 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionFlagsBits, AuditLogEvent } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel, LOOP_LABELS } = require("./utils/nowPlayingPanel");
@@ -16,6 +16,8 @@ const {
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { randomWelcomeMessage } = require("./utils/welcomeMessages");
+const { getLogChannelId } = require("./utils/logStore");
+const { sendLog } = require("./utils/actionLogger");
 
 const client = new Client({
   intents: [
@@ -297,6 +299,45 @@ client.on("voiceStateUpdate", (oldState) => {
       });
     }
   }
+});
+
+// ---- Logue les changements de rôle faits "à la main" (via le profil du membre
+// ou le menu de rôles Discord natif), dans la catégorie "Logs rôles" (voir
+// .panel > Logs). Les changements faits PAR le bot (.massrole ou le panel)
+// sont déjà logués en un seul message agrégé par utils/massRole.js — on les
+// ignore ici (exécuteur = le bot dans les logs d'audit Discord) pour éviter
+// un doublon (un message par membre en plus du résumé global).
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (!getLogChannelId(newMember.guild.id, "roles")) return;
+
+  const oldRoles = oldMember.roles.cache;
+  const newRoles = newMember.roles.cache;
+  const added = newRoles.filter((r) => !oldRoles.has(r.id));
+  const removed = oldRoles.filter((r) => !newRoles.has(r.id));
+  if (added.size === 0 && removed.size === 0) return;
+
+  let executor = null;
+  try {
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 5 });
+    executor = auditLogs.entries.find(
+      (entry) => entry.target?.id === newMember.id && Date.now() - entry.createdTimestamp < 10_000
+    )?.executor;
+  } catch (err) {
+    console.warn("[logs] Impossible de lire les logs d'audit pour ce changement de rôle :", err.message);
+  }
+
+  if (executor?.id === client.user.id) return;
+
+  const parts = [];
+  if (added.size) parts.push(`+ ${added.map((r) => r.name).join(", ")}`);
+  if (removed.size) parts.push(`- ${removed.map((r) => r.name).join(", ")}`);
+
+  sendLog(
+    client,
+    newMember.guild.id,
+    "roles",
+    `**${executor ? executor.tag : "quelqu'un"}** a modifié les rôles de **${newMember.user.tag}** (${parts.join(" / ")}).`
+  );
 });
 
 // ---- Suit en direct les changements de morceau Spotify de la personne suivie

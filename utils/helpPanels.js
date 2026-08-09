@@ -105,7 +105,7 @@ function adminDashSections(prefix) {
     {
       heading: "Réglages",
       lines: [
-        `\`${prefix}panel\` — Panel pour changer les préfixes du bot et configurer les salons de logs (modération, salon, rôles)`,
+        `\`${prefix}panel\` — Panel pour changer les préfixes du bot, configurer les salons de logs (modération, salon, rôles) et gérer les rôles en masse`,
       ],
     },
     {
