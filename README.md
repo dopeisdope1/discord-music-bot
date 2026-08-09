@@ -114,9 +114,11 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     irréversible)
   - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
     (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
-    pour voir le détail sans tout afficher d'un coup. Ne montre que les
-    sections que tu peux réellement utiliser, selon tes permissions
-    (natives Discord et/ou rôles autorisés)
+    pour voir le détail sans tout afficher d'un coup. La liste "Commandes
+    autorisées" est calculée **commande par commande** pour toi précisément
+    (pas par groupe fixe) : si tu n'as accès qu'à `.helpall`/`.perms` via une
+    catégorie de `.panel` > Permissions, c'est tout ce qui s'affiche — pas le
+    reste de la modération
 
 `.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
 voir "Page Permissions" ci-dessous) ouvre un panel à **quatre pages**

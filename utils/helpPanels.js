@@ -5,11 +5,35 @@ const {
   SeparatorSpacingSize,
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
-const { getCategories } = require("./permissionCategoryStore");
+const { getCategories, ASSIGNABLE_COMMANDS } = require("./permissionCategoryStore");
+const { canUseCommand } = require("./permissions");
 
 const HELP_TIMEOUT_MS = 5 * 60_000;
+
+// Description affichée par commande assignable dans `.help` — voir
+// utils/permissionCategoryStore.js pour la liste canonique des commandes.
+function assignableCommandLine(prefix, cmd) {
+  const lines = {
+    helpall: `\`${prefix}helpall\` — Liste les commandes par catégorie de permission`,
+    perms: `\`${prefix}perms\` — Liste les rôles par catégorie de permission`,
+    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
+    renew: `\`${prefix}renew\` — Recrée le salon (vide)`,
+    hide: `\`${prefix}hide\` — Cache le salon à @everyone`,
+    unhide: `\`${prefix}unhide\` — Affiche le salon à @everyone`,
+    lock: `\`${prefix}lock\` — Bloque l'écriture pour @everyone`,
+    unlock: `\`${prefix}unlock\` — Débloque l'écriture pour @everyone`,
+    massrole: `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
+    create: `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
+    ban: `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
+    unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
+    unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
+    clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
+  };
+  return lines[cmd] || `\`${prefix}${cmd}\``;
+}
 
 /**
  * Construit un panel d'aide en Components V2, sans couleur d'accent.
@@ -83,16 +107,19 @@ function buildMusicHelpPanel(prefix = "!") {
 }
 
 /**
- * Catégories du panel d'aide "-help", filtrées selon ce que l'auteur peut
- * réellement utiliser (admin, permission Discord "Bannir des membres", ou
- * rôle autorisé via `.panel` > Permissions) — pas juste un binaire
- * admin/non-admin, puisque les rôles "mod" et "ban" peuvent être accordés
- * séparément. "Danger" (`.banall`) n'apparaît que pour un vrai administrateur
- * (isAdmin), jamais pour un simple rôle "mod" autorisé.
+ * Catégories du panel d'aide "-help", construites commande par commande via
+ * canUseCommand plutôt qu'avec des groupes fixes "mod"/"ban" — chaque
+ * commande assignable (voir ASSIGNABLE_COMMANDS) n'apparaît que si l'auteur
+ * y a réellement accès (admin, permission Discord native pour ban/unban/
+ * unbanall, ou rôle autorisé pour une catégorie de `.panel` > Permissions
+ * qui l'inclut). Deux personnes avec des catégories différentes voient donc
+ * des listes différentes. "⚠️ Danger" (`.banall`) n'apparaît que pour un
+ * vrai administrateur, jamais via une catégorie de permission (exclue de
+ * ASSIGNABLE_COMMANDS).
  * @param {string} prefix
- * @param {{ hasMod: boolean, hasBan: boolean, isAdmin: boolean }} perms
+ * @param {import('discord.js').Message} message
  */
-function buildDashCategories(prefix, { hasMod, hasBan, isAdmin }) {
+function buildDashCategories(prefix, message) {
   const categories = [
     {
       key: "public",
@@ -107,40 +134,20 @@ function buildDashCategories(prefix, { hasMod, hasBan, isAdmin }) {
     },
   ];
 
-  if (hasBan) {
+  const allowed = ASSIGNABLE_COMMANDS.filter((cmd) => canUseCommand(message, cmd));
+  if (allowed.length) {
     categories.push({
-      key: "ban",
-      label: "Bannissement",
-      names: ["ban", "unban", "unbanall"],
-      lines: [
-        `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
-        `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
-        `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
-      ],
+      key: "allowed",
+      label: "Commandes autorisées",
+      names: allowed,
+      lines: allowed.map((cmd) => assignableCommandLine(prefix, cmd)),
+      footer: allowed.includes("clear")
+        ? "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord)."
+        : undefined,
     });
   }
 
-  if (hasMod) {
-    categories.push({
-      key: "mod",
-      label: "Modération",
-      names: ["clear", "panel", "renew", "hide", "unhide", "lock", "unlock", "massrole", "create", "helpall", "perms"],
-      lines: [
-        `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
-        `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
-        `\`${prefix}renew\` — Recrée le salon (vide)`,
-        `\`${prefix}hide\`/\`${prefix}unhide\` — Cache/affiche le salon à @everyone`,
-        `\`${prefix}lock\`/\`${prefix}unlock\` — Bloque/débloque l'écriture pour @everyone`,
-        `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
-        `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
-        `\`${prefix}helpall\` — Liste les commandes par catégorie de permission`,
-        `\`${prefix}perms\` — Liste les rôles par catégorie de permission`,
-      ],
-      footer: "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord).",
-    });
-  }
-
-  if (isAdmin) {
+  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
     categories.push({
       key: "danger",
       label: "⚠️ Danger",
@@ -199,13 +206,12 @@ function buildHelpCategoryPanel(categories, key) {
  * Envoie le panel d'aide "-help" interactif : un écran d'accueil qui résume
  * chaque catégorie (nom des commandes), puis un menu déroulant pour naviguer
  * dedans sans tout afficher d'un coup — voir buildDashCategories pour le
- * filtrage par permission.
+ * filtrage par permission (commande par commande, propre à l'auteur).
  * @param {import('discord.js').Message} message
  * @param {string} prefix
- * @param {{ hasMod: boolean, hasBan: boolean, isAdmin: boolean }} perms
  */
-async function sendDashHelpPanel(message, prefix, perms) {
-  const categories = buildDashCategories(prefix, perms);
+async function sendDashHelpPanel(message, prefix) {
+  const categories = buildDashCategories(prefix, message);
   const panelMessage = await message.reply(buildHelpOverview(categories));
 
   const collector = panelMessage.createMessageComponentCollector({ time: HELP_TIMEOUT_MS });
