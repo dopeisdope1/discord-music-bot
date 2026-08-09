@@ -343,6 +343,7 @@ client.on("guildMemberAdd", (member) => {
   console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
   const botMember = member.guild.members.me;
   const channel =
+    member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
     member.guild.systemChannel ||
     member.guild.channels.cache.find(
       (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
