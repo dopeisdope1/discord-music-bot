@@ -100,21 +100,22 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
     profil), `.snipe` (dernier message supprimé du salon), `.gif <recherche>`
     (envoie un gif aléatoire via Giphy)
-  - Admin, ou rôle autorisé via `.panel` > Permissions (groupe "mod") :
-    `.clear`, `.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`,
-    `.panel`, `.create <nom> <url>` (crée un emoji sur le serveur à partir
-    d'un lien ou d'une image en pièce jointe)
-  - Admin, permission Discord **Bannir des membres**, ou rôle autorisé via
-    `.panel` > Permissions (groupe "ban") : `.ban`, `.unban`, `.unbanall`
-    (débannit tout le monde, avec confirmation)
-  - **Admin uniquement**, jamais extensible via un rôle `.panel` >
-    Permissions (trop destructeur pour être délégué) : `.banall` (bannit
-    tous les membres humains du serveur sauf toi, avec confirmation —
-    action irréversible)
+  - Admin, ou rôle autorisé pour une catégorie de permission qui inclut la
+    commande (voir "Page Permissions" ci-dessous) : `.clear`, `.renew`,
+    `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.panel`,
+    `.create <nom> <url>` (crée un emoji), `.helpall` (liste les commandes
+    par catégorie), `.perms` (liste les rôles par catégorie)
+  - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
+    système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
+    confirmation)
+  - **Admin uniquement**, jamais assignable à une catégorie de permission
+    (trop destructeur pour être délégué) : `.banall` (bannit tous les
+    membres humains du serveur sauf toi, avec confirmation — action
+    irréversible)
   - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
     (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
     pour voir le détail sans tout afficher d'un coup. Ne montre que les
-    catégories que tu peux réellement utiliser, selon tes permissions
+    sections que tu peux réellement utiliser, selon tes permissions
     (natives Discord et/ou rôles autorisés)
 
 `.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
@@ -156,18 +157,30 @@ touchés) ; un changement fait à la main donne un message par membre avec le
 nom de la personne qui a fait le changement (nécessite la permission
 **View Audit Log**, voir section 3).
 
-**Page Permissions** (réservée aux administrateurs même si un rôle "mod" a
-été autorisé — pour éviter qu'un rôle autorisé s'auto-accorde plus de droits)
-— un menu de rôles par groupe de commandes (**Commandes modération** :
-`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`/`.massrole`/`.panel`/`.create`/
-`.clear` sur un autre membre ; **Commandes ban** : `.ban`/`.unban`) où tu
-choisis les rôles autorisés à les utiliser, en plus des permissions Discord
-natives (Administrateur, Bannir des membres) qui continuent de fonctionner
-normalement — ce menu ne fait qu'ajouter des accès, jamais en retirer.
-Sélectionner aucun rôle retire les accès accordés par ce menu (les
-permissions Discord natives restent inchangées). Persisté dans
-`data/rolePerms.json` (+ salon `zinki-config`, voir plus bas), comme les
-préfixes et les logs.
+**Page Permissions** (modifiable uniquement par de vrais administrateurs,
+même si un rôle autorisé permet d'ouvrir `.panel` — pour éviter qu'un rôle
+autorisé s'auto-accorde plus de droits) — un système de **catégories
+numérotées et indépendantes** ("Permission 1", "Permission 2"... chacune sa
+propre liste de commandes et de rôles, sans héritage automatique entre
+elles, contrairement à l'exemple à deux groupes fixes "mod"/"ban" d'avant) :
+
+- Bouton "➕ Créer une catégorie" → crée une "Permission N" vide (N ne se
+  réutilise jamais, même après suppression d'une catégorie).
+- Menu déroulant "Gérer une catégorie" → ouvre le détail d'une catégorie
+  existante, avec un menu multi-sélection listant toutes les commandes
+  assignables (coche celles que tu veux inclure) et un menu de rôles
+  (`RoleSelectMenu`, choisis qui a accès), plus un bouton pour la supprimer.
+
+Les commandes assignables : `.helpall`, `.perms`, `.panel`, `.renew`,
+`.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.create`, `.ban`,
+`.unban`, `.unbanall`, `.clear` (`.banall` en est volontairement exclue).
+Ça s'ajoute aux permissions Discord natives (Administrateur toujours, plus
+Bannir des membres pour `.ban`/`.unban`/`.unbanall` spécifiquement), qui
+continuent de fonctionner normalement — les catégories ne font qu'ajouter
+des accès, jamais en retirer. `.helpall` liste les catégories avec leurs
+commandes (équivalent texte de cette page) ; `.perms` liste les catégories
+avec leurs rôles. Persisté dans `data/permissionCategories.json` (+ salon
+`zinki-config`, voir plus bas), comme les préfixes et les logs.
 
 Le bouton **"Gérer les rôles en masse"** sur la page Permissions fait la même
 chose que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les

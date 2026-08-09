@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
-const { hasBanPermission } = require("../utils/permissions");
+const { canUseCommand } = require("../utils/permissions");
 const { randomClearJoke } = require("../utils/jokes");
 const { sendLog } = require("../utils/actionLogger");
 
@@ -35,14 +35,9 @@ module.exports = {
   },
 
   async execute(interaction) {
-    if (!hasBanPermission(interaction)) {
+    if (!canUseCommand(interaction, "unban")) {
       return interaction.reply({
-        embeds: [
-          buildStatusEmbed(
-            "error",
-            "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
-          ),
-        ],
+        embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")],
         ephemeral: true,
       });
     }

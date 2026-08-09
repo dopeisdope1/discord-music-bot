@@ -1,7 +1,7 @@
 const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel, sendDashHelpPanel } = require("./helpPanels");
-const { hasModPermission, hasBanPermission } = require("./permissions");
+const { buildMusicHelpPanel, sendDashHelpPanel, sendHelpAllPanel, sendPermsPanel } = require("./helpPanels");
+const { canUseCommand, hasModPermission, hasBanPermission } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
@@ -33,15 +33,31 @@ const LOOP_KEYWORDS = {
 
 // Commandes "." accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
-// Commandes "." réservées aux administrateurs (ou à un rôle autorisé via .panel > Permissions, groupe "mod")
-const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
+// Commandes "." dont l'accès se décide au cas par cas via canUseCommand :
+// admin, permission Discord native (ban/unban/unbanall uniquement), ou rôle
+// autorisé pour une catégorie de permission qui inclut cette commande précise
+// (voir .panel > Permissions, utils/permissionCategoryStore.js — chaque
+// catégorie est indépendante, pas de groupe "mod"/"ban" figé).
+const DASH_ADMIN_COMMANDS = new Set([
+  "renew",
+  "hide",
+  "unhide",
+  "lock",
+  "unlock",
+  "massrole",
+  "panel",
+  "create",
+  "helpall",
+  "perms",
+]);
 // "banall" est gérée à part (permission vérifiée dans son propre handler) :
-// contrairement au reste de DASH_ADMIN_COMMANDS, elle n'est PAS extensible
-// via un rôle "mod" — bannir tout le serveur est trop destructeur pour être
-// délégable autrement qu'à un vrai administrateur.
+// contrairement au reste de DASH_ADMIN_COMMANDS, elle n'est PAS assignable à
+// une catégorie de permission — bannir tout le serveur est trop destructeur
+// pour être délégable autrement qu'à un vrai administrateur.
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
-// Commandes "." réservées à l'admin, à la permission "Bannir des membres", ou
-// à un rôle autorisé via .panel > Permissions (groupe "ban")
+// Commandes "." dont la permission est aussi vérifiée via canUseCommand (qui
+// accepte en plus la permission Discord native "Bannir des membres" pour
+// celles-ci spécifiquement — voir utils/permissions.js).
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -78,10 +94,10 @@ async function requirePlayerControl(client, message) {
   return false;
 }
 
-function requireModPermission(message) {
-  if (!hasModPermission(message)) {
+function requireCommandAccess(message, cmd) {
+  if (!canUseCommand(message, cmd)) {
     message.reply({
-      embeds: [buildStatusEmbed("error", "Tu dois être administrateur du serveur pour utiliser cette commande.")],
+      embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")],
     });
     return false;
   }
@@ -354,15 +370,15 @@ const handlers = {
         );
       }
     } else if (targetMemberId) {
-      // Cible quelqu'un d'autre (@membre ou ID) : réservé aux administrateurs
-      if (!hasModPermission(message)) {
+      // Cible quelqu'un d'autre (@membre ou ID) : nécessite l'accès à "clear"
+      if (!canUseCommand(message, "clear")) {
         return sendTempReply(
           channel,
           {
             embeds: [
               buildStatusEmbed(
                 "error",
-                "Tu dois être administrateur pour supprimer les messages d'un autre membre."
+                "Tu n'as pas la permission de supprimer les messages d'un autre membre."
               ),
             ],
           },
@@ -370,8 +386,8 @@ const handlers = {
         );
       }
     } else {
-      // -clear <nombre> : réservé aux administrateurs
-      if (!hasModPermission(message)) {
+      // -clear <nombre> : nécessite l'accès à "clear"
+      if (!canUseCommand(message, "clear")) {
         return sendTempReply(
           channel,
           { embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")] },
@@ -422,6 +438,14 @@ const handlers = {
 
   async panel(client, message) {
     await handlePrefixPanel(message);
+  },
+
+  async helpall(client, message) {
+    await sendHelpAllPanel(message);
+  },
+
+  async perms(client, message) {
+    await sendPermsPanel(message);
   },
 
   async ban(client, message) {
@@ -932,20 +956,11 @@ async function handleTextCommand(client, message) {
       return handlers.clear(client, message, args);
     }
     if (BAN_COMMANDS.has(cmd)) {
-      if (!hasBanPermission(message)) {
-        return message.reply({
-          embeds: [
-            buildStatusEmbed(
-              "error",
-              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
-            ),
-          ],
-        });
-      }
+      if (!requireCommandAccess(message, cmd)) return;
       return handlers[cmd](client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;
-    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireModPermission(message)) return;
+    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
     return handlers[cmd](client, message, args);
   }
 

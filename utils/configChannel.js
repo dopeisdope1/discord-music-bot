@@ -1,7 +1,10 @@
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { getRawGuildData: getRawPrefixes, hydrateFromRemote: hydratePrefixes } = require("./prefixStore");
 const { getRawGuildData: getRawLogChannels, hydrateFromRemote: hydrateLogChannels } = require("./logStore");
-const { getRawGuildData: getRawRolePerms, hydrateFromRemote: hydrateRolePerms } = require("./rolePermStore");
+const {
+  getRawGuildData: getRawPermissionCategories,
+  hydrateFromRemote: hydratePermissionCategories,
+} = require("./permissionCategoryStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, salons de logs) y disparaît au
@@ -57,7 +60,7 @@ async function loadGuildConfig(guild) {
     const data = JSON.parse(raw);
     hydratePrefixes(guild.id, data.prefixes);
     hydrateLogChannels(guild.id, data.logChannels);
-    hydrateRolePerms(guild.id, data.rolePerms);
+    hydratePermissionCategories(guild.id, data.permissionCategories);
     console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
   } catch (err) {
     console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
@@ -74,7 +77,7 @@ async function saveGuildConfig(guild) {
   const data = {
     prefixes: getRawPrefixes(guild.id),
     logChannels: getRawLogChannels(guild.id),
-    rolePerms: getRawRolePerms(guild.id),
+    permissionCategories: getRawPermissionCategories(guild.id),
   };
   const content = "```json\n" + JSON.stringify(data, null, 2) + "\n```";
 

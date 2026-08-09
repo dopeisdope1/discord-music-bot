@@ -11,13 +11,22 @@ const {
   TextInputStyle,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   ChannelType,
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
-const { getAllowedRoles, setAllowedRoles, PERMISSION_GROUPS } = require("./rolePermStore");
+const {
+  getCategories,
+  getCategory,
+  createCategory,
+  deleteCategory,
+  setCategoryCommands,
+  setCategoryRoles,
+  ASSIGNABLE_COMMANDS,
+} = require("./permissionCategoryStore");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
@@ -113,33 +122,44 @@ function buildLogsPage(guildId) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-function buildPermissionsPage(guildId, guild) {
+function buildPermissionsPage(guild, statusText) {
+  const categories = getCategories(guild.id);
   const container = new ContainerBuilder();
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Permissions\n> Autorise des rôles en plus des permissions Discord natives (Administrateur, " +
-        "Bannir des membres) à utiliser certaines commandes — sans jamais les remplacer. Réservé aux " +
-        "administrateurs du serveur."
+      "## Permissions\n> Crée des catégories de permission (chacune indépendante des autres, sans " +
+        "héritage automatique), et choisis-y les commandes et les rôles autorisés — en plus des " +
+        "permissions Discord natives (Administrateur, Bannir des membres pour `.ban`/`.unban`/`.unbanall`), " +
+        "qui continuent de fonctionner normalement. Listées aussi par `.helpall` (commandes) et `.perms` " +
+        "(rôles).\n\n" +
+        (categories.length
+          ? categories
+              .map(
+                (c) =>
+                  `**Permission ${c.id}**\n↳ ${c.commands.length ? c.commands.join(", ") : "*aucune commande*"}`
+              )
+              .join("\n")
+          : "*Aucune catégorie créée pour l'instant.*")
     )
   );
-
-  for (const group of Object.values(PERMISSION_GROUPS)) {
-    const allowed = getAllowedRoles(guildId, group.key).filter((id) => guild.roles.cache.has(id));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `**${group.label}** (${group.description})\n> ${
-          allowed.length ? allowed.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle supplémentaire*"
-        }`
-      )
-    );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("perm_category_create").setLabel("➕ Créer une catégorie").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  if (categories.length) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder()
-          .setCustomId(`permrole:${group.key}`)
-          .setPlaceholder(`${group.label} — choisir les rôles autorisés`)
-          .setMinValues(0)
-          .setMaxValues(MAX_ROLES_PER_GROUP)
-          .setDefaultRoles(allowed)
+        new StringSelectMenuBuilder()
+          .setCustomId("perm_category_select")
+          .setPlaceholder("Gérer une catégorie")
+          .addOptions(categories.map((c) => ({ label: `Permission ${c.id}`, value: String(c.id) })))
       )
     );
   }
@@ -152,6 +172,64 @@ function buildPermissionsPage(guildId, guild) {
   );
   container.addActionRowComponents(buildNavRow("permissions"));
 
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildCategoryDetailPanel(guild, id, statusText) {
+  const category = getCategory(guild.id, id);
+  const container = new ContainerBuilder();
+
+  if (!category) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("Cette catégorie n'existe déjà plus."));
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("perm_category_back").setLabel("Retour").setStyle(ButtonStyle.Secondary)
+      )
+    );
+    return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  }
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Permission ${category.id}\n> Choisis les commandes et les rôles associés à cette catégorie.`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`perm_category_commands:${category.id}`)
+        .setPlaceholder("Commandes de cette catégorie")
+        .setMinValues(0)
+        .setMaxValues(ASSIGNABLE_COMMANDS.length)
+        .addOptions(
+          ASSIGNABLE_COMMANDS.map((cmd) => ({ label: cmd, value: cmd, default: category.commands.includes(cmd) }))
+        )
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId(`perm_category_roles:${category.id}`)
+        .setPlaceholder("Rôles ayant cette permission")
+        .setMinValues(0)
+        .setMaxValues(MAX_ROLES_PER_GROUP)
+        .setDefaultRoles(category.roles.filter((roleId) => guild.roles.cache.has(roleId)))
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`perm_category_delete:${category.id}`)
+        .setLabel("🗑️ Supprimer cette catégorie")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("perm_category_back").setLabel("Retour").setStyle(ButtonStyle.Secondary)
+    )
+  );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
@@ -328,7 +406,7 @@ function buildRoleColorPanel(name) {
 
 function buildPanel(page, guild, statusText) {
   if (page === "logs") return buildLogsPage(guild.id);
-  if (page === "permissions") return buildPermissionsPage(guild.id, guild);
+  if (page === "permissions") return buildPermissionsPage(guild, statusText);
   if (page === "roles") return buildRolesPage(guild, statusText);
   return buildPrefixesPage(guild.id);
 }
@@ -396,8 +474,10 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
  * Ouvre le panel d'administration (`.panel`, réservé aux administrateurs — la
  * vérification se fait avant l'appel de cette fonction), organisé en quatre
  * pages navigables via les boutons du bas : Préfixes (musique/membres),
- * Logs (salon par catégorie), Permissions (rôles autorisés en plus des
- * permissions Discord natives, par groupe de commandes) et Rôles (créer/
+ * Logs (salon par catégorie), Permissions (catégories numérotées
+ * indépendantes — "Permission 1", "Permission 2"... — chacune avec ses
+ * propres commandes et ses propres rôles autorisés, en plus des permissions
+ * Discord natives ; voir utils/permissionCategoryStore.js) et Rôles (créer/
  * supprimer un rôle du serveur avec confirmation avant suppression, et
  * réorganiser sa position dans la hiérarchie via deux boutons monter/
  * descendre). Un bouton "Gérer les rôles en masse" sur la page Permissions
@@ -437,18 +517,55 @@ async function handlePrefixPanel(message) {
         return;
       }
 
-      if (i.isRoleSelectMenu() && i.customId.startsWith("permrole:")) {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          await i.reply({
-            content: "Seul un administrateur du serveur peut modifier les permissions de rôle.",
-            ephemeral: true,
-          });
-          return;
-        }
-        const group = i.customId.split(":")[1];
-        setAllowedRoles(guildId, group, i.values);
+      if (i.customId.startsWith("perm_category_") && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        await i.reply({
+          content: "Seul un administrateur du serveur peut modifier les permissions.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (i.isButton() && i.customId === "perm_category_create") {
+        const id = createCategory(guildId);
         saveGuildConfig(i.guild);
+        currentPage = "permissions";
+        await i.update(buildPanel(currentPage, guild, `Catégorie **Permission ${id}** créée.`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "perm_category_select") {
+        await i.update(buildCategoryDetailPanel(guild, Number(i.values[0])));
+        return;
+      }
+
+      if (i.isButton() && i.customId === "perm_category_back") {
+        currentPage = "permissions";
         await i.update(buildPanel(currentPage, guild));
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("perm_category_delete:")) {
+        const id = Number(i.customId.split(":")[1]);
+        deleteCategory(guildId, id);
+        saveGuildConfig(i.guild);
+        currentPage = "permissions";
+        await i.update(buildPanel(currentPage, guild, `Catégorie **Permission ${id}** supprimée.`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId.startsWith("perm_category_commands:")) {
+        const id = Number(i.customId.split(":")[1]);
+        setCategoryCommands(guildId, id, i.values);
+        saveGuildConfig(i.guild);
+        await i.update(buildCategoryDetailPanel(guild, id));
+        return;
+      }
+
+      if (i.isRoleSelectMenu() && i.customId.startsWith("perm_category_roles:")) {
+        const id = Number(i.customId.split(":")[1]);
+        setCategoryRoles(guildId, id, i.values);
+        saveGuildConfig(i.guild);
+        await i.update(buildCategoryDetailPanel(guild, id));
         return;
       }
 

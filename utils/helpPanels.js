@@ -7,6 +7,7 @@ const {
   StringSelectMenuBuilder,
   MessageFlags,
 } = require("discord.js");
+const { getCategories } = require("./permissionCategoryStore");
 
 const HELP_TIMEOUT_MS = 5 * 60_000;
 
@@ -123,7 +124,7 @@ function buildDashCategories(prefix, { hasMod, hasBan, isAdmin }) {
     categories.push({
       key: "mod",
       label: "Modération",
-      names: ["clear", "panel", "renew", "hide", "unhide", "lock", "unlock", "massrole", "create"],
+      names: ["clear", "panel", "renew", "hide", "unhide", "lock", "unlock", "massrole", "create", "helpall", "perms"],
       lines: [
         `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
         `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
@@ -132,6 +133,8 @@ function buildDashCategories(prefix, { hasMod, hasBan, isAdmin }) {
         `\`${prefix}lock\`/\`${prefix}unlock\` — Bloque/débloque l'écriture pour @everyone`,
         `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
         `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
+        `\`${prefix}helpall\` — Liste les commandes par catégorie de permission`,
+        `\`${prefix}perms\` — Liste les rôles par catégorie de permission`,
       ],
       footer: "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord).",
     });
@@ -225,4 +228,72 @@ async function sendDashHelpPanel(message, prefix, perms) {
   });
 }
 
-module.exports = { buildMusicHelpPanel, sendDashHelpPanel, buildHelpPanel };
+/**
+ * `.helpall` : liste chaque catégorie de permission (voir `.panel` >
+ * Permissions, utils/permissionCategoryStore.js) avec les commandes qui lui
+ * sont associées — un aperçu de "qui peut faire quoi", sans les rôles
+ * (voir `.perms` pour ça).
+ * @param {import('discord.js').Message} message
+ */
+async function sendHelpAllPanel(message) {
+  const categories = getCategories(message.guildId);
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Permissions liées aux commandes\n> Voici les différentes permissions ainsi que les commandes accessibles."
+    )
+  );
+
+  if (categories.length === 0) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("*Aucune catégorie configurée — voir `.panel` > Permissions.*")
+    );
+  }
+
+  for (const cat of categories) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Permission ${cat.id}**\n↳ ${cat.commands.length ? cat.commands.join(", ") : "*aucune commande*"}`
+      )
+    );
+  }
+
+  await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
+}
+
+/**
+ * `.perms` : liste chaque catégorie de permission avec les rôles qui y sont
+ * autorisés — le pendant "rôles" de `.helpall` (qui liste les commandes).
+ * @param {import('discord.js').Message} message
+ */
+async function sendPermsPanel(message) {
+  const categories = getCategories(message.guildId);
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Permissions\n> Voici les différentes permissions ainsi que les rôles associés."
+    )
+  );
+
+  if (categories.length === 0) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("*Aucune catégorie configurée — voir `.panel` > Permissions.*")
+    );
+  }
+
+  for (const cat of categories) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Permission ${cat.id}**\n↳ ${cat.roles.length ? cat.roles.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*"}`
+      )
+    );
+  }
+
+  await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
+}
+
+module.exports = { buildMusicHelpPanel, sendDashHelpPanel, sendHelpAllPanel, sendPermsPanel, buildHelpPanel };
