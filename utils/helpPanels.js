@@ -82,12 +82,10 @@ function memberDashSection(prefix) {
   return {
     heading: "Membres",
     lines: [
-      `\`${prefix}pic [@membre]\` — Affiche la photo de profil (la tienne par défaut)`,
-      `\`${prefix}avatar [@membre]\` — Alias de ${prefix}pic`,
-      `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
-      `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
-      `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
-      `\`${prefix}gif <recherche>\` — Envoie un gif aléatoire correspondant à la recherche`,
+      `\`${prefix}pic\`/\`${prefix}avatar [@membre]\` — Photo de profil (toi par défaut)`,
+      `\`${prefix}snipe\` — Dernier message supprimé du salon`,
+      `\`${prefix}clear me\` (ou \`uo clear\`) — Supprime tes messages récents (5×/25 min)`,
+      `\`${prefix}gif <recherche>\` — Envoie un gif`,
     ],
   };
 }
@@ -96,12 +94,11 @@ function memberDashSection(prefix) {
 // membres", ou un rôle autorisé via `.panel` > Permissions (groupe "ban").
 function banDashSection(prefix) {
   return {
-    heading: "Modération — bannissement",
+    heading: "Bannissement",
     lines: [
-      `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre`,
-      `\`${prefix}unban [id]\` — Ouvre le panel **Zinki Assassini** pour débannir un membre (menu déroulant si l'ID n'est pas donné)`,
-      `\`/ban\` / \`/unban\` — Mêmes permissions, mais avec recherche en direct (tape et ça filtre, sans liste avant de taper)`,
-      `\`${prefix}unbanall\` — Débannit **tous** les membres bannis du serveur (confirmation demandée)`,
+      `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
+      `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
+      `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
     ],
   };
 }
@@ -110,10 +107,8 @@ function banDashSection(prefix) {
 // via un rôle `.panel` > Permissions — trop destructrice).
 function dangerDashSection(prefix) {
   return {
-    heading: "⚠️ Modération — danger",
-    lines: [
-      `\`${prefix}banall\` — Bannit **tous** les membres humains du serveur, sauf toi (confirmation demandée, action irréversible)`,
-    ],
+    heading: "⚠️ Danger",
+    lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
   };
 }
 
@@ -122,34 +117,15 @@ function dangerDashSection(prefix) {
 function modDashSections(prefix) {
   return [
     {
-      heading: "Messages",
+      heading: "Modération",
       lines: [
-        `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
-        `\`${prefix}clear @membre\` ou \`${prefix}clear <id>\` — Supprime les messages récents d'un membre`,
-      ],
-    },
-    {
-      heading: "Réglages",
-      lines: [
-        `\`${prefix}panel\` — Panel à 4 pages : Préfixes du bot, salons de logs (modération/salon/rôles), Permissions (autoriser des rôles à utiliser ces commandes, + gérer les rôles en masse), et Rôles (créer/supprimer un rôle du serveur)`,
-      ],
-    },
-    {
-      heading: "Salon",
-      lines: [
-        `\`${prefix}renew\` — Recrée le salon à l'identique (vide)`,
-        `\`${prefix}hide\` — Cache le salon à @everyone`,
-        `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
-        `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
-        `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
-        `\`${prefix}massrole add|remove @role\`/\`<id>\` — Ajoute/retire un rôle à tous les membres (utilise l'ID pour ne pas ping tout le rôle)`,
-      ],
-    },
-    {
-      heading: "Emoji",
-      lines: [
-        `\`${prefix}create <nom> <url>\` — Crée un emoji sur le serveur à partir d'un lien d'image`,
-        `\`${prefix}create <nom>\` (avec une image en pièce jointe) — Idem, à partir du fichier envoyé`,
+        `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
+        `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
+        `\`${prefix}renew\` — Recrée le salon (vide)`,
+        `\`${prefix}hide\`/\`${prefix}unhide\` — Cache/affiche le salon à @everyone`,
+        `\`${prefix}lock\`/\`${prefix}unlock\` — Bloque/débloque l'écriture pour @everyone`,
+        `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
+        `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
       ],
     },
   ];

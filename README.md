@@ -244,7 +244,10 @@ Réservés aux administrateurs (ou aux membres avec la permission Discord
   lettre en direct.
 - `.unban` (texte, sans argument) — panel **Zinki Assassini** avec un menu
   déroulant natif Discord affiché directement (liste des membres
-  actuellement bannis, généralement courte) ; taper un pseudo filtre la
+  actuellement bannis, généralement courte), chaque entrée précisant qui a
+  fait le bannissement (lu depuis les logs d'audit Discord — nécessite la
+  permission **View Audit Log**, voir section 3 ; absent si le ban est trop
+  ancien pour figurer encore dans les logs) ; taper un pseudo filtre la
   liste en direct, mais Discord affiche quand même une liste par défaut
   avant de taper quoi que ce soit — comportement du client, pas du bot,
   impossible à masquer via l'API.

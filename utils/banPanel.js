@@ -10,6 +10,7 @@ const {
   TextInputStyle,
   MessageFlags,
   PermissionFlagsBits,
+  AuditLogEvent,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { randomClearJoke } = require("./jokes");
@@ -293,6 +294,30 @@ async function unbanTarget(interaction, message, targetId, target) {
 }
 
 /**
+ * Cherche, pour chaque banni affiché, qui a effectué le bannissement (les
+ * bans Discord n'incluent pas cette info directement — seuls les logs
+ * d'audit l'ont). Best-effort : rien de bloquant si la permission **View
+ * Audit Log** manque, ou si le ban est trop ancien pour figurer encore dans
+ * les logs (rétention limitée côté Discord).
+ * @param {import('discord.js').Guild} guild
+ * @returns {Promise<Map<string, import('discord.js').User>>} userId (banni) -> exécuteur
+ */
+async function fetchBanExecutors(guild) {
+  if (!guild.members.me.permissions.has(PermissionFlagsBits.ViewAuditLog)) return new Map();
+
+  const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 100 }).catch(() => null);
+  if (!logs) return new Map();
+
+  const executors = new Map();
+  for (const entry of logs.entries.values()) {
+    if (entry.target?.id && !executors.has(entry.target.id)) {
+      executors.set(entry.target.id, entry.executor);
+    }
+  }
+  return executors;
+}
+
+/**
  * Ouvre un panel listant les membres actuellement bannis, pour en débannir un
  * (`.unban` sans argument, réservé aux administrateurs — la vérification se
  * fait avant l'appel de cette fonction). Menu déroulant natif Discord
@@ -314,17 +339,22 @@ async function handleUnbanPanel(message) {
   }
 
   const entries = [...bans.values()].slice(0, 25);
+  const executors = await fetchBanExecutors(message.guild);
   const panelMessage = await message.reply(
     buildResultsPanel(
       `## Zinki Assassini\n> Choisis qui débannir${
         bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`.unban <id>\` pour les autres)` : ""
       } (tape un pseudo pour filtrer).`,
       UNBAN_SELECT,
-      entries.map((ban) => ({
-        label: ban.user.tag.slice(0, 100),
-        value: ban.user.id,
-        description: ban.reason ? ban.reason.slice(0, 100) : undefined,
-      }))
+      entries.map((ban) => {
+        const executor = executors.get(ban.user.id);
+        const parts = [executor ? `Banni par ${executor.tag}` : null, ban.reason].filter(Boolean);
+        return {
+          label: ban.user.tag.slice(0, 100),
+          value: ban.user.id,
+          description: parts.length ? parts.join(" — ").slice(0, 100) : undefined,
+        };
+      })
     )
   );
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
