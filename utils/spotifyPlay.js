@@ -14,6 +14,7 @@ const SELECTION_TIMEOUT_MS = 30_000;
  * nœuds Lavalink publics n'ont pas forcément le plugin Spotify).
  * @param {object} params
  * @param {import('kazagumo').Kazagumo} params.kazagumo
+ * @param {import('discord.js').Client} params.client
  * @param {import('discord.js').VoiceBasedChannel} params.voiceChannel
  * @param {import('discord.js').TextBasedChannel} params.textChannel
  * @param {import('discord.js').GuildMember} params.member
@@ -22,7 +23,7 @@ const SELECTION_TIMEOUT_MS = 30_000;
  * @param {(payload: object) => Promise<import('discord.js').Message>} params.send
  *   Envoie le message initial et renvoie l'objet Message créé.
  */
-async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, query, requesterId, send }) {
+async function handleSpotifyPlay({ kazagumo, client, voiceChannel, textChannel, member, query, requesterId, send }) {
   let resolved;
   try {
     resolved = await resolveSpotifyQuery(query);
@@ -47,6 +48,7 @@ async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, 
         member,
         query: `${track.name} ${trackArtists(track)}`,
         engine: "youtube",
+        client,
       });
       if (!outcome) {
         await textChannel.send({

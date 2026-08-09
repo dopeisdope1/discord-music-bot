@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
+const { requirePlayerControlInteraction } = require("../utils/playerControl");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,6 +20,7 @@ module.exports = {
     if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
+    if (!(await requirePlayerControlInteraction(interaction))) return;
     const niveau = interaction.options.getInteger("niveau");
     player.setVolume(niveau);
     await interaction.reply({

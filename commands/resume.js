@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
 const { setPlayerPaused } = require("../utils/musicPlayer");
+const { requirePlayerControlInteraction } = require("../utils/playerControl");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,6 +13,7 @@ module.exports = {
     if (!player) {
       return interaction.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")], ephemeral: true });
     }
+    if (!(await requirePlayerControlInteraction(interaction))) return;
     setPlayerPaused(player, false);
     await interaction.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
   },

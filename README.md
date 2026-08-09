@@ -161,6 +161,20 @@ Une fois un titre choisi, le bot le recherche sur YouTube via Lavalink pour la
 lecture réelle (Spotify ne fournit pas l'audio brut, et les nœuds Lavalink publics
 n'ont pas toujours le plugin nécessaire pour lire les liens Spotify directement).
 
+### Qui peut contrôler la musique ("DJ")
+
+La première personne qui fait démarrer la musique sur un serveur (`!play`,
+`!join`, ou le bouton "Écouter avec lui") devient la seule autorisée à
+utiliser `pause`/`resume`/`skip`/`stop`/`leave`/`volume`/`loop` (texte, slash,
+ou boutons du panel) tant que le player existe. Si quelqu'un d'autre essaie,
+le bot envoie automatiquement un message à cette personne : "**{pseudo}** veut
+gérer le bot avec toi, accepter ?" avec des boutons Accepter/Refuser ; si elle
+accepte, la personne qui a demandé peut ensuite utiliser ces commandes elle
+aussi, jusqu'à ce que la musique soit arrêtée (`stop`/`leave`/déconnexion
+automatique), après quoi la prochaine personne à relancer la musique redevient
+la seule autorisée. Ajouter des titres à la file (`play` sur un player déjà en
+cours) reste ouvert à tout le monde.
+
 ## 7bis. `!join [@membre]` — écouter le Spotify de quelqu'un en direct
 
 Commande textuelle uniquement (pas de `/join`).
@@ -183,10 +197,12 @@ la même personne (en lisant sa présence Spotify au moment du clic, pas une val
 ## 7ter. `.ban` / `.unban` — modération
 
 Réservés aux administrateurs (ou aux membres avec la permission Discord
-**Bannir des membres**). `.ban` ouvre le panel **Zinki Assassini** (menu
-déroulant natif Discord pour choisir qui bannir) ; `.unban` ouvre un panel
-listant les membres actuellement bannis, ou débannit directement si tu lui
-donnes un ID (`.unban <id>`).
+**Bannir des membres**). `.ban` ouvre le panel **Zinki Assassini** : pas de
+liste de membres à parcourir, un bouton "Rechercher un membre" ouvre une
+recherche par pseudo/nom/ID (via l'API de recherche de Discord), et ne
+propose un choix que s'il y a plusieurs résultats. `.unban` fonctionne pareil
+en cherchant parmi les membres actuellement bannis, ou débannit directement si
+tu lui donnes un ID (`.unban <id>`).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra

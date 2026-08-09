@@ -2,7 +2,11 @@ const {
   ContainerBuilder,
   TextDisplayBuilder,
   ActionRowBuilder,
-  UserSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   StringSelectMenuBuilder,
   MessageFlags,
   PermissionFlagsBits,
@@ -40,22 +44,114 @@ async function safeErrorReply(i) {
   }
 }
 
-function buildZinkiAssassiniPanel() {
+function buildSearchPanel(title, intro, buttonCustomId) {
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("## Zinki Assassini\n> Choisis qui bannir du serveur.")
-  );
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n> ${intro}`));
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder().setCustomId("zinki_assassini_select").setPlaceholder("Choisir un membre à bannir")
+      new ButtonBuilder().setCustomId(buttonCustomId).setLabel("Rechercher un membre").setStyle(ButtonStyle.Secondary)
     )
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
+function buildSearchModal(customId, title) {
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(title)
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("query")
+          .setLabel("Pseudo, nom, ou ID")
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(1)
+          .setMaxLength(100)
+          .setRequired(true)
+      )
+    );
+}
+
+function buildPickPanel(title, candidates, selectCustomId) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## ${title}\n> Plusieurs résultats correspondent, choisis :`)
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(selectCustomId)
+        .setPlaceholder("Choisir")
+        .addOptions(
+          candidates.map((c) => ({
+            label: c.label.slice(0, 100),
+            value: c.value,
+            description: c.description ? c.description.slice(0, 100) : undefined,
+          }))
+        )
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+async function banTarget(interaction, message, targetId) {
+  if (targetId === message.author.id) {
+    await interaction.update(buildStatusPanel("Tu ne peux pas te bannir toi-même."));
+    return;
+  }
+  if (targetId === message.client.user.id) {
+    await interaction.update(buildStatusPanel("Je ne vais pas me bannir moi-même."));
+    return;
+  }
+
+  // Accuse réception tout de suite (dans les 3s imposées par Discord) : le
+  // fetch du membre + le ban lui-même sont de vraies requêtes réseau qui
+  // peuvent facilement dépasser ce délai, d'où le "n'a pas répondu à temps".
+  await interaction.deferUpdate();
+
+  const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
+  if (targetMember && !targetMember.bannable) {
+    await interaction.editReply(
+      buildStatusPanel("Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")
+    );
+    return;
+  }
+
+  const banResult = await message.guild.members
+    .ban(targetId, { reason: `Zinki Assassini — banni par ${message.author.tag}` })
+    .catch((err) => {
+      console.error(err);
+      return null;
+    });
+
+  if (!banResult) {
+    await interaction.editReply(
+      buildStatusPanel(
+        `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+      )
+    );
+    return;
+  }
+
+  await interaction.editReply(
+    buildStatusPanel(`${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`)
+  );
+  sendLog(message.client, message.guild.id, "moderation", {
+    title: "Ban",
+    description: "Membre banni via Zinki Assassini.",
+    actor: message.author,
+    fields: [
+      { name: "Cible", value: targetMember ? `${targetMember.user.tag} (${targetId})` : `<@${targetId}>`, inline: true },
+    ],
+  });
+}
+
 /**
  * Ouvre le panel "Zinki Assassini" (`.ban`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction).
+ * vérification se fait avant l'appel de cette fonction). Pas de liste de
+ * membres à parcourir : un bouton ouvre une recherche (pseudo/nom/ID) via
+ * l'API de recherche de membres Discord, et ne propose un choix que s'il y a
+ * plusieurs résultats.
  * @param {import('discord.js').Message} message
  */
 async function handleBanPanel(message) {
@@ -64,8 +160,11 @@ async function handleBanPanel(message) {
     return;
   }
 
-  const panelMessage = await message.reply(buildZinkiAssassiniPanel());
-  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
+  const panelMessage = await message.reply(
+    buildSearchPanel("Zinki Assassini", "Clique pour rechercher qui bannir (pseudo, nom ou ID).", "zinki_search_open")
+  );
+
+  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
 
   collector.on("collect", async (i) => {
     try {
@@ -74,60 +173,49 @@ async function handleBanPanel(message) {
         return;
       }
 
-      const targetId = i.values[0];
+      if (i.isButton() && i.customId === "zinki_search_open") {
+        await i.showModal(buildSearchModal("zinki_search_modal", "Rechercher un membre à bannir"));
 
-      if (targetId === message.author.id) {
-        await i.update(buildStatusPanel("Tu ne peux pas te bannir toi-même."));
+        let submitted;
+        try {
+          submitted = await i.awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === "zinki_search_modal" && m.user.id === message.author.id,
+          });
+        } catch {
+          return; // pas de soumission dans les temps
+        }
+
+        const query = submitted.fields.getTextInputValue("query").trim();
+
+        if (/^\d{15,}$/.test(query)) {
+          await banTarget(submitted, message, query);
+          return;
+        }
+
+        const results = await message.guild.members.search({ query, limit: 25 }).catch(() => null);
+        if (!results || results.size === 0) {
+          await submitted.reply({ embeds: [buildStatusEmbed("error", `Aucun membre trouvé pour "${query}".`)], ephemeral: true });
+          return;
+        }
+        if (results.size === 1) {
+          await banTarget(submitted, message, results.first().id);
+          return;
+        }
+
+        const candidates = [...results.values()].map((m) => ({
+          label: m.user.tag,
+          value: m.id,
+          description: m.nickname ? `Surnom : ${m.nickname}` : undefined,
+        }));
+        await submitted.update(buildPickPanel("Zinki Assassini", candidates, "zinki_pick"));
         return;
       }
 
-      if (targetId === message.client.user.id) {
-        await i.update(buildStatusPanel("Je ne vais pas me bannir moi-même."));
+      if (i.isStringSelectMenu() && i.customId === "zinki_pick") {
+        await banTarget(i, message, i.values[0]);
         return;
       }
-
-      // Accuse réception tout de suite (dans les 3s imposées par Discord) : le
-      // fetch du membre + le ban lui-même sont de vraies requêtes réseau qui
-      // peuvent facilement dépasser ce délai, d'où le "n'a pas répondu à temps".
-      await i.deferUpdate();
-
-      const targetMember = await message.guild.members.fetch(targetId).catch(() => null);
-      if (targetMember && !targetMember.bannable) {
-        await i.editReply(
-          buildStatusPanel("Je ne peux pas bannir ce membre (rôle trop élevé ou permissions insuffisantes).")
-        );
-        return;
-      }
-
-      const banResult = await message.guild.members
-        .ban(targetId, { reason: `Zinki Assassini — banni par ${message.author.tag}` })
-        .catch((err) => {
-          console.error(err);
-          return null;
-        });
-
-      if (!banResult) {
-        await i.editReply(
-          buildStatusPanel(
-            `Impossible de bannir ${targetMember ? targetMember.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
-          )
-        );
-        return;
-      }
-
-      await i.editReply(
-        buildStatusPanel(
-          `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
-        )
-      );
-      sendLog(message.client, message.guild.id, "moderation", {
-        title: "Ban",
-        description: "Membre banni via Zinki Assassini.",
-        actor: message.author,
-        fields: [
-          { name: "Cible", value: targetMember ? `${targetMember.user.tag} (${targetId})` : `<@${targetId}>`, inline: true },
-        ],
-      });
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel Zinki Assassini :", err);
       await safeErrorReply(i);
@@ -177,10 +265,41 @@ async function unbanById(message, userId) {
   });
 }
 
+async function unbanTarget(interaction, message, targetId, target) {
+  await interaction.deferUpdate();
+
+  const result = await message.guild.bans
+    .remove(targetId, `Débanni par ${message.author.tag}`)
+    .catch((err) => {
+      console.error(err);
+      return null;
+    });
+
+  if (!result) {
+    await interaction.editReply(
+      buildStatusPanel(
+        `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
+      )
+    );
+    return;
+  }
+
+  await interaction.editReply(
+    buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
+  );
+  sendLog(message.client, message.guild.id, "moderation", {
+    title: "Unban",
+    description: "Membre débanni depuis la recherche.",
+    actor: message.author,
+    fields: [{ name: "Cible", value: target ? `${target.user.tag} (${targetId})` : `<@${targetId}>`, inline: true }],
+  });
+}
+
 /**
- * Ouvre un panel listant les membres actuellement bannis, pour en débannir un
- * (`.unban` sans argument, réservé aux administrateurs — la vérification se
- * fait avant l'appel de cette fonction).
+ * Ouvre un panel pour débannir un membre par recherche (`.unban` sans
+ * argument, réservé aux administrateurs — la vérification se fait avant
+ * l'appel de cette fonction). Recherche parmi les membres actuellement
+ * bannis (pseudo/nom/ID) plutôt que d'en afficher la liste complète.
  * @param {import('discord.js').Message} message
  */
 async function handleUnbanPanel(message) {
@@ -195,32 +314,15 @@ async function handleUnbanPanel(message) {
     return;
   }
 
-  const entries = [...bans.values()].slice(0, 25);
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `## Débannir un membre\n> Choisis qui débannir${
-        bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`.unban <id>\` pour les autres)` : ""
-      }.`
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("unban_select")
-        .setPlaceholder("Choisir un membre à débannir")
-        .addOptions(
-          entries.map((ban) => ({
-            label: ban.user.tag.slice(0, 100),
-            value: ban.user.id,
-            description: ban.reason ? ban.reason.slice(0, 100) : undefined,
-          }))
-        )
+  const panelMessage = await message.reply(
+    buildSearchPanel(
+      "Débannir un membre",
+      `Clique pour rechercher parmi les **${bans.size}** membre(s) banni(s) (pseudo, nom ou ID).`,
+      "unban_search_open"
     )
   );
 
-  const panelMessage = await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
-  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
+  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
 
   collector.on("collect", async (i) => {
     try {
@@ -229,36 +331,52 @@ async function handleUnbanPanel(message) {
         return;
       }
 
-      await i.deferUpdate();
+      if (i.isButton() && i.customId === "unban_search_open") {
+        await i.showModal(buildSearchModal("unban_search_modal", "Rechercher un membre banni"));
 
-      const targetId = i.values[0];
-      const target = entries.find((ban) => ban.user.id === targetId);
+        let submitted;
+        try {
+          submitted = await i.awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === "unban_search_modal" && m.user.id === message.author.id,
+          });
+        } catch {
+          return;
+        }
 
-      const result = await message.guild.bans
-        .remove(targetId, `Débanni par ${message.author.tag}`)
-        .catch((err) => {
-          console.error(err);
-          return null;
-        });
+        const query = submitted.fields.getTextInputValue("query").trim().toLowerCase();
+        const matches = /^\d{15,}$/.test(query)
+          ? [...bans.values()].filter((b) => b.user.id === query)
+          : [...bans.values()].filter(
+              (b) => b.user.tag.toLowerCase().includes(query) || b.user.username.toLowerCase().includes(query)
+            );
 
-      if (!result) {
-        await i.editReply(
-          buildStatusPanel(
-            `Impossible de débannir ${target ? target.user.tag : `<@${targetId}>`} (erreur Discord — voir les logs).`
-          )
-        );
+        if (matches.length === 0) {
+          await submitted.reply({
+            embeds: [buildStatusEmbed("error", `Aucun membre banni trouvé pour "${query}".`)],
+            ephemeral: true,
+          });
+          return;
+        }
+        if (matches.length === 1) {
+          await unbanTarget(submitted, message, matches[0].user.id, matches[0]);
+          return;
+        }
+
+        const candidates = matches.slice(0, 25).map((b) => ({
+          label: b.user.tag,
+          value: b.user.id,
+          description: b.reason || undefined,
+        }));
+        await submitted.update(buildPickPanel("Débannir un membre", candidates, "unban_pick"));
         return;
       }
 
-      await i.editReply(
-        buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
-      );
-      sendLog(message.client, message.guild.id, "moderation", {
-        title: "Unban",
-        description: "Membre débanni depuis la liste des bannis.",
-        actor: message.author,
-        fields: [{ name: "Cible", value: target ? `${target.user.tag} (${targetId})` : `<@${targetId}>`, inline: true }],
-      });
+      if (i.isStringSelectMenu() && i.customId === "unban_pick") {
+        const target = bans.get(i.values[0]);
+        await unbanTarget(i, message, i.values[0], target);
+        return;
+      }
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel de débannissement :", err);
       await safeErrorReply(i);

@@ -15,6 +15,7 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
 const { searchGif } = require("./gifSearch");
+const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -48,6 +49,27 @@ function getPlayerOrReply(client, message) {
     return null;
   }
   return player;
+}
+
+/**
+ * Vérifie que l'auteur du message peut utiliser une commande de contrôle
+ * (pause/skip/stop/volume/loop/leave) : seule la personne qui a amené le bot
+ * en vocal (ou quelqu'un qu'elle a autorisé) le peut — voir utils/playerControl.js.
+ * Si ce n'est pas le cas, envoie une demande d'autorisation au propriétaire.
+ * @returns {Promise<boolean>} true si la commande peut continuer
+ */
+async function requirePlayerControl(client, message) {
+  if (canControlPlayer(client, message.guildId, message.author.id)) return true;
+  requestPlayerAccess(client, message.channel, message.author, message.guildId);
+  await message.reply({
+    embeds: [
+      buildStatusEmbed(
+        "info",
+        "Cette commande est réservée à la personne qui a lancé la musique. Une demande d'autorisation lui a été envoyée."
+      ),
+    ],
+  });
+  return false;
 }
 
 function requireModPermission(message) {
@@ -126,6 +148,7 @@ const handlers = {
           textChannel: message.channel,
           member: message.member,
           query,
+          client,
         });
         if (!outcome) {
           return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
@@ -145,6 +168,7 @@ const handlers = {
 
     await handleSpotifyPlay({
       kazagumo: client.kazagumo,
+      client,
       voiceChannel: vc,
       textChannel: message.channel,
       member: message.member,
@@ -174,6 +198,7 @@ const handlers = {
   async skip(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     if (!player.queue.current) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
     }
@@ -184,7 +209,9 @@ const handlers = {
   async stop(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     stopNowPlayingTracking(client, message.guildId);
+    clearPlayerControl(client, message.guildId);
     player.destroy();
     await message.reply({
       embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
@@ -194,7 +221,9 @@ const handlers = {
   async leave(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     stopNowPlayingTracking(client, message.guildId);
+    clearPlayerControl(client, message.guildId);
     player.destroy();
     await message.reply({ embeds: [buildStatusEmbed("success", "J'ai quitté le salon vocal.")] });
   },
@@ -202,6 +231,7 @@ const handlers = {
   async pause(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     setPlayerPaused(player, true);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
   },
@@ -209,6 +239,7 @@ const handlers = {
   async resume(client, message) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     setPlayerPaused(player, false);
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
   },
@@ -233,6 +264,7 @@ const handlers = {
   async volume(client, message, args) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     const niveau = parseInt(args[0], 10);
     if (isNaN(niveau) || niveau < 0 || niveau > 150) {
       const { main } = getPrefixes(message.guild.id);
@@ -249,6 +281,7 @@ const handlers = {
   async loop(client, message, args) {
     const player = getPlayerOrReply(client, message);
     if (!player) return;
+    if (!(await requirePlayerControl(client, message))) return;
     const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
     if (!mode) {
       const { main } = getPrefixes(message.guild.id);

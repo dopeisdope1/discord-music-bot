@@ -72,7 +72,8 @@ function buildMusicHelpPanel(prefix = "!") {
         ],
       },
     ],
-    footer: "Tu dois être dans un salon vocal pour lancer une lecture.",
+    footer:
+      "Tu dois être dans un salon vocal pour lancer une lecture. Seule la personne qui a amené le bot en vocal peut utiliser pause/resume/skip/stop/leave/volume/loop — les autres doivent lui demander la permission (un message avec Accepter/Refuser lui est envoyé automatiquement).",
   });
 }
 

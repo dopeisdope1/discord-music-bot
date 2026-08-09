@@ -19,6 +19,7 @@ const { randomWelcomeMessage } = require("./utils/welcomeMessages");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
+const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 
 const client = new Client({
   intents: [
@@ -105,6 +106,14 @@ client.snipes = new Collection();
 // utils/joinSpotify.js) : Map<guildId, { targetUserId, lastSyncId }>
 client.spotifyFollows = new Collection();
 
+// Stocke qui a amené le bot en vocal sur chaque serveur (Map<guildId, userId>)
+// et qui d'autre a été autorisé entretemps (Map<guildId, Set<userId>>) — voir
+// utils/playerControl.js. Seul le "propriétaire" (ou une personne autorisée
+// par lui) peut utiliser les commandes de contrôle (pause/skip/stop/volume/
+// loop/leave) ; les autres doivent lui demander la permission.
+client.playerOwners = new Collection();
+client.playerAllowed = new Collection();
+
 // ---- Événements Kazagumo ----
 client.kazagumo
   .on("playerStart", async (player) => {
@@ -152,6 +161,8 @@ client.kazagumo
   });
 
 const MUSIC_BUTTON_IDS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop", "music_queue"]);
+// "music_queue" est en lecture seule, pas besoin de la permission de contrôle.
+const GATED_MUSIC_BUTTONS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop"]);
 
 // ---- Interactions : slash commands + boutons du panel ----
 client.on("interactionCreate", async (interaction) => {
@@ -227,6 +238,19 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
+    if (GATED_MUSIC_BUTTONS.has(interaction.customId) && !canControlPlayer(client, interaction.guildId, interaction.user.id)) {
+      requestPlayerAccess(client, interaction.channel, interaction.user, interaction.guildId);
+      return interaction.reply({
+        embeds: [
+          buildStatusEmbed(
+            "info",
+            "Cette commande est réservée à la personne qui a lancé la musique. Une demande d'autorisation lui a été envoyée."
+          ),
+        ],
+        ephemeral: true,
+      });
+    }
+
     switch (interaction.customId) {
       case "music_pauseresume":
         setPlayerPaused(player, !player.paused);
@@ -242,6 +266,7 @@ client.on("interactionCreate", async (interaction) => {
         break;
       case "music_stop":
         stopNowPlayingTracking(client, interaction.guildId);
+        clearPlayerControl(client, interaction.guildId);
         player.destroy();
         break;
       case "music_loop": {
@@ -302,6 +327,7 @@ client.on("voiceStateUpdate", (oldState) => {
   if (humanCount === 0) {
     const textChannel = client.channels.cache.get(player.textId);
     stopNowPlayingTracking(client, player.guildId);
+    clearPlayerControl(client, player.guildId);
     player.destroy();
     if (textChannel) {
       textChannel.send({

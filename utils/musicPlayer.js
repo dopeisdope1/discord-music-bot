@@ -1,5 +1,6 @@
 const { buildNowPlayingPanel } = require("./nowPlayingPanel");
 const { startTracking, setPaused, getElapsedMs, stopTracking } = require("./playbackTimer");
+const { setPlayerOwner } = require("./playerControl");
 
 // Discord limite l'édition d'un message à ~5 requêtes / 5s par salon. 5s est
 // donc la cadence la plus rapide possible sans risquer des 429 (voire un
@@ -30,7 +31,7 @@ async function getOrCreatePlayer(kazagumo, { guildId, voiceChannel, textChannel 
  * lecture si rien n'est en cours.
  * @returns {null|{ result: object, alreadyPlaying: boolean }}
  */
-async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query, engine }) {
+async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query, engine, client }) {
   const result = await kazagumo.search(query, { requester: member, engine });
   if (!result || !result.tracks.length) return null;
 
@@ -39,6 +40,8 @@ async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query
     voiceChannel,
     textChannel,
   });
+
+  if (client) setPlayerOwner(client, voiceChannel.guild.id, member.id);
 
   const alreadyPlaying = Boolean(player.playing || player.paused || player.queue.current);
 

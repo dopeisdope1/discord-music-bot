@@ -3,6 +3,7 @@ const { getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = r
 const { getOrCreatePlayer } = require("./musicPlayer");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { playbackErrorMessage } = require("./musicErrors");
+const { setPlayerOwner } = require("./playerControl");
 
 /**
  * Rejoint un salon vocal et joue ce que `listenerMember` écoute actuellement
@@ -61,6 +62,7 @@ async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMe
     voiceChannel,
     textChannel,
   });
+  setPlayerOwner(client, voiceChannel.guild.id, playerMember.id);
 
   // Enregistre le suivi AVANT de lancer la lecture : le handler "playerStart"
   // s'en sert pour afficher la bonne position dans le panel.

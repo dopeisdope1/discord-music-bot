@@ -37,6 +37,7 @@ module.exports = {
           textChannel: interaction.channel,
           member: interaction.member,
           query,
+          client: interaction.client,
         });
         if (!outcome) {
           return interaction.editReply({
@@ -58,6 +59,7 @@ module.exports = {
 
     await handleSpotifyPlay({
       kazagumo: interaction.client.kazagumo,
+      client: interaction.client,
       voiceChannel,
       textChannel: interaction.channel,
       member: interaction.member,
