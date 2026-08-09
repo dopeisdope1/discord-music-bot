@@ -67,4 +67,34 @@ function setLogChannel(guildId, category, channelId) {
   save();
 }
 
-module.exports = { getLogChannels, getLogChannelId, setLogChannel, LOG_CATEGORIES };
+/**
+ * Valeurs brutes d'un serveur, utilisé par utils/configChannel.js pour
+ * sauvegarder/restaurer via Discord.
+ * @param {string} guildId
+ */
+function getRawGuildData(guildId) {
+  return load()[guildId] || {};
+}
+
+/**
+ * Recharge les salons de logs d'un serveur depuis une source externe (voir
+ * utils/configChannel.js — la config sauvegardée dans un salon Discord dédié,
+ * qui survit aux redéploiements Railway contrairement au disque local).
+ * @param {string} guildId
+ * @param {object} remoteData
+ */
+function hydrateFromRemote(guildId, remoteData) {
+  if (!remoteData) return;
+  const data = load();
+  data[guildId] = { ...data[guildId], ...remoteData };
+  save();
+}
+
+module.exports = {
+  getLogChannels,
+  getLogChannelId,
+  setLogChannel,
+  getRawGuildData,
+  hydrateFromRemote,
+  LOG_CATEGORIES,
+};

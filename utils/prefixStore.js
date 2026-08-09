@@ -56,4 +56,27 @@ function setPrefix(guildId, type, value) {
   save();
 }
 
-module.exports = { getPrefixes, setPrefix, DEFAULT_PREFIXES };
+/**
+ * Valeurs personnalisées brutes d'un serveur (sans les valeurs par défaut),
+ * utilisé par utils/configChannel.js pour sauvegarder/restaurer via Discord.
+ * @param {string} guildId
+ */
+function getRawGuildData(guildId) {
+  return load()[guildId] || {};
+}
+
+/**
+ * Recharge les valeurs personnalisées d'un serveur depuis une source externe
+ * (voir utils/configChannel.js — la config sauvegardée dans un salon Discord
+ * dédié, qui survit aux redéploiements Railway contrairement au disque local).
+ * @param {string} guildId
+ * @param {object} remoteData
+ */
+function hydrateFromRemote(guildId, remoteData) {
+  if (!remoteData) return;
+  const data = load();
+  data[guildId] = { ...data[guildId], ...remoteData };
+  save();
+}
+
+module.exports = { getPrefixes, setPrefix, getRawGuildData, hydrateFromRemote, DEFAULT_PREFIXES };

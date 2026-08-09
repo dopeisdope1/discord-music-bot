@@ -17,6 +17,7 @@ const {
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
+const { saveGuildConfig } = require("./configChannel");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
@@ -171,6 +172,7 @@ async function handlePrefixPanel(message) {
         const category = i.customId.split(":")[1];
         const channelId = i.values[0];
         setLogChannel(guildId, category, channelId);
+        saveGuildConfig(i.guild);
         await i.update(buildPrefixPanel(guildId));
         return;
       }
@@ -260,6 +262,7 @@ async function handlePrefixPanel(message) {
         }
 
         setPrefix(guildId, type, raw);
+        saveGuildConfig(submitted.guild);
         await submitted.update(buildPrefixPanel(guildId));
       } catch (err) {
         console.error("[panel] Erreur lors du traitement de la modale de préfixe :", err);

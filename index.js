@@ -18,6 +18,7 @@ const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyAc
 const { randomWelcomeMessage } = require("./utils/welcomeMessages");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
+const { loadGuildConfig } = require("./utils/configChannel");
 
 const client = new Client({
   intents: [
@@ -413,14 +414,23 @@ client.on("guildMemberAdd", (member) => {
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
-  // Sur un serveur avec beaucoup de membres, Discord ne pousse pas forcément
-  // les présences de tout le monde par défaut (limite du "large_threshold").
-  // On demande explicitement la liste complète des membres + présences pour
-  // que la présence Spotify de n'importe qui soit fiable dès le premier
-  // !join, pas seulement pour les membres déjà "connus" du bot.
   for (const guild of client.guilds.cache.values()) {
+    // Sur un serveur avec beaucoup de membres, Discord ne pousse pas forcément
+    // les présences de tout le monde par défaut (limite du "large_threshold").
+    // On demande explicitement la liste complète des membres + présences pour
+    // que la présence Spotify de n'importe qui soit fiable dès le premier
+    // !join, pas seulement pour les membres déjà "connus" du bot.
     guild.members.fetch({ withPresences: true }).catch((err) => {
       console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
+    });
+
+    // Restaure les préfixes/salons de logs configurés via .panel : le disque
+    // du container Railway est réinitialisé à chaque redéploiement, donc sans
+    // ça la config choisie reviendrait aux valeurs par défaut à chaque push
+    // (voir utils/configChannel.js, qui sauvegarde tout ça dans un salon
+    // Discord caché — jamais réinitialisé, lui).
+    loadGuildConfig(guild).catch((err) => {
+      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
     });
   }
 });
@@ -429,6 +439,9 @@ client.once("ready", () => {
 client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
+  });
+  loadGuildConfig(guild).catch((err) => {
+    console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
   });
 });
 

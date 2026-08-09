@@ -109,30 +109,26 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 
 Les deux préfixes ci-dessus (`!` et `.`) sont configurables par serveur via le
 panel `.panel` (réservé aux administrateurs) : deux boutons ouvrent chacun une
-fenêtre pour saisir un nouveau préfixe, sans avoir à toucher au code. La valeur
-est sauvegardée dans `data/` (voir `DATA_DIR` juste en dessous).
+fenêtre pour saisir un nouveau préfixe, sans avoir à toucher au code.
 
-### Rendre `data/` permanent sur Railway (préfixes + salons de logs)
+### Pourquoi la config ne se réinitialise plus après un redéploiement
 
-Par défaut, `data/` vit sur le disque du container Railway, qui est
-**réinitialisé à chaque redéploiement** (donc à chaque push sur `main`,
-vu l'auto-déploiement) : les préfixes et salons de logs configurés via
-`.panel` reviendraient sinon à leurs valeurs par défaut à chaque mise à jour
-du bot. Pour que ça ne bouge plus jamais :
+Le disque du container Railway est **réinitialisé à chaque redéploiement**
+(donc à chaque push sur `main`, vu l'auto-déploiement) : tout ce qui n'est
+écrit que dans `data/` y disparaîtrait à chaque mise à jour du bot.
 
-1. Sur le dashboard Railway, ouvre le service du bot → onglet **Volumes** →
-   **Add Volume**.
-2. Choisis un point de montage, par exemple `/app/data`.
-3. Ajoute une variable d'environnement `DATA_DIR` avec la même valeur
-   (`/app/data`) dans l'onglet **Variables**.
-4. Redéploie une dernière fois (ou attends le prochain push) : à partir de
-   là, `data/prefixes.json` et `data/logChannels.json` vivent sur le volume,
-   qui n'est jamais effacé par un redéploiement.
+Pour éviter ça sans configuration manuelle sur Railway, chaque changement fait
+via `.panel` (préfixe ou salon de logs) est aussi sauvegardé dans un salon
+Discord caché appelé **`zinki-config`** (créé automatiquement, masqué à
+@everyone) — voir `utils/configChannel.js`. Au démarrage du bot, la config y
+est relue et rechargée en mémoire **avant** de toucher au disque local :
+Discord, contrairement au container Railway, n'est jamais réinitialisé, donc
+rien de ce qui est déjà configuré n'est jamais perdu ni remis à zéro.
+**Ne supprime pas le salon `zinki-config`** — c'est là que tout est stocké.
 
-Sans cette étape (qui se fait uniquement sur le dashboard Railway, pas dans
-le code), le préfixe musique par défaut du code est `?` et le préfixe
-membres/modération `.` — donc un redéploiement sans volume revient à ces
-valeurs-là plutôt qu'à `!`/`.`.
+`data/` (et la variable d'env `DATA_DIR`, pour la pointer vers un Volume
+Railway si tu en montes un) reste utilisé comme cache local rapide en plus de
+ça, mais n'est plus la seule copie de la config.
 
 Le même panel `.panel` propose aussi une section **Logs** : un menu déroulant
 par catégorie (**Logs modération** = `.clear`/`.ban`/`.unban`, **Logs salon** =
