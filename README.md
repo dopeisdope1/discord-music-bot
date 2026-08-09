@@ -197,13 +197,28 @@ la même personne (en lisant sa présence Spotify au moment du clic, pas une val
 ## 7ter. `.ban` / `.unban` — modération
 
 Réservés aux administrateurs (ou aux membres avec la permission Discord
-**Bannir des membres**). `.ban` et `.unban` ouvrent tous les deux le panel
-**Zinki Assassini** avec un menu déroulant natif Discord (`.ban` : sélecteur
-de membre du serveur ; `.unban` : liste des membres actuellement bannis) —
-taper un pseudo filtre la liste en direct (Discord affiche quand même une
-liste par défaut avant de taper, comportement du client impossible à masquer
-via le bot). `.unban` débannit aussi directement si tu lui donnes un ID
-(`.unban <id>`).
+**Bannir des membres**). Deux façons d'y accéder :
+
+- `.ban` / `.unban` (texte) — panel **Zinki Assassini** avec un menu déroulant
+  natif Discord (`.ban` : sélecteur de membre du serveur ; `.unban` : liste
+  des membres actuellement bannis). Taper un pseudo filtre la liste en
+  direct, mais Discord affiche quand même une liste par défaut avant de
+  taper quoi que ce soit — c'est un comportement du client Discord lui-même,
+  aucune option d'API ne permet de le désactiver (vérifié dans le changelog
+  officiel des développeurs Discord).
+- `/ban` / `/unban` (slash) — même résultat, mais avec une **vraie recherche
+  en direct** : le champ est vide tant que tu n'as rien tapé, et affiche des
+  suggestions filtrées au fur et à mesure (autocomplétion Discord, backée par
+  l'API de recherche de membres pour `/ban` et par la liste des bannis pour
+  `/unban`). C'est la seule façon d'avoir un champ de recherche sans aucune
+  liste avant de taper.
+
+`.unban` débannit aussi directement si tu lui donnes un ID (`.unban <id>`).
+
+**`/ban` et `/unban` sont de nouvelles commandes slash : lance `npm run
+deploy` une fois (avec `.env` rempli) pour qu'elles apparaissent sur
+Discord — un simple `git push`/redéploiement Railway ne suffit pas, il faut
+explicitement redéployer les commandes slash auprès de l'API Discord.**
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra

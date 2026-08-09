@@ -89,6 +89,7 @@ function memberDashSection(prefix) {
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
       `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
       `\`${prefix}unban [id]\` — Ouvre le panel **Zinki Assassini** pour débannir un membre (menu déroulant si l'ID n'est pas donné)`,
+      `\`/ban\` / \`/unban\` — Mêmes permissions, mais avec recherche en direct (tape et ça filtre, sans liste avant de taper)`,
       `\`${prefix}gif <recherche>\` — Envoie un gif aléatoire correspondant à la recherche`,
     ],
   };

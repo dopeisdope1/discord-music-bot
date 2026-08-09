@@ -166,6 +166,17 @@ const GATED_MUSIC_BUTTONS = new Set(["music_pauseresume", "music_skip", "music_s
 
 // ---- Interactions : slash commands + boutons du panel ----
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    const command = client.commands.get(interaction.commandName);
+    if (!command?.autocomplete) return;
+    try {
+      await command.autocomplete(interaction);
+    } catch (err) {
+      console.error(err);
+    }
+    return;
+  }
+
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
