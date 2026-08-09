@@ -93,9 +93,7 @@ function buildSearchModal(modalId) {
 const BAN_SEARCH_BUTTON = "zinki_ban_search";
 const BAN_MODAL = "zinki_ban_modal";
 const BAN_RESULT_SELECT = "zinki_ban_result_select";
-const UNBAN_SEARCH_BUTTON = "zinki_unban_search";
-const UNBAN_MODAL = "zinki_unban_modal";
-const UNBAN_RESULT_SELECT = "zinki_unban_result_select";
+const UNBAN_SELECT = "unban_select";
 
 async function banTarget(interaction, message, targetId) {
   if (targetId === message.author.id) {
@@ -295,10 +293,12 @@ async function unbanTarget(interaction, message, targetId, target) {
 }
 
 /**
- * Ouvre un panel pour débannir un membre (`.unban` sans argument, réservé aux
- * administrateurs — la vérification se fait avant l'appel de cette
- * fonction). Même flux bouton + modale que `.ban` : aucune liste tant que
- * l'utilisateur n'a pas tapé et validé une recherche parmi les bannis.
+ * Ouvre un panel listant les membres actuellement bannis, pour en débannir un
+ * (`.unban` sans argument, réservé aux administrateurs — la vérification se
+ * fait avant l'appel de cette fonction). Menu déroulant natif Discord
+ * (StringSelectMenu) directement : la liste des bannis est généralement
+ * courte, donc contrairement à `.ban` on l'affiche tout de suite plutôt que
+ * de passer par une recherche — taper filtre en direct parmi les options.
  * @param {import('discord.js').Message} message
  */
 async function handleUnbanPanel(message) {
@@ -313,14 +313,21 @@ async function handleUnbanPanel(message) {
     return;
   }
 
+  const entries = [...bans.values()].slice(0, 25);
   const panelMessage = await message.reply(
-    buildSearchPanel(
-      "## Zinki Assassini\n> Clique pour chercher qui débannir (aucune liste tant que tu n'as rien tapé).",
-      UNBAN_SEARCH_BUTTON
+    buildResultsPanel(
+      `## Zinki Assassini\n> Choisis qui débannir${
+        bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`.unban <id>\` pour les autres)` : ""
+      } (tape un pseudo pour filtrer).`,
+      UNBAN_SELECT,
+      entries.map((ban) => ({
+        label: ban.user.tag.slice(0, 100),
+        value: ban.user.id,
+        description: ban.reason ? ban.reason.slice(0, 100) : undefined,
+      }))
     )
   );
-  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
-  let done = false;
+  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
     try {
@@ -329,60 +336,19 @@ async function handleUnbanPanel(message) {
         return;
       }
 
-      if (i.isButton() && i.customId === UNBAN_SEARCH_BUTTON) {
-        await i.showModal(buildSearchModal(UNBAN_MODAL));
-        const submitted = await i
-          .awaitModalSubmit({
-            time: PANEL_TIMEOUT_MS,
-            filter: (m) => m.customId === UNBAN_MODAL && m.user.id === message.author.id,
-          })
-          .catch(() => null);
-        if (!submitted) return;
-
-        const query = submitted.fields.getTextInputValue("query").trim().toLowerCase();
-        const matches = [...bans.values()].filter(
-          (b) => b.user.tag.toLowerCase().includes(query) || b.user.username.toLowerCase().includes(query) || b.user.id === query
-        );
-
-        if (matches.length === 0) {
-          await submitted.update(
-            buildSearchPanel(`## Zinki Assassini\n> Aucun banni trouvé pour "${query}". Réessaie.`, UNBAN_SEARCH_BUTTON)
-          );
-          return;
-        }
-
-        const shown = matches.slice(0, 25);
-        await submitted.update(
-          buildResultsPanel(
-            `## Zinki Assassini\n> ${matches.length} résultat${matches.length > 1 ? "s" : ""} pour "${query}"${
-              matches.length > 25 ? " (25 premiers affichés, affine ta recherche pour les autres)" : ""
-            } — choisis qui débannir.`,
-            UNBAN_RESULT_SELECT,
-            shown.map((b) => ({
-              label: b.user.tag.slice(0, 100),
-              value: b.user.id,
-              description: b.reason ? b.reason.slice(0, 100) : undefined,
-            }))
-          )
-        );
-        return;
-      }
-
-      if (i.isStringSelectMenu() && i.customId === UNBAN_RESULT_SELECT) {
-        const targetId = i.values[0];
-        const target = [...bans.values()].find((ban) => ban.user.id === targetId);
-        await unbanTarget(i, message, targetId, target);
-        done = true;
-        collector.stop();
-      }
+      const targetId = i.values[0];
+      const target = entries.find((ban) => ban.user.id === targetId);
+      await unbanTarget(i, message, targetId, target);
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel de débannissement :", err);
       await safeErrorReply(i);
     }
   });
 
-  collector.on("end", () => {
-    if (!done) panelMessage.edit({ components: [] }).catch(() => {});
+  collector.on("end", (collected) => {
+    if (collected.size === 0) {
+      panelMessage.edit({ components: [] }).catch(() => {});
+    }
   });
 }
 

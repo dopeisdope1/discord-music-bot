@@ -199,17 +199,22 @@ la même personne (en lisant sa présence Spotify au moment du clic, pas une val
 Réservés aux administrateurs (ou aux membres avec la permission Discord
 **Bannir des membres**). Deux façons d'y accéder :
 
-- `.ban` / `.unban` (texte) — panel **Zinki Assassini** avec un bouton
+- `.ban` (texte) — panel **Zinki Assassini** avec un bouton
   "🔍 Chercher un membre" qui ouvre une fenêtre modale (champ texte) : rien ne
-  s'affiche tant que tu n'as pas tapé et validé une recherche, seuls les
-  résultats correspondants apparaissent ensuite dans un menu déroulant
-  (`.ban` : recherche parmi les membres du serveur ; `.unban` : recherche
-  parmi les membres actuellement bannis). Contrairement à un menu déroulant
-  natif Discord cliqué directement (qui affiche toujours une liste par
-  défaut, comportement du client impossible à désactiver via l'API), ce
-  bouton + modale ne montre jamais rien avant une recherche explicite — au
-  prix d'un clic en plus et d'un filtrage "après validation" plutôt que
-  lettre par lettre en direct.
+  s'affiche tant que tu n'as pas tapé et validé une recherche parmi les
+  membres du serveur, seuls les résultats correspondants apparaissent
+  ensuite dans un menu déroulant. Contrairement à un menu déroulant natif
+  Discord cliqué directement (qui affiche toujours une liste par défaut,
+  comportement du client impossible à désactiver via l'API), ce bouton +
+  modale ne montre jamais rien avant une recherche explicite — au prix d'un
+  clic en plus et d'un filtrage "après validation" plutôt que lettre par
+  lettre en direct.
+- `.unban` (texte, sans argument) — panel **Zinki Assassini** avec un menu
+  déroulant natif Discord affiché directement (liste des membres
+  actuellement bannis, généralement courte) ; taper un pseudo filtre la
+  liste en direct, mais Discord affiche quand même une liste par défaut
+  avant de taper quoi que ce soit — comportement du client, pas du bot,
+  impossible à masquer via l'API.
 - `/ban` / `/unban` (slash) — même résultat, mais avec une **vraie recherche
   en direct** : le champ est vide tant que tu n'as rien tapé, et affiche des
   suggestions filtrées au fur et à mesure, sans validation nécessaire
