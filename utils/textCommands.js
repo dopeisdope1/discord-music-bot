@@ -6,8 +6,6 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
-const { canUseDashCommand } = require("./commandPermissions");
-const { handleCommandPanel, CONFIGURABLE_COMMANDS } = require("./commandPanelWizard");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
@@ -27,8 +25,11 @@ const LOOP_KEYWORDS = {
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
-// Commandes "-" dont l'accès se configure via -panel (voir commandPermissions.js)
-const DASH_COMMANDS = new Set(CONFIGURABLE_COMMANDS);
+// Commandes "-" accessibles à tout le monde, sans permission particulière
+const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
+// Commandes "-" réservées aux administrateurs
+const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock"]);
+const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
@@ -320,8 +321,8 @@ const handlers = {
         );
       }
     } else {
-      // -clear <nombre> : accès configurable via -panel
-      if (!canUseDashCommand(message, "clear").allowed) {
+      // -clear <nombre> : réservé aux administrateurs
+      if (!hasModPermission(message)) {
         return sendTempReply(
           channel,
           { embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")] },
@@ -495,10 +496,6 @@ const handlers = {
       allowedMentions: { parse: [] },
     });
   },
-
-  async panel(client, message) {
-    await handleCommandPanel(message);
-  },
 };
 
 /**
@@ -536,10 +533,6 @@ async function handleTextCommand(client, message) {
       const panel = hasModPermission(message) ? buildAdminHelpPanel() : buildMemberDashHelpPanel();
       return message.channel.send(panel);
     }
-    if (cmd === "panel") {
-      if (!requireModPermission(message)) return;
-      return handlers.panel(client, message, args);
-    }
     if (cmd === "ban") {
       if (!hasBanPermission(message)) {
         return message.reply({
@@ -572,15 +565,7 @@ async function handleTextCommand(client, message) {
       return handlers.clear(client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;
-
-    const { allowed, reason } = canUseDashCommand(message, cmd);
-    if (!allowed) {
-      const text =
-        reason === "channel"
-          ? "Cette commande n'est pas autorisée dans ce salon."
-          : "Tu n'as pas la permission d'utiliser cette commande.";
-      return message.reply({ embeds: [buildStatusEmbed("error", text)] });
-    }
+    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireModPermission(message)) return;
     return handlers[cmd](client, message, args);
   }
 

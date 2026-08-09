@@ -95,13 +95,11 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 - **`-`** : préfixe pour les commandes membres et de modération
   - Ouvertes à tout le monde par défaut : `-pic [@membre]` / `-avatar` (photo de
     profil), `-snipe` (dernier message supprimé du salon)
-  - Réservées aux administrateurs par défaut : `-clear`, `-renew`, `-hide`,
-    `-unhide`, `-lock`, `-unlock`
+  - Réservées aux administrateurs : `-clear`, `-renew`, `-hide`, `-unhide`,
+    `-lock`, `-unlock`
+  - Admin, ou permission Discord **Bannir des membres** : `-ban`, `-unban`
   - `-help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)
-  - `-panel` → (admin uniquement) panel interactif pour autoriser/interdire un
-    rôle sur une commande précise, ou la restreindre à certains salons — voir
-    section 7ter
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
@@ -137,27 +135,13 @@ Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'im
 qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
 la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
 
-## 7ter. `-panel` — configurer les permissions par commande
+## 7ter. `-ban` / `-unban` — modération
 
-Réservé aux administrateurs. Ouvre un panel avec des menus déroulants pour
-configurer finement l'accès aux commandes `-` (voir section 6bis) :
-
-1. Choisis une commande (`-clear`, `-snipe`, `-lock`, etc.)
-2. Choisis une action :
-   - **Autoriser un rôle** — donne accès à la commande à un rôle qui ne
-     l'aurait pas par défaut (ex. donner `-clear` à un rôle "Modérateur"
-     sans lui donner la permission Administrateur complète)
-   - **Interdire un rôle** — retire l'accès à un rôle précis, même pour une
-     commande normalement ouverte à tout le monde (ex. interdire `-snipe`
-     à un rôle "Muet")
-   - **Restreindre à des salons** — la commande ne fonctionne plus que dans
-     les salons choisis (aucun salon choisi = de nouveau utilisable partout)
-   - **Réinitialiser** — efface toute la configuration de cette commande
-3. Sélectionne le rôle ou les salons concernés selon l'action choisie
-
-Les administrateurs du serveur gardent toujours accès à tout, quelle que soit
-la configuration — impossible de se bloquer soi-même par erreur. Les réglages
-sont sauvegardés par serveur dans `data/commandConfig.json` (non versionné).
+Réservés aux administrateurs (ou aux membres avec la permission Discord
+**Bannir des membres**). `-ban` ouvre le panel **Zinki Assassini** (menu
+déroulant natif Discord pour choisir qui bannir) ; `-unban` ouvre un panel
+listant les membres actuellement bannis, ou débannit directement si tu lui
+donnes un ID (`-unban <id>`).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra

@@ -92,7 +92,7 @@ function memberDashSection(prefix) {
   };
 }
 
-// Commandes "-" réservées aux administrateurs par défaut (configurable via -panel).
+// Commandes "-" réservées aux administrateurs.
 function adminDashSections(prefix) {
   return [
     {
@@ -110,12 +110,6 @@ function adminDashSections(prefix) {
         `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
         `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
         `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
-      ],
-    },
-    {
-      heading: "Configuration",
-      lines: [
-        `\`${prefix}panel\` — Panel interactif : autoriser/interdire un rôle sur une commande, restreindre à des salons`,
       ],
     },
   ];
