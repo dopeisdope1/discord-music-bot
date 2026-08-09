@@ -2,6 +2,7 @@ const { resolveSpotifyQuery, trackArtists } = require("./spotifySearch");
 const { buildTrackChoicePanel } = require("./spotifyPlayPanel");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { queueAndPlay } = require("./musicPlayer");
+const { playbackErrorMessage } = require("./musicErrors");
 
 const SELECTION_TIMEOUT_MS = 30_000;
 
@@ -55,7 +56,7 @@ async function handleSpotifyPlay({ kazagumo, voiceChannel, textChannel, member, 
     } catch (err) {
       console.error(err);
       await textChannel.send({
-        embeds: [buildStatusEmbed("error", `Impossible de jouer **${track.name}**.`)],
+        embeds: [buildStatusEmbed("error", playbackErrorMessage(err, `Impossible de jouer **${track.name}**.`))],
       });
     }
   };

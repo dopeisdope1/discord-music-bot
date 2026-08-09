@@ -2,6 +2,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./spotifyPresence");
 const { getOrCreatePlayer } = require("./musicPlayer");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { playbackErrorMessage } = require("./musicErrors");
 
 /**
  * Rejoint un salon vocal et joue ce que `listenerMember` écoute actuellement
@@ -37,10 +38,19 @@ async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMe
     return;
   }
 
-  const result = await client.kazagumo.search(spotifyActivityQuery(activity), {
-    requester: playerMember,
-    engine: "youtube",
-  });
+  let result;
+  try {
+    result = await client.kazagumo.search(spotifyActivityQuery(activity), {
+      requester: playerMember,
+      engine: "youtube",
+    });
+  } catch (err) {
+    console.error(err);
+    await send({
+      embeds: [buildStatusEmbed("error", playbackErrorMessage(err, `Impossible de jouer **${activity.details}**.`))],
+    });
+    return;
+  }
   if (!result || !result.tracks.length) {
     await send({ embeds: [buildStatusEmbed("error", `Impossible de trouver **${activity.details}** sur YouTube.`)] });
     return;
@@ -64,10 +74,18 @@ async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMe
   // démarre la piste déjà à la bonne seconde en un seul aller-retour réseau,
   // sans passer par un seek() séparé après coup.
   const freshActivity = getSpotifyActivity(listenerMember) ?? activity;
-  await player.play(result.tracks[0], {
-    replaceCurrent: true,
-    position: spotifyActivityElapsedMs(freshActivity),
-  });
+  try {
+    await player.play(result.tracks[0], {
+      replaceCurrent: true,
+      position: spotifyActivityElapsedMs(freshActivity),
+    });
+  } catch (err) {
+    console.error(err);
+    await send({
+      embeds: [buildStatusEmbed("error", playbackErrorMessage(err, `Impossible de jouer **${activity.details}**.`))],
+    });
+    return;
+  }
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()

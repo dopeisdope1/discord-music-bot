@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
 const { handleSpotifyPlay } = require("../utils/spotifyPlay");
 const { queueAndPlay } = require("../utils/musicPlayer");
+const { playbackErrorMessage } = require("../utils/musicErrors");
 
 const URL_REGEX = /^https?:\/\//i;
 
@@ -49,7 +50,7 @@ module.exports = {
       } catch (err) {
         console.error(err);
         await interaction.editReply({
-          embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")],
+          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, "Impossible de jouer ce titre. Vérifie le lien."))],
         });
       }
       return;

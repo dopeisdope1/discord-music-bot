@@ -9,6 +9,7 @@ const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
+const { playbackErrorMessage } = require("./musicErrors");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -130,7 +131,9 @@ const handlers = {
         });
       } catch (err) {
         console.error(err);
-        await message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
+        await message.reply({
+          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, "Impossible de jouer ce titre. Vérifie le lien."))],
+        });
       }
       return;
     }
