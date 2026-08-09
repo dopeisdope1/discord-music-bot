@@ -336,14 +336,21 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 
 // ---- Message de bienvenue pour les nouveaux membres ----
 client.on("guildMemberAdd", (member) => {
+  console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
   const botMember = member.guild.members.me;
   const channel =
     member.guild.systemChannel ||
     member.guild.channels.cache.find(
       (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
     );
-  if (!channel) return;
-  channel.send(`${member} ${randomWelcomeMessage()}`).catch(() => {});
+  if (!channel) {
+    console.warn("[bienvenue] Aucun salon disponible pour envoyer le message.");
+    return;
+  }
+  console.log(`[bienvenue] Envoi dans #${channel.name}`);
+  channel
+    .send(`${member} ${randomWelcomeMessage()}`)
+    .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
 });
 
 client.once("ready", () => {
