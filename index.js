@@ -326,20 +326,40 @@ client.on("messageDelete", (message) => {
   rememberSnipe(client, message.channelId, message, "deleted");
 });
 
-// ---- Déconnecte le bot si tout le monde quitte le salon vocal ----
-client.on("voiceStateUpdate", (oldState) => {
+// ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie
+// l'état si le bot lui-même est déconnecté/expulsé/déplacé (manuellement
+// depuis Discord, kick, coupure...) ----
+client.on("voiceStateUpdate", (oldState, newState) => {
   const player = client.kazagumo.players.get(oldState.guild.id);
   if (!player || oldState.channelId !== player.voiceId) return;
+
+  const textChannel = client.channels.cache.get(player.textId);
+
+  // Le bot a quitté le salon suivi par le player sans passer par nos propres
+  // commandes (déconnexion manuelle, kick, déplacement...) : le player
+  // Kazagumo ne reflète plus la réalité vocale. Sans ce nettoyage, il reste
+  // en mémoire et le prochain `!play`/`/play` le réutilise tel quel (file,
+  // position, propriétaire fantômes) au lieu de repartir de zéro.
+  if (oldState.id === client.user.id) {
+    stopNowPlayingTracking(client, player.guildId);
+    clearPlayerControl(client, player.guildId);
+    player.destroy().catch(() => {});
+    if (textChannel) {
+      textChannel.send({
+        embeds: [buildStatusEmbed("info", "Je ne suis plus dans le salon vocal, la lecture s'est arrêtée.")],
+      });
+    }
+    return;
+  }
 
   const voiceChannel = oldState.guild.channels.cache.get(player.voiceId);
   if (!voiceChannel) return;
 
   const humanCount = voiceChannel.members.filter((m) => !m.user.bot).size;
   if (humanCount === 0) {
-    const textChannel = client.channels.cache.get(player.textId);
     stopNowPlayingTracking(client, player.guildId);
     clearPlayerControl(client, player.guildId);
-    player.destroy();
+    player.destroy().catch(() => {});
     if (textChannel) {
       textChannel.send({
         embeds: [buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.")],
