@@ -183,11 +183,15 @@ du serveur — en sélectionner un affiche une confirmation (nom du rôle +
 nombre de membres concernés) avant suppression réelle, puisque l'action est
 irréversible ; un troisième menu "↕️ Choisir un rôle à réorganiser" affiche
 sa position actuelle (ex: "3 / 12") avec des boutons ⬆️ Monter / ⬇️ Descendre
-pour le déplacer d'un cran à la fois dans la hiérarchie du serveur. Le rôle
-@everyone et les rôles gérés par une intégration (bot, boost serveur...) ne
-peuvent être ni supprimés ni déplacés depuis ce panel ; un rôle ne peut pas
-non plus être monté au-dessus du rôle le plus haut du bot (limite de
-hiérarchie Discord).
+pour le déplacer d'un cran à la fois, et un bouton "🎯 Aller à un rang précis"
+qui ouvre une fenêtre pour taper directement le rang voulu (Discord ne
+propose aucun composant "glisser-déposer" côté API bot — impossible de
+réordonner à la souris comme dans les paramètres natifs du serveur, ce
+bouton est l'équivalent le plus proche : un saut direct plutôt qu'un
+cran à la fois). Le rôle @everyone et les rôles gérés par une intégration
+(bot, boost serveur...) ne peuvent être ni supprimés ni déplacés depuis ce
+panel ; un rôle ne peut pas non plus être monté au-dessus du rôle le plus
+haut du bot (limite de hiérarchie Discord).
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).

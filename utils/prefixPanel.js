@@ -213,7 +213,7 @@ function buildRoleMovePanel(guild, role) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## Déplacer le rôle **${role.name}**\n> Position actuelle : **${rank}** / ${sorted.length} (1 = le plus haut). Utilise les boutons pour le monter ou le descendre d'un cran.`
+      `## Déplacer le rôle **${role.name}**\n> Position actuelle : **${rank}** / ${sorted.length} (1 = le plus haut). Discord ne permet pas le glisser-déposer via un bot (aucun composant "drag & drop" n'existe côté API) — monte/descends d'un cran, ou saute direct à un rang précis.`
     )
   );
   container.addActionRowComponents(
@@ -228,10 +228,31 @@ function buildRoleMovePanel(guild, role) {
         .setLabel("⬇️ Descendre")
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(role.position <= 1),
+      new ButtonBuilder()
+        .setCustomId(`role_move_exact:${role.id}`)
+        .setLabel("🎯 Aller à un rang précis")
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("role_move_done").setLabel("Retour").setStyle(ButtonStyle.Secondary)
     )
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildRoleMoveExactModal(role, rank, maxRank) {
+  return new ModalBuilder()
+    .setCustomId(`role_move_exact_modal:${role.id}`)
+    .setTitle(`Position de ${role.name}`.slice(0, 45))
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("rank")
+          .setLabel(`Rang cible (1 = le plus haut, ${maxRank} = le plus bas)`)
+          .setStyle(TextInputStyle.Short)
+          .setValue(String(rank))
+          .setRequired(true)
+          .setMaxLength(4)
+      )
+    );
 }
 
 function buildRoleDeleteConfirmPanel(role) {
@@ -523,6 +544,59 @@ async function handlePrefixPanel(message) {
           return;
         }
         await i.update(buildRoleMovePanel(guild, moved));
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("role_move_exact:")) {
+        const roleId = i.customId.split(":")[1];
+        const role = guild.roles.cache.get(roleId);
+        if (!role) {
+          currentPage = "roles";
+          await i.update(buildPanel(currentPage, guild, "Ce rôle n'existe déjà plus."));
+          return;
+        }
+
+        const sorted = rankedRoles(guild);
+        const currentRank = sorted.findIndex((r) => r.id === role.id) + 1;
+        await i.showModal(buildRoleMoveExactModal(role, currentRank, sorted.length));
+
+        const submitted = await i
+          .awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === `role_move_exact_modal:${roleId}` && m.user.id === message.author.id,
+          })
+          .catch(() => null);
+        if (!submitted) return;
+
+        const targetRank = parseInt(submitted.fields.getTextInputValue("rank").trim(), 10);
+        if (!Number.isInteger(targetRank) || targetRank < 1 || targetRank > sorted.length) {
+          await submitted.reply({
+            content: `Rang invalide : donne un nombre entre 1 et ${sorted.length}.`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        // Traduit le rang choisi (1 = le plus haut) en la valeur "position"
+        // brute que Discord utilise en interne, en reprenant celle du rôle
+        // qui occupe actuellement ce rang — Discord se charge de décaler les
+        // autres rôles en conséquence.
+        const targetPosition = sorted[targetRank - 1].position;
+        const moved = await role
+          .setPosition(targetPosition, { reason: `Réordonné via .panel par ${message.author.tag}` })
+          .catch((err) => {
+            console.error(err);
+            return null;
+          });
+
+        if (!moved) {
+          await submitted.reply({
+            content: "Impossible de déplacer ce rôle à ce rang (hiérarchie Discord — le rôle doit rester strictement sous le mien).",
+            ephemeral: true,
+          });
+          return;
+        }
+        await submitted.update(buildRoleMovePanel(guild, moved));
         return;
       }
 
