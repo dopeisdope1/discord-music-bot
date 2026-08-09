@@ -100,12 +100,14 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
     profil), `.snipe` (dernier message supprimé du salon), `.gif <recherche>`
     (envoie un gif aléatoire via Giphy)
-  - Réservées aux administrateurs : `.clear`, `.renew`, `.hide`, `.unhide`,
-    `.lock`, `.unlock`, `.massrole`, `.panel`, `.create <nom> <url>` (crée un
-    emoji sur le serveur à partir d'un lien ou d'une image en pièce jointe)
-  - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban`
-  - `.help` → affiche les commandes disponibles pour toi (liste complète si tu
-    es administrateur)
+  - Admin, ou rôle autorisé via `.panel` > Permissions (groupe "mod") :
+    `.clear`, `.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`,
+    `.panel`, `.create <nom> <url>` (crée un emoji sur le serveur à partir
+    d'un lien ou d'une image en pièce jointe)
+  - Admin, permission Discord **Bannir des membres**, ou rôle autorisé via
+    `.panel` > Permissions (groupe "ban") : `.ban`, `.unban`
+  - `.help` → n'affiche que les commandes que tu peux réellement utiliser,
+    selon tes permissions (natives Discord et/ou rôles autorisés)
 
 `.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
 voir "Page Permissions" ci-dessous) ouvre un panel à **trois pages**

@@ -87,16 +87,27 @@ function memberDashSection(prefix) {
       `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
       `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
-      `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
-      `\`${prefix}unban [id]\` — Ouvre le panel **Zinki Assassini** pour débannir un membre (menu déroulant si l'ID n'est pas donné)`,
-      `\`/ban\` / \`/unban\` — Mêmes permissions, mais avec recherche en direct (tape et ça filtre, sans liste avant de taper)`,
       `\`${prefix}gif <recherche>\` — Envoie un gif aléatoire correspondant à la recherche`,
     ],
   };
 }
 
-// Commandes "." réservées aux administrateurs.
-function adminDashSections(prefix) {
+// Commandes "." réservées à l'admin, la permission Discord "Bannir des
+// membres", ou un rôle autorisé via `.panel` > Permissions (groupe "ban").
+function banDashSection(prefix) {
+  return {
+    heading: "Modération — bannissement",
+    lines: [
+      `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre`,
+      `\`${prefix}unban [id]\` — Ouvre le panel **Zinki Assassini** pour débannir un membre (menu déroulant si l'ID n'est pas donné)`,
+      `\`/ban\` / \`/unban\` — Mêmes permissions, mais avec recherche en direct (tape et ça filtre, sans liste avant de taper)`,
+    ],
+  };
+}
+
+// Commandes "." réservées à l'admin, ou un rôle autorisé via `.panel` >
+// Permissions (groupe "mod").
+function modDashSections(prefix) {
   return [
     {
       heading: "Messages",
@@ -108,7 +119,7 @@ function adminDashSections(prefix) {
     {
       heading: "Réglages",
       lines: [
-        `\`${prefix}panel\` — Panel pour changer les préfixes du bot, configurer les salons de logs (modération, salon, rôles) et gérer les rôles en masse`,
+        `\`${prefix}panel\` — Panel à 3 pages : Préfixes du bot, salons de logs (modération/salon/rôles), et Permissions (autoriser des rôles à utiliser ces commandes, + gérer les rôles en masse)`,
       ],
     },
     {
@@ -133,31 +144,27 @@ function adminDashSections(prefix) {
 }
 
 /**
- * Panel d'aide "-help" pour un membre sans permission particulière : ne
- * liste que les commandes qu'il peut réellement utiliser.
+ * Panel d'aide "-help" : ne liste que les commandes que l'auteur peut
+ * réellement utiliser, en fonction de ses permissions réelles (admin,
+ * permission Discord "Bannir des membres", ou rôle autorisé via `.panel` >
+ * Permissions) — pas juste un binaire admin/non-admin, puisque les rôles
+ * "mod" et "ban" peuvent maintenant être accordés séparément.
  * @param {string} prefix
+ * @param {{ hasMod: boolean, hasBan: boolean }} perms
  */
-function buildMemberDashHelpPanel(prefix = ".") {
+function buildDashHelpPanel(prefix, { hasMod, hasBan }) {
+  const sections = [memberDashSection(prefix)];
+  if (hasBan) sections.push(banDashSection(prefix));
+  if (hasMod) sections.push(...modDashSections(prefix));
+
   return buildHelpPanel({
     title: "Aide — Commandes",
-    intro: `Préfixe : \`${prefix}\` — commandes disponibles pour tout le monde.`,
-    sections: [memberDashSection(prefix)],
+    intro: `Préfixe : \`${prefix}\` — commandes disponibles pour toi ci-dessous.`,
+    sections,
+    footer: hasMod
+      ? "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord)."
+      : undefined,
   });
 }
 
-/**
- * Panel d'aide "-help" pour un administrateur : liste tout (commandes
- * membres + commandes de modération).
- * @param {string} prefix
- */
-function buildAdminHelpPanel(prefix = ".") {
-  return buildHelpPanel({
-    title: "Aide — Commandes",
-    intro: `Préfixe : \`${prefix}\` — en tant qu'administrateur, tu as accès à tout.`,
-    sections: [memberDashSection(prefix), ...adminDashSections(prefix)],
-    footer:
-      "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord).",
-  });
-}
-
-module.exports = { buildMusicHelpPanel, buildMemberDashHelpPanel, buildAdminHelpPanel, buildHelpPanel };
+module.exports = { buildMusicHelpPanel, buildDashHelpPanel, buildHelpPanel };
