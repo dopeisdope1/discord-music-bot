@@ -105,7 +105,12 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     `.panel`, `.create <nom> <url>` (crée un emoji sur le serveur à partir
     d'un lien ou d'une image en pièce jointe)
   - Admin, permission Discord **Bannir des membres**, ou rôle autorisé via
-    `.panel` > Permissions (groupe "ban") : `.ban`, `.unban`
+    `.panel` > Permissions (groupe "ban") : `.ban`, `.unban`, `.unbanall`
+    (débannit tout le monde, avec confirmation)
+  - **Admin uniquement**, jamais extensible via un rôle `.panel` >
+    Permissions (trop destructeur pour être délégué) : `.banall` (bannit
+    tous les membres humains du serveur sauf toi, avec confirmation —
+    action irréversible)
   - `.help` → n'affiche que les commandes que tu peux réellement utiliser,
     selon tes permissions (natives Discord et/ou rôles autorisés)
 

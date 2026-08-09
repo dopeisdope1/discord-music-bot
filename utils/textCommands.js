@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, EmbedBuilder } = require("discord.js");
+const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
 const { buildMusicHelpPanel, buildDashHelpPanel } = require("./helpPanels");
 const { hasModPermission, hasBanPermission } = require("./permissions");
@@ -32,11 +32,16 @@ const LOOP_KEYWORDS = {
 
 // Commandes "." accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
-// Commandes "." réservées aux administrateurs
+// Commandes "." réservées aux administrateurs (ou à un rôle autorisé via .panel > Permissions, groupe "mod")
 const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
-const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
-// Commandes "." réservées à l'admin ou à la permission "Bannir des membres"
-const BAN_COMMANDS = new Set(["ban", "unban"]);
+// "banall" est gérée à part (permission vérifiée dans son propre handler) :
+// contrairement au reste de DASH_ADMIN_COMMANDS, elle n'est PAS extensible
+// via un rôle "mod" — bannir tout le serveur est trop destructeur pour être
+// délégable autrement qu'à un vrai administrateur.
+const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
+// Commandes "." réservées à l'admin, à la permission "Bannir des membres", ou
+// à un rôle autorisé via .panel > Permissions (groupe "ban")
+const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
@@ -430,6 +435,156 @@ const handlers = {
     await handleUnbanPanel(message);
   },
 
+  // Bannit tous les membres bannissables du serveur (hors bots et hors
+  // l'auteur lui-même — pour ne pas se verrouiller dehors sans pouvoir
+  // confirmer/annuler ni faire `.unbanall` derrière). Action extrêmement
+  // destructrice : réservée aux VRAIS administrateurs (permission Discord
+  // native), volontairement non extensible via un rôle `.panel` >
+  // Permissions contrairement au reste des commandes de modération — la
+  // vérification se fait ici, pas dans le dispatcher (voir DASH_COMMANDS).
+  async banall(client, message) {
+    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Commande réservée aux administrateurs du serveur.")],
+      });
+    }
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
+    }
+
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("banall_confirm").setLabel("Bannir tout le monde").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("banall_cancel").setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+    );
+    const confirmMessage = await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          "warning",
+          "**Action irréversible** : ça va bannir **tous les membres humains** du serveur (bots et toi exclus). Confirme dans les 30 secondes."
+        ),
+      ],
+      components: [confirmRow],
+    });
+
+    const collector = confirmMessage.createMessageComponentCollector({ time: 30_000, max: 1 });
+
+    collector.on("collect", async (i) => {
+      if (i.user.id !== message.author.id) {
+        return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
+      }
+      if (i.customId === "banall_cancel") {
+        return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
+      }
+
+      await i.update({ embeds: [buildStatusEmbed("warning", "Bannissement en cours...")], components: [] });
+
+      const members = await message.guild.members.fetch();
+      const targets = members.filter((m) => !m.user.bot && m.id !== message.author.id && m.bannable);
+
+      let success = 0;
+      let failed = 0;
+      for (const member of targets.values()) {
+        try {
+          await member.ban({ reason: `.banall par ${message.author.tag}` });
+          success += 1;
+        } catch (err) {
+          console.error(err);
+          failed += 1;
+        }
+      }
+
+      await confirmMessage
+        .edit({
+          embeds: [
+            buildStatusEmbed(
+              "success",
+              `**${success}** membre(s) banni(s)${failed ? ` (${failed} échec(s))` : ""}.`
+            ),
+          ],
+        })
+        .catch(() => {});
+      sendLog(client, message.guild.id, "moderation", {
+        title: "Ban All",
+        description: `**${success}** membre(s) banni(s) via \`.banall\`${failed ? ` (${failed} échec(s))` : ""}.`,
+        actor: message.author,
+      });
+    });
+
+    collector.on("end", (collected) => {
+      if (collected.size === 0) confirmMessage.edit({ components: [] }).catch(() => {});
+    });
+  },
+
+  // Débannit tous les membres actuellement bannis du serveur. Moins
+  // destructeur que `.banall` (ne touche aucun membre actif), donc gérée
+  // comme `.ban`/`.unban` : admin, permission "Bannir des membres", ou rôle
+  // autorisé via `.panel` > Permissions (vérifié dans le dispatcher, voir
+  // BAN_COMMANDS).
+  async unbanall(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
+    }
+
+    const bans = await message.guild.bans.fetch().catch(() => null);
+    if (!bans || bans.size === 0) {
+      return message.reply({ embeds: [buildStatusEmbed("info", "Aucun membre banni sur ce serveur.")] });
+    }
+
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("unbanall_confirm").setLabel("Débannir tout le monde").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("unbanall_cancel").setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+    );
+    const confirmMessage = await message.reply({
+      embeds: [buildStatusEmbed("warning", `Ça va débannir **${bans.size}** membre(s). Confirme dans les 30 secondes.`)],
+      components: [confirmRow],
+    });
+
+    const collector = confirmMessage.createMessageComponentCollector({ time: 30_000, max: 1 });
+
+    collector.on("collect", async (i) => {
+      if (i.user.id !== message.author.id) {
+        return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
+      }
+      if (i.customId === "unbanall_cancel") {
+        return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
+      }
+
+      await i.update({ embeds: [buildStatusEmbed("warning", "Débannissement en cours...")], components: [] });
+
+      let success = 0;
+      let failed = 0;
+      for (const ban of bans.values()) {
+        try {
+          await message.guild.bans.remove(ban.user.id, `.unbanall par ${message.author.tag}`);
+          success += 1;
+        } catch (err) {
+          console.error(err);
+          failed += 1;
+        }
+      }
+
+      await confirmMessage
+        .edit({
+          embeds: [
+            buildStatusEmbed(
+              "success",
+              `**${success}** membre(s) débanni(s)${failed ? ` (${failed} échec(s))` : ""}.`
+            ),
+          ],
+        })
+        .catch(() => {});
+      sendLog(client, message.guild.id, "moderation", {
+        title: "Unban All",
+        description: `**${success}** membre(s) débanni(s) via \`.unbanall\`${failed ? ` (${failed} échec(s))` : ""}.`,
+        actor: message.author,
+      });
+    });
+
+    collector.on("end", (collected) => {
+      if (collected.size === 0) confirmMessage.edit({ components: [] }).catch(() => {});
+    });
+  },
+
   async renew(client, message) {
     const channel = message.channel;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -734,6 +889,7 @@ async function handleTextCommand(client, message) {
         buildDashHelpPanel(DASH_PREFIX, {
           hasMod: hasModPermission(message),
           hasBan: hasBanPermission(message),
+          isAdmin: Boolean(message.member?.permissions.has(PermissionFlagsBits.Administrator)),
         })
       );
     }

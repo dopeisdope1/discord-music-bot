@@ -101,6 +101,18 @@ function banDashSection(prefix) {
       `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre`,
       `\`${prefix}unban [id]\` — Ouvre le panel **Zinki Assassini** pour débannir un membre (menu déroulant si l'ID n'est pas donné)`,
       `\`/ban\` / \`/unban\` — Mêmes permissions, mais avec recherche en direct (tape et ça filtre, sans liste avant de taper)`,
+      `\`${prefix}unbanall\` — Débannit **tous** les membres bannis du serveur (confirmation demandée)`,
+    ],
+  };
+}
+
+// Commande "." réservée aux VRAIS administrateurs uniquement (pas extensible
+// via un rôle `.panel` > Permissions — trop destructrice).
+function dangerDashSection(prefix) {
+  return {
+    heading: "⚠️ Modération — danger",
+    lines: [
+      `\`${prefix}banall\` — Bannit **tous** les membres humains du serveur, sauf toi (confirmation demandée, action irréversible)`,
     ],
   };
 }
@@ -119,7 +131,7 @@ function modDashSections(prefix) {
     {
       heading: "Réglages",
       lines: [
-        `\`${prefix}panel\` — Panel à 3 pages : Préfixes du bot, salons de logs (modération/salon/rôles), et Permissions (autoriser des rôles à utiliser ces commandes, + gérer les rôles en masse)`,
+        `\`${prefix}panel\` — Panel à 4 pages : Préfixes du bot, salons de logs (modération/salon/rôles), Permissions (autoriser des rôles à utiliser ces commandes, + gérer les rôles en masse), et Rôles (créer/supprimer un rôle du serveur)`,
       ],
     },
     {
@@ -148,14 +160,17 @@ function modDashSections(prefix) {
  * réellement utiliser, en fonction de ses permissions réelles (admin,
  * permission Discord "Bannir des membres", ou rôle autorisé via `.panel` >
  * Permissions) — pas juste un binaire admin/non-admin, puisque les rôles
- * "mod" et "ban" peuvent maintenant être accordés séparément.
+ * "mod" et "ban" peuvent maintenant être accordés séparément. `.banall` n'est
+ * listée que pour un vrai administrateur (isAdmin), jamais pour un simple
+ * rôle "mod" autorisé — voir dangerDashSection.
  * @param {string} prefix
- * @param {{ hasMod: boolean, hasBan: boolean }} perms
+ * @param {{ hasMod: boolean, hasBan: boolean, isAdmin: boolean }} perms
  */
-function buildDashHelpPanel(prefix, { hasMod, hasBan }) {
+function buildDashHelpPanel(prefix, { hasMod, hasBan, isAdmin }) {
   const sections = [memberDashSection(prefix)];
   if (hasBan) sections.push(banDashSection(prefix));
   if (hasMod) sections.push(...modDashSections(prefix));
+  if (isAdmin) sections.push(dangerDashSection(prefix));
 
   return buildHelpPanel({
     title: "Aide — Commandes",
