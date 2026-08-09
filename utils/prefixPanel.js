@@ -165,7 +165,7 @@ function buildRolesPage(guild, statusText) {
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Rôles\n> Crée un nouveau rôle, ou supprime un rôle existant du serveur (action irréversible, une confirmation est demandée)."
+      "## Rôles\n> Crée un nouveau rôle, supprime un rôle existant (action irréversible, une confirmation est demandée), ou réorganise sa position dans la hiérarchie."
     )
   );
   container.addActionRowComponents(
@@ -182,10 +182,55 @@ function buildRolesPage(guild, statusText) {
         .setMaxValues(1)
     )
   );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId("role_move_select")
+        .setPlaceholder("↕️ Choisir un rôle à réorganiser (hiérarchie)")
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
+  );
 
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(buildNavRow("roles"));
 
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+// Classement des rôles du serveur du plus haut au plus bas dans la
+// hiérarchie, @everyone exclu (toujours en bas, position fixe, pas
+// pertinent à afficher/déplacer ici).
+function rankedRoles(guild) {
+  return [...guild.roles.cache.values()].filter((r) => r.id !== guild.id).sort((a, b) => b.position - a.position);
+}
+
+function buildRoleMovePanel(guild, role) {
+  const sorted = rankedRoles(guild);
+  const rank = sorted.findIndex((r) => r.id === role.id) + 1;
+  const maxPosition = guild.members.me.roles.highest.position - 1;
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Déplacer le rôle **${role.name}**\n> Position actuelle : **${rank}** / ${sorted.length} (1 = le plus haut). Utilise les boutons pour le monter ou le descendre d'un cran.`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`role_move:up:${role.id}`)
+        .setLabel("⬆️ Monter")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(role.position >= maxPosition),
+      new ButtonBuilder()
+        .setCustomId(`role_move:down:${role.id}`)
+        .setLabel("⬇️ Descendre")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(role.position <= 1),
+      new ButtonBuilder().setCustomId("role_move_done").setLabel("Retour").setStyle(ButtonStyle.Secondary)
+    )
+  );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
@@ -332,9 +377,10 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
  * pages navigables via les boutons du bas : Préfixes (musique/membres),
  * Logs (salon par catégorie), Permissions (rôles autorisés en plus des
  * permissions Discord natives, par groupe de commandes) et Rôles (créer/
- * supprimer un rôle du serveur, avec confirmation avant suppression). Un
- * bouton "Gérer les rôles en masse" sur la page Permissions ouvre un
- * sous-panel dédié.
+ * supprimer un rôle du serveur avec confirmation avant suppression, et
+ * réorganiser sa position dans la hiérarchie via deux boutons monter/
+ * descendre). Un bouton "Gérer les rôles en masse" sur la page Permissions
+ * ouvre un sous-panel dédié.
  * @param {import('discord.js').Message} message
  */
 async function handlePrefixPanel(message) {
@@ -429,6 +475,54 @@ async function handlePrefixPanel(message) {
         await i.update(
           buildPanel(currentPage, guild, deleted ? `Rôle **${name}** supprimé.` : `Impossible de supprimer **${name}** (erreur Discord).`)
         );
+        return;
+      }
+
+      if (i.isRoleSelectMenu() && i.customId === "role_move_select") {
+        const role = i.roles.first();
+        const invalidReason =
+          role.id === guildId ? "Impossible de déplacer le rôle @everyone." : validateMassRoleTarget(guild, role);
+        if (invalidReason) {
+          await i.reply({ content: invalidReason, ephemeral: true });
+          return;
+        }
+        await i.update(buildRoleMovePanel(guild, role));
+        return;
+      }
+
+      if (i.isButton() && i.customId === "role_move_done") {
+        currentPage = "roles";
+        await i.update(buildPanel(currentPage, guild));
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("role_move:")) {
+        const [, direction, roleId] = i.customId.split(":");
+        const role = guild.roles.cache.get(roleId);
+        if (!role) {
+          currentPage = "roles";
+          await i.update(buildPanel(currentPage, guild, "Ce rôle n'existe déjà plus."));
+          return;
+        }
+        const invalidReason = validateMassRoleTarget(guild, role);
+        if (invalidReason) {
+          await i.reply({ content: invalidReason, ephemeral: true });
+          return;
+        }
+
+        const newPosition = Math.max(role.position + (direction === "up" ? 1 : -1), 1);
+        const moved = await role
+          .setPosition(newPosition, { reason: `Réordonné via .panel par ${message.author.tag}` })
+          .catch((err) => {
+            console.error(err);
+            return null;
+          });
+
+        if (!moved) {
+          await i.reply({ content: "Impossible de déplacer ce rôle (erreur Discord — réessaie).", ephemeral: true });
+          return;
+        }
+        await i.update(buildRoleMovePanel(guild, moved));
         return;
       }
 

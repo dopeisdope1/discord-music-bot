@@ -181,8 +181,13 @@ liste de couleurs prédéfinies (ou "Par défaut", ou "Annuler la création") ; 
 menu déroulant natif Discord "🗑️ Choisir un rôle à supprimer" liste les rôles
 du serveur — en sélectionner un affiche une confirmation (nom du rôle +
 nombre de membres concernés) avant suppression réelle, puisque l'action est
-irréversible. Le rôle @everyone et les rôles gérés par une intégration (bot,
-boost serveur...) ne peuvent pas être supprimés depuis ce panel.
+irréversible ; un troisième menu "↕️ Choisir un rôle à réorganiser" affiche
+sa position actuelle (ex: "3 / 12") avec des boutons ⬆️ Monter / ⬇️ Descendre
+pour le déplacer d'un cran à la fois dans la hiérarchie du serveur. Le rôle
+@everyone et les rôles gérés par une intégration (bot, boost serveur...) ne
+peuvent être ni supprimés ni déplacés depuis ce panel ; un rôle ne peut pas
+non plus être monté au-dessus du rôle le plus haut du bot (limite de
+hiérarchie Discord).
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
