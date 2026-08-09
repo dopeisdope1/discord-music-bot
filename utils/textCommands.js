@@ -476,10 +476,12 @@ const handlers = {
     }
 
     const action = (args[0] || "").toLowerCase();
-    const roleArg = args[1];
+    const roleArg = (args[1] || "").replace(/[<>]/g, "");
     const role =
       message.mentions.roles?.first() ||
-      (roleArg && /^\d{15,}$/.test(roleArg) ? message.guild.roles.cache.get(roleArg) : null);
+      (roleArg && /^\d{15,}$/.test(roleArg)
+        ? await message.guild.roles.fetch(roleArg).catch(() => null)
+        : null);
 
     if (!["add", "remove"].includes(action) || !role) {
       return message.reply({
