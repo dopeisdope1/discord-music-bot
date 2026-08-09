@@ -76,7 +76,7 @@ function buildMusicHelpPanel(prefix = "!") {
   });
 }
 
-// Commandes "-" accessibles à tout le monde, sans permission particulière.
+// Commandes "." accessibles à tout le monde, sans permission particulière.
 function memberDashSection(prefix) {
   return {
     heading: "Membres",
@@ -86,13 +86,13 @@ function memberDashSection(prefix) {
       `\`${prefix}snipe\` — Affiche le dernier message supprimé du salon`,
       `\`${prefix}clear me\` — Supprime tes propres messages récents (limite : 5 fois / 25 min)`,
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
-      "`.ban` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)",
-      "`.unban [id]` — Débannit un membre (panel de sélection si l'ID n'est pas donné)",
+      `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
+      `\`${prefix}unban [id]\` — Débannit un membre (panel de sélection si l'ID n'est pas donné)`,
     ],
   };
 }
 
-// Commandes "-" réservées aux administrateurs.
+// Commandes "." réservées aux administrateurs.
 function adminDashSections(prefix) {
   return [
     {
@@ -101,6 +101,10 @@ function adminDashSections(prefix) {
         `\`${prefix}clear <nombre>\` — Supprime les N derniers messages`,
         `\`${prefix}clear @membre\` ou \`${prefix}clear <id>\` — Supprime les messages récents d'un membre`,
       ],
+    },
+    {
+      heading: "Réglages",
+      lines: [`\`${prefix}panel\` — Panel pour changer les préfixes du bot (musique et membres/modération)`],
     },
     {
       heading: "Salon",

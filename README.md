@@ -96,10 +96,17 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
     profil), `.snipe` (dernier message supprimé du salon)
   - Réservées aux administrateurs : `.clear`, `.renew`, `.hide`, `.unhide`,
-    `.lock`, `.unlock`, `.massrole`
+    `.lock`, `.unlock`, `.massrole`, `.panel`
   - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban`
   - `.help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)
+
+Les deux préfixes ci-dessus (`!` et `.`) sont configurables par serveur via le
+panel `.panel` (réservé aux administrateurs) : deux boutons ouvrent chacun une
+fenêtre pour saisir un nouveau préfixe, sans avoir à toucher au code. La valeur
+est sauvegardée sur le disque du serveur (pas dans le code), donc elle survit
+aux redémarrages mais **peut être réinitialisée par un redéploiement Railway**
+si aucun volume persistant n'est monté sur `data/`.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).

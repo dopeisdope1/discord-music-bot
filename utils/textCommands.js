@@ -7,6 +7,8 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
+const { handlePrefixPanel } = require("./prefixPanel");
+const { getPrefixes } = require("./prefixStore");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
@@ -24,12 +26,10 @@ const LOOP_KEYWORDS = {
   "2": "queue",
 };
 
-const MAIN_PREFIX = "!";
-const DASH_PREFIX = ".";
 // Commandes "." accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
 // Commandes "." réservées aux administrateurs
-const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole"]);
+const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel"]);
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
 // Commandes "." réservées à l'admin ou à la permission "Bannir des membres"
 const BAN_COMMANDS = new Set(["ban", "unban"]);
@@ -232,8 +232,9 @@ const handlers = {
     if (!player) return;
     const niveau = parseInt(args[0], 10);
     if (isNaN(niveau) || niveau < 0 || niveau > 150) {
+      const { main } = getPrefixes(message.guild.id);
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Indique un volume entre 0 et 150. Ex : `!volume 80`")],
+        embeds: [buildStatusEmbed("error", `Indique un volume entre 0 et 150. Ex : \`${main}volume 80\``)],
       });
     }
     player.setVolume(niveau);
@@ -247,8 +248,9 @@ const handlers = {
     if (!player) return;
     const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
     if (!mode) {
+      const { main } = getPrefixes(message.guild.id);
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Mode invalide. Utilise : `!loop off|song|queue`")],
+        embeds: [buildStatusEmbed("error", `Mode invalide. Utilise : \`${main}loop off|song|queue\``)],
       });
     }
     player.setLoop(mode);
@@ -336,13 +338,14 @@ const handlers = {
       }
       const amount = parseInt(rawArg, 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
+        const { dash } = getPrefixes(message.guild.id);
         return sendTempReply(
           channel,
           {
             embeds: [
               buildStatusEmbed(
                 "error",
-                "Utilisation : `.clear me` (tes messages), `.clear @membre`/`<id>` ou `.clear <nombre>`"
+                `Utilisation : \`${dash}clear me\` (tes messages), \`${dash}clear @membre\`/\`<id>\` ou \`${dash}clear <nombre>\``
               ),
             ],
           },
@@ -367,6 +370,10 @@ const handlers = {
           .catch(() => {});
       })
       .catch((err) => console.error(err));
+  },
+
+  async panel(client, message) {
+    await handlePrefixPanel(message);
   },
 
   async ban(client, message) {
@@ -486,11 +493,12 @@ const handlers = {
         : null);
 
     if (!["add", "remove"].includes(action) || !role) {
+      const { dash } = getPrefixes(message.guild.id);
       return message.reply({
         embeds: [
           buildStatusEmbed(
             "error",
-            "Utilisation : `.massrole add @role`/`<id>` ou `.massrole remove @role`/`<id>` (utilise l'ID pour ne pas ping tout le rôle)"
+            `Utilisation : \`${dash}massrole add @role\`/\`<id>\` ou \`${dash}massrole remove @role\`/\`<id>\` (utilise l'ID pour ne pas ping tout le rôle)`
           ),
         ],
       });
@@ -603,19 +611,22 @@ async function handleTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
+  const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);
 
-  // Déclencheur spécial sans préfixe : "uo clear" = "-clear me" (supprime tes
+  // Déclencheur spécial sans préfixe : "uo clear" = ".clear me" (supprime tes
   // propres messages), ouvert à tout le monde (limite gérée dans le handler)
   if (content.toLowerCase() === "uo clear") {
     return handlers.clear(client, message, ["me"]);
   }
 
-  // Préfixe "." : commandes membres + modération + ban/unban
+  // Préfixe "." (configurable via .panel) : commandes membres + modération + ban/unban
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdRaw || "").toLowerCase();
     if (cmd === "help") {
-      const panel = hasModPermission(message) ? buildAdminHelpPanel() : buildMemberDashHelpPanel();
+      const panel = hasModPermission(message)
+        ? buildAdminHelpPanel(DASH_PREFIX)
+        : buildMemberDashHelpPanel(DASH_PREFIX);
       return message.channel.send(panel);
     }
     if (cmd === "clear") {
@@ -641,12 +652,12 @@ async function handleTextCommand(client, message) {
     return handlers[cmd](client, message, args);
   }
 
-  // Préfixe principal "m!"
+  // Préfixe principal (! par défaut, configurable via .panel)
   if (content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdRaw || "").toLowerCase();
     if (cmd === "help") {
-      return message.channel.send(buildMusicHelpPanel());
+      return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX));
     }
     if (handlers[cmd]) {
       return handlers[cmd](client, message, args);
@@ -654,4 +665,4 @@ async function handleTextCommand(client, message) {
   }
 }
 
-module.exports = { handleTextCommand, rememberSnipe, MAIN_PREFIX, DASH_PREFIX };
+module.exports = { handleTextCommand, rememberSnipe };

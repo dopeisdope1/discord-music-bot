@@ -1,0 +1,122 @@
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ComponentType,
+  MessageFlags,
+} = require("discord.js");
+const { getPrefixes, setPrefix } = require("./prefixStore");
+
+const PANEL_TIMEOUT_MS = 5 * 60_000;
+const MAX_PREFIX_LENGTH = 5;
+
+const TYPE_LABELS = {
+  main: "musique",
+  dash: "membres/modération",
+};
+
+function buildPrefixPanel(guildId) {
+  const { main, dash } = getPrefixes(guildId);
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`.ban\`/\`.unban\`) : \`${dash}\``
+    )
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("prefix_edit:main").setLabel("Changer préfixe musique").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("prefix_edit:dash").setLabel("Changer préfixe membres/modération").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildPrefixModal(type, current) {
+  return new ModalBuilder()
+    .setCustomId(`prefix_modal:${type}`)
+    .setTitle(`Préfixe ${TYPE_LABELS[type]}`)
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel(`Nouveau préfixe (${TYPE_LABELS[type]})`)
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(1)
+          .setMaxLength(MAX_PREFIX_LENGTH)
+          .setValue(current)
+          .setRequired(true)
+      )
+    );
+}
+
+/**
+ * Ouvre le panel de gestion des préfixes (`.panel`, réservé aux administrateurs
+ * — la vérification se fait avant l'appel de cette fonction). Deux boutons
+ * ouvrent chacun une modale pour changer le préfixe musique ou membres/mod ;
+ * les valeurs sont persistées par serveur via utils/prefixStore.js.
+ * @param {import('discord.js').Message} message
+ */
+async function handlePrefixPanel(message) {
+  const guildId = message.guild.id;
+  const panelMessage = await message.reply(buildPrefixPanel(guildId));
+
+  const collector = panelMessage.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: PANEL_TIMEOUT_MS,
+  });
+
+  collector.on("collect", async (i) => {
+    if (i.user.id !== message.author.id) {
+      await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
+      return;
+    }
+
+    const type = i.customId.split(":")[1]; // "main" | "dash"
+    const current = getPrefixes(guildId)[type];
+    await i.showModal(buildPrefixModal(type, current));
+
+    let submitted;
+    try {
+      submitted = await i.awaitModalSubmit({
+        time: PANEL_TIMEOUT_MS,
+        filter: (m) => m.customId === `prefix_modal:${type}` && m.user.id === message.author.id,
+      });
+    } catch {
+      return; // pas de soumission dans les temps
+    }
+
+    const raw = submitted.fields.getTextInputValue("value").trim();
+    const prefixes = getPrefixes(guildId);
+    const otherType = type === "main" ? "dash" : "main";
+    const other = prefixes[otherType];
+
+    if (!raw || /\s/.test(raw) || raw.length > MAX_PREFIX_LENGTH) {
+      await submitted.reply({
+        content: "Préfixe invalide : pas d'espace, 1 à 5 caractères.",
+        ephemeral: true,
+      });
+      return;
+    }
+    if (raw === other || raw.startsWith(other) || other.startsWith(raw)) {
+      await submitted.reply({
+        content: `Ce préfixe entre en conflit avec le préfixe ${TYPE_LABELS[otherType]} actuel (\`${other}\`), choisis-en un autre.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    setPrefix(guildId, type, raw);
+    await submitted.update(buildPrefixPanel(guildId));
+  });
+}
+
+module.exports = { handlePrefixPanel };
