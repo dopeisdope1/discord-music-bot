@@ -111,8 +111,11 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     Permissions (trop destructeur pour être délégué) : `.banall` (bannit
     tous les membres humains du serveur sauf toi, avec confirmation —
     action irréversible)
-  - `.help` → n'affiche que les commandes que tu peux réellement utiliser,
-    selon tes permissions (natives Discord et/ou rôles autorisés)
+  - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
+    (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
+    pour voir le détail sans tout afficher d'un coup. Ne montre que les
+    catégories que tu peux réellement utiliser, selon tes permissions
+    (natives Discord et/ou rôles autorisés)
 
 `.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
 voir "Page Permissions" ci-dessous) ouvre un panel à **quatre pages**

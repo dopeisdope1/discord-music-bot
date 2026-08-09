@@ -1,6 +1,6 @@
 const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel, buildDashHelpPanel } = require("./helpPanels");
+const { buildMusicHelpPanel, sendDashHelpPanel } = require("./helpPanels");
 const { hasModPermission, hasBanPermission } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleSpotifyPlay } = require("./spotifyPlay");
@@ -885,13 +885,11 @@ async function handleTextCommand(client, message) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdRaw || "").toLowerCase();
     if (cmd === "help") {
-      return message.channel.send(
-        buildDashHelpPanel(DASH_PREFIX, {
-          hasMod: hasModPermission(message),
-          hasBan: hasBanPermission(message),
-          isAdmin: Boolean(message.member?.permissions.has(PermissionFlagsBits.Administrator)),
-        })
-      );
+      return sendDashHelpPanel(message, DASH_PREFIX, {
+        hasMod: hasModPermission(message),
+        hasBan: hasBanPermission(message),
+        isAdmin: Boolean(message.member?.permissions.has(PermissionFlagsBits.Administrator)),
+      });
     }
     if (cmd === "clear") {
       // Permission gérée dans le handler : dépend de la cible (soi-même,

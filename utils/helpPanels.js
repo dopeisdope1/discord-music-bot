@@ -3,8 +3,12 @@ const {
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
   MessageFlags,
 } = require("discord.js");
+
+const HELP_TIMEOUT_MS = 5 * 60_000;
 
 /**
  * Construit un panel d'aide en Components V2, sans couleur d'accent.
@@ -77,47 +81,49 @@ function buildMusicHelpPanel(prefix = "!") {
   });
 }
 
-// Commandes "." accessibles à tout le monde, sans permission particulière.
-function memberDashSection(prefix) {
-  return {
-    heading: "Membres",
-    lines: [
-      `\`${prefix}pic\`/\`${prefix}avatar [@membre]\` — Photo de profil (toi par défaut)`,
-      `\`${prefix}snipe\` — Dernier message supprimé du salon`,
-      `\`${prefix}clear me\` (ou \`uo clear\`) — Supprime tes messages récents (5×/25 min)`,
-      `\`${prefix}gif <recherche>\` — Envoie un gif`,
-    ],
-  };
-}
-
-// Commandes "." réservées à l'admin, la permission Discord "Bannir des
-// membres", ou un rôle autorisé via `.panel` > Permissions (groupe "ban").
-function banDashSection(prefix) {
-  return {
-    heading: "Bannissement",
-    lines: [
-      `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
-      `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
-      `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
-    ],
-  };
-}
-
-// Commande "." réservée aux VRAIS administrateurs uniquement (pas extensible
-// via un rôle `.panel` > Permissions — trop destructrice).
-function dangerDashSection(prefix) {
-  return {
-    heading: "⚠️ Danger",
-    lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
-  };
-}
-
-// Commandes "." réservées à l'admin, ou un rôle autorisé via `.panel` >
-// Permissions (groupe "mod").
-function modDashSections(prefix) {
-  return [
+/**
+ * Catégories du panel d'aide "-help", filtrées selon ce que l'auteur peut
+ * réellement utiliser (admin, permission Discord "Bannir des membres", ou
+ * rôle autorisé via `.panel` > Permissions) — pas juste un binaire
+ * admin/non-admin, puisque les rôles "mod" et "ban" peuvent être accordés
+ * séparément. "Danger" (`.banall`) n'apparaît que pour un vrai administrateur
+ * (isAdmin), jamais pour un simple rôle "mod" autorisé.
+ * @param {string} prefix
+ * @param {{ hasMod: boolean, hasBan: boolean, isAdmin: boolean }} perms
+ */
+function buildDashCategories(prefix, { hasMod, hasBan, isAdmin }) {
+  const categories = [
     {
-      heading: "Modération",
+      key: "public",
+      label: "Commandes publiques",
+      names: ["pic", "avatar", "snipe", "clear me", "gif"],
+      lines: [
+        `\`${prefix}pic\`/\`${prefix}avatar [@membre]\` — Photo de profil (toi par défaut)`,
+        `\`${prefix}snipe\` — Dernier message supprimé du salon`,
+        `\`${prefix}clear me\` (ou \`uo clear\`) — Supprime tes messages récents (5×/25 min)`,
+        `\`${prefix}gif <recherche>\` — Envoie un gif`,
+      ],
+    },
+  ];
+
+  if (hasBan) {
+    categories.push({
+      key: "ban",
+      label: "Bannissement",
+      names: ["ban", "unban", "unbanall"],
+      lines: [
+        `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
+        `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
+        `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
+      ],
+    });
+  }
+
+  if (hasMod) {
+    categories.push({
+      key: "mod",
+      label: "Modération",
+      names: ["clear", "panel", "renew", "hide", "unhide", "lock", "unlock", "massrole", "create"],
       lines: [
         `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
         `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
@@ -127,35 +133,96 @@ function modDashSections(prefix) {
         `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
         `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
       ],
-    },
-  ];
+      footer: "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord).",
+    });
+  }
+
+  if (isAdmin) {
+    categories.push({
+      key: "danger",
+      label: "⚠️ Danger",
+      names: ["banall"],
+      lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
+    });
+  }
+
+  return categories;
+}
+
+function buildCategorySelect(categories, selectedKey) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("help_category")
+      .setPlaceholder("Naviguer vers une catégorie")
+      .addOptions(categories.map((c) => ({ label: c.label, value: c.key, default: c.key === selectedKey })))
+  );
+}
+
+function buildHelpOverview(categories) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Aide — Commandes\n" +
+        "Sélectionne une catégorie dans le menu ci-dessous pour voir ses commandes.\n" +
+        "Les arguments entre `[]` sont facultatifs, ceux entre `<>` sont obligatoires."
+    )
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      categories.map((c) => `**${c.label} (${c.names.length})** : ${c.names.join(", ")}`).join("\n")
+    )
+  );
+  container.addActionRowComponents(buildCategorySelect(categories));
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildHelpCategoryPanel(categories, key) {
+  const category = categories.find((c) => c.key === key) || categories[0];
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## ${category.label}\n${category.lines.join("\n")}`)
+  );
+  if (category.footer) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(category.footer));
+  }
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildCategorySelect(categories, category.key));
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 /**
- * Panel d'aide "-help" : ne liste que les commandes que l'auteur peut
- * réellement utiliser, en fonction de ses permissions réelles (admin,
- * permission Discord "Bannir des membres", ou rôle autorisé via `.panel` >
- * Permissions) — pas juste un binaire admin/non-admin, puisque les rôles
- * "mod" et "ban" peuvent maintenant être accordés séparément. `.banall` n'est
- * listée que pour un vrai administrateur (isAdmin), jamais pour un simple
- * rôle "mod" autorisé — voir dangerDashSection.
+ * Envoie le panel d'aide "-help" interactif : un écran d'accueil qui résume
+ * chaque catégorie (nom des commandes), puis un menu déroulant pour naviguer
+ * dedans sans tout afficher d'un coup — voir buildDashCategories pour le
+ * filtrage par permission.
+ * @param {import('discord.js').Message} message
  * @param {string} prefix
  * @param {{ hasMod: boolean, hasBan: boolean, isAdmin: boolean }} perms
  */
-function buildDashHelpPanel(prefix, { hasMod, hasBan, isAdmin }) {
-  const sections = [memberDashSection(prefix)];
-  if (hasBan) sections.push(banDashSection(prefix));
-  if (hasMod) sections.push(...modDashSections(prefix));
-  if (isAdmin) sections.push(dangerDashSection(prefix));
+async function sendDashHelpPanel(message, prefix, perms) {
+  const categories = buildDashCategories(prefix, perms);
+  const panelMessage = await message.reply(buildHelpOverview(categories));
 
-  return buildHelpPanel({
-    title: "Aide — Commandes",
-    intro: `Préfixe : \`${prefix}\` — commandes disponibles pour toi ci-dessous.`,
-    sections,
-    footer: hasMod
-      ? "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord)."
-      : undefined,
+  const collector = panelMessage.createMessageComponentCollector({ time: HELP_TIMEOUT_MS });
+
+  collector.on("collect", async (i) => {
+    try {
+      if (i.user.id !== message.author.id) {
+        await i.reply({ content: "Seul l'auteur de la commande peut naviguer dans ce menu.", ephemeral: true });
+        return;
+      }
+      if (!i.isStringSelectMenu() || i.customId !== "help_category") return;
+      await i.update(buildHelpCategoryPanel(categories, i.values[0]));
+    } catch (err) {
+      console.error("[help] Erreur dans le panel d'aide :", err);
+    }
+  });
+
+  collector.on("end", () => {
+    panelMessage.edit({ components: [] }).catch(() => {});
   });
 }
 
-module.exports = { buildMusicHelpPanel, buildDashHelpPanel, buildHelpPanel };
+module.exports = { buildMusicHelpPanel, sendDashHelpPanel, buildHelpPanel };
