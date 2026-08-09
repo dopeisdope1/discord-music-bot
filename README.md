@@ -198,11 +198,12 @@ la même personne (en lisant sa présence Spotify au moment du clic, pas une val
 
 Réservés aux administrateurs (ou aux membres avec la permission Discord
 **Bannir des membres**). `.ban` et `.unban` ouvrent tous les deux le panel
-**Zinki Assassini** : pas de liste de membres à parcourir, un bouton
-"Rechercher un membre" ouvre une recherche par pseudo/nom/ID (via l'API de
-recherche de Discord pour `.ban`, parmi les membres actuellement bannis pour
-`.unban`), et ne propose un choix que s'il y a plusieurs résultats. `.unban`
-débannit aussi directement si tu lui donnes un ID (`.unban <id>`).
+**Zinki Assassini** avec un menu déroulant natif Discord (`.ban` : sélecteur
+de membre du serveur ; `.unban` : liste des membres actuellement bannis) —
+taper un pseudo filtre la liste en direct (Discord affiche quand même une
+liste par défaut avant de taper, comportement du client impossible à masquer
+via le bot). `.unban` débannit aussi directement si tu lui donnes un ID
+(`.unban <id>`).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra

@@ -2,11 +2,7 @@ const {
   ContainerBuilder,
   TextDisplayBuilder,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
+  UserSelectMenuBuilder,
   StringSelectMenuBuilder,
   MessageFlags,
   PermissionFlagsBits,
@@ -44,51 +40,16 @@ async function safeErrorReply(i) {
   }
 }
 
-function buildSearchPanel(title, intro, buttonCustomId) {
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n> ${intro}`));
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(buttonCustomId).setLabel("Rechercher un membre").setStyle(ButtonStyle.Secondary)
-    )
-  );
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-function buildSearchModal(customId, title) {
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle(title)
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("query")
-          .setLabel("Pseudo, nom, ou ID")
-          .setStyle(TextInputStyle.Short)
-          .setMinLength(1)
-          .setMaxLength(100)
-          .setRequired(true)
-      )
-    );
-}
-
-function buildPickPanel(title, candidates, selectCustomId) {
+function buildZinkiAssassiniPanel() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## ${title}\n> Plusieurs résultats correspondent, choisis :`)
+    new TextDisplayBuilder().setContent(
+      "## Zinki Assassini\n> Choisis qui bannir du serveur (tape un pseudo ou un ID pour chercher)."
+    )
   );
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(selectCustomId)
-        .setPlaceholder("Choisir")
-        .addOptions(
-          candidates.map((c) => ({
-            label: c.label.slice(0, 100),
-            value: c.value,
-            description: c.description ? c.description.slice(0, 100) : undefined,
-          }))
-        )
+      new UserSelectMenuBuilder().setCustomId("zinki_assassini_select").setPlaceholder("Choisir un membre à bannir")
     )
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -148,10 +109,11 @@ async function banTarget(interaction, message, targetId) {
 
 /**
  * Ouvre le panel "Zinki Assassini" (`.ban`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction). Pas de liste de
- * membres à parcourir : un bouton ouvre une recherche (pseudo/nom/ID) via
- * l'API de recherche de membres Discord, et ne propose un choix que s'il y a
- * plusieurs résultats.
+ * vérification se fait avant l'appel de cette fonction). Menu déroulant natif
+ * Discord (UserSelectMenu) : ouvre le sélecteur natif, où taper un pseudo/nom
+ * filtre en direct (Discord affiche quand même une liste de membres en
+ * dessous par défaut — comportement du client, pas du bot, impossible à
+ * masquer via l'API).
  * @param {import('discord.js').Message} message
  */
 async function handleBanPanel(message) {
@@ -160,11 +122,8 @@ async function handleBanPanel(message) {
     return;
   }
 
-  const panelMessage = await message.reply(
-    buildSearchPanel("Zinki Assassini", "Clique pour rechercher qui bannir (pseudo, nom ou ID).", "zinki_search_open")
-  );
-
-  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+  const panelMessage = await message.reply(buildZinkiAssassiniPanel());
+  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
     try {
@@ -173,49 +132,7 @@ async function handleBanPanel(message) {
         return;
       }
 
-      if (i.isButton() && i.customId === "zinki_search_open") {
-        await i.showModal(buildSearchModal("zinki_search_modal", "Rechercher un membre à bannir"));
-
-        let submitted;
-        try {
-          submitted = await i.awaitModalSubmit({
-            time: PANEL_TIMEOUT_MS,
-            filter: (m) => m.customId === "zinki_search_modal" && m.user.id === message.author.id,
-          });
-        } catch {
-          return; // pas de soumission dans les temps
-        }
-
-        const query = submitted.fields.getTextInputValue("query").trim();
-
-        if (/^\d{15,}$/.test(query)) {
-          await banTarget(submitted, message, query);
-          return;
-        }
-
-        const results = await message.guild.members.search({ query, limit: 25 }).catch(() => null);
-        if (!results || results.size === 0) {
-          await submitted.reply({ embeds: [buildStatusEmbed("error", `Aucun membre trouvé pour "${query}".`)], ephemeral: true });
-          return;
-        }
-        if (results.size === 1) {
-          await banTarget(submitted, message, results.first().id);
-          return;
-        }
-
-        const candidates = [...results.values()].map((m) => ({
-          label: m.user.tag,
-          value: m.id,
-          description: m.nickname ? `Surnom : ${m.nickname}` : undefined,
-        }));
-        await submitted.update(buildPickPanel("Zinki Assassini", candidates, "zinki_pick"));
-        return;
-      }
-
-      if (i.isStringSelectMenu() && i.customId === "zinki_pick") {
-        await banTarget(i, message, i.values[0]);
-        return;
-      }
+      await banTarget(i, message, i.values[0]);
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel Zinki Assassini :", err);
       await safeErrorReply(i);
@@ -289,17 +206,17 @@ async function unbanTarget(interaction, message, targetId, target) {
   );
   sendLog(message.client, message.guild.id, "moderation", {
     title: "Unban",
-    description: "Membre débanni depuis la recherche.",
+    description: "Membre débanni via Zinki Assassini.",
     actor: message.author,
     fields: [{ name: "Cible", value: target ? `${target.user.tag} (${targetId})` : `<@${targetId}>`, inline: true }],
   });
 }
 
 /**
- * Ouvre un panel pour débannir un membre par recherche (`.unban` sans
- * argument, réservé aux administrateurs — la vérification se fait avant
- * l'appel de cette fonction). Recherche parmi les membres actuellement
- * bannis (pseudo/nom/ID) plutôt que d'en afficher la liste complète.
+ * Ouvre un panel listant les membres actuellement bannis, pour en débannir un
+ * (`.unban` sans argument, réservé aux administrateurs — la vérification se
+ * fait avant l'appel de cette fonction). Menu déroulant natif Discord
+ * (StringSelectMenu) : taper filtre en direct parmi les options listées.
  * @param {import('discord.js').Message} message
  */
 async function handleUnbanPanel(message) {
@@ -314,15 +231,32 @@ async function handleUnbanPanel(message) {
     return;
   }
 
-  const panelMessage = await message.reply(
-    buildSearchPanel(
-      "Zinki Assassini",
-      `Clique pour rechercher qui débannir parmi les **${bans.size}** membre(s) banni(s) (pseudo, nom ou ID).`,
-      "unban_search_open"
+  const entries = [...bans.values()].slice(0, 25);
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Zinki Assassini\n> Choisis qui débannir${
+        bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`.unban <id>\` pour les autres)` : ""
+      } (tape un pseudo pour filtrer).`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("unban_select")
+        .setPlaceholder("Choisir un membre à débannir")
+        .addOptions(
+          entries.map((ban) => ({
+            label: ban.user.tag.slice(0, 100),
+            value: ban.user.id,
+            description: ban.reason ? ban.reason.slice(0, 100) : undefined,
+          }))
+        )
     )
   );
 
-  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+  const panelMessage = await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
+  const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS, max: 1 });
 
   collector.on("collect", async (i) => {
     try {
@@ -331,52 +265,9 @@ async function handleUnbanPanel(message) {
         return;
       }
 
-      if (i.isButton() && i.customId === "unban_search_open") {
-        await i.showModal(buildSearchModal("unban_search_modal", "Zinki Assassini — Rechercher"));
-
-        let submitted;
-        try {
-          submitted = await i.awaitModalSubmit({
-            time: PANEL_TIMEOUT_MS,
-            filter: (m) => m.customId === "unban_search_modal" && m.user.id === message.author.id,
-          });
-        } catch {
-          return;
-        }
-
-        const query = submitted.fields.getTextInputValue("query").trim().toLowerCase();
-        const matches = /^\d{15,}$/.test(query)
-          ? [...bans.values()].filter((b) => b.user.id === query)
-          : [...bans.values()].filter(
-              (b) => b.user.tag.toLowerCase().includes(query) || b.user.username.toLowerCase().includes(query)
-            );
-
-        if (matches.length === 0) {
-          await submitted.reply({
-            embeds: [buildStatusEmbed("error", `Aucun membre banni trouvé pour "${query}".`)],
-            ephemeral: true,
-          });
-          return;
-        }
-        if (matches.length === 1) {
-          await unbanTarget(submitted, message, matches[0].user.id, matches[0]);
-          return;
-        }
-
-        const candidates = matches.slice(0, 25).map((b) => ({
-          label: b.user.tag,
-          value: b.user.id,
-          description: b.reason || undefined,
-        }));
-        await submitted.update(buildPickPanel("Zinki Assassini", candidates, "unban_pick"));
-        return;
-      }
-
-      if (i.isStringSelectMenu() && i.customId === "unban_pick") {
-        const target = bans.get(i.values[0]);
-        await unbanTarget(i, message, i.values[0], target);
-        return;
-      }
+      const targetId = i.values[0];
+      const target = entries.find((ban) => ban.user.id === targetId);
+      await unbanTarget(i, message, targetId, target);
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel de débannissement :", err);
       await safeErrorReply(i);
