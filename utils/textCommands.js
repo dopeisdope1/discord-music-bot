@@ -9,6 +9,7 @@ const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
+const { sendLog } = require("./actionLogger");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
@@ -368,6 +369,14 @@ const handlers = {
         tempMessage
           ?.edit({ embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${joke}`)] })
           .catch(() => {});
+        sendLog(
+          client,
+          message.guild.id,
+          "moderation",
+          `**${message.author.tag}** a utilisé \`.clear\` dans ${channel} — **${deletedTotal}** message(s) supprimé(s)${
+            targetMemberId ? ` (cible : <@${targetMemberId}>)` : ""
+          }.`
+        );
       })
       .catch((err) => console.error(err));
   },
@@ -400,6 +409,7 @@ const handlers = {
       await clone.setPosition(channel.position).catch(() => {});
       await channel.delete().catch(() => {});
       await sendTempReply(clone, { embeds: [buildStatusEmbed("success", "Salon renouvelé.")] }, 15000);
+      sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a renouvelé le salon **#${channel.name}**.`);
     } catch (err) {
       console.error(err);
       await message.channel.send({
@@ -422,6 +432,7 @@ const handlers = {
       { embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.")], allowedMentions: { parse: [] } },
       15000
     );
+    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a caché le salon ${message.channel} pour @everyone.`);
   },
 
   async unhide(client, message) {
@@ -441,6 +452,7 @@ const handlers = {
       },
       15000
     );
+    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a rendu le salon ${message.channel} visible pour @everyone.`);
   },
 
   async lock(client, message) {
@@ -458,6 +470,7 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
+    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a verrouillé le salon ${message.channel}.`);
   },
 
   async unlock(client, message) {
@@ -475,6 +488,7 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
+    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a déverrouillé le salon ${message.channel}.`);
   },
 
   async massrole(client, message, args) {
@@ -556,6 +570,14 @@ const handlers = {
         ),
       ],
     });
+    sendLog(
+      client,
+      message.guild.id,
+      "roles",
+      `**${message.author.tag}** a ${action === "add" ? "ajouté" : "retiré"} le rôle **${role.name}** ${
+        action === "add" ? "à" : "de"
+      } **${success}** membre(s)${failed ? ` (${failed} échec(s))` : ""}.`
+    );
   },
 
   async pic(client, message) {

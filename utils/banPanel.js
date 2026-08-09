@@ -9,6 +9,7 @@ const {
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { randomClearJoke } = require("./jokes");
+const { sendLog } = require("./actionLogger");
 
 const PANEL_TIMEOUT_MS = 60_000;
 
@@ -102,6 +103,12 @@ async function handleBanPanel(message) {
         `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
       )
     );
+    sendLog(
+      message.client,
+      message.guild.id,
+      "moderation",
+      `**${message.author.tag}** a banni **${targetMember ? targetMember.user.tag : targetId}** via Zinki Assassini.`
+    );
   });
 
   collector.on("end", (collected) => {
@@ -139,6 +146,7 @@ async function unbanById(message, userId) {
   await message.reply({
     embeds: [buildStatusEmbed("success", `<@${userId}> a été débanni — ${randomClearJoke()}`)],
   });
+  sendLog(message.client, message.guild.id, "moderation", `**${message.author.tag}** a débanni <@${userId}> (par ID).`);
 }
 
 /**
@@ -215,6 +223,12 @@ async function handleUnbanPanel(message) {
 
     await i.editReply(
       buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
+    );
+    sendLog(
+      message.client,
+      message.guild.id,
+      "moderation",
+      `**${message.author.tag}** a débanni **${target ? target.user.tag : targetId}**.`
     );
   });
 

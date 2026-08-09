@@ -108,6 +108,13 @@ est sauvegardée sur le disque du serveur (pas dans le code), donc elle survit
 aux redémarrages mais **peut être réinitialisée par un redéploiement Railway**
 si aucun volume persistant n'est monté sur `data/`.
 
+Le même panel `.panel` propose aussi une section **Logs** : un menu déroulant
+par catégorie (**Logs modération** = `.clear`/`.ban`/`.unban`, **Logs salon** =
+`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`, **Logs rôles** = `.massrole`) où
+tu choisis, en tapant pour rechercher, le salon où le bot doit poster un
+message à chaque utilisation de ces commandes. Laisser une catégorie vide
+désactive simplement ses logs.
+
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
 
