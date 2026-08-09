@@ -29,7 +29,7 @@ const DASH_PREFIX = "-";
 // Commandes "-" accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
 // Commandes "-" réservées aux administrateurs
-const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock"]);
+const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole"]);
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -465,6 +465,76 @@ const handlers = {
         buildStatusEmbed("success", "Salon déverrouillé : @everyone peut de nouveau écrire."),
       ],
       allowedMentions: { parse: [] },
+    });
+  },
+
+  async massrole(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")],
+      });
+    }
+
+    const action = (args[0] || "").toLowerCase();
+    const role = message.mentions.roles?.first();
+
+    if (!["add", "remove"].includes(action) || !role) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `-massrole add @role` ou `-massrole remove @role`")],
+      });
+    }
+
+    if (role.managed) {
+      return message.reply({
+        embeds: [
+          buildStatusEmbed("error", "Ce rôle est géré automatiquement (bot/intégration), impossible de le modifier en masse."),
+        ],
+      });
+    }
+
+    const botMember = message.guild.members.me;
+    if (role.position >= botMember.roles.highest.position) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Ce rôle est plus haut que le mien dans la hiérarchie, je ne peux pas le modifier.")],
+      });
+    }
+
+    await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          `${action === "add" ? "Ajout" : "Retrait"} du rôle **${role.name}** en cours pour tous les membres...`
+        ),
+      ],
+    });
+
+    const members = await message.guild.members.fetch();
+    const targets = members.filter(
+      (m) => !m.user.bot && (action === "add" ? !m.roles.cache.has(role.id) : m.roles.cache.has(role.id))
+    );
+
+    let success = 0;
+    let failed = 0;
+    for (const member of targets.values()) {
+      try {
+        if (action === "add") await member.roles.add(role, `Massrole par ${message.author.tag}`);
+        else await member.roles.remove(role, `Massrole par ${message.author.tag}`);
+        success += 1;
+      } catch (err) {
+        console.error(err);
+        failed += 1;
+      }
+    }
+
+    await message.channel.send({
+      embeds: [
+        buildStatusEmbed(
+          "success",
+          `${action === "add" ? "Ajouté" : "Retiré"} **${role.name}** pour **${success}** membre(s)` +
+            (failed ? ` (${failed} échec(s))` : "") +
+            "."
+        ),
+      ],
     });
   },
 
