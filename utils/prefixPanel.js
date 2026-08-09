@@ -20,6 +20,7 @@ const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
 const { getAllowedRoles, setAllowedRoles, PERMISSION_GROUPS } = require("./rolePermStore");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { saveGuildConfig } = require("./configChannel");
+const { sendLog } = require("./actionLogger");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
@@ -34,6 +35,7 @@ const PAGES = {
   prefixes: "Préfixes",
   logs: "Logs",
   permissions: "Permissions",
+  roles: "Rôles",
 };
 
 function buildSimplePanel(text) {
@@ -152,9 +154,88 @@ function buildPermissionsPage(guildId, guild) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-function buildPanel(page, guild) {
+function buildRolesPage(guild, statusText) {
+  const container = new ContainerBuilder();
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Rôles\n> Crée un nouveau rôle, ou supprime un rôle existant du serveur (action irréversible, une confirmation est demandée)."
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("role_create_open").setLabel("➕ Créer un rôle").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId("role_delete_select")
+        .setPlaceholder("🗑️ Choisir un rôle à supprimer")
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildNavRow("roles"));
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildRoleDeleteConfirmPanel(role) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Supprimer le rôle **${role.name}** ?\n> Action irréversible — ${role.members.size} membre(s) actuellement concerné(s) le perdront.`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`role_delete_confirm:${role.id}`)
+        .setLabel("Confirmer la suppression")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("role_delete_cancel").setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildRoleCreateModal() {
+  return new ModalBuilder()
+    .setCustomId("role_create_modal")
+    .setTitle("Créer un rôle")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("name")
+          .setLabel("Nom du rôle")
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(1)
+          .setMaxLength(100)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("color")
+          .setLabel("Couleur en hex, optionnel (ex: ff5500)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(7)
+          .setRequired(false)
+      )
+    );
+}
+
+function buildPanel(page, guild, statusText) {
   if (page === "logs") return buildLogsPage(guild.id);
   if (page === "permissions") return buildPermissionsPage(guild.id, guild);
+  if (page === "roles") return buildRolesPage(guild, statusText);
   return buildPrefixesPage(guild.id);
 }
 
@@ -219,11 +300,13 @@ async function replyWithError(interaction) {
 
 /**
  * Ouvre le panel d'administration (`.panel`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction), organisé en trois
+ * vérification se fait avant l'appel de cette fonction), organisé en quatre
  * pages navigables via les boutons du bas : Préfixes (musique/membres),
- * Logs (salon par catégorie) et Permissions (rôles autorisés en plus des
- * permissions Discord natives, par groupe de commandes). Un bouton "Gérer les
- * rôles en masse" sur la page Permissions ouvre un sous-panel dédié.
+ * Logs (salon par catégorie), Permissions (rôles autorisés en plus des
+ * permissions Discord natives, par groupe de commandes) et Rôles (créer/
+ * supprimer un rôle du serveur, avec confirmation avant suppression). Un
+ * bouton "Gérer les rôles en masse" sur la page Permissions ouvre un
+ * sous-panel dédié.
  * @param {import('discord.js').Message} message
  */
 async function handlePrefixPanel(message) {
@@ -268,6 +351,105 @@ async function handlePrefixPanel(message) {
         setAllowedRoles(guildId, group, i.values);
         saveGuildConfig(i.guild);
         await i.update(buildPanel(currentPage, guild));
+        return;
+      }
+
+      if (i.isRoleSelectMenu() && i.customId === "role_delete_select") {
+        const role = i.roles.first();
+        const invalidReason =
+          role.id === guildId ? "Impossible de supprimer le rôle @everyone." : validateMassRoleTarget(guild, role);
+        if (invalidReason) {
+          await i.reply({ content: invalidReason, ephemeral: true });
+          return;
+        }
+        await i.update(buildRoleDeleteConfirmPanel(role));
+        return;
+      }
+
+      if (i.isButton() && i.customId === "role_delete_cancel") {
+        currentPage = "roles";
+        await i.update(buildPanel(currentPage, guild));
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("role_delete_confirm:")) {
+        const roleId = i.customId.split(":")[1];
+        const role = guild.roles.cache.get(roleId);
+        currentPage = "roles";
+        if (!role) {
+          await i.update(buildPanel(currentPage, guild, "Ce rôle n'existe déjà plus."));
+          return;
+        }
+        const name = role.name;
+        const deleted = await role
+          .delete(`Supprimé via .panel par ${message.author.tag}`)
+          .then(() => true)
+          .catch((err) => {
+            console.error(err);
+            return false;
+          });
+        if (deleted) {
+          sendLog(i.client, guildId, "roles", {
+            title: "Suppression de rôle",
+            description: `Rôle **${name}** supprimé.`,
+            actor: message.author,
+          });
+        }
+        await i.update(
+          buildPanel(currentPage, guild, deleted ? `Rôle **${name}** supprimé.` : `Impossible de supprimer **${name}** (erreur Discord).`)
+        );
+        return;
+      }
+
+      if (i.isButton() && i.customId === "role_create_open") {
+        if (!guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          await i.reply({ content: "Il me manque la permission **Gérer les rôles**.", ephemeral: true });
+          return;
+        }
+        await i.showModal(buildRoleCreateModal());
+
+        const submitted = await i
+          .awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === "role_create_modal" && m.user.id === message.author.id,
+          })
+          .catch(() => null);
+        if (!submitted) return;
+
+        const name = submitted.fields.getTextInputValue("name").trim();
+        const rawColor = submitted.fields.getTextInputValue("color").trim();
+        let color;
+        if (rawColor) {
+          const hex = rawColor.replace(/^#/, "");
+          if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+            await submitted.reply({
+              content: "Couleur invalide : donne un code hex à 6 caractères (ex: ff5500), ou laisse vide.",
+              ephemeral: true,
+            });
+            return;
+          }
+          color = parseInt(hex, 16);
+        }
+
+        const role = await guild.roles
+          .create({ name, color, reason: `Créé via .panel par ${message.author.tag}` })
+          .catch((err) => {
+            console.error(err);
+            return null;
+          });
+
+        currentPage = "roles";
+        if (!role) {
+          await submitted.update(buildPanel(currentPage, guild, "Impossible de créer ce rôle (nom invalide, ou limite de rôles atteinte)."));
+          return;
+        }
+
+        sendLog(submitted.client, guildId, "roles", {
+          title: "Création de rôle",
+          description: `Rôle **${role.name}** créé.`,
+          actor: message.author,
+        });
+        await submitted.update(buildPanel(currentPage, guild, `Rôle **${role.name}** créé.`));
         return;
       }
 

@@ -110,8 +110,9 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     selon tes permissions (natives Discord et/ou rôles autorisés)
 
 `.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
-voir "Page Permissions" ci-dessous) ouvre un panel à **trois pages**
-navigables via les boutons du bas : **Préfixes**, **Logs** et **Permissions**.
+voir "Page Permissions" ci-dessous) ouvre un panel à **quatre pages**
+navigables via les boutons du bas : **Préfixes**, **Logs**, **Permissions** et
+**Rôles**.
 
 **Page Préfixes** — les deux préfixes ci-dessus (`!` et `.`) sont configurables
 par serveur : deux boutons ouvrent chacun une fenêtre pour saisir un nouveau
@@ -164,6 +165,14 @@ Le bouton **"Gérer les rôles en masse"** sur la page Permissions fait la même
 chose que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les
 membres non-bot du serveur), mais via deux menus déroulants de rôles au lieu
 de taper la commande.
+
+**Page Rôles** — un bouton "➕ Créer un rôle" ouvre une fenêtre pour saisir un
+nom (et, en option, une couleur en hex) ; un menu déroulant natif Discord
+"🗑️ Choisir un rôle à supprimer" liste les rôles du serveur — en sélectionner
+un affiche une confirmation (nom du rôle + nombre de membres concernés) avant
+suppression réelle, puisque l'action est irréversible. Le rôle @everyone et
+les rôles gérés par une intégration (bot, boost serveur...) ne peuvent pas
+être supprimés depuis ce panel.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
