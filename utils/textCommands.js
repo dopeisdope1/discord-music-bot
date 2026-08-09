@@ -386,7 +386,7 @@ const handlers = {
       const clone = await channel.clone({ reason: `Salon renouvelé par ${message.author.tag}` });
       await clone.setPosition(channel.position).catch(() => {});
       await channel.delete().catch(() => {});
-      await clone.send({ embeds: [buildStatusEmbed("success", "Salon renouvelé.")] });
+      await sendTempReply(clone, { embeds: [buildStatusEmbed("success", "Salon renouvelé.")] }, 15000);
     } catch (err) {
       console.error(err);
       await message.channel.send({
@@ -404,10 +404,11 @@ const handlers = {
     await message.channel.permissionOverwrites
       .edit(message.guild.roles.everyone, { ViewChannel: false })
       .catch(() => {});
-    await message.channel.send({
-      embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.")],
-      allowedMentions: { parse: [] },
-    });
+    await sendTempReply(
+      message.channel,
+      { embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.")], allowedMentions: { parse: [] } },
+      15000
+    );
   },
 
   async unhide(client, message) {
@@ -419,10 +420,14 @@ const handlers = {
     await message.channel.permissionOverwrites
       .edit(message.guild.roles.everyone, { ViewChannel: null })
       .catch(() => {});
-    await message.channel.send({
-      embeds: [buildStatusEmbed("success", "Salon de nouveau visible pour @everyone.")],
-      allowedMentions: { parse: [] },
-    });
+    await sendTempReply(
+      message.channel,
+      {
+        embeds: [buildStatusEmbed("success", "Salon de nouveau visible pour @everyone.")],
+        allowedMentions: { parse: [] },
+      },
+      15000
+    );
   },
 
   async lock(client, message) {
