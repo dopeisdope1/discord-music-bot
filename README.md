@@ -107,9 +107,13 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - `.help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)
 
-Les deux préfixes ci-dessus (`!` et `.`) sont configurables par serveur via le
-panel `.panel` (réservé aux administrateurs) : deux boutons ouvrent chacun une
-fenêtre pour saisir un nouveau préfixe, sans avoir à toucher au code.
+`.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
+voir "Page Permissions" ci-dessous) ouvre un panel à **trois pages**
+navigables via les boutons du bas : **Préfixes**, **Logs** et **Permissions**.
+
+**Page Préfixes** — les deux préfixes ci-dessus (`!` et `.`) sont configurables
+par serveur : deux boutons ouvrent chacun une fenêtre pour saisir un nouveau
+préfixe, sans avoir à toucher au code.
 
 ### Pourquoi la config ne se réinitialise plus après un redéploiement
 
@@ -118,8 +122,8 @@ Le disque du container Railway est **réinitialisé à chaque redéploiement**
 écrit que dans `data/` y disparaîtrait à chaque mise à jour du bot.
 
 Pour éviter ça sans configuration manuelle sur Railway, chaque changement fait
-via `.panel` (préfixe ou salon de logs) est aussi sauvegardé dans un salon
-Discord caché appelé **`zinki-config`** (créé automatiquement, masqué à
+via `.panel` (préfixe, salon de logs ou rôle autorisé) est aussi sauvegardé
+dans un salon Discord caché appelé **`zinki-config`** (créé automatiquement, masqué à
 @everyone) — voir `utils/configChannel.js`. Au démarrage du bot, la config y
 est relue et rechargée en mémoire **avant** de toucher au disque local :
 Discord, contrairement au container Railway, n'est jamais réinitialisé, donc
@@ -130,21 +134,34 @@ rien de ce qui est déjà configuré n'est jamais perdu ni remis à zéro.
 Railway si tu en montes un) reste utilisé comme cache local rapide en plus de
 ça, mais n'est plus la seule copie de la config.
 
-Le même panel `.panel` propose aussi une section **Logs** : un menu déroulant
-par catégorie (**Logs modération** = `.clear`/`.ban`/`.unban`, **Logs salon** =
-`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`, **Logs rôles** = `.massrole` ET
-tout ajout/retrait de rôle fait à la main sur le profil d'un membre) où tu
-choisis, en tapant pour rechercher, le salon où le bot doit poster un message.
-Laisser une catégorie vide désactive simplement ses logs. Pour "Logs rôles",
-un changement fait via `.massrole`/le panel donne un seul message résumé
-(nombre de membres touchés) ; un changement fait à la main donne un message
-par membre avec le nom de la personne qui a fait le changement (nécessite la
-permission **View Audit Log**, voir section 3).
+**Page Logs** — un menu déroulant par catégorie (**Logs modération** =
+`.clear`/`.ban`/`.unban`, **Logs salon** = `.renew`/`.hide`/`.unhide`/
+`.lock`/`.unlock`, **Logs rôles** = `.massrole` ET tout ajout/retrait de rôle
+fait à la main sur le profil d'un membre) où tu choisis, en tapant pour
+rechercher, le salon où le bot doit poster un message. Laisser une catégorie
+vide désactive simplement ses logs. Pour "Logs rôles", un changement fait via
+`.massrole`/le panel donne un seul message résumé (nombre de membres
+touchés) ; un changement fait à la main donne un message par membre avec le
+nom de la personne qui a fait le changement (nécessite la permission
+**View Audit Log**, voir section 3).
 
-Le bouton **"Gérer les rôles en masse"** du panel `.panel` fait la même chose
-que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les membres
-non-bot du serveur), mais via deux menus déroulants de rôles au lieu de taper
-la commande.
+**Page Permissions** (réservée aux administrateurs même si un rôle "mod" a
+été autorisé — pour éviter qu'un rôle autorisé s'auto-accorde plus de droits)
+— un menu de rôles par groupe de commandes (**Commandes modération** :
+`.renew`/`.hide`/`.unhide`/`.lock`/`.unlock`/`.massrole`/`.panel`/`.create`/
+`.clear` sur un autre membre ; **Commandes ban** : `.ban`/`.unban`) où tu
+choisis les rôles autorisés à les utiliser, en plus des permissions Discord
+natives (Administrateur, Bannir des membres) qui continuent de fonctionner
+normalement — ce menu ne fait qu'ajouter des accès, jamais en retirer.
+Sélectionner aucun rôle retire les accès accordés par ce menu (les
+permissions Discord natives restent inchangées). Persisté dans
+`data/rolePerms.json` (+ salon `zinki-config`, voir plus bas), comme les
+préfixes et les logs.
+
+Le bouton **"Gérer les rôles en masse"** sur la page Permissions fait la même
+chose que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les
+membres non-bot du serveur), mais via deux menus déroulants de rôles au lieu
+de taper la commande.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
