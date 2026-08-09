@@ -15,6 +15,7 @@ const {
 } = require("./utils/musicPlayer");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
+const { randomWelcomeMessage } = require("./utils/welcomeMessages");
 
 const client = new Client({
   intents: [
@@ -331,6 +332,13 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
   } catch (err) {
     console.error(err);
   }
+});
+
+// ---- Message de bienvenue pour les nouveaux membres ----
+client.on("guildMemberAdd", (member) => {
+  const channel = member.guild.systemChannel;
+  if (!channel) return;
+  channel.send(`${member} ${randomWelcomeMessage()}`).catch(() => {});
 });
 
 client.once("ready", () => {
