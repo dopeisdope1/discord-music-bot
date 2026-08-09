@@ -202,7 +202,7 @@ async function handlePrefixPanel(message) {
             const { success, failed } = await runMassRole({
               client: sub.client,
               guild: sub.guild,
-              actorTag: message.author.tag,
+              actor: message.author,
               action,
               role,
             });

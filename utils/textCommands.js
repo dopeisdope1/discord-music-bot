@@ -370,14 +370,12 @@ const handlers = {
         tempMessage
           ?.edit({ embeds: [buildStatusEmbed("success", `**${deletedTotal}** supprimé(s) — ${joke}`)] })
           .catch(() => {});
-        sendLog(
-          client,
-          message.guild.id,
-          "moderation",
-          `**${message.author.tag}** a utilisé \`.clear\` dans ${channel} — **${deletedTotal}** message(s) supprimé(s)${
-            targetMemberId ? ` (cible : <@${targetMemberId}>)` : ""
-          }.`
-        );
+        sendLog(client, message.guild.id, "moderation", {
+          title: "Clear",
+          description: `**${deletedTotal}** message(s) supprimé(s) dans ${channel}.`,
+          actor: message.author,
+          fields: targetMemberId ? [{ name: "Cible", value: `<@${targetMemberId}>`, inline: true }] : undefined,
+        });
       })
       .catch((err) => console.error(err));
   },
@@ -410,7 +408,11 @@ const handlers = {
       await clone.setPosition(channel.position).catch(() => {});
       await channel.delete().catch(() => {});
       await sendTempReply(clone, { embeds: [buildStatusEmbed("success", "Salon renouvelé.")] }, 15000);
-      sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a renouvelé le salon **#${channel.name}**.`);
+      sendLog(client, message.guild.id, "salon", {
+        title: "Renew",
+        description: `Salon **#${channel.name}** renouvelé.`,
+        actor: message.author,
+      });
     } catch (err) {
       console.error(err);
       await message.channel.send({
@@ -433,7 +435,12 @@ const handlers = {
       { embeds: [buildStatusEmbed("info", "Salon caché pour @everyone.")], allowedMentions: { parse: [] } },
       15000
     );
-    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a caché le salon ${message.channel} pour @everyone.`);
+    sendLog(client, message.guild.id, "salon", {
+      title: "Hide",
+      description: "Salon caché pour @everyone.",
+      actor: message.author,
+      fields: [{ name: "Salon", value: `${message.channel}`, inline: true }],
+    });
   },
 
   async unhide(client, message) {
@@ -453,7 +460,12 @@ const handlers = {
       },
       15000
     );
-    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a rendu le salon ${message.channel} visible pour @everyone.`);
+    sendLog(client, message.guild.id, "salon", {
+      title: "Unhide",
+      description: "Salon rendu visible pour @everyone.",
+      actor: message.author,
+      fields: [{ name: "Salon", value: `${message.channel}`, inline: true }],
+    });
   },
 
   async lock(client, message) {
@@ -471,7 +483,12 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
-    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a verrouillé le salon ${message.channel}.`);
+    sendLog(client, message.guild.id, "salon", {
+      title: "Lock",
+      description: "Salon verrouillé : @everyone ne peut plus écrire ici.",
+      actor: message.author,
+      fields: [{ name: "Salon", value: `${message.channel}`, inline: true }],
+    });
   },
 
   async unlock(client, message) {
@@ -489,7 +506,12 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
-    sendLog(client, message.guild.id, "salon", `**${message.author.tag}** a déverrouillé le salon ${message.channel}.`);
+    sendLog(client, message.guild.id, "salon", {
+      title: "Unlock",
+      description: "Salon déverrouillé : @everyone peut de nouveau écrire.",
+      actor: message.author,
+      fields: [{ name: "Salon", value: `${message.channel}`, inline: true }],
+    });
   },
 
   async massrole(client, message, args) {
@@ -530,7 +552,7 @@ const handlers = {
     const { success, failed } = await runMassRole({
       client,
       guild: message.guild,
-      actorTag: message.author.tag,
+      actor: message.author,
       action,
       role,
     });

@@ -120,12 +120,14 @@ async function handleBanPanel(message) {
           `${targetMember ? targetMember.user.tag : `<@${targetId}>`} a été banni — ${randomClearJoke()}`
         )
       );
-      sendLog(
-        message.client,
-        message.guild.id,
-        "moderation",
-        `**${message.author.tag}** a banni **${targetMember ? targetMember.user.tag : targetId}** via Zinki Assassini.`
-      );
+      sendLog(message.client, message.guild.id, "moderation", {
+        title: "Ban",
+        description: "Membre banni via Zinki Assassini.",
+        actor: message.author,
+        fields: [
+          { name: "Cible", value: targetMember ? `${targetMember.user.tag} (${targetId})` : `<@${targetId}>`, inline: true },
+        ],
+      });
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel Zinki Assassini :", err);
       await safeErrorReply(i);
@@ -167,7 +169,12 @@ async function unbanById(message, userId) {
   await message.reply({
     embeds: [buildStatusEmbed("success", `<@${userId}> a été débanni — ${randomClearJoke()}`)],
   });
-  sendLog(message.client, message.guild.id, "moderation", `**${message.author.tag}** a débanni <@${userId}> (par ID).`);
+  sendLog(message.client, message.guild.id, "moderation", {
+    title: "Unban",
+    description: "Membre débanni (par ID).",
+    actor: message.author,
+    fields: [{ name: "Cible", value: `<@${userId}> (${userId})`, inline: true }],
+  });
 }
 
 /**
@@ -246,12 +253,12 @@ async function handleUnbanPanel(message) {
       await i.editReply(
         buildStatusPanel(`${target ? target.user.tag : `<@${targetId}>`} a été débanni — ${randomClearJoke()}`)
       );
-      sendLog(
-        message.client,
-        message.guild.id,
-        "moderation",
-        `**${message.author.tag}** a débanni **${target ? target.user.tag : targetId}**.`
-      );
+      sendLog(message.client, message.guild.id, "moderation", {
+        title: "Unban",
+        description: "Membre débanni depuis la liste des bannis.",
+        actor: message.author,
+        fields: [{ name: "Cible", value: target ? `${target.user.tag} (${targetId})` : `<@${targetId}>`, inline: true }],
+      });
     } catch (err) {
       console.error("[banPanel] Erreur dans le panel de débannissement :", err);
       await safeErrorReply(i);

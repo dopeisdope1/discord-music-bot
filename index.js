@@ -337,16 +337,18 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   if (executor?.id === client.user.id) return;
 
-  const parts = [];
-  if (added.size) parts.push(`+ ${added.map((r) => r.name).join(", ")}`);
-  if (removed.size) parts.push(`- ${removed.map((r) => r.name).join(", ")}`);
+  const fields = [{ name: "Membre", value: `${newMember.user.tag} (${newMember.id})`, inline: false }];
+  if (added.size) fields.push({ name: "Ajoutés", value: added.map((r) => r.toString()).join(", "), inline: true });
+  if (removed.size) fields.push({ name: "Retirés", value: removed.map((r) => r.toString()).join(", "), inline: true });
 
-  sendLog(
-    client,
-    newMember.guild.id,
-    "roles",
-    `**${executor ? executor.tag : "quelqu'un"}** a modifié les rôles de **${newMember.user.tag}** (${parts.join(" / ")}).`
-  );
+  sendLog(client, newMember.guild.id, "roles", {
+    title: "Rôle modifié (manuel)",
+    description: executor
+      ? "Changement de rôle effectué à la main."
+      : "Changement de rôle effectué à la main (exécuteur inconnu — active **View Audit Log** pour l'attribution).",
+    actor: executor ?? undefined,
+    fields,
+  });
 });
 
 // ---- Suit en direct les changements de morceau Spotify de la personne suivie

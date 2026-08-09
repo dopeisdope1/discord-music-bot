@@ -30,12 +30,12 @@ function validateMassRoleTarget(guild, role) {
  * @param {object} params
  * @param {import('discord.js').Client} params.client
  * @param {import('discord.js').Guild} params.guild
- * @param {string} params.actorTag
+ * @param {import('discord.js').User} params.actor
  * @param {"add"|"remove"} params.action
  * @param {import('discord.js').Role} params.role
  * @returns {Promise<{ success: number, failed: number }>}
  */
-async function runMassRole({ client, guild, actorTag, action, role }) {
+async function runMassRole({ client, guild, actor, action, role }) {
   const members = await guild.members.fetch();
   const targets = members.filter(
     (m) => !m.user.bot && (action === "add" ? !m.roles.cache.has(role.id) : m.roles.cache.has(role.id))
@@ -45,8 +45,8 @@ async function runMassRole({ client, guild, actorTag, action, role }) {
   let failed = 0;
   for (const member of targets.values()) {
     try {
-      if (action === "add") await member.roles.add(role, `Massrole par ${actorTag}`);
-      else await member.roles.remove(role, `Massrole par ${actorTag}`);
+      if (action === "add") await member.roles.add(role, `Massrole par ${actor.tag}`);
+      else await member.roles.remove(role, `Massrole par ${actor.tag}`);
       success += 1;
     } catch (err) {
       console.error(err);
@@ -54,14 +54,13 @@ async function runMassRole({ client, guild, actorTag, action, role }) {
     }
   }
 
-  sendLog(
-    client,
-    guild.id,
-    "roles",
-    `**${actorTag}** a ${action === "add" ? "ajouté" : "retiré"} le rôle **${role.name}** ${
-      action === "add" ? "à" : "de"
-    } **${success}** membre(s)${failed ? ` (${failed} échec(s))` : ""}.`
-  );
+  sendLog(client, guild.id, "roles", {
+    title: action === "add" ? "Massrole — ajout" : "Massrole — retrait",
+    description: `Rôle **${role.name}** ${action === "add" ? "ajouté à" : "retiré de"} **${success}** membre(s)${
+      failed ? ` (${failed} échec(s))` : ""
+    }.`,
+    actor,
+  });
 
   return { success, failed };
 }
