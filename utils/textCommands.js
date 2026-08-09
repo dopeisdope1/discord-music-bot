@@ -26,6 +26,7 @@ const LOOP_KEYWORDS = {
 
 const MAIN_PREFIX = "!";
 const DASH_PREFIX = "-";
+const BAN_PREFIX = ".";
 // Commandes "-" accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
 // Commandes "-" réservées aux administrateurs
@@ -608,6 +609,26 @@ async function handleTextCommand(client, message) {
     return handlers.clear(client, message, ["me"]);
   }
 
+  // Préfixe "." : ban / unban
+  if (content.startsWith(BAN_PREFIX)) {
+    const [cmdRaw, ...args] = content.slice(BAN_PREFIX.length).trim().split(/\s+/);
+    const cmd = (cmdRaw || "").toLowerCase();
+    if (cmd === "ban" || cmd === "unban") {
+      if (!hasBanPermission(message)) {
+        return message.reply({
+          embeds: [
+            buildStatusEmbed(
+              "error",
+              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
+            ),
+          ],
+        });
+      }
+      return handlers[cmd](client, message, args);
+    }
+    return;
+  }
+
   // Préfixe "-" : commandes membres + modération
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
@@ -615,32 +636,6 @@ async function handleTextCommand(client, message) {
     if (cmd === "help") {
       const panel = hasModPermission(message) ? buildAdminHelpPanel() : buildMemberDashHelpPanel();
       return message.channel.send(panel);
-    }
-    if (cmd === "ban") {
-      if (!hasBanPermission(message)) {
-        return message.reply({
-          embeds: [
-            buildStatusEmbed(
-              "error",
-              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
-            ),
-          ],
-        });
-      }
-      return handlers.ban(client, message, args);
-    }
-    if (cmd === "unban") {
-      if (!hasBanPermission(message)) {
-        return message.reply({
-          embeds: [
-            buildStatusEmbed(
-              "error",
-              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
-            ),
-          ],
-        });
-      }
-      return handlers.unban(client, message, args);
     }
     if (cmd === "clear") {
       // Permission gérée dans le handler : dépend de la cible (soi-même,

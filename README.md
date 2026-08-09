@@ -97,7 +97,7 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     profil), `-snipe` (dernier message supprimé du salon)
   - Réservées aux administrateurs : `-clear`, `-renew`, `-hide`, `-unhide`,
     `-lock`, `-unlock`
-  - Admin, ou permission Discord **Bannir des membres** : `-ban`, `-unban`
+  - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban` (préfixe point, pas tiret)
   - `-help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)
 
@@ -135,13 +135,13 @@ Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'im
 qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
 la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
 
-## 7ter. `-ban` / `-unban` — modération
+## 7ter. `.ban` / `.unban` — modération
 
 Réservés aux administrateurs (ou aux membres avec la permission Discord
-**Bannir des membres**). `-ban` ouvre le panel **Zinki Assassini** (menu
-déroulant natif Discord pour choisir qui bannir) ; `-unban` ouvre un panel
+**Bannir des membres**). `.ban` ouvre le panel **Zinki Assassini** (menu
+déroulant natif Discord pour choisir qui bannir) ; `.unban` ouvre un panel
 listant les membres actuellement bannis, ou débannit directement si tu lui
-donnes un ID (`-unban <id>`).
+donnes un ID (`.unban <id>`).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
