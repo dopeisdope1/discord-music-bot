@@ -49,7 +49,7 @@ function buildHelpPanel({ title, intro, sections, footer }) {
 function buildMusicHelpPanel(prefix = "!") {
   return buildHelpPanel({
     title: "Aide — Commandes musique",
-    intro: `Préfixe : \`${prefix}\` — les commandes slash \`/\` équivalentes existent aussi.`,
+    intro: `Préfixe : \`${prefix}\``,
     sections: [
       {
         heading: "Lecture",
