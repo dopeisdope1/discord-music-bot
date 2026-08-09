@@ -150,6 +150,8 @@ client.kazagumo
     }
   });
 
+const MUSIC_BUTTON_IDS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop", "music_queue"]);
+
 // ---- Interactions : slash commands + boutons du panel ----
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isChatInputCommand()) {
@@ -200,6 +202,13 @@ client.on("interactionCreate", async (interaction) => {
       });
       return;
     }
+
+    // Boutons non-musicaux (ex: `.panel` — "prefix_edit:*", "massrole_open") :
+    // gérés par leur propre collector attaché au message (voir utils/prefixPanel.js
+    // et utils/banPanel.js), pas ici. Sans ce garde-fou, ce handler global
+    // répondait "Aucune musique en cours." à la place du collector dédié, qui
+    // se retrouvait ensuite avec une interaction déjà "répondue".
+    if (!MUSIC_BUTTON_IDS.has(interaction.customId)) return;
 
     const player = client.kazagumo.players.get(interaction.guildId);
     if (!player) {
