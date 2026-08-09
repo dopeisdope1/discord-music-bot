@@ -1,7 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel, LOOP_LABELS } = require("./utils/nowPlayingPanel");
@@ -336,7 +336,12 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 
 // ---- Message de bienvenue pour les nouveaux membres ----
 client.on("guildMemberAdd", (member) => {
-  const channel = member.guild.systemChannel;
+  const botMember = member.guild.members.me;
+  const channel =
+    member.guild.systemChannel ||
+    member.guild.channels.cache.find(
+      (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
+    );
   if (!channel) return;
   channel.send(`${member} ${randomWelcomeMessage()}`).catch(() => {});
 });
