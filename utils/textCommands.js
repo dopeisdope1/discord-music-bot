@@ -476,11 +476,19 @@ const handlers = {
     }
 
     const action = (args[0] || "").toLowerCase();
-    const role = message.mentions.roles?.first();
+    const roleArg = args[1];
+    const role =
+      message.mentions.roles?.first() ||
+      (roleArg && /^\d{15,}$/.test(roleArg) ? message.guild.roles.cache.get(roleArg) : null);
 
     if (!["add", "remove"].includes(action) || !role) {
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Utilisation : `-massrole add @role` ou `-massrole remove @role`")],
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            "Utilisation : `-massrole add @role`/`<id>` ou `-massrole remove @role`/`<id>` (utilise l'ID pour ne pas ping tout le rôle)"
+          ),
+        ],
       });
     }
 

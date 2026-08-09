@@ -110,7 +110,7 @@ function adminDashSections(prefix) {
         `\`${prefix}unhide\` — Rend le salon visible à @everyone`,
         `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
         `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
-        `\`${prefix}massrole add @role\` ou \`${prefix}massrole remove @role\` — Ajoute/retire un rôle à tous les membres`,
+        `\`${prefix}massrole add|remove @role\`/\`<id>\` — Ajoute/retire un rôle à tous les membres (utilise l'ID pour ne pas ping tout le rôle)`,
       ],
     },
   ];
