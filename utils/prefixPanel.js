@@ -21,6 +21,7 @@ const { getAllowedRoles, setAllowedRoles, PERMISSION_GROUPS } = require("./roleP
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
+const { memberFetchErrorMessage } = require("./guildMembers");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
@@ -220,16 +221,43 @@ function buildRoleCreateModal() {
           .setMinLength(1)
           .setMaxLength(100)
           .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("color")
-          .setLabel("Couleur en hex, optionnel (ex: ff5500)")
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(7)
-          .setRequired(false)
       )
     );
+}
+
+// Le nom d'un rôle doit rester en texte libre (modale, ci-dessus — aucun
+// menu déroulant ne permet de saisir du texte arbitraire), mais la couleur
+// se prête bien à une liste fermée : après la modale, un menu déroulant
+// (même style que "Choisir un rôle à supprimer") propose un choix de
+// couleurs prédéfinies plutôt qu'un champ hex à taper à la main.
+const ROLE_COLOR_PRESETS = [
+  { label: "Par défaut (pas de couleur)", value: "none" },
+  { label: "Rouge", value: "e74c3c" },
+  { label: "Orange", value: "e67e22" },
+  { label: "Jaune", value: "f1c40f" },
+  { label: "Vert", value: "2ecc71" },
+  { label: "Cyan", value: "1abc9c" },
+  { label: "Bleu", value: "3498db" },
+  { label: "Violet", value: "9b59b6" },
+  { label: "Rose", value: "e91e63" },
+  { label: "Gris", value: "95a5a6" },
+  { label: "Annuler la création", value: "cancel" },
+];
+
+function buildRoleColorPanel(name) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## Créer le rôle **${name}**\n> Choisis une couleur.`)
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("role_create_color")
+        .setPlaceholder("Choisir une couleur")
+        .addOptions(ROLE_COLOR_PRESETS)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 function buildPanel(page, guild, statusText) {
@@ -285,8 +313,8 @@ function buildMassRoleSubPanel() {
   return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
 }
 
-async function replyWithError(interaction) {
-  const payload = { content: "Une erreur est survenue, réessaie.", ephemeral: true };
+async function replyWithError(interaction, message = "Une erreur est survenue, réessaie.") {
+  const payload = { content: message, ephemeral: true };
   try {
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(payload);
@@ -313,6 +341,9 @@ async function handlePrefixPanel(message) {
   const guild = message.guild;
   const guildId = guild.id;
   let currentPage = "prefixes";
+  // Nom saisi dans la modale de création de rôle, en attente du choix de
+  // couleur (interaction suivante) — voir "role_create_open"/"role_create_color".
+  let pendingRoleName = null;
   const panelMessage = await message.reply(buildPanel(currentPage, guild));
 
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
@@ -416,21 +447,23 @@ async function handlePrefixPanel(message) {
           .catch(() => null);
         if (!submitted) return;
 
-        const name = submitted.fields.getTextInputValue("name").trim();
-        const rawColor = submitted.fields.getTextInputValue("color").trim();
-        let color;
-        if (rawColor) {
-          const hex = rawColor.replace(/^#/, "");
-          if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-            await submitted.reply({
-              content: "Couleur invalide : donne un code hex à 6 caractères (ex: ff5500), ou laisse vide.",
-              ephemeral: true,
-            });
-            return;
-          }
-          color = parseInt(hex, 16);
+        pendingRoleName = submitted.fields.getTextInputValue("name").trim();
+        await submitted.update(buildRoleColorPanel(pendingRoleName));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "role_create_color") {
+        currentPage = "roles";
+        const name = pendingRoleName;
+        const choice = i.values[0];
+        pendingRoleName = null;
+
+        if (!name || choice === "cancel") {
+          await i.update(buildPanel(currentPage, guild, choice === "cancel" ? "Création annulée." : undefined));
+          return;
         }
 
+        const color = choice === "none" ? undefined : parseInt(choice, 16);
         const role = await guild.roles
           .create({ name, color, reason: `Créé via .panel par ${message.author.tag}` })
           .catch((err) => {
@@ -438,18 +471,17 @@ async function handlePrefixPanel(message) {
             return null;
           });
 
-        currentPage = "roles";
         if (!role) {
-          await submitted.update(buildPanel(currentPage, guild, "Impossible de créer ce rôle (nom invalide, ou limite de rôles atteinte)."));
+          await i.update(buildPanel(currentPage, guild, "Impossible de créer ce rôle (nom invalide, ou limite de rôles atteinte)."));
           return;
         }
 
-        sendLog(submitted.client, guildId, "roles", {
+        sendLog(i.client, guildId, "roles", {
           title: "Création de rôle",
           description: `Rôle **${role.name}** créé.`,
           actor: message.author,
         });
-        await submitted.update(buildPanel(currentPage, guild, `Rôle **${role.name}** créé.`));
+        await i.update(buildPanel(currentPage, guild, `Rôle **${role.name}** créé.`));
         return;
       }
 
@@ -494,7 +526,7 @@ async function handlePrefixPanel(message) {
             );
           } catch (err) {
             console.error("[panel] Erreur dans le sous-panel rôles en masse :", err);
-            await replyWithError(sub);
+            await replyWithError(sub, memberFetchErrorMessage(err) ?? undefined);
           }
         });
         return;

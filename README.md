@@ -175,12 +175,14 @@ membres non-bot du serveur), mais via deux menus déroulants de rôles au lieu
 de taper la commande.
 
 **Page Rôles** — un bouton "➕ Créer un rôle" ouvre une fenêtre pour saisir un
-nom (et, en option, une couleur en hex) ; un menu déroulant natif Discord
-"🗑️ Choisir un rôle à supprimer" liste les rôles du serveur — en sélectionner
-un affiche une confirmation (nom du rôle + nombre de membres concernés) avant
-suppression réelle, puisque l'action est irréversible. Le rôle @everyone et
-les rôles gérés par une intégration (bot, boost serveur...) ne peuvent pas
-être supprimés depuis ce panel.
+nom (texte libre, obligatoirement une modale — aucun menu déroulant ne permet
+de taper du texte), puis un menu déroulant "Choisir une couleur" propose une
+liste de couleurs prédéfinies (ou "Par défaut", ou "Annuler la création") ; un
+menu déroulant natif Discord "🗑️ Choisir un rôle à supprimer" liste les rôles
+du serveur — en sélectionner un affiche une confirmation (nom du rôle +
+nombre de membres concernés) avant suppression réelle, puisque l'action est
+irréversible. Le rôle @everyone et les rôles gérés par une intégration (bot,
+boost serveur...) ne peuvent pas être supprimés depuis ce panel.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).

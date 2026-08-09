@@ -16,6 +16,7 @@ const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
 const { searchGif } = require("./gifSearch");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
+const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -469,45 +470,60 @@ const handlers = {
     const collector = confirmMessage.createMessageComponentCollector({ time: 30_000, max: 1 });
 
     collector.on("collect", async (i) => {
-      if (i.user.id !== message.author.id) {
-        return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
-      }
-      if (i.customId === "banall_cancel") {
-        return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
-      }
-
-      await i.update({ embeds: [buildStatusEmbed("warning", "Bannissement en cours...")], components: [] });
-
-      const members = await message.guild.members.fetch();
-      const targets = members.filter((m) => !m.user.bot && m.id !== message.author.id && m.bannable);
-
-      let success = 0;
-      let failed = 0;
-      for (const member of targets.values()) {
-        try {
-          await member.ban({ reason: `.banall par ${message.author.tag}` });
-          success += 1;
-        } catch (err) {
-          console.error(err);
-          failed += 1;
+      try {
+        if (i.user.id !== message.author.id) {
+          return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
         }
-      }
+        if (i.customId === "banall_cancel") {
+          return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
+        }
 
-      await confirmMessage
-        .edit({
-          embeds: [
-            buildStatusEmbed(
-              "success",
-              `**${success}** membre(s) banni(s)${failed ? ` (${failed} échec(s))` : ""}.`
-            ),
-          ],
-        })
-        .catch(() => {});
-      sendLog(client, message.guild.id, "moderation", {
-        title: "Ban All",
-        description: `**${success}** membre(s) banni(s) via \`.banall\`${failed ? ` (${failed} échec(s))` : ""}.`,
-        actor: message.author,
-      });
+        await i.update({ embeds: [buildStatusEmbed("warning", "Bannissement en cours...")], components: [] });
+
+        const members = await fetchAllMembers(message.guild);
+        const targets = members.filter((m) => !m.user.bot && m.id !== message.author.id && m.bannable);
+
+        let success = 0;
+        let failed = 0;
+        for (const member of targets.values()) {
+          try {
+            await member.ban({ reason: `.banall par ${message.author.tag}` });
+            success += 1;
+          } catch (err) {
+            console.error(err);
+            failed += 1;
+          }
+        }
+
+        await confirmMessage
+          .edit({
+            embeds: [
+              buildStatusEmbed(
+                "success",
+                `**${success}** membre(s) banni(s)${failed ? ` (${failed} échec(s))` : ""}.`
+              ),
+            ],
+          })
+          .catch(() => {});
+        sendLog(client, message.guild.id, "moderation", {
+          title: "Ban All",
+          description: `**${success}** membre(s) banni(s) via \`.banall\`${failed ? ` (${failed} échec(s))` : ""}.`,
+          actor: message.author,
+        });
+      } catch (err) {
+        console.error(err);
+        await confirmMessage
+          .edit({
+            embeds: [
+              buildStatusEmbed(
+                "error",
+                memberFetchErrorMessage(err) || "Une erreur est survenue, réessaie."
+              ),
+            ],
+            components: [],
+          })
+          .catch(() => {});
+      }
     });
 
     collector.on("end", (collected) => {
@@ -542,42 +558,49 @@ const handlers = {
     const collector = confirmMessage.createMessageComponentCollector({ time: 30_000, max: 1 });
 
     collector.on("collect", async (i) => {
-      if (i.user.id !== message.author.id) {
-        return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
-      }
-      if (i.customId === "unbanall_cancel") {
-        return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
-      }
-
-      await i.update({ embeds: [buildStatusEmbed("warning", "Débannissement en cours...")], components: [] });
-
-      let success = 0;
-      let failed = 0;
-      for (const ban of bans.values()) {
-        try {
-          await message.guild.bans.remove(ban.user.id, `.unbanall par ${message.author.tag}`);
-          success += 1;
-        } catch (err) {
-          console.error(err);
-          failed += 1;
+      try {
+        if (i.user.id !== message.author.id) {
+          return i.reply({ content: "Seul l'auteur de la commande peut confirmer.", ephemeral: true });
         }
-      }
+        if (i.customId === "unbanall_cancel") {
+          return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
+        }
 
-      await confirmMessage
-        .edit({
-          embeds: [
-            buildStatusEmbed(
-              "success",
-              `**${success}** membre(s) débanni(s)${failed ? ` (${failed} échec(s))` : ""}.`
-            ),
-          ],
-        })
-        .catch(() => {});
-      sendLog(client, message.guild.id, "moderation", {
-        title: "Unban All",
-        description: `**${success}** membre(s) débanni(s) via \`.unbanall\`${failed ? ` (${failed} échec(s))` : ""}.`,
-        actor: message.author,
-      });
+        await i.update({ embeds: [buildStatusEmbed("warning", "Débannissement en cours...")], components: [] });
+
+        let success = 0;
+        let failed = 0;
+        for (const ban of bans.values()) {
+          try {
+            await message.guild.bans.remove(ban.user.id, `.unbanall par ${message.author.tag}`);
+            success += 1;
+          } catch (err) {
+            console.error(err);
+            failed += 1;
+          }
+        }
+
+        await confirmMessage
+          .edit({
+            embeds: [
+              buildStatusEmbed(
+                "success",
+                `**${success}** membre(s) débanni(s)${failed ? ` (${failed} échec(s))` : ""}.`
+              ),
+            ],
+          })
+          .catch(() => {});
+        sendLog(client, message.guild.id, "moderation", {
+          title: "Unban All",
+          description: `**${success}** membre(s) débanni(s) via \`.unbanall\`${failed ? ` (${failed} échec(s))` : ""}.`,
+          actor: message.author,
+        });
+      } catch (err) {
+        console.error(err);
+        await confirmMessage
+          .edit({ embeds: [buildStatusEmbed("error", "Une erreur est survenue, réessaie.")], components: [] })
+          .catch(() => {});
+      }
     });
 
     collector.on("end", (collected) => {
@@ -738,24 +761,36 @@ const handlers = {
       ],
     });
 
-    const { success, failed } = await runMassRole({
-      client,
-      guild: message.guild,
-      actor: message.author,
-      action,
-      role,
-    });
+    try {
+      const { success, failed } = await runMassRole({
+        client,
+        guild: message.guild,
+        actor: message.author,
+        action,
+        role,
+      });
 
-    await message.channel.send({
-      embeds: [
-        buildStatusEmbed(
-          "success",
-          `${action === "add" ? "Ajouté" : "Retiré"} **${role.name}** pour **${success}** membre(s)` +
-            (failed ? ` (${failed} échec(s))` : "") +
-            "."
-        ),
-      ],
-    });
+      await message.channel.send({
+        embeds: [
+          buildStatusEmbed(
+            "success",
+            `${action === "add" ? "Ajouté" : "Retiré"} **${role.name}** pour **${success}** membre(s)` +
+              (failed ? ` (${failed} échec(s))` : "") +
+              "."
+          ),
+        ],
+      });
+    } catch (err) {
+      console.error(err);
+      await message.channel.send({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            memberFetchErrorMessage(err) || "Impossible de récupérer la liste des membres, réessaie."
+          ),
+        ],
+      });
+    }
   },
 
   async pic(client, message) {

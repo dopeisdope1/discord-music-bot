@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { sendLog } = require("./actionLogger");
+const { fetchAllMembers } = require("./guildMembers");
 
 /**
  * Vérifie qu'un rôle peut être modifié en masse par le bot (permission,
@@ -36,7 +37,7 @@ function validateMassRoleTarget(guild, role) {
  * @returns {Promise<{ success: number, failed: number }>}
  */
 async function runMassRole({ client, guild, actor, action, role }) {
-  const members = await guild.members.fetch();
+  const members = await fetchAllMembers(guild);
   const targets = members.filter(
     (m) => !m.user.bot && (action === "add" ? !m.roles.cache.has(role.id) : m.roles.cache.has(role.id))
   );
