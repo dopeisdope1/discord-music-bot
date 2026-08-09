@@ -26,6 +26,8 @@ LAVALINK_HOST=...
 LAVALINK_PORT=...
 LAVALINK_PASSWORD=...
 LAVALINK_SECURE=true
+GIPHY_API_KEY=...   # optionnel — clé publique de démo utilisée sinon (`.gif`)
+DATA_DIR=...         # optionnel — voir "Rendre data/ permanent sur Railway" plus bas
 ```
 
 ## 2bis. Nœud Lavalink
@@ -57,7 +59,8 @@ Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - `bot`, `applications.commands`
 - Connect, Speak, Send Messages, Embed Links, Use Slash Commands, Manage Roles,
   Manage Channels, Manage Messages (pour les commandes de modération), View
-  Audit Log (pour attribuer les changements de rôle manuels dans "Logs rôles")
+  Audit Log (pour attribuer les changements de rôle manuels dans "Logs rôles"),
+  Manage Expressions (pour `.create`)
 
 ## 4. Déployer les commandes slash
 
@@ -95,9 +98,11 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
 - **`.`** : préfixe pour les commandes membres et de modération
   - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
-    profil), `.snipe` (dernier message supprimé du salon)
+    profil), `.snipe` (dernier message supprimé du salon), `.gif <recherche>`
+    (envoie un gif aléatoire via Giphy)
   - Réservées aux administrateurs : `.clear`, `.renew`, `.hide`, `.unhide`,
-    `.lock`, `.unlock`, `.massrole`, `.panel`
+    `.lock`, `.unlock`, `.massrole`, `.panel`, `.create <nom> <url>` (crée un
+    emoji sur le serveur à partir d'un lien ou d'une image en pièce jointe)
   - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban`
   - `.help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)

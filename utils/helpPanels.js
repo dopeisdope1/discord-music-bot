@@ -88,6 +88,7 @@ function memberDashSection(prefix) {
       `\`uo clear\` (sans préfixe) — Alias de \`${prefix}clear me\``,
       `\`${prefix}ban\` — Ouvre le panel **Zinki Assassini** pour bannir un membre (admin, ou permission **Bannir des membres**)`,
       `\`${prefix}unban [id]\` — Débannit un membre (panel de sélection si l'ID n'est pas donné)`,
+      `\`${prefix}gif <recherche>\` — Envoie un gif aléatoire correspondant à la recherche`,
     ],
   };
 }
@@ -117,6 +118,13 @@ function adminDashSections(prefix) {
         `\`${prefix}lock\` — Empêche @everyone d'écrire dans le salon`,
         `\`${prefix}unlock\` — Autorise de nouveau @everyone à écrire`,
         `\`${prefix}massrole add|remove @role\`/\`<id>\` — Ajoute/retire un rôle à tous les membres (utilise l'ID pour ne pas ping tout le rôle)`,
+      ],
+    },
+    {
+      heading: "Emoji",
+      lines: [
+        `\`${prefix}create <nom> <url>\` — Crée un emoji sur le serveur à partir d'un lien d'image`,
+        `\`${prefix}create <nom>\` (avec une image en pièce jointe) — Idem, à partir du fichier envoyé`,
       ],
     },
   ];

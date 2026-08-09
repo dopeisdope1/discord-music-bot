@@ -14,6 +14,7 @@ const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { playbackErrorMessage } = require("./musicErrors");
+const { searchGif } = require("./gifSearch");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -29,9 +30,9 @@ const LOOP_KEYWORDS = {
 };
 
 // Commandes "." accessibles à tout le monde, sans permission particulière
-const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
+const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
 // Commandes "." réservées aux administrateurs
-const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel"]);
+const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
 // Commandes "." réservées à l'admin ou à la permission "Bannir des membres"
 const BAN_COMMANDS = new Set(["ban", "unban"]);
@@ -599,6 +600,67 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
+  },
+
+  async gif(client, message, args) {
+    const query = args.join(" ");
+    if (!query) {
+      const { dash } = getPrefixes(message.guild.id);
+      return message.reply({ embeds: [buildStatusEmbed("error", `Indique une recherche. Ex : \`${dash}gif chat\``)] });
+    }
+    try {
+      const url = await searchGif(query);
+      if (!url) {
+        return message.reply({ embeds: [buildStatusEmbed("error", `Aucun gif trouvé pour "${query}".`)] });
+      }
+      await message.reply(url);
+    } catch (err) {
+      console.error(err);
+      await message.reply({ embeds: [buildStatusEmbed("error", "Impossible de récupérer un gif pour le moment.")] });
+    }
+  },
+
+  async create(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuildExpressions)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les expressions du serveur**.")],
+      });
+    }
+
+    const name = args[0];
+    const attachment = message.attachments.first();
+    const source = attachment?.url || args[1];
+
+    if (!name || !/^[a-zA-Z0-9_]{2,32}$/.test(name) || !source) {
+      const { dash } = getPrefixes(message.guild.id);
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            `Utilisation : \`${dash}create <nom> <url>\` ou \`${dash}create <nom>\` avec une image en pièce jointe. Le nom doit faire 2 à 32 caractères (lettres, chiffres, _).`
+          ),
+        ],
+      });
+    }
+
+    try {
+      const emoji = await message.guild.emojis.create({
+        attachment: source,
+        name,
+        reason: `Créé par ${message.author.tag}`,
+      });
+      await message.reply({ embeds: [buildStatusEmbed("success", `Emoji ${emoji} créé : \`:${emoji.name}:\``)] });
+    } catch (err) {
+      console.error(err);
+      await message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            "Impossible de créer l'emoji (format/taille d'image invalide, limite d'emojis du serveur atteinte, ou permission insuffisante)."
+          ),
+        ],
+      });
+    }
   },
 };
 
