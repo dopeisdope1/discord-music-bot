@@ -10,13 +10,12 @@ const { getLogChannelId, LOG_CATEGORIES } = require("./logStore");
 
 /**
  * Construit un log en Components V2 (même style que `.panel`/`.help`/les
- * panels de modération), avec une barre d'accent colorée par catégorie et
- * l'avatar de l'auteur en vignette au lieu du look "carte" des embeds classiques.
+ * panels de modération, sans couleur d'accent ni emoji), avec l'avatar de
+ * l'auteur en vignette au lieu du look "carte" des embeds classiques.
  */
 function buildLogPanel({ title, description, actor, fields, category }) {
   const meta = LOG_CATEGORIES[category];
   const container = new ContainerBuilder();
-  if (meta?.color !== undefined) container.setAccentColor(meta.color);
 
   const headerText = new TextDisplayBuilder().setContent(`## ${title}\n${description}`);
   if (actor) {

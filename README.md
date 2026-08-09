@@ -105,9 +105,29 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 Les deux préfixes ci-dessus (`!` et `.`) sont configurables par serveur via le
 panel `.panel` (réservé aux administrateurs) : deux boutons ouvrent chacun une
 fenêtre pour saisir un nouveau préfixe, sans avoir à toucher au code. La valeur
-est sauvegardée sur le disque du serveur (pas dans le code), donc elle survit
-aux redémarrages mais **peut être réinitialisée par un redéploiement Railway**
-si aucun volume persistant n'est monté sur `data/`.
+est sauvegardée dans `data/` (voir `DATA_DIR` juste en dessous).
+
+### Rendre `data/` permanent sur Railway (préfixes + salons de logs)
+
+Par défaut, `data/` vit sur le disque du container Railway, qui est
+**réinitialisé à chaque redéploiement** (donc à chaque push sur `main`,
+vu l'auto-déploiement) : les préfixes et salons de logs configurés via
+`.panel` reviendraient sinon à leurs valeurs par défaut à chaque mise à jour
+du bot. Pour que ça ne bouge plus jamais :
+
+1. Sur le dashboard Railway, ouvre le service du bot → onglet **Volumes** →
+   **Add Volume**.
+2. Choisis un point de montage, par exemple `/app/data`.
+3. Ajoute une variable d'environnement `DATA_DIR` avec la même valeur
+   (`/app/data`) dans l'onglet **Variables**.
+4. Redéploie une dernière fois (ou attends le prochain push) : à partir de
+   là, `data/prefixes.json` et `data/logChannels.json` vivent sur le volume,
+   qui n'est jamais effacé par un redéploiement.
+
+Sans cette étape (qui se fait uniquement sur le dashboard Railway, pas dans
+le code), le préfixe musique par défaut du code est `?` et le préfixe
+membres/modération `.` — donc un redéploiement sans volume revient à ces
+valeurs-là plutôt qu'à `!`/`.`.
 
 Le même panel `.panel` propose aussi une section **Logs** : un menu déroulant
 par catégorie (**Logs modération** = `.clear`/`.ban`/`.unban`, **Logs salon** =

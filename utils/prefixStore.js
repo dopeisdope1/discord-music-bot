@@ -1,10 +1,18 @@
 const fs = require("fs");
 const path = require("path");
 
-const DATA_DIR = path.join(__dirname, "..", "data");
+// DATA_DIR est configurable via la variable d'env DATA_DIR : sur Railway, le
+// disque du container est réinitialisé à chaque redéploiement, donc tout ce
+// qui est écrit dans le chemin par défaut (relatif au code) est perdu au
+// prochain push. Pointer DATA_DIR vers un Volume Railway monté (persistant,
+// lui, entre les redéploiements) rend ce fichier permanent. Voir le README.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-const DEFAULT_PREFIXES = { main: "!", dash: "." };
+// "?" car c'est la valeur actuellement configurée sur le serveur : tant que
+// data/prefixes.json ne survit pas à un redéploiement (voir DATA_DIR
+// ci-dessus), c'est cette valeur par défaut qui s'applique après coup.
+const DEFAULT_PREFIXES = { main: "?", dash: "." };
 
 let cache = null;
 

@@ -1,31 +1,19 @@
 const fs = require("fs");
 const path = require("path");
 
-const DATA_DIR = path.join(__dirname, "..", "data");
+// DATA_DIR est configurable via la variable d'env DATA_DIR : sur Railway, le
+// disque du container est réinitialisé à chaque redéploiement, donc tout ce
+// qui est écrit dans le chemin par défaut (relatif au code) est perdu au
+// prochain push. Pointer DATA_DIR vers un Volume Railway monté (persistant,
+// lui, entre les redéploiements) rend ce fichier permanent. Voir le README.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "logChannels.json");
 
 // Catégories affichées dans `.panel` > Logs, alignées sur les rubriques de `.help`.
-// La couleur sert uniquement à distinguer les catégories dans l'embed de log
-// (voir utils/actionLogger.js) — les autres embeds du bot restent sans couleur.
 const LOG_CATEGORIES = {
-  moderation: {
-    key: "moderation",
-    label: "Logs modération",
-    description: "`.clear`, `.ban`, `.unban`",
-    color: 0xed4245,
-  },
-  salon: {
-    key: "salon",
-    label: "Logs salon",
-    description: "`.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`",
-    color: 0x5865f2,
-  },
-  roles: {
-    key: "roles",
-    label: "Logs rôles",
-    description: "`.massrole` + changements manuels de rôle",
-    color: 0x9b59b6,
-  },
+  moderation: { key: "moderation", label: "Logs modération", description: "`.clear`, `.ban`, `.unban`" },
+  salon: { key: "salon", label: "Logs salon", description: "`.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`" },
+  roles: { key: "roles", label: "Logs rôles", description: "`.massrole` + changements manuels de rôle" },
 };
 
 let cache = null;
