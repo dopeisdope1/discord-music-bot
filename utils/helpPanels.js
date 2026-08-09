@@ -121,7 +121,7 @@ function adminDashSections(prefix) {
  * liste que les commandes qu'il peut réellement utiliser.
  * @param {string} prefix
  */
-function buildMemberDashHelpPanel(prefix = "-") {
+function buildMemberDashHelpPanel(prefix = ".") {
   return buildHelpPanel({
     title: "Aide — Commandes",
     intro: `Préfixe : \`${prefix}\` — commandes disponibles pour tout le monde.`,
@@ -134,7 +134,7 @@ function buildMemberDashHelpPanel(prefix = "-") {
  * membres + commandes de modération).
  * @param {string} prefix
  */
-function buildAdminHelpPanel(prefix = "-") {
+function buildAdminHelpPanel(prefix = ".") {
   return buildHelpPanel({
     title: "Aide — Commandes",
     intro: `Préfixe : \`${prefix}\` — en tant qu'administrateur, tu as accès à tout.`,

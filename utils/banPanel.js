@@ -37,7 +37,7 @@ function buildZinkiAssassiniPanel() {
 }
 
 /**
- * Ouvre le panel "Zinki Assassini" (`-ban`, réservé aux administrateurs — la
+ * Ouvre le panel "Zinki Assassini" (`.ban`, réservé aux administrateurs — la
  * vérification se fait avant l'appel de cette fonction).
  * @param {import('discord.js').Message} message
  */
@@ -112,7 +112,7 @@ async function handleBanPanel(message) {
 }
 
 /**
- * Débannit directement un membre par ID (`-unban <id>`).
+ * Débannit directement un membre par ID (`.unban <id>`).
  * @param {import('discord.js').Message} message
  * @param {string} userId
  */
@@ -143,7 +143,7 @@ async function unbanById(message, userId) {
 
 /**
  * Ouvre un panel listant les membres actuellement bannis, pour en débannir un
- * (`-unban` sans argument, réservé aux administrateurs — la vérification se
+ * (`.unban` sans argument, réservé aux administrateurs — la vérification se
  * fait avant l'appel de cette fonction).
  * @param {import('discord.js').Message} message
  */
@@ -164,7 +164,7 @@ async function handleUnbanPanel(message) {
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       `## Débannir un membre\n> Choisis qui débannir${
-        bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`-unban <id>\` pour les autres)` : ""
+        bans.size > 25 ? ` (${bans.size} bannis au total, 25 premiers affichés — utilise \`.unban <id>\` pour les autres)` : ""
       }.`
     )
   );

@@ -25,13 +25,14 @@ const LOOP_KEYWORDS = {
 };
 
 const MAIN_PREFIX = "!";
-const DASH_PREFIX = "-";
-const BAN_PREFIX = ".";
-// Commandes "-" accessibles à tout le monde, sans permission particulière
+const DASH_PREFIX = ".";
+// Commandes "." accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe"]);
-// Commandes "-" réservées aux administrateurs
+// Commandes "." réservées aux administrateurs
 const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole"]);
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS]);
+// Commandes "." réservées à l'admin ou à la permission "Bannir des membres"
+const BAN_COMMANDS = new Set(["ban", "unban"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
@@ -261,7 +262,7 @@ const handlers = {
     await message.channel.send(buildMusicHelpPanel());
   },
 
-  // ---- Modération (préfixe "-") ----
+  // ---- Modération (préfixe ".") ----
   async clear(client, message, args) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
@@ -341,7 +342,7 @@ const handlers = {
             embeds: [
               buildStatusEmbed(
                 "error",
-                "Utilisation : `-clear me` (tes messages), `-clear @membre`/`<id>` ou `-clear <nombre>`"
+                "Utilisation : `.clear me` (tes messages), `.clear @membre`/`<id>` ou `.clear <nombre>`"
               ),
             ],
           },
@@ -489,7 +490,7 @@ const handlers = {
         embeds: [
           buildStatusEmbed(
             "error",
-            "Utilisation : `-massrole add @role`/`<id>` ou `-massrole remove @role`/`<id>` (utilise l'ID pour ne pas ping tout le rôle)"
+            "Utilisation : `.massrole add @role`/`<id>` ou `.massrole remove @role`/`<id>` (utilise l'ID pour ne pas ping tout le rôle)"
           ),
         ],
       });
@@ -609,27 +610,7 @@ async function handleTextCommand(client, message) {
     return handlers.clear(client, message, ["me"]);
   }
 
-  // Préfixe "." : ban / unban
-  if (content.startsWith(BAN_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(BAN_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (cmd === "ban" || cmd === "unban") {
-      if (!hasBanPermission(message)) {
-        return message.reply({
-          embeds: [
-            buildStatusEmbed(
-              "error",
-              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
-            ),
-          ],
-        });
-      }
-      return handlers[cmd](client, message, args);
-    }
-    return;
-  }
-
-  // Préfixe "-" : commandes membres + modération
+  // Préfixe "." : commandes membres + modération + ban/unban
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
     const cmd = (cmdRaw || "").toLowerCase();
@@ -641,6 +622,19 @@ async function handleTextCommand(client, message) {
       // Permission gérée dans le handler : dépend de la cible (soi-même,
       // quelqu'un d'autre, ou un nombre).
       return handlers.clear(client, message, args);
+    }
+    if (BAN_COMMANDS.has(cmd)) {
+      if (!hasBanPermission(message)) {
+        return message.reply({
+          embeds: [
+            buildStatusEmbed(
+              "error",
+              "Tu dois être administrateur ou avoir la permission **Bannir des membres** pour utiliser cette commande."
+            ),
+          ],
+        });
+      }
+      return handlers[cmd](client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;
     if (DASH_ADMIN_COMMANDS.has(cmd) && !requireModPermission(message)) return;

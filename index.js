@@ -95,7 +95,7 @@ client.nowPlayingMessages = new Collection();
 // Stocke l'intervalle de rafraîchissement du panel (position en direct) par serveur
 client.nowPlayingIntervals = new Collection();
 
-// Stocke le dernier message supprimé par salon (commande -snipe)
+// Stocke le dernier message supprimé par salon (commande .snipe)
 client.snipes = new Collection();
 
 // Stocke qui chaque serveur suit actuellement via !join/spotify_join (voir
@@ -262,7 +262,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---- Commandes textuelles préfixées (! pour tout, - pour -clear / -renew) ----
+// ---- Commandes textuelles préfixées (! pour la musique, . pour la modération/membres) ----
 client.on("messageCreate", (message) => {
   handleTextCommand(client, message).catch((err) => {
     console.error(err);
@@ -272,7 +272,7 @@ client.on("messageCreate", (message) => {
   });
 });
 
-// ---- Mémorise les messages supprimés pour la commande -snipe ----
+// ---- Mémorise les messages supprimés pour la commande .snipe ----
 client.on("messageDelete", (message) => {
   if (!message.guild) return;
   rememberSnipe(client, message.channelId, message, "deleted");

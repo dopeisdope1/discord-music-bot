@@ -51,7 +51,7 @@ les services applicatifs classiques.
 Sur le portail développeur Discord, dans l'onglet **Bot** :
 - ✅ SERVER MEMBERS INTENT — nécessaire pour `!join` (lit la présence des membres)
 - ✅ PRESENCE INTENT — nécessaire pour `!join` (détecte l'activité "écoute Spotify")
-- ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`!play`, `-clear`...)
+- ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`!play`, `.clear`...)
 
 Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - `bot`, `applications.commands`
@@ -92,13 +92,13 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
 
 - **`!`** : préfixe principal, pour toutes les commandes musique
   (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
-- **`-`** : préfixe pour les commandes membres et de modération
-  - Ouvertes à tout le monde par défaut : `-pic [@membre]` / `-avatar` (photo de
-    profil), `-snipe` (dernier message supprimé du salon)
-  - Réservées aux administrateurs : `-clear`, `-renew`, `-hide`, `-unhide`,
-    `-lock`, `-unlock`
-  - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban` (préfixe point, pas tiret)
-  - `-help` → affiche les commandes disponibles pour toi (liste complète si tu
+- **`.`** : préfixe pour les commandes membres et de modération
+  - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
+    profil), `.snipe` (dernier message supprimé du salon)
+  - Réservées aux administrateurs : `.clear`, `.renew`, `.hide`, `.unhide`,
+    `.lock`, `.unlock`, `.massrole`
+  - Admin, ou permission Discord **Bannir des membres** : `.ban`, `.unban`
+  - `.help` → affiche les commandes disponibles pour toi (liste complète si tu
     es administrateur)
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
