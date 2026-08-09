@@ -316,8 +316,8 @@ async function handleUnbanPanel(message) {
 
   const panelMessage = await message.reply(
     buildSearchPanel(
-      "Débannir un membre",
-      `Clique pour rechercher parmi les **${bans.size}** membre(s) banni(s) (pseudo, nom ou ID).`,
+      "Zinki Assassini",
+      `Clique pour rechercher qui débannir parmi les **${bans.size}** membre(s) banni(s) (pseudo, nom ou ID).`,
       "unban_search_open"
     )
   );
@@ -332,7 +332,7 @@ async function handleUnbanPanel(message) {
       }
 
       if (i.isButton() && i.customId === "unban_search_open") {
-        await i.showModal(buildSearchModal("unban_search_modal", "Rechercher un membre banni"));
+        await i.showModal(buildSearchModal("unban_search_modal", "Zinki Assassini — Rechercher"));
 
         let submitted;
         try {
@@ -368,7 +368,7 @@ async function handleUnbanPanel(message) {
           value: b.user.id,
           description: b.reason || undefined,
         }));
-        await submitted.update(buildPickPanel("Débannir un membre", candidates, "unban_pick"));
+        await submitted.update(buildPickPanel("Zinki Assassini", candidates, "unban_pick"));
         return;
       }
 

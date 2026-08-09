@@ -197,12 +197,12 @@ la même personne (en lisant sa présence Spotify au moment du clic, pas une val
 ## 7ter. `.ban` / `.unban` — modération
 
 Réservés aux administrateurs (ou aux membres avec la permission Discord
-**Bannir des membres**). `.ban` ouvre le panel **Zinki Assassini** : pas de
-liste de membres à parcourir, un bouton "Rechercher un membre" ouvre une
-recherche par pseudo/nom/ID (via l'API de recherche de Discord), et ne
-propose un choix que s'il y a plusieurs résultats. `.unban` fonctionne pareil
-en cherchant parmi les membres actuellement bannis, ou débannit directement si
-tu lui donnes un ID (`.unban <id>`).
+**Bannir des membres**). `.ban` et `.unban` ouvrent tous les deux le panel
+**Zinki Assassini** : pas de liste de membres à parcourir, un bouton
+"Rechercher un membre" ouvre une recherche par pseudo/nom/ID (via l'API de
+recherche de Discord pour `.ban`, parmi les membres actuellement bannis pour
+`.unban`), et ne propose un choix que s'il y a plusieurs résultats. `.unban`
+débannit aussi directement si tu lui donnes un ID (`.unban <id>`).
 
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
