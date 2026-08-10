@@ -565,7 +565,7 @@ async function handlePrefixPanel(message) {
         const category = i.customId.split(":")[1];
         const channelId = i.values[0];
         setLogChannel(guildId, category, channelId);
-        saveGuildConfig(i.guild);
+        await saveGuildConfig(i.guild);
         await i.update(buildPanel(currentPage, guild));
         return;
       }
@@ -580,7 +580,7 @@ async function handlePrefixPanel(message) {
 
       if (i.isButton() && i.customId === "perm_category_create") {
         const id = createCategory(guildId);
-        saveGuildConfig(i.guild);
+        await saveGuildConfig(i.guild);
         currentPage = "permissions";
         await i.update(buildPanel(currentPage, guild, `Catégorie **Permission ${id}** créée.`));
         return;
@@ -600,7 +600,7 @@ async function handlePrefixPanel(message) {
       if (i.isButton() && i.customId.startsWith("perm_category_delete:")) {
         const id = Number(i.customId.split(":")[1]);
         deleteCategory(guildId, id);
-        saveGuildConfig(i.guild);
+        await saveGuildConfig(i.guild);
         currentPage = "permissions";
         await i.update(buildPanel(currentPage, guild, `Catégorie **Permission ${id}** supprimée.`));
         return;
@@ -609,7 +609,7 @@ async function handlePrefixPanel(message) {
       if (i.isStringSelectMenu() && i.customId.startsWith("perm_category_commands:")) {
         const id = Number(i.customId.split(":")[1]);
         setCategoryCommands(guildId, id, i.values);
-        saveGuildConfig(i.guild);
+        await saveGuildConfig(i.guild);
         await i.update(buildCategoryDetailPanel(guild, id));
         return;
       }
@@ -617,7 +617,7 @@ async function handlePrefixPanel(message) {
       if (i.isRoleSelectMenu() && i.customId.startsWith("perm_category_roles:")) {
         const id = Number(i.customId.split(":")[1]);
         setCategoryRoles(guildId, id, i.values);
-        saveGuildConfig(i.guild);
+        await saveGuildConfig(i.guild);
         await i.update(buildCategoryDetailPanel(guild, id));
         return;
       }
@@ -977,7 +977,7 @@ async function handlePrefixPanel(message) {
         }
 
         setPrefix(guildId, type, raw);
-        saveGuildConfig(submitted.guild);
+        await saveGuildConfig(submitted.guild);
         await submitted.update(buildPanel(currentPage, guild));
       } catch (err) {
         console.error("[panel] Erreur lors du traitement de la modale de préfixe :", err);

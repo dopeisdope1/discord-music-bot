@@ -502,4 +502,25 @@ client.on("guildCreate", (guild) => {
   });
 });
 
+// Sans handler, Node.js termine le process instantanément sur SIGTERM (le
+// signal que Railway envoie pour arrêter l'ancien conteneur à chaque
+// redéploiement), sans attendre la fin des appels réseau en cours — ce qui
+// pouvait couper une sauvegarde de config (ex: préfixe tout juste changé via
+// .panel, voir utils/configChannel.js) en plein vol si un push tombait juste
+// après, faisant revenir la config à l'ancienne valeur au redémarrage.
+// Enregistrer ce handler désactive la fermeture automatique de Node : on
+// laisse ici une courte marge pour que ces requêtes Discord en cours aient le
+// temps de se terminer avant de fermer nous-mêmes proprement.
+let isShuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[shutdown] Signal ${signal} reçu, arrêt dans 3s (le temps que les sauvegardes en cours se terminent)...`);
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  client.destroy();
+  process.exit(0);
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 client.login(process.env.DISCORD_TOKEN);
