@@ -851,6 +851,16 @@ async function handlePrefixPanel(message) {
           });
           return;
         }
+        // "=" est réservé aux commandes anti-nuke (.antifast/.owner/.wl, voir
+        // utils/textCommands.js — SECURITY_PREFIX), volontairement à part de
+        // ce système de préfixes configurables.
+        if (raw.startsWith("=")) {
+          await submitted.reply({
+            content: "`=` est réservé aux commandes anti-nuke, choisis un autre préfixe.",
+            ephemeral: true,
+          });
+          return;
+        }
         if (raw === other || raw.startsWith(other) || other.startsWith(raw)) {
           await submitted.reply({
             content: `Ce préfixe entre en conflit avec le préfixe ${TYPE_LABELS[otherType]} actuel (\`${other}\`), choisis-en un autre.`,

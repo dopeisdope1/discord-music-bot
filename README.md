@@ -28,7 +28,7 @@ LAVALINK_PASSWORD=...
 LAVALINK_SECURE=true
 GIPHY_API_KEY=...   # optionnel — clé publique de démo utilisée sinon (`.gif`)
 DATA_DIR=...         # optionnel — voir "Rendre data/ permanent sur Railway" plus bas
-BOT_OWNER_IDS=...    # optionnel — voir section 7quater (anti-nuke : `.owner`/`.antifast`/`.wl`)
+BOT_OWNER_IDS=...    # optionnel — voir section 7quater (anti-nuke : `=owner`/`=antifast`/`=wl`)
 ```
 
 ## 2bis. Nœud Lavalink
@@ -119,8 +119,8 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     le rôle du responsable est au même niveau ou au-dessus de celui du bot,
     voir section 7quater pour la vraie détection anti-nuke générale)
   - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
-    catégorie de permission, voir section 7quater) : `.antifast`, `.owner`,
-    `.wl`
+    catégorie de permission, voir section 7quater) : `=antifast`, `=owner`,
+    `=wl` — préfixe fixe `=`, pas `!`/`.` (non configurable via `.panel`)
   - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
     (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
     pour voir le détail sans tout afficher d'un coup. La liste "Commandes
@@ -360,7 +360,7 @@ un compte staff compromis est justement le scénario que ça doit couvrir.
 Ça veut dire qu'un admin qui crée légitimement plusieurs rôles/salons d'un
 coup en configurant le serveur peut se faire neutraliser par erreur — c'est
 le compromis de tout système anti-nuke (mêmes seuils que la plupart des bots
-équivalents). D'où les commandes `.owner`/`.wl` ci-dessous, pour élargir
+équivalents). D'où les commandes `=owner`/`=wl` ci-dessous, pour élargir
 volontairement le cercle des gens exemptés.
 
 **Les commandes du bot lui-même ne se déclenchent jamais entre elles** :
@@ -374,28 +374,30 @@ concernées.
 Nécessite la permission **View Audit Log** pour identifier qui a fait quoi
 (voir section 3) — sans elle, l'anti-nuke ne peut rien détecter.
 
-**Commandes de config (`utils/antiNukeCommands.js`), délibérément séparées du
-système `.panel` > Permissions / Administrateur natif — jamais délégables
-via une catégorie de permission, pour qu'un admin compromis ne puisse pas
-juste se donner accès :**
+**Commandes de config (`utils/antiNukeCommands.js`), sur un préfixe fixe `=`
+séparé de tes préfixes configurables (pas `!`/`.`, voir `SECURITY_PREFIX`
+dans `utils/textCommands.js`) et délibérément à l'écart du système
+`.panel` > Permissions / Administrateur natif — jamais délégables via une
+catégorie de permission, pour qu'un admin compromis ne puisse pas juste se
+donner accès :**
 
-- `.antifast` — ouvre un panel interactif (Components V2) : statut, bouton
+- `=antifast` — ouvre un panel interactif (Components V2) : statut, bouton
   Activer/Désactiver, et un menu déroulant natif Discord par action
-  (ajouter/retirer un owner, ajouter/retirer un whitelisté). `.antifast on` /
-  `.antifast off` restent des raccourcis texte rapides qui ne passent pas par
-  le panel. Réservé aux **owners anti-nuke** (voir `.owner`) pour voir/ouvrir
+  (ajouter/retirer un owner, ajouter/retirer un whitelisté). `=antifast on` /
+  `=antifast off` restent des raccourcis texte rapides qui ne passent pas par
+  le panel. Réservé aux **owners anti-nuke** (voir `=owner`) pour voir/ouvrir
   le panel ; les deux menus "owner" restent en plus réservés au propriétaire
   réel du serveur ou du bot, même depuis le panel.
-- `.owner add @membre` / `.owner remove @membre` / `.owner list` — gère qui,
+- `=owner add @membre` / `=owner remove @membre` / `=owner list` — gère qui,
   en plus du vrai propriétaire Discord du serveur, peut configurer
-  l'anti-nuke (`.antifast`, `.wl`). **Réservé au propriétaire réel du
+  l'anti-nuke (`=antifast`, `=wl`). **Réservé au propriétaire réel du
   serveur** (`guild.ownerId`) **ou à un propriétaire du bot** (voir
   `BOT_OWNER_IDS` ci-dessous) — même un owner anti-nuke ajouté via cette
   commande ne peut pas en ajouter d'autres, pour éviter qu'un owner compromis
   étende la liste.
-- `.wl add @membre` / `.wl remove @membre` / `.wl list` — liste des membres
+- `=wl add @membre` / `=wl remove @membre` / `=wl list` — liste des membres
   exemptés des déclencheurs anti-nuke, en plus du propriétaire/des owners/du
-  bot. Gérée par les owners anti-nuke (contrairement à `.owner`, réservée au
+  bot. Gérée par les owners anti-nuke (contrairement à `=owner`, réservée au
   propriétaire).
 
 Toute action sur ces trois commandes (activer/désactiver, ajout/retrait d'un
@@ -420,7 +422,7 @@ l'anti-nuke :
 - **Propriétaire réel du serveur ou propriétaire du bot** (`BOT_OWNER_IDS`) :
   exécute directement, avec la confirmation habituelle
   ("Bannir tout le monde" / "Annuler").
-- **Owner anti-nuke délégué** (ajouté via `.owner add`, donc PAS le
+- **Owner anti-nuke délégué** (ajouté via `=owner add`, donc PAS le
   propriétaire réel ni un propriétaire du bot) : ne bannit **jamais**
   directement. Le bot ping le propriétaire réel du serveur ET tous les
   propriétaires du bot avec un message "**{tag}** veut exécuter `.banall`.

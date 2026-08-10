@@ -71,14 +71,16 @@ const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, 
 // accepte en plus la permission Discord native "Bannir des membres" pour
 // celles-ci spécifiquement — voir utils/permissions.js).
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
-// Commandes "." de config de l'anti-nuke — jamais assignables à une
-// catégorie de permission ni gérées via canUseCommand (Administrateur
-// natif compris) : leur permission est vérifiée par leur propre handler
-// (owners anti-nuke / propriétaire réel du serveur, voir
-// utils/antiNukeCommands.js), un cercle volontairement séparé de
-// l'Administrateur Discord natif — c'est justement un compte admin
-// compromis que ça doit couvrir.
+// Commandes de config de l'anti-nuke — jamais assignables à une catégorie de
+// permission ni gérées via canUseCommand (Administrateur natif compris) :
+// leur permission est vérifiée par leur propre handler (owners anti-nuke /
+// propriétaire réel du serveur, voir utils/antiNukeCommands.js), un cercle
+// volontairement séparé de l'Administrateur Discord natif — c'est justement
+// un compte admin compromis que ça doit couvrir. Accessibles uniquement via
+// le préfixe fixe "=" (SECURITY_PREFIX, non configurable via `.panel`), pas
+// via `!`/`.` — une séparation de plus par rapport au reste des commandes.
 const SECURITY_COMMANDS = new Set(["antifast", "owner", "wl"]);
+const SECURITY_PREFIX = "=";
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
@@ -1131,6 +1133,16 @@ async function handleTextCommand(client, message) {
     }
   }
 
+  // Préfixe fixe "=" (non configurable, séparé de `.panel`) : uniquement les
+  // commandes de config de l'anti-nuke — voir SECURITY_COMMANDS/SECURITY_PREFIX.
+  if (content.startsWith(SECURITY_PREFIX)) {
+    const [cmdRaw, ...args] = content.slice(SECURITY_PREFIX.length).trim().split(/\s+/);
+    const cmd = (cmdRaw || "").toLowerCase();
+    if (!SECURITY_COMMANDS.has(cmd)) return;
+    // Permission vérifiée dans chaque handler (isOwner / propriétaire réel).
+    return handlers[cmd](client, message, args);
+  }
+
   // Préfixe "." (configurable via .panel) : commandes membres + modération + ban/unban
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
@@ -1145,10 +1157,6 @@ async function handleTextCommand(client, message) {
     }
     if (BAN_COMMANDS.has(cmd)) {
       if (!requireCommandAccess(message, cmd)) return;
-      return handlers[cmd](client, message, args);
-    }
-    if (SECURITY_COMMANDS.has(cmd)) {
-      // Permission vérifiée dans chaque handler (isOwner / propriétaire réel).
       return handlers[cmd](client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;
