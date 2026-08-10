@@ -20,6 +20,7 @@ const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
+const { registerAntiNuke } = require("./utils/antiNuke");
 
 const client = new Client({
   intents: [
@@ -32,6 +33,11 @@ const client = new Client({
     // privilégiés), comme MESSAGE CONTENT.
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
+    // Nécessaires pour que l'anti-nuke détecte les bannissements
+    // (guildBanAdd) et les créations de webhook (webhooksUpdate) — pas des
+    // intents privilégiés, rien à activer sur le portail développeur.
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildWebhooks,
   ],
   // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de musique
   // ou message sniped contenant littéralement "@everyone"). Les mentions
@@ -467,6 +473,9 @@ client.on("guildMemberAdd", (member) => {
     .send(`${member} ${randomWelcomeMessage()}`)
     .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
 });
+
+// ---- Protection anti-nuke ("antifast") ----
+registerAntiNuke(client);
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);

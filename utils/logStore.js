@@ -14,6 +14,7 @@ const LOG_CATEGORIES = {
   moderation: { key: "moderation", label: "Logs modération", description: "`.clear`, `.ban`, `.unban`" },
   salon: { key: "salon", label: "Logs salon", description: "`.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`" },
   roles: { key: "roles", label: "Logs rôles", description: "`.massrole` + changements manuels de rôle" },
+  securite: { key: "securite", label: "Logs sécurité", description: "Alertes anti-nuke (\"antifast\")" },
 };
 
 let cache = null;

@@ -152,9 +152,10 @@ Railway si tu en montes un) reste utilisé comme cache local rapide en plus de
 **Page Logs** — un menu déroulant par catégorie (**Logs modération** =
 `.clear`/`.ban`/`.unban`, **Logs salon** = `.renew`/`.hide`/`.unhide`/
 `.lock`/`.unlock`, **Logs rôles** = `.massrole` ET tout ajout/retrait de rôle
-fait à la main sur le profil d'un membre) où tu choisis, en tapant pour
-rechercher, le salon où le bot doit poster un message. Laisser une catégorie
-vide désactive simplement ses logs. Pour "Logs rôles", un changement fait via
+fait à la main sur le profil d'un membre, **Logs sécurité** = alertes
+anti-nuke, voir section 7quater) où tu choisis, en tapant pour rechercher, le
+salon où le bot doit poster un message. Laisser une catégorie vide désactive
+simplement ses logs. Pour "Logs rôles", un changement fait via
 `.massrole`/le panel donne un seul message résumé (nombre de membres
 touchés) ; un changement fait à la main donne un message par membre avec le
 nom de la personne qui a fait le changement (nécessite la permission
@@ -324,6 +325,45 @@ explicitement redéployer les commandes slash auprès de l'API Discord.**
 Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
 systématiquement "n'écoute rien sur Spotify", même si c'est faux.
+
+## 7quater. Anti-nuke ("antifast")
+
+Protection automatique contre les nukes (destruction rapide du serveur),
+activée en permanence, aucune commande ni réglage — voir `utils/antiNuke.js`.
+Détecte les rafales d'actions destructrices faites **à la main via Discord**
+(pas par le bot lui-même, voir plus bas) par le même membre en moins de 10
+secondes :
+
+- Suppression ou création de **3 rôles**
+- Suppression ou création de **3 salons**
+- **3 bannissements** ou **3 expulsions**
+- Création de **2 webhooks**
+- Attribution de la permission **Administrateur** à un rôle (déclenché dès la
+  1ère fois, pas besoin de répétition — c'est déjà un signal fort à lui seul)
+
+Dès qu'un seuil est franchi, le responsable est neutralisé : **tous ses
+rôles lui sont retirés** (hors @everyone et rôles gérés par une intégration).
+C'est réversible (un admin peut les redonner ensuite), volontairement moins
+radical qu'un kick/ban. Une alerte est envoyée dans "Logs sécurité" (voir
+"Page Logs" ci-dessus) avec qui a été neutralisé et pourquoi.
+
+Seul le **propriétaire du serveur** est exempté (ainsi que le bot lui-même) —
+volontairement aucune liste d'admins de confiance en plus : un compte staff
+compromis est justement le scénario que ça doit couvrir. Ça veut dire qu'un
+admin qui crée légitimement plusieurs rôles/salons d'un coup en configurant
+le serveur peut se faire neutraliser par erreur — c'est le compromis de tout
+système anti-nuke (mêmes seuils que la plupart des bots équivalents).
+
+**Les commandes du bot lui-même ne se déclenchent jamais entre elles** :
+`.massrole`, `.banall`/`.unbanall`, la création/suppression de rôles via
+`.panel`, etc. exécutent l'action avec le compte du bot, donc les logs
+d'audit Discord attribuent l'action au bot — explicitement ignoré par
+l'anti-nuke (`executor.bot`). Seules les actions faites directement par un
+humain via l'interface Discord native (ou par un autre bot compromis) sont
+concernées.
+
+Nécessite la permission **View Audit Log** pour identifier qui a fait quoi
+(voir section 3) — sans elle, l'anti-nuke ne peut rien détecter.
 
 ## 8. Notes sur Components V2
 
