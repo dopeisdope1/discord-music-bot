@@ -964,6 +964,37 @@ async function handleTextCommand(client, message) {
     return handlers.clear(client, message, ["me"]);
   }
 
+  // Déclencheur spécial sans préfixe : "add <rôle>" / "del <rôle>" en
+  // répondant au message de la cible (ou en la mentionnant) — raccourci de
+  // .addrole/.delrole par nom de rôle plutôt que mention/ID. Volontairement
+  // strict (cible requise + nom de rôle exact + permission) pour ne pas
+  // réagir à une phrase normale qui commencerait par "add"/"del" par hasard ;
+  // si une condition ne colle pas, on ignore silencieusement plutôt que de
+  // spammer une erreur dans une conversation qui n'était pas une commande.
+  const addDelMatch = content.match(/^(add|del)\s+(.+)$/i);
+  if (addDelMatch) {
+    const action = addDelMatch[1].toLowerCase();
+    const roleName = addDelMatch[2].trim().toLowerCase();
+
+    const target =
+      message.mentions.members?.first() ||
+      (message.reference
+        ? await message
+            .fetchReference()
+            .then((ref) => ref.member || message.guild.members.fetch(ref.author.id).catch(() => null))
+            .catch(() => null)
+        : null);
+    const role = target ? message.guild.roles.cache.find((r) => r.id !== message.guild.id && r.name.toLowerCase() === roleName) : null;
+
+    if (target && role) {
+      const permCommand = action === "add" ? "addrole" : "delrole";
+      if (canUseCommand(message, permCommand)) {
+        return (action === "add" ? addRoleDirect : delRoleDirect)(message, target.id, role.id);
+      }
+      return;
+    }
+  }
+
   // Préfixe "." (configurable via .panel) : commandes membres + modération + ban/unban
   if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
     const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);

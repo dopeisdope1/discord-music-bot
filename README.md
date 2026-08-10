@@ -227,6 +227,15 @@ Contrairement à "Gérer les rôles en masse" (page Permissions), ça ne touche
 qu'un seul membre. Mêmes restrictions que `.massrole` (rôle @everyone,
 rôles gérés par une intégration, et hiérarchie du bot).
 
+**Raccourci sans préfixe** : réponds au message de quelqu'un (ou mentionne-le)
+en tapant `add <nom du rôle>` ou `del <nom du rôle>` (ex: quelqu'un demande
+"ajoute-moi la perm image", tu réponds à son message par `add image`) — ça
+ajoute/retire directement le rôle dont le nom correspond exactement (pas
+sensible à la casse). Nécessite la même permission que `.addrole`/`.delrole` ;
+si la cible, le nom de rôle ou la permission ne collent pas, rien ne se passe
+(pour ne pas réagir à une phrase normale commençant par "add"/"del" par
+hasard).
+
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
 
