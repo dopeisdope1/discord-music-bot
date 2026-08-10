@@ -114,9 +114,13 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     natif ne suffit plus, jamais assignable à une catégorie de permission) :
     `.banall` (bannit tous les membres humains du serveur sauf toi, avec
     confirmation — action irréversible). Toute tentative par quelqu'un
-    d'autre ne bannit personne et retire immédiatement tous les rôles du
-    responsable, comme une détection anti-nuke (voir section 7quater) —
-    alerte envoyée dans "Logs sécurité"
+    d'autre ne bannit personne et retire immédiatement tous ses rôles, comme
+    une détection anti-nuke (voir section 7quater) — sauf si son rôle le
+    plus haut est au même niveau ou au-dessus de celui du bot (limite de
+    hiérarchie Discord, aucun code ne peut la contourner : remonte le rôle
+    du bot dans les paramètres du serveur si ça arrive). La réponse au
+    responsable reste volontairement vague (ne révèle pas si le retrait a
+    marché) ; le détail exact est dans "Logs sécurité"
   - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
     catégorie de permission, voir section 7quater) : `.antifast`, `.owner`,
     `.wl`

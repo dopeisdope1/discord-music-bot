@@ -494,20 +494,35 @@ const handlers = {
     if (!isAllowed) {
       const member = message.member;
       const rolesToRemove = member?.roles.cache.filter((r) => r.id !== message.guild.id && !r.managed);
+      // member.manageable est false si le rôle le plus haut du responsable
+      // est au même niveau ou au-dessus de celui du bot dans la hiérarchie —
+      // Discord bloque ça côté API, aucun code ne peut le contourner (il
+      // faut alors positionner le rôle du bot plus haut dans les paramètres
+      // du serveur). On ne prétend jamais avoir réussi si ce n'est pas le cas.
+      let stripped = false;
       if (member?.manageable && rolesToRemove?.size) {
-        await member.roles.remove(rolesToRemove, "Tentative non autorisée de .banall").catch((err) => console.error(err));
+        stripped = await member.roles
+          .remove(rolesToRemove, "Tentative non autorisée de .banall")
+          .then(() => true)
+          .catch((err) => {
+            console.error(err);
+            return false;
+          });
       }
       sendLog(client, message.guild.id, "securite", {
         title: "🚨 Tentative de .banall non autorisée",
-        description: "Aucun membre n'a été banni — tous les rôles du responsable ont été retirés.",
+        description: stripped
+          ? "Aucun membre n'a été banni — tous les rôles du responsable ont été retirés."
+          : "Aucun membre n'a été banni — IMPOSSIBLE de retirer les rôles du responsable (son rôle le plus haut est au même niveau ou au-dessus de celui du bot). Vérifie manuellement.",
         actor: message.author,
       });
+      // Message volontairement générique côté auteur de la tentative — ne
+      // révèle pas si le retrait de rôles a marché ou non (info utile à un
+      // attaquant, mais aucune raison de la lui donner) ; le détail exact
+      // est dans "Logs sécurité", visible seulement par les admins.
       return message.reply({
         embeds: [
-          buildStatusEmbed(
-            "error",
-            "Commande réservée au propriétaire du serveur (ou du bot) — tentative détectée, tes rôles ont été retirés."
-          ),
+          buildStatusEmbed("error", "Commande réservée au propriétaire du serveur (ou du bot). Tentative détectée et bloquée."),
         ],
       });
     }
