@@ -165,7 +165,7 @@ function buildDashCategories(prefix, message) {
       label: "🛡️ Sécurité",
       names: ["antifast", "owner", "wl"],
       lines: [
-        `\`${prefix}antifast [on|off]\` — Statut / active / désactive l'anti-nuke`,
+        `\`${prefix}antifast\` — Panel (statut, activer/désactiver, owners, whitelist). \`${prefix}antifast on|off\` en raccourci direct`,
         `\`${prefix}owner add|remove|list [@membre]\` — Qui peut configurer l'anti-nuke (réservé au propriétaire réel)`,
         `\`${prefix}wl add|remove|list [@membre]\` — Membres exemptés de l'anti-nuke`,
       ],

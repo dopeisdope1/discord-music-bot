@@ -379,9 +379,13 @@ système `.panel` > Permissions / Administrateur natif — jamais délégables
 via une catégorie de permission, pour qu'un admin compromis ne puisse pas
 juste se donner accès :**
 
-- `.antifast` — affiche l'état actuel (activé/désactivé). `.antifast on` /
-  `.antifast off` — active/désactive l'anti-nuke pour ce serveur. Réservé aux
-  **owners anti-nuke** (voir `.owner`).
+- `.antifast` — ouvre un panel interactif (Components V2) : statut, bouton
+  Activer/Désactiver, et un menu déroulant natif Discord par action
+  (ajouter/retirer un owner, ajouter/retirer un whitelisté). `.antifast on` /
+  `.antifast off` restent des raccourcis texte rapides qui ne passent pas par
+  le panel. Réservé aux **owners anti-nuke** (voir `.owner`) pour voir/ouvrir
+  le panel ; les deux menus "owner" restent en plus réservés au propriétaire
+  réel du serveur ou du bot, même depuis le panel.
 - `.owner add @membre` / `.owner remove @membre` / `.owner list` — gère qui,
   en plus du vrai propriétaire Discord du serveur, peut configurer
   l'anti-nuke (`.antifast`, `.wl`). **Réservé au propriétaire réel du
