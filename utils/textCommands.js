@@ -7,7 +7,14 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
-const { handleAddRolePanel, handleDelRolePanel, addRoleDirect, delRoleDirect } = require("./rolePanels");
+const {
+  handleAddRolePanel,
+  handleDelRolePanel,
+  handleAddRoleForMember,
+  handleDelRoleForMember,
+  addRoleDirect,
+  delRoleDirect,
+} = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -822,11 +829,13 @@ const handlers = {
 
   async addrole(client, message, args) {
     if (args.length >= 2) return addRoleDirect(message, args[0], args[1]);
+    if (args.length === 1) return handleAddRoleForMember(message, args[0]);
     await handleAddRolePanel(message);
   },
 
   async delrole(client, message, args) {
     if (args.length >= 2) return delRoleDirect(message, args[0], args[1]);
+    if (args.length === 1) return handleDelRoleForMember(message, args[0]);
     await handleDelRolePanel(message);
   },
 

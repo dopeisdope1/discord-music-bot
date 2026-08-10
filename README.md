@@ -213,12 +213,15 @@ un membre précis (plutôt qu'à tout le monde ou dans la hiérarchie), voir
 `.addrole`/`.delrole` ci-dessous.
 
 **`.addrole` / `.delrole`** — commandes autonomes (pas dans `.panel`) pour
-ajouter/retirer un rôle à un seul membre, de deux façons :
-- Sans argument : panel en deux étapes — un menu déroulant natif Discord
-  "Choisir un membre", puis un menu "Ajouter ce rôle à ce membre" (ou
-  "Retirer ce rôle à ce membre") pour choisir le rôle.
-- Directement : `.addrole @membre @role` / `.delrole @membre @role` (mentions
-  ou ID des deux), sans passer par les menus.
+ajouter/retirer un rôle à un seul membre, à trois niveaux :
+- Sans argument (`.addrole`) : panel "Ajout de rôle" avec un menu déroulant
+  natif Discord pour choisir le membre, puis un second menu pour choisir le
+  rôle.
+- Avec juste le membre (`.addrole @membre` ou `.addrole <id>`) : saute
+  directement à l'écran "Ajout de rôle" avec un champ **Cible** affichant le
+  membre déjà choisi, et un menu déroulant pour choisir le rôle.
+- Avec les deux (`.addrole @membre @role`, mentions ou ID) : appliqué tout de
+  suite, sans aucun panel.
 
 Contrairement à "Gérer les rôles en masse" (page Permissions), ça ne touche
 qu'un seul membre. Mêmes restrictions que `.massrole` (rôle @everyone,
