@@ -18,6 +18,18 @@ const {
 // caché : Discord, contrairement au disque du bot, n'est jamais réinitialisé.
 const CONFIG_CHANNEL_NAME = "zinki-config";
 
+// Le "ready" de index.js appelle loadGuildConfig(guild) SANS l'attendre (une
+// boucle for classique, pas de Promise.all) : le bot commence donc à traiter
+// des commandes avant que la restauration ait fini pour chaque serveur. Si
+// une commande qui sauvegarde la config (`.panel`, `.owner`, `.antifast`...)
+// tourne dans cette fenêtre, saveGuildConfig lirait des valeurs par
+// défaut/vides pour les catégories pas encore restaurées et écraserait la
+// vraie config sur Discord avec — c'est ce qui faisait revenir le préfixe à
+// sa valeur par défaut après un redéploiement qui tombait juste après un
+// test de commande. Map<guildId, Promise> pour que saveGuildConfig puisse
+// attendre la restauration en cours avant de composer les données à écrire.
+const hydrationPromises = new Map();
+
 async function getConfigChannel(guild, { create = false } = {}) {
   let channel = guild.channels.cache.find(
     (c) => c.type === ChannelType.GuildText && c.name === CONFIG_CHANNEL_NAME
@@ -52,24 +64,29 @@ async function findConfigMessage(channel) {
  * qui survit aux redéploiements Railway — dans le cache local.
  * @param {import('discord.js').Guild} guild
  */
-async function loadGuildConfig(guild) {
-  const channel = await getConfigChannel(guild);
-  if (!channel) return;
+function loadGuildConfig(guild) {
+  const promise = (async () => {
+    const channel = await getConfigChannel(guild);
+    if (!channel) return;
 
-  const message = await findConfigMessage(channel);
-  if (!message) return;
+    const message = await findConfigMessage(channel);
+    if (!message) return;
 
-  try {
-    const raw = message.content.replace(/^```json\n/, "").replace(/\n```$/, "");
-    const data = JSON.parse(raw);
-    hydratePrefixes(guild.id, data.prefixes);
-    hydrateLogChannels(guild.id, data.logChannels);
-    hydratePermissionCategories(guild.id, data.permissionCategories);
-    hydrateAntiNuke(guild.id, data.antiNuke);
-    console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
-  } catch (err) {
-    console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
-  }
+    try {
+      const raw = message.content.replace(/^```json\n/, "").replace(/\n```$/, "");
+      const data = JSON.parse(raw);
+      hydratePrefixes(guild.id, data.prefixes);
+      hydrateLogChannels(guild.id, data.logChannels);
+      hydratePermissionCategories(guild.id, data.permissionCategories);
+      hydrateAntiNuke(guild.id, data.antiNuke);
+      console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
+    } catch (err) {
+      console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
+    }
+  })();
+
+  hydrationPromises.set(guild.id, promise);
+  return promise;
 }
 
 /**
@@ -79,6 +96,13 @@ async function loadGuildConfig(guild) {
  * @param {import('discord.js').Guild} guild
  */
 async function saveGuildConfig(guild) {
+  // Attend que la restauration initiale (voir loadGuildConfig, appelée au
+  // démarrage) soit terminée avant de composer les données à écrire — sinon
+  // on risque d'écraser une vraie config avec des valeurs par défaut/vides
+  // pas encore restaurées (voir le commentaire sur hydrationPromises).
+  const pending = hydrationPromises.get(guild.id);
+  if (pending) await pending;
+
   const data = {
     prefixes: getRawPrefixes(guild.id),
     logChannels: getRawLogChannels(guild.id),
