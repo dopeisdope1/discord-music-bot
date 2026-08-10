@@ -933,9 +933,11 @@ async function handleTextCommand(client, message) {
   const content = message.content.trim();
   const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);
 
-  // Déclencheur spécial sans préfixe : "uo clear" = ".clear me" (supprime tes
-  // propres messages), ouvert à tout le monde (limite gérée dans le handler)
-  if (content.toLowerCase() === "uo clear") {
+  // Déclencheurs spéciaux sans préfixe : "uo clear" / "clear me" = ".clear me"
+  // (supprime tes propres messages), ouvert à tout le monde (limite gérée
+  // dans le handler)
+  const lowerContent = content.toLowerCase();
+  if (lowerContent === "uo clear" || lowerContent === "clear me") {
     return handlers.clear(client, message, ["me"]);
   }
 
