@@ -11,6 +11,7 @@ const {
   TextInputStyle,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  UserSelectMenuBuilder,
   StringSelectMenuBuilder,
   ChannelType,
   PermissionFlagsBits,
@@ -243,7 +244,7 @@ function buildRolesPage(guild, statusText) {
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Rôles\n> Crée un nouveau rôle, supprime un rôle existant (action irréversible, une confirmation est demandée), ou réorganise sa position dans la hiérarchie."
+      "## Rôles\n> Crée un nouveau rôle, supprime un rôle existant (action irréversible, une confirmation est demandée), réorganise sa position dans la hiérarchie, ou ajoute un rôle à un membre précis."
     )
   );
   container.addActionRowComponents(
@@ -269,11 +270,57 @@ function buildRolesPage(guild, statusText) {
         .setMaxValues(1)
     )
   );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("role_assign_open")
+        .setLabel("👤 Ajouter un rôle à un membre")
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
 
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(buildNavRow("roles"));
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+// Sous-panel en deux étapes (comme la création de rôle : nom puis couleur) —
+// aucun composant Discord ne permet de combiner un choix de membre et un
+// choix de rôle dans un seul menu, donc on demande le membre d'abord, puis
+// le rôle une fois qu'il est connu (customId embarque l'id du membre).
+function buildRoleAssignUserPanel() {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent("## Ajouter un rôle à un membre\n> Choisis le membre.")
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder()
+        .setCustomId("role_assign_user_select")
+        .setPlaceholder("👤 Choisir un membre")
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildRoleAssignRolePanel(userId) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## Ajouter un rôle à <@${userId}>\n> Choisis le rôle à ajouter.`)
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId(`role_assign_role_select:${userId}`)
+        .setPlaceholder("Ajouter ce rôle à ce membre")
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
 }
 
 // Classement des rôles du serveur du plus haut au plus bas dans la
@@ -324,7 +371,13 @@ function buildRoleMoveExactModal(role, rank, maxRank) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("rank")
-          .setLabel(`Rang cible (1 = le plus haut, ${maxRank} = le plus bas)`)
+          // Le label Discord est limité à 45 caractères — avec un serveur à
+          // 10+ rôles, inclure "maxRank" dans le label dépassait cette limite
+          // et faisait planter l'ouverture de la modale (silencieusement,
+          // rattrapé par le catch générique du panel). La borne max est donc
+          // affichée dans le placeholder à la place, qui n'a pas cette limite.
+          .setLabel("Rang cible (1 = le plus haut)")
+          .setPlaceholder(`Entre 1 et ${maxRank}`)
           .setStyle(TextInputStyle.Short)
           .setValue(String(rank))
           .setRequired(true)
@@ -812,6 +865,75 @@ async function handlePrefixPanel(message) {
           } catch (err) {
             console.error("[panel] Erreur dans le sous-panel rôles en masse :", err);
             await replyWithError(sub, memberFetchErrorMessage(err) ?? undefined);
+          }
+        });
+        return;
+      }
+
+      if (i.isButton() && i.customId === "role_assign_open") {
+        const subMessage = await i.reply({ ...buildRoleAssignUserPanel(), fetchReply: true });
+        const subCollector = subMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+
+        subCollector.on("collect", async (sub) => {
+          try {
+            if (sub.user.id !== message.author.id) {
+              await sub.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
+              return;
+            }
+
+            if (sub.isUserSelectMenu() && sub.customId === "role_assign_user_select") {
+              const targetId = sub.values[0];
+              if (targetId === sub.user.id && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                await sub.reply({ content: "Tu ne peux pas te choisir toi-même.", ephemeral: true });
+                return;
+              }
+              await sub.update(buildRoleAssignRolePanel(targetId));
+              return;
+            }
+
+            if (sub.isRoleSelectMenu() && sub.customId.startsWith("role_assign_role_select:")) {
+              const targetId = sub.customId.split(":")[1];
+              const role = sub.roles.first();
+              const invalidReason = validateMassRoleTarget(sub.guild, role);
+              if (invalidReason) {
+                await sub.reply({ content: invalidReason, ephemeral: true });
+                return;
+              }
+
+              const member = await sub.guild.members.fetch(targetId).catch(() => null);
+              if (!member) {
+                await sub.update(buildSimplePanel("Ce membre n'est plus sur le serveur."));
+                return;
+              }
+              if (member.roles.cache.has(role.id)) {
+                await sub.update(buildSimplePanel(`**${member.user.tag}** a déjà le rôle **${role.name}**.`));
+                return;
+              }
+
+              const added = await member.roles
+                .add(role, `Ajouté via .panel par ${message.author.tag}`)
+                .then(() => true)
+                .catch((err) => {
+                  console.error(err);
+                  return false;
+                });
+
+              if (!added) {
+                await sub.update(buildSimplePanel(`Impossible d'ajouter **${role.name}** à **${member.user.tag}** (erreur Discord).`));
+                return;
+              }
+
+              sendLog(sub.client, guildId, "roles", {
+                title: "Ajout de rôle",
+                description: `Rôle **${role.name}** ajouté à <@${member.id}>.`,
+                actor: message.author,
+              });
+              await sub.update(buildSimplePanel(`Rôle **${role.name}** ajouté à **${member.user.tag}**.`));
+              return;
+            }
+          } catch (err) {
+            console.error("[panel] Erreur dans le sous-panel attribution de rôle :", err);
+            await replyWithError(sub);
           }
         });
         return;

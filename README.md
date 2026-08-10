@@ -206,7 +206,11 @@ bouton est l'équivalent le plus proche : un saut direct plutôt qu'un
 cran à la fois). Le rôle @everyone et les rôles gérés par une intégration
 (bot, boost serveur...) ne peuvent être ni supprimés ni déplacés depuis ce
 panel ; un rôle ne peut pas non plus être monté au-dessus du rôle le plus
-haut du bot (limite de hiérarchie Discord).
+haut du bot (limite de hiérarchie Discord). Un dernier bouton "👤 Ajouter un
+rôle à un membre" ouvre un sous-panel en deux étapes : un menu "Choisir un
+membre" puis, une fois le membre choisi, un menu "Ajouter ce rôle à ce
+membre" pour choisir le rôle — contrairement à "Gérer les rôles en masse",
+ça ne touche qu'un seul membre précis.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).
