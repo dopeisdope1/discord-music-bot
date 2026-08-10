@@ -102,9 +102,10 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     (envoie un gif aléatoire via Giphy)
   - Admin, ou rôle autorisé pour une catégorie de permission qui inclut la
     commande (voir "Page Permissions" ci-dessous) : `.clear`, `.renew`,
-    `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.panel`,
-    `.create <nom> <url>` (crée un emoji), `.helpall` (liste les commandes
-    par catégorie), `.perms` (liste les rôles par catégorie)
+    `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`,
+    `.delrole`, `.panel`, `.create <nom> <url>` (crée un emoji), `.helpall`
+    (liste les commandes par catégorie), `.perms` (liste les rôles par
+    catégorie)
   - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
     système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
     confirmation)
@@ -174,8 +175,9 @@ elles, contrairement à l'exemple à deux groupes fixes "mod"/"ban" d'avant) :
   (`RoleSelectMenu`, choisis qui a accès), plus un bouton pour la supprimer.
 
 Les commandes assignables : `.helpall`, `.perms`, `.panel`, `.renew`,
-`.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.create`, `.ban`,
-`.unban`, `.unbanall`, `.clear` (`.banall` en est volontairement exclue).
+`.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`, `.delrole`,
+`.create`, `.ban`, `.unban`, `.unbanall`, `.clear` (`.banall` en est
+volontairement exclue).
 Ça s'ajoute aux permissions Discord natives (Administrateur toujours, plus
 Bannir des membres pour `.ban`/`.unban`/`.unbanall` spécifiquement), qui
 continuent de fonctionner normalement — les catégories ne font qu'ajouter
@@ -206,11 +208,17 @@ bouton est l'équivalent le plus proche : un saut direct plutôt qu'un
 cran à la fois). Le rôle @everyone et les rôles gérés par une intégration
 (bot, boost serveur...) ne peuvent être ni supprimés ni déplacés depuis ce
 panel ; un rôle ne peut pas non plus être monté au-dessus du rôle le plus
-haut du bot (limite de hiérarchie Discord). Un dernier bouton "👤 Ajouter un
-rôle à un membre" ouvre un sous-panel en deux étapes : un menu "Choisir un
-membre" puis, une fois le membre choisi, un menu "Ajouter ce rôle à ce
-membre" pour choisir le rôle — contrairement à "Gérer les rôles en masse",
-ça ne touche qu'un seul membre précis.
+haut du bot (limite de hiérarchie Discord). Pour attribuer/retirer un rôle à
+un membre précis (plutôt qu'à tout le monde ou dans la hiérarchie), voir
+`.addrole`/`.delrole` ci-dessous.
+
+**`.addrole` / `.delrole`** — commandes autonomes (pas dans `.panel`) pour
+ajouter/retirer un rôle à un seul membre, via un panel en deux étapes : un
+menu déroulant natif Discord "Choisir un membre", puis un menu "Ajouter ce
+rôle à ce membre" (ou "Retirer ce rôle à ce membre") pour choisir le rôle.
+Contrairement à "Gérer les rôles en masse" (page Permissions), ça ne touche
+qu'un seul membre. Mêmes restrictions que `.massrole` (rôle @everyone,
+rôles gérés par une intégration, et hiérarchie du bot).
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
 le portail développeur (voir section 3).

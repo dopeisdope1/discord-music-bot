@@ -23,6 +23,8 @@ const ASSIGNABLE_COMMANDS = [
   "lock",
   "unlock",
   "massrole",
+  "addrole",
+  "delrole",
   "create",
   "ban",
   "unban",

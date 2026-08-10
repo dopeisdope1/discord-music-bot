@@ -7,6 +7,7 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
+const { handleAddRolePanel, handleDelRolePanel } = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -45,6 +46,8 @@ const DASH_ADMIN_COMMANDS = new Set([
   "lock",
   "unlock",
   "massrole",
+  "addrole",
+  "delrole",
   "panel",
   "create",
   "helpall",
@@ -817,6 +820,14 @@ const handlers = {
     }
   },
 
+  async addrole(client, message) {
+    await handleAddRolePanel(message);
+  },
+
+  async delrole(client, message) {
+    await handleDelRolePanel(message);
+  },
+
   async pic(client, message) {
     const target = message.mentions.members?.first() || message.member;
     const avatarUrl = target.displayAvatarURL({ size: 1024 });
@@ -933,11 +944,12 @@ async function handleTextCommand(client, message) {
   const content = message.content.trim();
   const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);
 
-  // Déclencheurs spéciaux sans préfixe : "uo clear" / "clear me" = ".clear me"
-  // (supprime tes propres messages), ouvert à tout le monde (limite gérée
+  // Déclencheurs spéciaux sans préfixe, tous équivalents à ".clear me"
+  // (supprime tes propres messages), ouverts à tout le monde (limite gérée
   // dans le handler)
+  const SELF_CLEAR_TRIGGERS = new Set(["uo clear", "clear me", "anas clear", "yanis clear"]);
   const lowerContent = content.toLowerCase();
-  if (lowerContent === "uo clear" || lowerContent === "clear me") {
+  if (SELF_CLEAR_TRIGGERS.has(lowerContent)) {
     return handlers.clear(client, message, ["me"]);
   }
 

@@ -26,6 +26,8 @@ function assignableCommandLine(prefix, cmd) {
     lock: `\`${prefix}lock\` — Bloque l'écriture pour @everyone`,
     unlock: `\`${prefix}unlock\` — Débloque l'écriture pour @everyone`,
     massrole: `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
+    addrole: `\`${prefix}addrole\` — Ajoute un rôle à un membre (menus déroulants)`,
+    delrole: `\`${prefix}delrole\` — Retire un rôle à un membre (menus déroulants)`,
     create: `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
     ban: `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
     unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
