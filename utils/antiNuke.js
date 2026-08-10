@@ -1,5 +1,6 @@
 const { AuditLogEvent, PermissionFlagsBits } = require("discord.js");
 const { sendLog } = require("./actionLogger");
+const { isEnabled, isOwner, isWhitelisted } = require("./antiNukeStore");
 
 // Fenêtre glissante : au-delà de ce seuil d'actions destructrices du même
 // type par le même membre en moins de WINDOW_MS, on considère que c'est un
@@ -28,9 +29,9 @@ function recordAndCheck(guildId, userId, action) {
 }
 
 function isExempt(guild, userId) {
-  // Jamais le propriétaire (impossible à sanctionner de toute façon côté API
-  // pour la plupart des actions) ni le bot lui-même.
-  return userId === guild.ownerId || userId === guild.client.user.id;
+  // Jamais le propriétaire, le bot lui-même, un "owner" anti-nuke (voir
+  // .owner) ni un membre whitelisté (voir .wl).
+  return userId === guild.ownerId || userId === guild.client.user.id || isOwner(guild, userId) || isWhitelisted(guild.id, userId);
 }
 
 /**
@@ -97,16 +98,18 @@ async function punish(guild, userId, reason) {
  * expulsions, création de webhooks — ainsi que l'attribution de la
  * permission Administrateur à un rôle, et neutralise automatiquement le
  * responsable (retrait de tous ses rôles) si ce n'est ni le propriétaire du
- * serveur ni le bot. Volontairement PAS de liste d'admins exemptés au-delà
- * du propriétaire : un compte staff compromis est justement le scénario que
- * ça doit couvrir. À l'inverse, toute action faite par le bot lui-même
- * (`.massrole`, `.banall`, rôles créés/supprimés via `.panel`...) est
- * ignorée automatiquement, l'exécuteur relevé dans les logs d'audit étant le
- * bot et non la personne qui a tapé la commande.
+ * serveur, ni le bot, ni un "owner"/whitelisté anti-nuke (voir
+ * utils/antiNukeStore.js et les commandes `.antifast`/`.owner`/`.wl`).
+ * Activable/désactivable par serveur via `.antifast on|off` — désactivé,
+ * plus aucun listener n'agit (voir isEnabled ci-dessous). Toute action faite
+ * par le bot lui-même (`.massrole`, `.banall`, rôles créés/supprimés via
+ * `.panel`...) est ignorée automatiquement, l'exécuteur relevé dans les logs
+ * d'audit étant le bot et non la personne qui a tapé la commande.
  * @param {import('discord.js').Client} client
  */
 function registerAntiNuke(client) {
   client.on("roleDelete", async (role) => {
+    if (!isEnabled(role.guild.id)) return;
     const executor = await findExecutor(role.guild, AuditLogEvent.RoleDelete, role.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(role.guild.id, executor.id, "roleDelete")) {
@@ -115,6 +118,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("roleCreate", async (role) => {
+    if (!isEnabled(role.guild.id)) return;
     const executor = await findExecutor(role.guild, AuditLogEvent.RoleCreate, role.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(role.guild.id, executor.id, "roleCreate")) {
@@ -123,6 +127,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("roleUpdate", async (oldRole, newRole) => {
+    if (!isEnabled(newRole.guild.id)) return;
     if (oldRole.permissions.has(PermissionFlagsBits.Administrator) || !newRole.permissions.has(PermissionFlagsBits.Administrator)) {
       return;
     }
@@ -132,7 +137,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("channelDelete", async (channel) => {
-    if (!channel.guild) return;
+    if (!channel.guild || !isEnabled(channel.guild.id)) return;
     const executor = await findExecutor(channel.guild, AuditLogEvent.ChannelDelete, channel.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(channel.guild.id, executor.id, "channelDelete")) {
@@ -141,7 +146,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("channelCreate", async (channel) => {
-    if (!channel.guild) return;
+    if (!channel.guild || !isEnabled(channel.guild.id)) return;
     const executor = await findExecutor(channel.guild, AuditLogEvent.ChannelCreate, channel.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(channel.guild.id, executor.id, "channelCreate")) {
@@ -150,6 +155,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("guildBanAdd", async (ban) => {
+    if (!isEnabled(ban.guild.id)) return;
     const executor = await findExecutor(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(ban.guild.id, executor.id, "ban")) {
@@ -158,6 +164,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("guildMemberRemove", async (member) => {
+    if (!isEnabled(member.guild.id)) return;
     const executor = await findExecutor(member.guild, AuditLogEvent.MemberKick, member.id);
     if (!executor || executor.bot) return;
     if (recordAndCheck(member.guild.id, executor.id, "kick")) {
@@ -166,7 +173,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("webhooksUpdate", async (channel) => {
-    if (!channel.guild) return;
+    if (!channel.guild || !isEnabled(channel.guild.id)) return;
     const executor = await findExecutor(channel.guild, AuditLogEvent.WebhookCreate);
     if (!executor || executor.bot) return;
     if (recordAndCheck(channel.guild.id, executor.id, "webhookCreate")) {

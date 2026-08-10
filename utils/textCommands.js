@@ -15,6 +15,7 @@ const {
   addRoleDirect,
   delRoleDirect,
 } = require("./rolePanels");
+const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand } = require("./antiNukeCommands");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -69,6 +70,14 @@ const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, 
 // accepte en plus la permission Discord native "Bannir des membres" pour
 // celles-ci spécifiquement — voir utils/permissions.js).
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
+// Commandes "." de config de l'anti-nuke — jamais assignables à une
+// catégorie de permission ni gérées via canUseCommand (Administrateur
+// natif compris) : leur permission est vérifiée par leur propre handler
+// (owners anti-nuke / propriétaire réel du serveur, voir
+// utils/antiNukeCommands.js), un cercle volontairement séparé de
+// l'Administrateur Discord natif — c'est justement un compte admin
+// compromis que ça doit couvrir.
+const SECURITY_COMMANDS = new Set(["antifast", "owner", "wl"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
@@ -839,6 +848,18 @@ const handlers = {
     await handleDelRolePanel(message);
   },
 
+  async antifast(client, message, args) {
+    await handleAntifastCommand(message, args);
+  },
+
+  async owner(client, message, args) {
+    await handleOwnerCommand(message, args);
+  },
+
+  async wl(client, message, args) {
+    await handleWhitelistCommand(message, args);
+  },
+
   async pic(client, message) {
     const target = message.mentions.members?.first() || message.member;
     const avatarUrl = target.displayAvatarURL({ size: 1024 });
@@ -1009,6 +1030,10 @@ async function handleTextCommand(client, message) {
     }
     if (BAN_COMMANDS.has(cmd)) {
       if (!requireCommandAccess(message, cmd)) return;
+      return handlers[cmd](client, message, args);
+    }
+    if (SECURITY_COMMANDS.has(cmd)) {
+      // Permission vérifiée dans chaque handler (isOwner / propriétaire réel).
       return handlers[cmd](client, message, args);
     }
     if (!DASH_COMMANDS.has(cmd)) return;

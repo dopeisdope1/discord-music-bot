@@ -113,6 +113,9 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     (trop destructeur pour être délégué) : `.banall` (bannit tous les
     membres humains du serveur sauf toi, avec confirmation — action
     irréversible)
+  - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
+    catégorie de permission, voir section 7quater) : `.antifast`, `.owner`,
+    `.wl`
   - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
     (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
     pour voir le détail sans tout afficher d'un coup. La liste "Commandes
@@ -329,10 +332,9 @@ systématiquement "n'écoute rien sur Spotify", même si c'est faux.
 ## 7quater. Anti-nuke ("antifast")
 
 Protection automatique contre les nukes (destruction rapide du serveur),
-activée en permanence, aucune commande ni réglage — voir `utils/antiNuke.js`.
-Détecte les rafales d'actions destructrices faites **à la main via Discord**
-(pas par le bot lui-même, voir plus bas) par le même membre en moins de 10
-secondes :
+activée par défaut — voir `utils/antiNuke.js`. Détecte les rafales d'actions
+destructrices faites **à la main via Discord** (pas par le bot lui-même,
+voir plus bas) par le même membre en moins de 10 secondes :
 
 - Suppression ou création de **3 rôles**
 - Suppression ou création de **3 salons**
@@ -347,12 +349,14 @@ C'est réversible (un admin peut les redonner ensuite), volontairement moins
 radical qu'un kick/ban. Une alerte est envoyée dans "Logs sécurité" (voir
 "Page Logs" ci-dessus) avec qui a été neutralisé et pourquoi.
 
-Seul le **propriétaire du serveur** est exempté (ainsi que le bot lui-même) —
-volontairement aucune liste d'admins de confiance en plus : un compte staff
-compromis est justement le scénario que ça doit couvrir. Ça veut dire qu'un
-admin qui crée légitimement plusieurs rôles/salons d'un coup en configurant
-le serveur peut se faire neutraliser par erreur — c'est le compromis de tout
-système anti-nuke (mêmes seuils que la plupart des bots équivalents).
+Seul le **propriétaire du serveur** est exempté par défaut (ainsi que le bot
+lui-même) — volontairement aucune liste d'admins de confiance automatique :
+un compte staff compromis est justement le scénario que ça doit couvrir.
+Ça veut dire qu'un admin qui crée légitimement plusieurs rôles/salons d'un
+coup en configurant le serveur peut se faire neutraliser par erreur — c'est
+le compromis de tout système anti-nuke (mêmes seuils que la plupart des bots
+équivalents). D'où les commandes `.owner`/`.wl` ci-dessous, pour élargir
+volontairement le cercle des gens exemptés.
 
 **Les commandes du bot lui-même ne se déclenchent jamais entre elles** :
 `.massrole`, `.banall`/`.unbanall`, la création/suppression de rôles via
@@ -364,6 +368,27 @@ concernées.
 
 Nécessite la permission **View Audit Log** pour identifier qui a fait quoi
 (voir section 3) — sans elle, l'anti-nuke ne peut rien détecter.
+
+**Commandes de config (`utils/antiNukeCommands.js`), délibérément séparées du
+système `.panel` > Permissions / Administrateur natif — jamais délégables
+via une catégorie de permission, pour qu'un admin compromis ne puisse pas
+juste se donner accès :**
+
+- `.antifast` — affiche l'état actuel (activé/désactivé). `.antifast on` /
+  `.antifast off` — active/désactive l'anti-nuke pour ce serveur. Réservé aux
+  **owners anti-nuke** (voir `.owner`).
+- `.owner add @membre` / `.owner remove @membre` / `.owner list` — gère qui,
+  en plus du vrai propriétaire Discord du serveur, peut configurer
+  l'anti-nuke (`.antifast`, `.wl`). **Réservé au seul propriétaire réel**
+  (`guild.ownerId`) — même un owner anti-nuke ne peut pas en ajouter
+  d'autres, pour éviter qu'un owner compromis étende la liste.
+- `.wl add @membre` / `.wl remove @membre` / `.wl list` — liste des membres
+  exemptés des déclencheurs anti-nuke, en plus du propriétaire/des owners/du
+  bot. Gérée par les owners anti-nuke (contrairement à `.owner`, réservée au
+  propriétaire).
+
+Toute action sur ces trois commandes (activer/désactiver, ajout/retrait d'un
+owner ou d'un whitelisté) est loguée dans "Logs sécurité".
 
 ## 8. Notes sur Components V2
 

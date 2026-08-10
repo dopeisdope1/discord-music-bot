@@ -10,6 +10,7 @@ const {
 } = require("discord.js");
 const { getCategories, ASSIGNABLE_COMMANDS } = require("./permissionCategoryStore");
 const { canUseCommand } = require("./permissions");
+const { isOwner } = require("./antiNukeStore");
 
 const HELP_TIMEOUT_MS = 5 * 60_000;
 
@@ -155,6 +156,19 @@ function buildDashCategories(prefix, message) {
       label: "⚠️ Danger",
       names: ["banall"],
       lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
+    });
+  }
+
+  if (isOwner(message.guild, message.author.id)) {
+    categories.push({
+      key: "securite",
+      label: "🛡️ Sécurité",
+      names: ["antifast", "owner", "wl"],
+      lines: [
+        `\`${prefix}antifast [on|off]\` — Statut / active / désactive l'anti-nuke`,
+        `\`${prefix}owner add|remove|list [@membre]\` — Qui peut configurer l'anti-nuke (réservé au propriétaire réel)`,
+        `\`${prefix}wl add|remove|list [@membre]\` — Membres exemptés de l'anti-nuke`,
+      ],
     });
   }
 
