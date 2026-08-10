@@ -110,17 +110,14 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
     système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
     confirmation)
-  - **Propriétaire du serveur ou du bot uniquement** (même l'Administrateur
-    natif ne suffit plus, jamais assignable à une catégorie de permission) :
-    `.banall` (bannit tous les membres humains du serveur sauf toi, avec
-    confirmation — action irréversible). Toute tentative par quelqu'un
-    d'autre ne bannit personne et retire immédiatement tous ses rôles, comme
-    une détection anti-nuke (voir section 7quater) — sauf si son rôle le
-    plus haut est au même niveau ou au-dessus de celui du bot (limite de
-    hiérarchie Discord, aucun code ne peut la contourner : remonte le rôle
-    du bot dans les paramètres du serveur si ça arrive). La réponse au
-    responsable reste volontairement vague (ne révèle pas si le retrait a
-    marché) ; le détail exact est dans "Logs sécurité"
+  - **Propriétaire du serveur/du bot, ou owner anti-nuke délégué avec
+    autorisation** (même l'Administrateur natif ne suffit pas, jamais
+    assignable à une catégorie de permission) : `.banall` (bannit tous les
+    membres humains du serveur sauf toi, avec confirmation — action
+    irréversible) — voir détail juste en dessous. Toute autre tentative est
+    simplement refusée (aucun retrait de rôle : peu fiable de toute façon si
+    le rôle du responsable est au même niveau ou au-dessus de celui du bot,
+    voir section 7quater pour la vraie détection anti-nuke générale)
   - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
     catégorie de permission, voir section 7quater) : `.antifast`, `.owner`,
     `.wl`
@@ -398,7 +395,9 @@ juste se donner accès :**
   propriétaire).
 
 Toute action sur ces trois commandes (activer/désactiver, ajout/retrait d'un
-owner ou d'un whitelisté) est loguée dans "Logs sécurité".
+owner ou d'un whitelisté), ainsi que chaque étape d'une demande `.banall`
+(demande envoyée, autorisée ou refusée — voir plus bas), est loguée dans
+"Logs sécurité".
 
 **`BOT_OWNER_IDS`** (variable d'env, IDs Discord séparés par des virgules,
 ex: `BOT_OWNER_IDS=123456789012345678,987654321098765432`) — pour toi, en
@@ -409,6 +408,26 @@ Utile si tu gères le bot pour le compte d'autres serveurs sans en être le
 propriétaire officiel dessus. Pour trouver ton ID Discord : Paramètres
 utilisateur > Avancés > activer le **Mode développeur**, puis clic droit sur
 ton pseudo > "Copier l'ID".
+
+**`.banall` et les owners délégués** — `.banall` (bannir tout le monde,
+section 6bis) a son propre système à trois niveaux, distinct du reste de
+l'anti-nuke :
+
+- **Propriétaire réel du serveur ou propriétaire du bot** (`BOT_OWNER_IDS`) :
+  exécute directement, avec la confirmation habituelle
+  ("Bannir tout le monde" / "Annuler").
+- **Owner anti-nuke délégué** (ajouté via `.owner add`, donc PAS le
+  propriétaire réel ni un propriétaire du bot) : ne bannit **jamais**
+  directement. Le bot ping le propriétaire réel du serveur ET tous les
+  propriétaires du bot avec un message "**{tag}** veut exécuter `.banall`.
+  Autorises-tu ?" et deux boutons Autoriser/Refuser (2 minutes pour
+  répondre). Seul le propriétaire réel ou un propriétaire du bot peut
+  cliquer ; un clic sur "Autoriser" fait office de confirmation et lance le
+  bannissement immédiatement, sans autre étape.
+- **N'importe qui d'autre** : refusé, tout simplement. Pas de rétorsion
+  (retrait de rôles) — voir plus haut, c'est de toute façon peu fiable
+  quand le rôle du responsable est au même niveau ou au-dessus de celui du
+  bot (limite de hiérarchie Discord, aucun code ne peut la contourner).
 
 ## 8. Notes sur Components V2
 

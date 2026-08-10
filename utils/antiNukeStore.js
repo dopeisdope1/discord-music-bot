@@ -26,6 +26,13 @@ function isBotOwner(userId) {
   return BOT_OWNER_IDS.includes(userId);
 }
 
+/**
+ * @returns {string[]}
+ */
+function getBotOwnerIds() {
+  return [...BOT_OWNER_IDS];
+}
+
 let cache = null;
 
 function load() {
@@ -162,6 +169,7 @@ module.exports = {
   removeOwner,
   isOwner,
   isBotOwner,
+  getBotOwnerIds,
   getWhitelist,
   addToWhitelist,
   removeFromWhitelist,

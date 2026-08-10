@@ -16,7 +16,7 @@ const {
   delRoleDirect,
 } = require("./rolePanels");
 const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand } = require("./antiNukeCommands");
-const { isBotOwner } = require("./antiNukeStore");
+const { isOwner, isBotOwner, getBotOwnerIds } = require("./antiNukeStore");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -169,6 +169,141 @@ async function clearMessages(client, channel, { targetMemberId, maxCount = Infin
   }
 
   return deletedTotal;
+}
+
+/**
+ * Bannit tous les membres bannissables du serveur (hors bots et hors
+ * l'auteur de `.banall`) et édite `statusMessage` avec le résultat — partagé
+ * entre le flux "propriétaire tape .banall directement" (confirmation
+ * classique) et le flux "owner délégué autorisé par le propriétaire réel"
+ * (voir requestBanAllAuthorization).
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Message} message
+ * @param {import('discord.js').Message} statusMessage
+ */
+async function executeBanAll(client, message, statusMessage) {
+  await statusMessage
+    .edit({ embeds: [buildStatusEmbed("warning", "Bannissement en cours...")], components: [] })
+    .catch(() => {});
+
+  try {
+    const members = await fetchAllMembers(message.guild);
+    const targets = members.filter((m) => !m.user.bot && m.id !== message.author.id && m.bannable);
+
+    let success = 0;
+    let failed = 0;
+    for (const member of targets.values()) {
+      try {
+        await member.ban({ reason: `.banall par ${message.author.tag}` });
+        success += 1;
+      } catch (err) {
+        console.error(err);
+        failed += 1;
+      }
+    }
+
+    await statusMessage
+      .edit({
+        embeds: [buildStatusEmbed("success", `**${success}** membre(s) banni(s)${failed ? ` (${failed} échec(s))` : ""}.`)],
+      })
+      .catch(() => {});
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Ban All",
+      description: `**${success}** membre(s) banni(s) via \`.banall\`${failed ? ` (${failed} échec(s))` : ""}.`,
+      actor: message.author,
+    });
+  } catch (err) {
+    console.error(err);
+    await statusMessage
+      .edit({
+        embeds: [buildStatusEmbed("error", memberFetchErrorMessage(err) || "Une erreur est survenue, réessaie.")],
+        components: [],
+      })
+      .catch(() => {});
+  }
+}
+
+/**
+ * Envoyée quand un "owner" délégué (ajouté via `.owner add`, pas le vrai
+ * propriétaire ni un propriétaire du bot) tape `.banall` : ping le
+ * propriétaire réel du serveur ET tous les propriétaires du bot, avec des
+ * boutons Autoriser/Refuser. Seul l'un d'eux peut répondre ; un "accepter"
+ * exécute directement le bannissement (le clic fait office de confirmation,
+ * pas besoin d'une seconde étape).
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Message} message
+ */
+async function requestBanAllAuthorization(client, message) {
+  const guild = message.guild;
+  const approverIds = [guild.ownerId, ...getBotOwnerIds().filter((id) => id !== guild.ownerId)];
+  const isApprover = (userId) => userId === guild.ownerId || isBotOwner(userId);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("banall_auth:accept").setLabel("Autoriser").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("banall_auth:deny").setLabel("Refuser").setStyle(ButtonStyle.Secondary)
+  );
+
+  const authMessage = await message.reply({
+    content: approverIds.map((id) => `<@${id}>`).join(" "),
+    embeds: [
+      buildStatusEmbed(
+        "warning",
+        `**${message.author.tag}** veut exécuter \`.banall\` (bannir **tous les membres humains** du serveur). Autorises-tu ?`
+      ),
+    ],
+    components: [row],
+    allowedMentions: { users: approverIds },
+  });
+
+  sendLog(client, guild.id, "securite", {
+    title: "Demande d'autorisation .banall",
+    description: `**${message.author.tag}** (owner délégué) a demandé à exécuter \`.banall\`.`,
+    actor: message.author,
+  });
+
+  const collector = authMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
+
+  collector.on("collect", async (i) => {
+    try {
+      if (!isApprover(i.user.id)) {
+        await i.reply({
+          content: "Seul le propriétaire du serveur (ou du bot) peut répondre à cette demande.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (i.customId === "banall_auth:deny") {
+        await i.update({ content: null, embeds: [buildStatusEmbed("info", `Refusé par **${i.user.tag}**.`)], components: [] });
+        sendLog(client, guild.id, "securite", {
+          title: "Demande .banall refusée",
+          description: `**${i.user.tag}** a refusé la demande de **${message.author.tag}**.`,
+          actor: i.user,
+        });
+        return;
+      }
+
+      await i.update({
+        content: null,
+        embeds: [buildStatusEmbed("warning", `Autorisé par **${i.user.tag}** — bannissement en cours...`)],
+        components: [],
+      });
+      sendLog(client, guild.id, "securite", {
+        title: "Demande .banall autorisée",
+        description: `**${i.user.tag}** a autorisé la demande de **${message.author.tag}**.`,
+        actor: i.user,
+      });
+      await executeBanAll(client, message, authMessage);
+    } catch (err) {
+      console.error("[banall] Erreur sur la demande d'autorisation :", err);
+    }
+  });
+
+  collector.on("end", (collected) => {
+    if (collected.size === 0) {
+      authMessage.edit({ content: null, embeds: [buildStatusEmbed("warning", "Demande expirée.")], components: [] }).catch(() => {});
+    }
+  });
 }
 
 const handlers = {
@@ -483,51 +618,32 @@ const handlers = {
   // Bannit tous les membres bannissables du serveur (hors bots et hors
   // l'auteur lui-même — pour ne pas se verrouiller dehors sans pouvoir
   // confirmer/annuler ni faire `.unbanall` derrière). Action extrêmement
-  // destructrice : réservée au propriétaire réel du serveur ou à un
-  // propriétaire du bot (BOT_OWNER_IDS) — même l'Administrateur natif ne
-  // suffit plus, et jamais extensible via `.panel` > Permissions. Toute
-  // tentative par quelqu'un d'autre est traitée comme une tentative de nuke :
-  // aucun membre n'est banni, et tous les rôles du responsable lui sont
-  // retirés immédiatement (voir utils/antiNuke.js pour la même punition).
+  // destructrice, jamais assignable via `.panel` > Permissions, à trois
+  // niveaux : le propriétaire réel du serveur ou un propriétaire du bot
+  // (BOT_OWNER_IDS) l'exécute directement (confirmation classique) ; un
+  // owner délégué (ajouté via `.owner add`) déclenche une demande
+  // d'autorisation envoyée au propriétaire réel/du bot (voir
+  // requestBanAllAuthorization) — rien ne se passe tant que ce n'est pas
+  // accepté ; n'importe qui d'autre est juste refusé (pas de rétorsion —
+  // retirer les rôles ne marche de toute façon pas si son rôle est au même
+  // niveau ou au-dessus de celui du bot, voir utils/antiNuke.js pour la
+  // vraie détection anti-nuke générale).
   async banall(client, message) {
-    const isAllowed = message.author.id === message.guild.ownerId || isBotOwner(message.author.id);
-    if (!isAllowed) {
-      const member = message.member;
-      const rolesToRemove = member?.roles.cache.filter((r) => r.id !== message.guild.id && !r.managed);
-      // member.manageable est false si le rôle le plus haut du responsable
-      // est au même niveau ou au-dessus de celui du bot dans la hiérarchie —
-      // Discord bloque ça côté API, aucun code ne peut le contourner (il
-      // faut alors positionner le rôle du bot plus haut dans les paramètres
-      // du serveur). On ne prétend jamais avoir réussi si ce n'est pas le cas.
-      let stripped = false;
-      if (member?.manageable && rolesToRemove?.size) {
-        stripped = await member.roles
-          .remove(rolesToRemove, "Tentative non autorisée de .banall")
-          .then(() => true)
-          .catch((err) => {
-            console.error(err);
-            return false;
-          });
-      }
-      sendLog(client, message.guild.id, "securite", {
-        title: "🚨 Tentative de .banall non autorisée",
-        description: stripped
-          ? "Aucun membre n'a été banni — tous les rôles du responsable ont été retirés."
-          : "Aucun membre n'a été banni — IMPOSSIBLE de retirer les rôles du responsable (son rôle le plus haut est au même niveau ou au-dessus de celui du bot). Vérifie manuellement.",
-        actor: message.author,
-      });
-      // Message volontairement générique côté auteur de la tentative — ne
-      // révèle pas si le retrait de rôles a marché ou non (info utile à un
-      // attaquant, mais aucune raison de la lui donner) ; le détail exact
-      // est dans "Logs sécurité", visible seulement par les admins.
+    const author = message.author;
+    const isTopOwner = author.id === message.guild.ownerId || isBotOwner(author.id);
+    const isDelegatedOwner = !isTopOwner && isOwner(message.guild, author.id);
+
+    if (!isTopOwner && !isDelegatedOwner) {
       return message.reply({
-        embeds: [
-          buildStatusEmbed("error", "Commande réservée au propriétaire du serveur (ou du bot). Tentative détectée et bloquée."),
-        ],
+        embeds: [buildStatusEmbed("error", "Commande réservée au propriétaire du serveur (ou du bot).")],
       });
     }
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
+    }
+
+    if (isDelegatedOwner) {
+      return requestBanAllAuthorization(client, message);
     }
 
     const confirmRow = new ActionRowBuilder().addComponents(
@@ -555,48 +671,13 @@ const handlers = {
           return i.update({ embeds: [buildStatusEmbed("info", "Annulé.")], components: [] });
         }
 
-        await i.update({ embeds: [buildStatusEmbed("warning", "Bannissement en cours...")], components: [] });
-
-        const members = await fetchAllMembers(message.guild);
-        const targets = members.filter((m) => !m.user.bot && m.id !== message.author.id && m.bannable);
-
-        let success = 0;
-        let failed = 0;
-        for (const member of targets.values()) {
-          try {
-            await member.ban({ reason: `.banall par ${message.author.tag}` });
-            success += 1;
-          } catch (err) {
-            console.error(err);
-            failed += 1;
-          }
-        }
-
-        await confirmMessage
-          .edit({
-            embeds: [
-              buildStatusEmbed(
-                "success",
-                `**${success}** membre(s) banni(s)${failed ? ` (${failed} échec(s))` : ""}.`
-              ),
-            ],
-          })
-          .catch(() => {});
-        sendLog(client, message.guild.id, "moderation", {
-          title: "Ban All",
-          description: `**${success}** membre(s) banni(s) via \`.banall\`${failed ? ` (${failed} échec(s))` : ""}.`,
-          actor: message.author,
-        });
+        await i.deferUpdate();
+        await executeBanAll(client, message, confirmMessage);
       } catch (err) {
         console.error(err);
         await confirmMessage
           .edit({
-            embeds: [
-              buildStatusEmbed(
-                "error",
-                memberFetchErrorMessage(err) || "Une erreur est survenue, réessaie."
-              ),
-            ],
+            embeds: [buildStatusEmbed("error", memberFetchErrorMessage(err) || "Une erreur est survenue, réessaie.")],
             components: [],
           })
           .catch(() => {});
