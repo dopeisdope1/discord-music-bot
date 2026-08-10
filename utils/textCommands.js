@@ -16,6 +16,7 @@ const {
   delRoleDirect,
 } = require("./rolePanels");
 const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand } = require("./antiNukeCommands");
+const { isBotOwner } = require("./antiNukeStore");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -482,14 +483,32 @@ const handlers = {
   // Bannit tous les membres bannissables du serveur (hors bots et hors
   // l'auteur lui-même — pour ne pas se verrouiller dehors sans pouvoir
   // confirmer/annuler ni faire `.unbanall` derrière). Action extrêmement
-  // destructrice : réservée aux VRAIS administrateurs (permission Discord
-  // native), volontairement non extensible via un rôle `.panel` >
-  // Permissions contrairement au reste des commandes de modération — la
-  // vérification se fait ici, pas dans le dispatcher (voir DASH_COMMANDS).
+  // destructrice : réservée au propriétaire réel du serveur ou à un
+  // propriétaire du bot (BOT_OWNER_IDS) — même l'Administrateur natif ne
+  // suffit plus, et jamais extensible via `.panel` > Permissions. Toute
+  // tentative par quelqu'un d'autre est traitée comme une tentative de nuke :
+  // aucun membre n'est banni, et tous les rôles du responsable lui sont
+  // retirés immédiatement (voir utils/antiNuke.js pour la même punition).
   async banall(client, message) {
-    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    const isAllowed = message.author.id === message.guild.ownerId || isBotOwner(message.author.id);
+    if (!isAllowed) {
+      const member = message.member;
+      const rolesToRemove = member?.roles.cache.filter((r) => r.id !== message.guild.id && !r.managed);
+      if (member?.manageable && rolesToRemove?.size) {
+        await member.roles.remove(rolesToRemove, "Tentative non autorisée de .banall").catch((err) => console.error(err));
+      }
+      sendLog(client, message.guild.id, "securite", {
+        title: "🚨 Tentative de .banall non autorisée",
+        description: "Aucun membre n'a été banni — tous les rôles du responsable ont été retirés.",
+        actor: message.author,
+      });
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Commande réservée aux administrateurs du serveur.")],
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            "Commande réservée au propriétaire du serveur (ou du bot) — tentative détectée, tes rôles ont été retirés."
+          ),
+        ],
       });
     }
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {

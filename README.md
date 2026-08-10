@@ -110,10 +110,13 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
   - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
     système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
     confirmation)
-  - **Admin uniquement**, jamais assignable à une catégorie de permission
-    (trop destructeur pour être délégué) : `.banall` (bannit tous les
-    membres humains du serveur sauf toi, avec confirmation — action
-    irréversible)
+  - **Propriétaire du serveur ou du bot uniquement** (même l'Administrateur
+    natif ne suffit plus, jamais assignable à une catégorie de permission) :
+    `.banall` (bannit tous les membres humains du serveur sauf toi, avec
+    confirmation — action irréversible). Toute tentative par quelqu'un
+    d'autre ne bannit personne et retire immédiatement tous les rôles du
+    responsable, comme une détection anti-nuke (voir section 7quater) —
+    alerte envoyée dans "Logs sécurité"
   - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
     catégorie de permission, voir section 7quater) : `.antifast`, `.owner`,
     `.wl`
