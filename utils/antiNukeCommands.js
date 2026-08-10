@@ -3,6 +3,7 @@ const {
   isEnabled,
   setEnabled,
   isOwner,
+  isBotOwner,
   getOwners,
   addOwner,
   removeOwner,
@@ -62,16 +63,18 @@ async function handleAntifastCommand(message, args) {
 /**
  * `.owner add|remove|list [@membre]` — gère qui, en plus du vrai propriétaire
  * Discord du serveur, peut configurer l'anti-nuke (`.antifast`, `.wl`).
- * Volontairement réservé au SEUL propriétaire réel (`guild.ownerId`), jamais
- * aux owners eux-mêmes : sinon un owner ajouté par erreur (ou compromis)
- * pourrait en ajouter d'autres en chaîne.
+ * Volontairement réservé au propriétaire réel (`guild.ownerId`) ou à un
+ * propriétaire du BOT (`BOT_OWNER_IDS`, valable sur tous les serveurs) —
+ * jamais aux owners anti-nuke ajoutés via cette commande eux-mêmes, sinon un
+ * owner ajouté par erreur (ou compromis) pourrait en ajouter d'autres en
+ * chaîne.
  * @param {import('discord.js').Message} message
  * @param {string[]} args
  */
 async function handleOwnerCommand(message, args) {
-  if (message.author.id !== message.guild.ownerId) {
+  if (message.author.id !== message.guild.ownerId && !isBotOwner(message.author.id)) {
     return message.reply({
-      embeds: [buildStatusEmbed("error", "Réservé au propriétaire du serveur.")],
+      embeds: [buildStatusEmbed("error", "Réservé au propriétaire du serveur (ou du bot).")],
     });
   }
 

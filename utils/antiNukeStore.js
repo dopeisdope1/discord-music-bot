@@ -9,6 +9,23 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "antiNuke.json");
 
+// IDs Discord (séparés par des virgules) du/des propriétaire(s) du BOT — pas
+// forcément le "propriétaire" Discord de tel ou tel serveur où il tourne.
+// Un bot owner a accès à `.owner`/`.antifast`/`.wl` sur TOUS les serveurs,
+// peu importe qui en est le propriétaire côté Discord. Voir README.
+const BOT_OWNER_IDS = (process.env.BOT_OWNER_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+/**
+ * @param {string} userId
+ * @returns {boolean}
+ */
+function isBotOwner(userId) {
+  return BOT_OWNER_IDS.includes(userId);
+}
+
 let cache = null;
 
 function load() {
@@ -75,8 +92,9 @@ function removeOwner(guildId, userId) {
 }
 
 /**
- * "Owner" au sens anti-nuke : le vrai propriétaire Discord du serveur, ou
- * quelqu'un qu'il a explicitement ajouté via `.owner add`. Délibérément
+ * "Owner" au sens anti-nuke : le vrai propriétaire Discord du serveur,
+ * quelqu'un qu'il a explicitement ajouté via `.owner add`, ou un propriétaire
+ * du bot lui-même (BOT_OWNER_IDS, valable sur tous les serveurs). Délibérément
  * séparé de la permission Discord native Administrateur et du système de
  * catégories `.panel` > Permissions — un compte admin compromis ne doit pas
  * pouvoir toucher à l'anti-nuke, seul ce cercle restreint le peut.
@@ -85,7 +103,7 @@ function removeOwner(guildId, userId) {
  * @returns {boolean}
  */
 function isOwner(guild, userId) {
-  return userId === guild.ownerId || getOwners(guild.id).includes(userId);
+  return userId === guild.ownerId || getOwners(guild.id).includes(userId) || isBotOwner(userId);
 }
 
 /**
@@ -143,6 +161,7 @@ module.exports = {
   addOwner,
   removeOwner,
   isOwner,
+  isBotOwner,
   getWhitelist,
   addToWhitelist,
   removeFromWhitelist,

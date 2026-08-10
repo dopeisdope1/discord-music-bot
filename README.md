@@ -28,6 +28,7 @@ LAVALINK_PASSWORD=...
 LAVALINK_SECURE=true
 GIPHY_API_KEY=...   # optionnel — clé publique de démo utilisée sinon (`.gif`)
 DATA_DIR=...         # optionnel — voir "Rendre data/ permanent sur Railway" plus bas
+BOT_OWNER_IDS=...    # optionnel — voir section 7quater (anti-nuke : `.owner`/`.antifast`/`.wl`)
 ```
 
 ## 2bis. Nœud Lavalink
@@ -379,9 +380,11 @@ juste se donner accès :**
   **owners anti-nuke** (voir `.owner`).
 - `.owner add @membre` / `.owner remove @membre` / `.owner list` — gère qui,
   en plus du vrai propriétaire Discord du serveur, peut configurer
-  l'anti-nuke (`.antifast`, `.wl`). **Réservé au seul propriétaire réel**
-  (`guild.ownerId`) — même un owner anti-nuke ne peut pas en ajouter
-  d'autres, pour éviter qu'un owner compromis étende la liste.
+  l'anti-nuke (`.antifast`, `.wl`). **Réservé au propriétaire réel du
+  serveur** (`guild.ownerId`) **ou à un propriétaire du bot** (voir
+  `BOT_OWNER_IDS` ci-dessous) — même un owner anti-nuke ajouté via cette
+  commande ne peut pas en ajouter d'autres, pour éviter qu'un owner compromis
+  étende la liste.
 - `.wl add @membre` / `.wl remove @membre` / `.wl list` — liste des membres
   exemptés des déclencheurs anti-nuke, en plus du propriétaire/des owners/du
   bot. Gérée par les owners anti-nuke (contrairement à `.owner`, réservée au
@@ -389,6 +392,16 @@ juste se donner accès :**
 
 Toute action sur ces trois commandes (activer/désactiver, ajout/retrait d'un
 owner ou d'un whitelisté) est loguée dans "Logs sécurité".
+
+**`BOT_OWNER_IDS`** (variable d'env, IDs Discord séparés par des virgules,
+ex: `BOT_OWNER_IDS=123456789012345678,987654321098765432`) — pour toi, en
+tant que propriétaire **du bot** (pas forcément du serveur Discord où il
+tourne) : quiconque est dans cette liste compte comme "owner anti-nuke" sur
+**tous** les serveurs, même ceux dont tu n'es pas le propriétaire Discord.
+Utile si tu gères le bot pour le compte d'autres serveurs sans en être le
+propriétaire officiel dessus. Pour trouver ton ID Discord : Paramètres
+utilisateur > Avancés > activer le **Mode développeur**, puis clic droit sur
+ton pseudo > "Copier l'ID".
 
 ## 8. Notes sur Components V2
 
