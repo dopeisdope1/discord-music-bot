@@ -5,6 +5,7 @@ const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
+const { handleMusicModerationTextCommand } = require("./utils/musicModerationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const {
   startNowPlayingTracking,
@@ -95,6 +96,11 @@ client.nowPlayingMessages = new Collection();
 
 // Stocke l'intervalle de rafraîchissement du panel (position en direct) par serveur
 client.nowPlayingIntervals = new Collection();
+
+// Stocke le dernier message supprimé par salon (utilisé en interne par
+// `?clear`, voir utils/moderationCommands.js — pas de commande `.snipe` sur
+// ce bot, uniquement le journal nécessaire au fonctionnement de clear).
+client.snipes = new Collection();
 
 // Stocke qui chaque serveur suit actuellement via !join/spotify_join (voir
 // utils/joinSpotify.js) : Map<guildId, { targetUserId, lastSyncId }>
@@ -299,9 +305,18 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---- Commandes textuelles préfixées (! par défaut, configurable via .panel sur le bot Gestion) ----
+// ---- Commandes textuelles préfixées (! par défaut, configurable via .panel/?panel) ----
 client.on("messageCreate", (message) => {
   handleMusicTextCommand(client, message).catch((err) => {
+    console.error(err);
+    message
+      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
+      .catch(() => {});
+  });
+  // Jeu de commandes de modération dupliqué sur ce bot (préfixe `?` par
+  // défaut, distinct du `!` musique et du `.` du bot Gestion) — voir
+  // utils/musicModerationCommands.js.
+  handleMusicModerationTextCommand(client, message).catch((err) => {
     console.error(err);
     message
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })

@@ -222,7 +222,9 @@ async function handleBlacklistTextCommand(client, message) {
   await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
-  const { blacklist: BLACKLIST_PREFIX } = getPrefixes(message.guild.id);
+  // Blacklist tourne sur le même bot que l'antifast (Security) — un seul
+  // préfixe pour les deux, pas de clé "blacklist" séparée dans prefixStore.
+  const { antifast: BLACKLIST_PREFIX } = getPrefixes(message.guild.id);
   if (!content.startsWith(BLACKLIST_PREFIX)) return;
 
   const [cmdRaw, ...args] = content.slice(BLACKLIST_PREFIX.length).trim().split(/\s+/);

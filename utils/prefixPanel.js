@@ -16,14 +16,15 @@ const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
 
 // Un type par bot — chacun lit son propre préfixe via getPrefixes(guildId)
-// (voir utils/prefixStore.js) dans son propre process (music+modération pour
-// main/dash, logs.js/antifast.js/blacklist.js pour les 3 autres).
+// (voir utils/prefixStore.js) dans son propre process. Blacklist tourne sur
+// le même bot/préfixe qu'antifast (voir utils/blacklistCommands.js), donc
+// pas de clé séparée ici.
 const TYPE_LABELS = {
   main: "musique",
-  dash: "membres/modération",
+  dash: "modération (bot Gestion)",
+  musicMod: "modération (bot Musique)",
   logs: "logs",
-  antifast: "antifast",
-  blacklist: "blacklist",
+  antifast: "antifast/blacklist",
 };
 
 function buildPrefixesPage(guildId) {
@@ -34,10 +35,10 @@ function buildPrefixesPage(guildId) {
     new TextDisplayBuilder().setContent(
       "## Préfixes des bots\n" +
         `> Musique : \`${prefixes.main}\`\n` +
-        `> Membres/modération (dont \`${prefixes.dash}ban\`/\`${prefixes.dash}unban\`) : \`${prefixes.dash}\`\n` +
+        `> Modération — bot Gestion (dont \`${prefixes.dash}ban\`/\`${prefixes.dash}unban\`) : \`${prefixes.dash}\`\n` +
+        `> Modération — bot Musique (mêmes commandes, même bot que la musique) : \`${prefixes.musicMod}\`\n` +
         `> Logs : \`${prefixes.logs}\`\n` +
-        `> Antifast : \`${prefixes.antifast}\`\n` +
-        `> Blacklist : \`${prefixes.blacklist}\``
+        `> Antifast/Blacklist : \`${prefixes.antifast}\``
     )
   );
   container.addActionRowComponents(
@@ -86,11 +87,12 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 }
 
 /**
- * Ouvre le panel d'administration (`.panel`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction) : les préfixes des 5
- * bots (musique, membres/modération, logs, antifast, blacklist). Chaque bot
- * relit sa propre valeur via utils/prefixStore.js, synchronisée entre tous
- * les process via le salon Discord partagé "zinki-config" (voir
+ * Ouvre le panel d'administration (accessible via `.panel` sur le bot
+ * Gestion ET `?panel` sur le bot Musique, réservé aux administrateurs — la
+ * vérification se fait avant l'appel de cette fonction) : les préfixes des
+ * bots (musique, modération×2, logs, antifast/blacklist). Chaque bot relit
+ * sa propre valeur via utils/prefixStore.js, synchronisée entre tous les
+ * process via le salon Discord partagé "zinki-config" (voir
  * utils/configChannel.js).
  * @param {import('discord.js').Message} message
  */

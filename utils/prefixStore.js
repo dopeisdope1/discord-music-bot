@@ -9,12 +9,13 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-// "?" car c'est la valeur actuellement configurée sur le serveur : tant que
-// data/prefixes.json ne survit pas à un redéploiement (voir DATA_DIR
-// ci-dessus), c'est cette valeur par défaut qui s'applique après coup.
-// logs/antifast/blacklist : préfixes des 3 bots dédiés (voir logs.js,
-// antifast.js, blacklist.js), configurables comme le reste depuis `.panel`.
-const DEFAULT_PREFIXES = { main: "?", dash: ".", logs: "=", antifast: "+", blacklist: "~" };
+// Valeurs par défaut avant toute config (la vraie valeur, une fois changée
+// via un panel, est restaurée depuis Discord — voir utils/configChannel.js).
+// dash = préfixe modération du bot Gestion ; musicMod = préfixe du même jeu
+// de commandes de modération dupliqué sur le bot Musique (voir
+// utils/musicModerationCommands.js) ; logs/antifast = préfixes des bots
+// dédiés (blacklist est fusionné sur le bot antifast, même préfixe).
+const DEFAULT_PREFIXES = { main: "!", dash: ".", musicMod: "?", logs: "=", antifast: "+" };
 
 let cache = null;
 

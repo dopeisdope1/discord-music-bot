@@ -761,4 +761,4 @@ async function handleModerationTextCommand(client, message) {
   return handlers[cmd](client, message, args);
 }
 
-module.exports = { handleModerationTextCommand, rememberSnipe };
+module.exports = { handleModerationTextCommand, rememberSnipe, handlers };

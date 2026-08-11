@@ -1,0 +1,92 @@
+const { getPrefixes } = require("./prefixStore");
+const { waitForHydration } = require("./configChannel");
+const { canUseCommand } = require("./permissions");
+const { buildStatusEmbed } = require("./statusEmbed");
+const { addRoleDirect, delRoleDirect } = require("./rolePanels");
+const { handlers } = require("./moderationCommands");
+
+// Même jeu de commandes de modération que le bot Gestion (voir
+// utils/moderationCommands.js, dont on réutilise directement les handlers),
+// mais hébergé en plus sur le bot Musique avec son propre préfixe — demande
+// explicite de garder ces commandes accessibles depuis le bot Musique
+// "comme au début", en plus du bot Gestion dédié. Sous-ensemble volontaire :
+// pas de pic/avatar/snipe/gif/create ici (ceux-là restent uniquement sur
+// Gestion).
+const ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel"]);
+const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
+const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
+
+function requireCommandAccess(message, cmd) {
+  if (!canUseCommand(message, cmd)) {
+    message.reply({
+      embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")],
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * À appeler dans l'écouteur "messageCreate" du bot Musique, en plus de
+ * handleMusicTextCommand — dispatch indépendant sur son propre préfixe
+ * (`musicMod`, `?` par défaut, configurable via `?panel`/`.panel`).
+ *
+ * Note : les déclencheurs sans préfixe ("clear me", "add"/"del" en réponse)
+ * sont aussi actifs ici, comme sur le bot Gestion — si les deux bots sont
+ * sur le même serveur, les deux répondront chacun de leur côté à ces
+ * phrases (pas d'erreur, juste une réponse en double).
+ */
+async function handleMusicModerationTextCommand(client, message) {
+  if (message.author.bot || !message.guild) return;
+
+  await waitForHydration(message.guild.id);
+
+  const content = message.content.trim();
+  const { musicMod: PREFIX } = getPrefixes(message.guild.id);
+
+  const SELF_CLEAR_TRIGGERS = new Set(["uo clear", "clear me", "anas clear", "yanis clear"]);
+  const lowerContent = content.toLowerCase();
+  if (SELF_CLEAR_TRIGGERS.has(lowerContent)) {
+    return handlers.clear(client, message, ["me"]);
+  }
+
+  const addDelMatch = content.match(/^(add|del)\s+(.+)$/i);
+  if (addDelMatch) {
+    const action = addDelMatch[1].toLowerCase();
+    const roleName = addDelMatch[2].trim().toLowerCase();
+
+    const target =
+      message.mentions.members?.first() ||
+      (message.reference
+        ? await message
+            .fetchReference()
+            .then((ref) => ref.member || message.guild.members.fetch(ref.author.id).catch(() => null))
+            .catch(() => null)
+        : null);
+    const role = target ? message.guild.roles.cache.find((r) => r.id !== message.guild.id && r.name.toLowerCase() === roleName) : null;
+
+    if (target && role) {
+      if (canUseCommand(message, action)) {
+        return (action === "add" ? addRoleDirect : delRoleDirect)(message, target.id, role.id);
+      }
+      return;
+    }
+  }
+
+  if (!content.startsWith(PREFIX)) return;
+
+  const [cmdRaw, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
+  const cmd = (cmdRaw || "").toLowerCase();
+  if (cmd === "clear") {
+    return handlers.clear(client, message, args);
+  }
+  if (BAN_COMMANDS.has(cmd)) {
+    if (!requireCommandAccess(message, cmd)) return;
+    return handlers[cmd](client, message, args);
+  }
+  if (!COMMANDS.has(cmd)) return;
+  if (ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
+  return handlers[cmd](client, message, args);
+}
+
+module.exports = { handleMusicModerationTextCommand };
