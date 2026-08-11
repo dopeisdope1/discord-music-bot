@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
+    "start:security": "node security.js",
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {

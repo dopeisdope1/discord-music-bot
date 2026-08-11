@@ -9,11 +9,17 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "logChannels.json");
 
-// Catégories affichées dans `.panel` > Logs, alignées sur les rubriques de `.help`.
+// Catégories affichées via `=logs` (bot Sécurité), alignées sur les rubriques
+// de `.help`/`=help`. Ce store est partagé entre le bot principal (Musique +
+// Modération, qui écrit les logs "moderation"/"salon"/"roles") et le bot
+// Sécurité (qui expose le choix des salons via `=logs`, et écrit lui-même
+// "securite"/"blacklist") — voir utils/configChannel.js.
 const LOG_CATEGORIES = {
   moderation: { key: "moderation", label: "Logs modération", description: "`.clear`, `.ban`, `.unban`" },
   salon: { key: "salon", label: "Logs salon", description: "`.renew`, `.hide`, `.unhide`, `.lock`, `.unlock`" },
   roles: { key: "roles", label: "Logs rôles", description: "`.massrole` + changements manuels de rôle" },
+  securite: { key: "securite", label: "Logs sécurité", description: "Alertes anti-nuke (\"antifast\")" },
+  blacklist: { key: "blacklist", label: "Logs blacklist", description: "Ajouts/retraits et bannissements automatiques" },
 };
 
 let cache = null;

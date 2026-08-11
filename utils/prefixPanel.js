@@ -9,12 +9,9 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
-const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
 const { saveGuildConfig, waitForHydration } = require("./configChannel");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
@@ -25,30 +22,13 @@ const TYPE_LABELS = {
   dash: "membres/modération",
 };
 
-const PAGES = {
-  prefixes: "Préfixes",
-  logs: "Logs",
-};
-
-function buildNavRow(currentPage) {
-  return new ActionRowBuilder().addComponents(
-    Object.entries(PAGES).map(([page, label]) =>
-      new ButtonBuilder()
-        .setCustomId(`panel_page:${page}`)
-        .setLabel(label)
-        .setStyle(page === currentPage ? ButtonStyle.Primary : ButtonStyle.Secondary)
-        .setDisabled(page === currentPage)
-    )
-  );
-}
-
 function buildPrefixesPage(guildId) {
   const { main, dash } = getPrefixes(guildId);
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`${dash}ban\`/\`${dash}unban\`) : \`${dash}\``
+      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`${dash}ban\`/\`${dash}unban\`) : \`${dash}\`\n> Logs/Blacklist/Antifast : bot Sécurité, préfixe fixe \`=\``
     )
   );
   container.addActionRowComponents(
@@ -57,55 +37,8 @@ function buildPrefixesPage(guildId) {
       new ButtonBuilder().setCustomId("prefix_edit:dash").setLabel("Changer préfixe membres/modération").setStyle(ButtonStyle.Secondary)
     )
   );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(buildNavRow("prefixes"));
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-function buildLogsPage(guildId) {
-  const logChannels = getLogChannels(guildId);
-  const { dash } = getPrefixes(guildId);
-
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "## Logs\n> Choisis un salon par catégorie ci-dessous pour y recevoir les logs correspondants.\n" +
-        Object.values(LOG_CATEGORIES)
-          .map((cat) => {
-            const channelId = logChannels[cat.key];
-            // cat.description écrit ses commandes avec "." comme préfixe
-            // générique (voir utils/logStore.js) — remplacé ici par le vrai
-            // préfixe configuré sur ce serveur.
-            const description = cat.description.replace(/`\./g, `\`${dash}`);
-            return `**${cat.label}** (${description}) — ${channelId ? `<#${channelId}>` : "*non configuré*"}`;
-          })
-          .join("\n")
-    )
-  );
-
-  for (const cat of Object.values(LOG_CATEGORIES)) {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId(`log_channel:${cat.key}`)
-          .setPlaceholder(`${cat.label} — choisir un salon`)
-          .setChannelTypes(ChannelType.GuildText)
-          .setMinValues(1)
-          .setMaxValues(1)
-      )
-    );
-  }
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(buildNavRow("logs"));
-
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-function buildPanel(page, guild) {
-  if (page === "logs") return buildLogsPage(guild.id);
-  return buildPrefixesPage(guild.id);
 }
 
 function buildPrefixModal(type, current) {
@@ -141,21 +74,20 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 
 /**
  * Ouvre le panel d'administration (`.panel`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction), organisé en deux
- * pages navigables via les boutons du bas : Préfixes (musique/membres) et
- * Logs (salon par catégorie).
+ * vérification se fait avant l'appel de cette fonction) : uniquement les
+ * préfixes musique et membres/modération. Les logs se configurent désormais
+ * via `=logs` sur le bot Sécurité (voir utils/logsPanel.js).
  * @param {import('discord.js').Message} message
  */
 async function handlePrefixPanel(message) {
   const guild = message.guild;
   const guildId = guild.id;
-  // Si le bot vient de redémarrer, attend que la config (préfixes, logs...)
-  // ait fini d'être restaurée depuis Discord avant de lire quoi que ce soit —
-  // sinon le panel afficherait/repartirait de valeurs par défaut le temps que
-  // la restauration se termine (voir configChannel.js).
+  // Si le bot vient de redémarrer, attend que la config (préfixes...) ait
+  // fini d'être restaurée depuis Discord avant de lire quoi que ce soit —
+  // sinon le panel afficherait/repartirait de valeurs par défaut le temps
+  // que la restauration se termine (voir configChannel.js).
   await waitForHydration(guildId);
-  let currentPage = "prefixes";
-  const panelMessage = await message.reply(buildPanel(currentPage, guild));
+  const panelMessage = await message.reply(buildPrefixesPage(guildId));
 
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
 
@@ -163,21 +95,6 @@ async function handlePrefixPanel(message) {
     try {
       if (i.user.id !== message.author.id) {
         await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
-        return;
-      }
-
-      if (i.isButton() && i.customId.startsWith("panel_page:")) {
-        currentPage = i.customId.split(":")[1];
-        await i.update(buildPanel(currentPage, guild));
-        return;
-      }
-
-      if (i.isChannelSelectMenu() && i.customId.startsWith("log_channel:")) {
-        const category = i.customId.split(":")[1];
-        const channelId = i.values[0];
-        setLogChannel(guildId, category, channelId);
-        await saveGuildConfig(i.guild);
-        await i.update(buildPanel(currentPage, guild));
         return;
       }
 
@@ -210,6 +127,16 @@ async function handlePrefixPanel(message) {
           });
           return;
         }
+        // "=" est réservé au bot Sécurité (=antifast/=owner/=wl/=allbots/
+        // =blacklist/=logs), volontairement à part de ce système de préfixes
+        // configurables.
+        if (raw.startsWith("=")) {
+          await submitted.reply({
+            content: "`=` est réservé au bot Sécurité, choisis un autre préfixe.",
+            ephemeral: true,
+          });
+          return;
+        }
         if (raw === other || raw.startsWith(other) || other.startsWith(raw)) {
           await submitted.reply({
             content: `Ce préfixe entre en conflit avec le préfixe ${TYPE_LABELS[otherType]} actuel (\`${other}\`), choisis-en un autre.`,
@@ -219,8 +146,8 @@ async function handlePrefixPanel(message) {
         }
 
         setPrefix(guildId, type, raw);
-        await saveGuildConfig(submitted.guild);
-        await submitted.update(buildPanel(currentPage, guild));
+        await saveGuildConfig(submitted.guild, ["prefixes"]);
+        await submitted.update(buildPrefixesPage(guildId));
       } catch (err) {
         console.error("[panel] Erreur lors du traitement de la modale de préfixe :", err);
         await replyWithError(submitted);
