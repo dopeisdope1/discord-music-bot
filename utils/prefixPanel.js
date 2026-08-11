@@ -72,7 +72,7 @@ function buildPrefixesPage(guildId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`.ban\`/\`.unban\`) : \`${dash}\``
+      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`${dash}ban\`/\`${dash}unban\`) : \`${dash}\``
     )
   );
   container.addActionRowComponents(
@@ -89,6 +89,7 @@ function buildPrefixesPage(guildId) {
 
 function buildLogsPage(guildId) {
   const logChannels = getLogChannels(guildId);
+  const { dash } = getPrefixes(guildId);
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
@@ -97,7 +98,11 @@ function buildLogsPage(guildId) {
         Object.values(LOG_CATEGORIES)
           .map((cat) => {
             const channelId = logChannels[cat.key];
-            return `**${cat.label}** (${cat.description}) — ${channelId ? `<#${channelId}>` : "*non configuré*"}`;
+            // cat.description écrit ses commandes avec "." comme préfixe
+            // générique (voir utils/logStore.js) — remplacé ici par le vrai
+            // préfixe configuré sur ce serveur.
+            const description = cat.description.replace(/`\./g, `\`${dash}`);
+            return `**${cat.label}** (${description}) — ${channelId ? `<#${channelId}>` : "*non configuré*"}`;
           })
           .join("\n")
     )
@@ -124,6 +129,7 @@ function buildLogsPage(guildId) {
 
 function buildPermissionsPage(guild, statusText) {
   const categories = getCategories(guild.id);
+  const { dash } = getPrefixes(guild.id);
   const container = new ContainerBuilder();
 
   if (statusText) {
@@ -135,8 +141,8 @@ function buildPermissionsPage(guild, statusText) {
     new TextDisplayBuilder().setContent(
       "## Permissions\n> Crée des catégories de permission (chacune indépendante des autres, sans " +
         "héritage automatique), et choisis-y les commandes et les rôles autorisés — en plus des " +
-        "permissions Discord natives (Administrateur, Bannir des membres pour `.ban`/`.unban`/`.unbanall`), " +
-        "qui continuent de fonctionner normalement. Listées aussi par `.helpall` (commandes) et `.perms` " +
+        `permissions Discord natives (Administrateur, Bannir des membres pour \`${dash}ban\`/\`${dash}unban\`/\`${dash}unbanall\`), ` +
+        `qui continuent de fonctionner normalement. Listées aussi par \`${dash}helpall\` (commandes) et \`${dash}perms\` ` +
         "(rôles).\n\n" +
         (categories.length
           ? categories
@@ -234,6 +240,7 @@ function buildCategoryDetailPanel(guild, id, statusText) {
 }
 
 function buildRolesPage(guild, statusText) {
+  const { dash } = getPrefixes(guild.id);
   const container = new ContainerBuilder();
 
   if (statusText) {
@@ -243,7 +250,7 @@ function buildRolesPage(guild, statusText) {
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Rôles\n> Crée un nouveau rôle, supprime un rôle existant (action irréversible, une confirmation est demandée), ou réorganise sa position dans la hiérarchie. Pour attribuer/retirer un rôle à un membre précis, voir `.addrole`/`.delrole`."
+      `## Rôles\n> Crée un nouveau rôle, supprime un rôle existant (action irréversible, une confirmation est demandée), ou réorganise sa position dans la hiérarchie. Pour attribuer/retirer un rôle à un membre précis, voir \`${dash}addrole\`/\`${dash}delrole\`.`
     )
   );
   container.addActionRowComponents(
