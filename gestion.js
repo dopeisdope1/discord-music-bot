@@ -1,12 +1,13 @@
 require("dotenv").config();
 const path = require("path");
 const { Client, GatewayIntentBits, Collection, AuditLogEvent } = require("discord.js");
-const { handleModerationTextCommand, rememberSnipe } = require("./utils/moderationCommands");
+const { handleModerationTextCommand, rememberSnipe, rememberEditSnipe } = require("./utils/moderationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { getAllTempBans, removeTempBan } = require("./utils/tempBanStore");
+const { getAllReminders, removeReminder } = require("./utils/reminderStore");
 
 const client = new Client({
   intents: [
@@ -38,8 +39,9 @@ for (const file of MODERATION_COMMAND_FILES) {
   client.commands.set(command.data.name, command);
 }
 
-// Stocke le dernier message supprimé par salon (commande .snipe)
+// Stocke le dernier message supprimé/édité par salon (commandes .snipe/.editsnipe)
 client.snipes = new Collection();
+client.editSnipes = new Collection();
 
 // ---- Interactions : slash commands (les boutons/menus/modales de .panel,
 // .ban, .unban, etc. sont gérés par leurs propres collectors attachés au
@@ -90,6 +92,12 @@ client.on("messageCreate", (message) => {
 client.on("messageDelete", (message) => {
   if (!message.guild) return;
   rememberSnipe(client, message.channelId, message, "deleted");
+});
+
+// ---- Mémorise les messages édités pour la commande .editsnipe ----
+client.on("messageUpdate", (oldMessage, newMessage) => {
+  if (!newMessage.guild) return;
+  rememberEditSnipe(client, newMessage.channelId, oldMessage, newMessage);
 });
 
 // ---- Logue les changements de rôle faits "à la main" (via le profil du membre
@@ -181,6 +189,23 @@ setInterval(async () => {
       // grave, l'entrée est de toute façon retirée du store ci-dessus.
       console.warn(`[tempban] Impossible de débannir ${userId} sur ${guildId} :`, err.message);
     }
+  }
+}, 60_000);
+
+// ---- Envoi des rappels arrivés à échéance (.reminder) — même logique de
+// vérification périodique que les bans temporaires ci-dessus.
+setInterval(() => {
+  for (const reminder of getAllReminders()) {
+    if (Date.now() < reminder.dueAt) continue;
+    removeReminder(reminder.guildId, reminder.id);
+    const channel = client.channels.cache.get(reminder.channelId);
+    if (!channel) continue;
+    channel
+      .send({
+        content: `<@${reminder.userId}>`,
+        embeds: [buildStatusEmbed("info", reminder.text, { title: "⏰ Rappel" })],
+      })
+      .catch(() => {});
   }
 }, 60_000);
 

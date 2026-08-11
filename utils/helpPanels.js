@@ -68,6 +68,14 @@ const MODERATION_COMMANDS = [
   "banner",
   "calc",
   "emojis",
+  "afk",
+  "editsnipe",
+  "join-stats",
+  "reminder",
+  "translate",
+  "setsupport",
+  "support",
+  "blinfo",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -129,6 +137,14 @@ function assignableCommandLine(prefix, cmd) {
     banner: `\`${prefix}banner [@membre]\` — Affiche la bannière de profil`,
     calc: `\`${prefix}calc <expression>\` — Calculatrice simple`,
     emojis: `\`${prefix}emojis\` — Liste les emojis du serveur`,
+    afk: `\`${prefix}afk [raison]\` — Te marque AFK jusqu'à ton prochain message`,
+    editsnipe: `\`${prefix}editsnipe\` — Montre le dernier message édité dans ce salon`,
+    "join-stats": `\`${prefix}join-stats\` — Arrivées sur 24h/7j/30j`,
+    reminder: `\`${prefix}reminder <durée> <texte>\` — Programme un rappel`,
+    translate: `\`${prefix}translate <langue> <texte>\` — Traduit un texte`,
+    setsupport: `\`${prefix}setsupport <url>\` — Définit le lien de support du serveur`,
+    support: `\`${prefix}support\` — Affiche le lien de support`,
+    blinfo: `\`${prefix}blinfo [@membre]\` — Vérifie si un membre est blacklist`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

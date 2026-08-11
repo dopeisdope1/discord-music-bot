@@ -23,6 +23,10 @@ const {
 } = require("./welcomeStore");
 const { getWarns, addWarn, removeWarn } = require("./warnStore");
 const { addTempBan } = require("./tempBanStore");
+const { setAfk, getAfk, clearAfk } = require("./afkStore");
+const { addReminder } = require("./reminderStore");
+const { setSupportUrl, getSupportUrl } = require("./supportStore");
+const { getBlacklistEntry } = require("./blacklistStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set([
@@ -38,6 +42,13 @@ const DASH_MEMBER_COMMANDS = new Set([
   "banner",
   "calc",
   "emojis",
+  "afk",
+  "editsnipe",
+  "join-stats",
+  "reminder",
+  "translate",
+  "support",
+  "blinfo",
 ]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set([
@@ -82,6 +93,7 @@ const DASH_ADMIN_COMMANDS = new Set([
   "steal",
   "export-emojis",
   "say",
+  "setsupport",
 ]);
 
 // Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
@@ -1693,6 +1705,150 @@ const handlers = {
     await message.delete().catch(() => {});
     await message.channel.send({ content: text, allowedMentions: { parse: [] } });
   },
+
+  async afk(client, message, args) {
+    const reason = args.join(" ").trim() || "AFK";
+    setAfk(message.guild.id, message.author.id, reason);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Tu es maintenant AFK : ${reason}`)] });
+  },
+
+  async editsnipe(client, message) {
+    const data = client.editSnipes.get(message.channel.id);
+    if (!data) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à sniper dans ce salon.")] });
+    }
+    await message.channel.send({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          `Par **${data.authorTag}**, <t:${Math.floor(data.timestamp / 1000)}:R>\n**Avant :** ${
+            data.before || "*[vide]*"
+          }\n**Après :** ${data.after || "*[vide]*"}`,
+          { title: "Message édité sniped" }
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async "join-stats"(client, message) {
+    let fetchErr = null;
+    const members = await fetchAllMembers(message.guild).catch((err) => {
+      fetchErr = err;
+      return null;
+    });
+    if (!members) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", memberFetchErrorMessage(fetchErr) || "Impossible de récupérer la liste des membres, réessaie.")],
+      });
+    }
+    const now = Date.now();
+    const windows = { "24h": 86_400_000, "7 jours": 7 * 86_400_000, "30 jours": 30 * 86_400_000 };
+    const fields = Object.entries(windows).map(([label, ms]) => ({
+      name: label,
+      value: `${members.filter((m) => m.joinedTimestamp && now - m.joinedTimestamp <= ms).size}`,
+      inline: true,
+    }));
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`Statistiques d'arrivées — ${message.guild.name}`)
+          .addFields(fields)
+          .setFooter({ text: `${message.guild.memberCount} membres au total` }),
+      ],
+    });
+  },
+
+  async reminder(client, message, args, prefix) {
+    const raw = args.join(" ").trim();
+    const match = /^(\S+)\s+([\s\S]+)$/.exec(raw);
+    if (!match) {
+      const dash = prefix || getPrefixes(message.guild.id).dash;
+      return message.reply({
+        embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}reminder <durée> <texte>\` (ex : \`${dash}reminder 10m boire de l'eau\`)`)],
+      });
+    }
+    const ms = parseDuration(match[1]);
+    if (!ms || ms <= 0) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Durée invalide. Exemples : `10m`, `2h`, `1j`.")] });
+    }
+    addReminder(message.guild.id, {
+      userId: message.author.id,
+      channelId: message.channel.id,
+      text: match[2],
+      dueAt: Date.now() + ms,
+    });
+    await saveGuildConfig(message.guild, ["reminders"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Rappel programmé dans **${formatDuration(ms)}** : ${match[2]}`)] });
+  },
+
+  // Utilise l'API non-officielle (sans clé) de Google Translate, comme de
+  // nombreux bots Discord gratuits — dégrade proprement (message d'erreur)
+  // si le service change ou est indisponible plutôt que de planter.
+  async translate(client, message, args) {
+    const lang = args[0];
+    const text = args.slice(1).join(" ").trim();
+    if (!lang || !text) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `translate <langue> <texte>` (ex : `translate en Bonjour tout le monde`)")],
+      });
+    }
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(
+        lang
+      )}&dt=t&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const translated = data[0].map((chunk) => chunk[0]).join("");
+      await message.reply({ embeds: [buildStatusEmbed("info", translated, { title: `Traduction (${lang})` })] });
+    } catch (err) {
+      console.error(err);
+      await message.reply({
+        embeds: [buildStatusEmbed("error", "Impossible de traduire ce texte pour le moment (langue invalide, ou service indisponible).")],
+      });
+    }
+  },
+
+  async setsupport(client, message, args, prefix) {
+    const url = (args[0] || "").trim();
+    if (!/^https?:\/\/\S+$/.test(url)) {
+      const dash = prefix || getPrefixes(message.guild.id).dash;
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}setsupport <url>\``)] });
+    }
+    setSupportUrl(message.guild.id, url);
+    await saveGuildConfig(message.guild, ["support"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Lien de support configuré : ${url}`)] });
+  },
+
+  async support(client, message, args, prefix) {
+    const url = getSupportUrl(message.guild.id);
+    if (!url) {
+      const dash = prefix || getPrefixes(message.guild.id).dash;
+      return message.reply({
+        embeds: [buildStatusEmbed("info", `Aucun lien de support configuré. (Un admin peut en définir un avec \`${dash}setsupport <url>\`.)`)],
+      });
+    }
+    await message.reply({ embeds: [buildStatusEmbed("info", url, { title: "Support" })] });
+  },
+
+  async blinfo(client, message) {
+    const target = message.mentions.users?.first() || message.author;
+    const entry = getBlacklistEntry(message.guild.id, target.id);
+    if (!entry) {
+      return message.reply({ embeds: [buildStatusEmbed("success", `${target.tag} n'est pas blacklist sur ce serveur.`)] });
+    }
+    await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          "warning",
+          `**Raison :** ${entry.reason}\n**Ajouté par :** <@${entry.addedById}>\n**Depuis :** <t:${Math.floor(entry.addedAt / 1000)}:R>`,
+          { title: `${target.tag} est blacklist` }
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    });
+  },
 };
 
 /**
@@ -1709,6 +1865,20 @@ function rememberSnipe(client, channelId, message, type) {
 }
 
 /**
+ * Enregistre une édition de message pour la commande .editsnipe.
+ */
+function rememberEditSnipe(client, channelId, oldMessage, newMessage) {
+  if (!oldMessage?.author || oldMessage.author.bot) return;
+  if (oldMessage.content === newMessage.content) return;
+  client.editSnipes.set(channelId, {
+    before: oldMessage.content,
+    after: newMessage.content,
+    authorTag: oldMessage.author.tag,
+    timestamp: Date.now(),
+  });
+}
+
+/**
  * À appeler dans l'écouteur "messageCreate" du bot Gestion.
  */
 async function handleModerationTextCommand(client, message) {
@@ -1720,6 +1890,30 @@ async function handleModerationTextCommand(client, message) {
 
   const content = message.content.trim();
   const { dash: DASH_PREFIX } = getPrefixes(message.guild.id);
+
+  // Statut AFK : retiré automatiquement dès que l'auteur reparle (sauf s'il
+  // vient de se remettre AFK à l'instant), et rappelé si un membre AFK est
+  // mentionné — ces deux vérifications doivent tourner sur TOUS les
+  // messages, pas seulement les commandes préfixées.
+  if (!content.toLowerCase().startsWith(`${DASH_PREFIX}afk`)) {
+    const clearedAfk = clearAfk(message.guild.id, message.author.id);
+    if (clearedAfk) {
+      message
+        .reply({ embeds: [buildStatusEmbed("info", `Bon retour ${message.author}, tu n'es plus AFK.`)] })
+        .catch(() => {});
+    }
+  }
+  for (const mentioned of message.mentions.members.values()) {
+    const afk = getAfk(message.guild.id, mentioned.id);
+    if (afk) {
+      message.channel
+        .send({
+          embeds: [buildStatusEmbed("info", `${mentioned} est AFK : ${afk.reason} (depuis <t:${Math.floor(afk.since / 1000)}:R>)`)],
+          allowedMentions: { parse: [] },
+        })
+        .catch(() => {});
+    }
+  }
 
   // Déclencheurs spéciaux sans préfixe, tous équivalents à ".clear me"
   // (supprime tes propres messages), ouverts à tout le monde (limite gérée
@@ -1780,4 +1974,4 @@ async function handleModerationTextCommand(client, message) {
   return handlers[cmd](client, message, args, DASH_PREFIX);
 }
 
-module.exports = { handleModerationTextCommand, rememberSnipe, handlers };
+module.exports = { handleModerationTextCommand, rememberSnipe, rememberEditSnipe, handlers };
