@@ -30,6 +30,9 @@ const ASSIGNABLE_COMMANDS = [
   "unban",
   "unbanall",
   "clear",
+  "niv",
+  "dero",
+  "counter",
 ];
 
 let cache = null;

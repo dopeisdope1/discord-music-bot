@@ -34,6 +34,9 @@ function assignableCommandLine(prefix, cmd) {
     unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
     unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
     clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
+    niv: `\`${prefix}niv\` — Liste qui a un rôle donné mais n'est pas en vocal`,
+    dero: `\`${prefix}dero set @role\` / \`${prefix}dero off\` — Rôle appliqué automatiquement (accès complet) sur chaque nouveau salon`,
+    counter: `\`${prefix}counter set #salon [modèle]\` / \`${prefix}counter off\` — Salon vocal renommé toutes les 10 min pour afficher un compteur (\`{count}\`)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

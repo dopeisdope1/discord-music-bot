@@ -5,6 +5,13 @@ const {
   ButtonBuilder,
   ButtonStyle,
   UserSelectMenuBuilder,
+  RoleSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ChannelType,
   MessageFlags,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
@@ -19,8 +26,17 @@ const {
   getWhitelist,
   addToWhitelist,
   removeFromWhitelist,
+  getRoleBypass,
+  setRoleBypass,
+  getCategoryBypass,
+  setCategoryBypass,
+  getModuleOverride,
+  setModuleOverride,
+  getAutoRestoreMs,
+  setAutoRestoreMs,
 } = require("./antiNukeStore");
 const { MODULE_GROUPS, MODULE_LABELS, ALL_MODULES } = require("./antiNukeModules");
+const { DEFAULT_THRESHOLDS, DEFAULT_WINDOW_MS } = require("./antiNuke");
 const { saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
@@ -58,6 +74,16 @@ function formatModules(modules) {
   if (!modules || modules.length === 0) return "*aucun*";
   if (modules.includes("all")) return "**Tout**";
   return modules.map((m) => MODULE_LABELS[m] || m).join(", ");
+}
+
+function formatDuration(ms) {
+  if (!ms || ms <= 0) return null;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.round(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}min`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h`;
 }
 
 function buildListPanel(title, entries, page, formatEntry) {
@@ -117,71 +143,6 @@ async function sendPaginatedList(message, title, entries, formatEntry) {
   });
 }
 
-function buildAntifastPanel(guild) {
-  const enabled = isEnabled(guild.id);
-  const owners = getOwners(guild.id);
-  const whitelist = Object.entries(getWhitelist(guild.id));
-
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `## Anti-nuke ("antifast")\n> Statut : **${enabled ? "Activé ✅" : "Désactivé ❌"}**\n\n` +
-        `**Owners** (en plus du propriétaire réel du serveur) : ${
-          owners.length ? owners.map((id) => `<@${id}>`).join(", ") : "*aucun*"
-        }\n` +
-        `**Whitelist** (${whitelist.length}) : ${
-          whitelist.length ? whitelist.map(([id, modules]) => `<@${id}> (${formatModules(modules)})`).join(", ") : "*aucune*"
-        }\n\n` +
-        `-# ${ALL_MODULES.length} modules surveillés. \`=wl add/remove @membre [module]\` pour une exemption précise — les menus ci-dessous exemptent de **tout**.`
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("antifast_toggle")
-        .setLabel(enabled ? "❌ Désactiver" : "✅ Activer")
-        .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder()
-        .setCustomId("antifast_owner_add")
-        .setPlaceholder("➕ Ajouter un owner (propriétaire réel/du bot uniquement)")
-        .setMinValues(1)
-        .setMaxValues(1)
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder()
-        .setCustomId("antifast_owner_remove")
-        .setPlaceholder("➖ Retirer un owner (propriétaire réel/du bot uniquement)")
-        .setMinValues(1)
-        .setMaxValues(1)
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder()
-        .setCustomId("antifast_wl_add")
-        .setPlaceholder("➕ Whitelister un membre (tout)")
-        .setMinValues(1)
-        .setMaxValues(1)
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder()
-        .setCustomId("antifast_wl_remove")
-        .setPlaceholder("➖ Retirer un membre de la whitelist (tout)")
-        .setMinValues(1)
-        .setMaxValues(1)
-    )
-  );
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
 async function safeErrorReply(i) {
   try {
     if (i.deferred || i.replied) {
@@ -194,15 +155,241 @@ async function safeErrorReply(i) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Panel principal =antifast
+// ---------------------------------------------------------------------------
+
+function buildAntifastPanel(guild) {
+  const enabled = isEnabled(guild.id);
+  const owners = getOwners(guild.id);
+  const whitelist = Object.entries(getWhitelist(guild.id));
+  const roleBypass = getRoleBypass(guild.id);
+  const categoryBypass = getCategoryBypass(guild.id);
+  const autoRestoreMs = getAutoRestoreMs(guild.id);
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## Anti-nuke ("antifast")\n> Statut : **${enabled ? "Activé ✅" : "Désactivé ❌"}**\n\n` +
+        `**Owners** (en plus du propriétaire réel) : ${owners.length ? owners.map((id) => `<@${id}>`).join(", ") : "*aucun*"}\n` +
+        `**Whitelist** (${whitelist.length}) : ${
+          whitelist.length ? whitelist.map(([id, modules]) => `<@${id}> (${formatModules(modules)})`).join(", ") : "*aucune*"
+        }\n` +
+        `**Rôles bypass** : ${roleBypass.length ? roleBypass.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}\n` +
+        `**Catégories bypass** : ${categoryBypass.length ? categoryBypass.map((id) => `<#${id}>`).join(", ") : "*aucune*"}\n` +
+        `**Réactivation auto** : ${autoRestoreMs > 0 ? `après ${formatDuration(autoRestoreMs)}` : "désactivée"}\n\n` +
+        `-# ${ALL_MODULES.length} modules surveillés. Boutons ci-dessous pour tout gérer.`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("antifast_toggle")
+        .setLabel(enabled ? "❌ Désactiver" : "✅ Activer")
+        .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("antifast_open_owners").setLabel("👑 Owners").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("antifast_open_whitelist").setLabel("🛡️ Whitelist").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("antifast_open_advanced").setLabel("⚙️ Avancé").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildOwnersSubPanel() {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent("## Owners anti-nuke\n> Réservé au propriétaire réel du serveur (ou du bot).")
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId("antifast_owner_add").setPlaceholder("➕ Ajouter un owner").setMinValues(1).setMaxValues(1)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId("antifast_owner_remove").setPlaceholder("➖ Retirer un owner").setMinValues(1).setMaxValues(1)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildWhitelistSubPanel() {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Whitelist anti-nuke\n> Ces menus exemptent de **tout**. Pour une exemption précise, utilise `=wl add @membre <module|catégorie>`."
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId("antifast_wl_add").setPlaceholder("➕ Whitelister un membre (tout)").setMinValues(1).setMaxValues(1)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId("antifast_wl_remove").setPlaceholder("➖ Retirer un membre (tout)").setMinValues(1).setMaxValues(1)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildAdvancedPanel(guild) {
+  const roleBypass = getRoleBypass(guild.id);
+  const categoryBypass = getCategoryBypass(guild.id);
+  const autoRestoreMs = getAutoRestoreMs(guild.id);
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Anti-nuke — Avancé\n" +
+        `**Rôles bypass** : ${roleBypass.length ? roleBypass.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}\n` +
+        `**Catégories bypass** : ${categoryBypass.length ? categoryBypass.map((id) => `<#${id}>`).join(", ") : "*aucune*"}\n` +
+        `**Réactivation auto des rôles retirés** : ${
+          autoRestoreMs > 0 ? `après ${formatDuration(autoRestoreMs)}` : "désactivée (retrait permanent)"
+        }`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId("antifast_adv_role_bypass")
+        .setPlaceholder("Rôles bypass (remplace la liste, vide = aucun)")
+        .setMinValues(0)
+        .setMaxValues(10)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("antifast_adv_cat_bypass")
+        .setPlaceholder("Catégories bypass (remplace la liste, vide = aucune)")
+        .setChannelTypes(ChannelType.GuildCategory)
+        .setMinValues(0)
+        .setMaxValues(10)
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("antifast_adv_restore").setLabel("⏱️ Réactivation auto").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("antifast_adv_modules").setLabel("🎯 Configurer un module").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildModuleCategoryPanel() {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Configurer un module\n> Choisis une catégorie."));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("antifast_module_category")
+        .setPlaceholder("Choisir une catégorie")
+        .addOptions(Object.entries(MODULE_GROUPS).map(([key, g]) => ({ label: g.label, value: key })))
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildModuleListPanel(groupKey) {
+  const group = MODULE_GROUPS[groupKey];
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${group.label}\n> Choisis un module à configurer.`));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("antifast_module_select")
+        .setPlaceholder("Choisir un module")
+        .addOptions(Object.entries(group.modules).map(([key, label]) => ({ label, value: key })))
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildModuleDetailPanel(guild, moduleKey) {
+  const override = getModuleOverride(guild.id, moduleKey);
+  const threshold = override.threshold ?? DEFAULT_THRESHOLDS[moduleKey];
+  const windowMs = override.windowMs ?? DEFAULT_WINDOW_MS;
+  const paused = Boolean(override.paused);
+  const isCustom = override.threshold != null || override.windowMs != null;
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `## ${MODULE_LABELS[moduleKey]}\n` +
+        `> Statut : **${paused ? "En pause ⏸️" : "Actif ✅"}**\n` +
+        `> Seuil : **${threshold}** action(s) en **${Math.round(windowMs / 1000)}s**${isCustom ? " *(personnalisé)*" : " *(par défaut)*"}`
+    )
+  );
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`antifast_module_pause:${moduleKey}`)
+        .setLabel(paused ? "▶️ Reprendre" : "⏸️ Mettre en pause")
+        .setStyle(paused ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`antifast_module_threshold:${moduleKey}`).setLabel("🎯 Régler le seuil").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`antifast_module_reset:${moduleKey}`).setLabel("↩️ Défaut").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container] };
+}
+
+function buildThresholdModal(moduleKey, threshold, windowMs) {
+  return new ModalBuilder()
+    .setCustomId(`antifast_threshold_modal:${moduleKey}`)
+    .setTitle(`Seuil — ${MODULE_LABELS[moduleKey]}`.slice(0, 45))
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("threshold")
+          .setLabel("Nombre d'actions avant déclenchement")
+          .setStyle(TextInputStyle.Short)
+          .setValue(String(threshold))
+          .setRequired(true)
+          .setMaxLength(3)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("window")
+          .setLabel("Délai (en secondes)")
+          .setStyle(TextInputStyle.Short)
+          .setValue(String(Math.round(windowMs / 1000)))
+          .setRequired(true)
+          .setMaxLength(4)
+      )
+    );
+}
+
+function buildRestoreModal(currentMs) {
+  return new ModalBuilder()
+    .setCustomId("antifast_restore_modal")
+    .setTitle("Réactivation automatique")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("minutes")
+          .setLabel("Délai en minutes (0 = désactivée)")
+          .setStyle(TextInputStyle.Short)
+          .setValue(String(Math.round(currentMs / 60000)))
+          .setRequired(true)
+          .setMaxLength(5)
+      )
+    );
+}
+
 /**
- * Panel interactif `=antifast` (sans argument) : statut + bouton
- * activer/désactiver + menus pour gérer owners et whitelist (exemption
- * totale — voir `=wl add/remove @membre <module>` pour une exemption
- * précise). Toujours réservé aux owners anti-nuke pour voir/interagir avec
- * le panel ; ajouter/retirer un owner reste en plus réservé au propriétaire
- * réel du serveur ou du bot (mêmes règles que `=owner`, vérifiées à nouveau
- * ici — un owner délégué peut voir le panel mais pas cliquer sur ces deux
- * menus précis).
+ * Panel interactif `=antifast` (sans argument) : statut, activer/désactiver,
+ * et trois boutons ouvrant chacun un sous-panel dédié (owners, whitelist,
+ * avancé) — nécessaire car Discord limite un message à 5 lignes de
+ * composants, largement dépassé si tout était sur un seul écran vu le
+ * nombre de réglages (bypass rôles/catégories, réactivation auto,
+ * configuration des 30 modules...). Toujours réservé aux owners anti-nuke ;
+ * ajouter/retirer un owner reste en plus réservé au propriétaire réel du
+ * serveur ou du bot.
  * @param {import('discord.js').Message} message
  */
 async function handleAntifastPanel(message) {
@@ -229,37 +416,16 @@ async function handleAntifastPanel(message) {
         return;
       }
 
-      if (i.isUserSelectMenu() && (i.customId === "antifast_owner_add" || i.customId === "antifast_owner_remove")) {
-        if (i.user.id !== i.guild.ownerId && !isBotOwner(i.user.id)) {
-          await i.reply({ content: "Réservé au propriétaire du serveur (ou du bot).", ephemeral: true });
-          return;
-        }
-        const targetId = i.values[0];
-        const adding = i.customId === "antifast_owner_add";
-        if (adding) addOwner(i.guild.id, targetId);
-        else removeOwner(i.guild.id, targetId);
-        await saveGuildConfig(i.guild);
-        sendLog(i.client, i.guild.id, "securite", {
-          title: adding ? "Owner anti-nuke ajouté" : "Owner anti-nuke retiré",
-          description: `<@${targetId}> ${adding ? "ajouté aux" : "retiré des"} owners anti-nuke via le panel.`,
-          actor: i.user,
-        });
-        await i.update(buildAntifastPanel(i.guild));
+      if (i.isButton() && i.customId === "antifast_open_owners") {
+        await handleOwnersSubPanel(i, message);
         return;
       }
-
-      if (i.isUserSelectMenu() && (i.customId === "antifast_wl_add" || i.customId === "antifast_wl_remove")) {
-        const targetId = i.values[0];
-        const adding = i.customId === "antifast_wl_add";
-        if (adding) addToWhitelist(i.guild.id, targetId, ["all"]);
-        else removeFromWhitelist(i.guild.id, targetId, ["all"]);
-        await saveGuildConfig(i.guild);
-        sendLog(i.client, i.guild.id, "securite", {
-          title: adding ? "Whitelist anti-nuke — ajout" : "Whitelist anti-nuke — retrait",
-          description: `<@${targetId}> ${adding ? "ajouté à" : "retiré de"} la whitelist anti-nuke (tout) via le panel.`,
-          actor: i.user,
-        });
-        await i.update(buildAntifastPanel(i.guild));
+      if (i.isButton() && i.customId === "antifast_open_whitelist") {
+        await handleWhitelistSubPanel(i, message);
+        return;
+      }
+      if (i.isButton() && i.customId === "antifast_open_advanced") {
+        await handleAdvancedSubPanel(i, message);
         return;
       }
     } catch (err) {
@@ -273,12 +439,199 @@ async function handleAntifastPanel(message) {
   });
 }
 
+async function handleOwnersSubPanel(i, message) {
+  const subMessage = await i.reply({ ...buildOwnersSubPanel(), fetchReply: true });
+  const subCollector = subMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+
+  subCollector.on("collect", async (sub) => {
+    try {
+      if (sub.user.id !== i.guild.ownerId && !isBotOwner(sub.user.id)) {
+        await sub.reply({ content: "Réservé au propriétaire du serveur (ou du bot).", ephemeral: true });
+        return;
+      }
+      const targetId = sub.values[0];
+      const adding = sub.customId === "antifast_owner_add";
+      if (adding) addOwner(sub.guild.id, targetId);
+      else removeOwner(sub.guild.id, targetId);
+      await saveGuildConfig(sub.guild);
+      sendLog(sub.client, sub.guild.id, "securite", {
+        title: adding ? "Owner anti-nuke ajouté" : "Owner anti-nuke retiré",
+        description: `<@${targetId}> ${adding ? "ajouté aux" : "retiré des"} owners anti-nuke via le panel.`,
+        actor: sub.user,
+      });
+      await sub.update(buildOwnersSubPanel());
+    } catch (err) {
+      console.error("[antiNukeCommands] Erreur sous-panel owners :", err);
+      await safeErrorReply(sub);
+    }
+  });
+}
+
+async function handleWhitelistSubPanel(i, message) {
+  const subMessage = await i.reply({ ...buildWhitelistSubPanel(), fetchReply: true });
+  const subCollector = subMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+
+  subCollector.on("collect", async (sub) => {
+    try {
+      const targetId = sub.values[0];
+      const adding = sub.customId === "antifast_wl_add";
+      if (adding) addToWhitelist(sub.guild.id, targetId, ["all"]);
+      else removeFromWhitelist(sub.guild.id, targetId, ["all"]);
+      await saveGuildConfig(sub.guild);
+      sendLog(sub.client, sub.guild.id, "securite", {
+        title: adding ? "Whitelist anti-nuke — ajout" : "Whitelist anti-nuke — retrait",
+        description: `<@${targetId}> ${adding ? "ajouté à" : "retiré de"} la whitelist anti-nuke (tout) via le panel.`,
+        actor: sub.user,
+      });
+      await sub.update(buildWhitelistSubPanel());
+    } catch (err) {
+      console.error("[antiNukeCommands] Erreur sous-panel whitelist :", err);
+      await safeErrorReply(sub);
+    }
+  });
+}
+
+async function handleAdvancedSubPanel(i, message) {
+  const subMessage = await i.reply({ ...buildAdvancedPanel(i.guild), fetchReply: true });
+  const subCollector = subMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
+  let currentGroupKey = null;
+
+  subCollector.on("collect", async (sub) => {
+    try {
+      if (sub.isRoleSelectMenu() && sub.customId === "antifast_adv_role_bypass") {
+        setRoleBypass(sub.guild.id, sub.values);
+        await saveGuildConfig(sub.guild);
+        sendLog(sub.client, sub.guild.id, "securite", {
+          title: "Rôles bypass anti-nuke modifiés",
+          description: `Nouveaux rôles bypass : ${sub.values.length ? sub.values.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}.`,
+          actor: sub.user,
+        });
+        await sub.update(buildAdvancedPanel(sub.guild));
+        return;
+      }
+
+      if (sub.isChannelSelectMenu() && sub.customId === "antifast_adv_cat_bypass") {
+        setCategoryBypass(sub.guild.id, sub.values);
+        await saveGuildConfig(sub.guild);
+        sendLog(sub.client, sub.guild.id, "securite", {
+          title: "Catégories bypass anti-nuke modifiées",
+          description: `Nouvelles catégories bypass : ${sub.values.length ? sub.values.map((id) => `<#${id}>`).join(", ") : "*aucune*"}.`,
+          actor: sub.user,
+        });
+        await sub.update(buildAdvancedPanel(sub.guild));
+        return;
+      }
+
+      if (sub.isButton() && sub.customId === "antifast_adv_restore") {
+        await sub.showModal(buildRestoreModal(getAutoRestoreMs(sub.guild.id)));
+        const submitted = await sub
+          .awaitModalSubmit({ time: PANEL_TIMEOUT_MS, filter: (m) => m.customId === "antifast_restore_modal" && m.user.id === sub.user.id })
+          .catch(() => null);
+        if (!submitted) return;
+
+        const minutes = parseInt(submitted.fields.getTextInputValue("minutes").trim(), 10);
+        if (!Number.isInteger(minutes) || minutes < 0 || minutes > 10_000) {
+          await submitted.reply({ content: "Nombre de minutes invalide.", ephemeral: true });
+          return;
+        }
+        setAutoRestoreMs(sub.guild.id, minutes * 60_000);
+        await saveGuildConfig(sub.guild);
+        sendLog(sub.client, sub.guild.id, "securite", {
+          title: "Réactivation automatique modifiée",
+          description: minutes > 0 ? `Réactivation auto réglée sur ${minutes} min.` : "Réactivation auto désactivée.",
+          actor: sub.user,
+        });
+        await submitted.update(buildAdvancedPanel(sub.guild));
+        return;
+      }
+
+      if (sub.isButton() && sub.customId === "antifast_adv_modules") {
+        await sub.update(buildModuleCategoryPanel());
+        return;
+      }
+
+      if (sub.isStringSelectMenu() && sub.customId === "antifast_module_category") {
+        currentGroupKey = sub.values[0];
+        await sub.update(buildModuleListPanel(currentGroupKey));
+        return;
+      }
+
+      if (sub.isStringSelectMenu() && sub.customId === "antifast_module_select") {
+        await sub.update(buildModuleDetailPanel(sub.guild, sub.values[0]));
+        return;
+      }
+
+      if (sub.isButton() && sub.customId.startsWith("antifast_module_pause:")) {
+        const moduleKey = sub.customId.split(":")[1];
+        const override = getModuleOverride(sub.guild.id, moduleKey);
+        setModuleOverride(sub.guild.id, moduleKey, { paused: !override.paused });
+        await saveGuildConfig(sub.guild);
+        sendLog(sub.client, sub.guild.id, "securite", {
+          title: "Module anti-nuke modifié",
+          description: `**${MODULE_LABELS[moduleKey]}** ${!override.paused ? "mis en pause" : "réactivé"} via le panel.`,
+          actor: sub.user,
+        });
+        await sub.update(buildModuleDetailPanel(sub.guild, moduleKey));
+        return;
+      }
+
+      if (sub.isButton() && sub.customId.startsWith("antifast_module_reset:")) {
+        const moduleKey = sub.customId.split(":")[1];
+        setModuleOverride(sub.guild.id, moduleKey, { threshold: undefined, windowMs: undefined });
+        await saveGuildConfig(sub.guild);
+        await sub.update(buildModuleDetailPanel(sub.guild, moduleKey));
+        return;
+      }
+
+      if (sub.isButton() && sub.customId.startsWith("antifast_module_threshold:")) {
+        const moduleKey = sub.customId.split(":")[1];
+        const override = getModuleOverride(sub.guild.id, moduleKey);
+        const threshold = override.threshold ?? DEFAULT_THRESHOLDS[moduleKey];
+        const windowMs = override.windowMs ?? DEFAULT_WINDOW_MS;
+        await sub.showModal(buildThresholdModal(moduleKey, threshold, windowMs));
+
+        const submitted = await sub
+          .awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === `antifast_threshold_modal:${moduleKey}` && m.user.id === sub.user.id,
+          })
+          .catch(() => null);
+        if (!submitted) return;
+
+        const newThreshold = parseInt(submitted.fields.getTextInputValue("threshold").trim(), 10);
+        const newWindowSeconds = parseInt(submitted.fields.getTextInputValue("window").trim(), 10);
+        if (!Number.isInteger(newThreshold) || newThreshold < 1 || newThreshold > 100) {
+          await submitted.reply({ content: "Nombre d'actions invalide (1 à 100).", ephemeral: true });
+          return;
+        }
+        if (!Number.isInteger(newWindowSeconds) || newWindowSeconds < 1 || newWindowSeconds > 3600) {
+          await submitted.reply({ content: "Délai invalide (1 à 3600 secondes).", ephemeral: true });
+          return;
+        }
+
+        setModuleOverride(sub.guild.id, moduleKey, { threshold: newThreshold, windowMs: newWindowSeconds * 1000 });
+        await saveGuildConfig(sub.guild);
+        sendLog(sub.client, sub.guild.id, "securite", {
+          title: "Module anti-nuke modifié",
+          description: `**${MODULE_LABELS[moduleKey]}** : seuil réglé sur ${newThreshold} action(s) / ${newWindowSeconds}s via le panel.`,
+          actor: sub.user,
+        });
+        await submitted.update(buildModuleDetailPanel(sub.guild, moduleKey));
+        return;
+      }
+    } catch (err) {
+      console.error("[antiNukeCommands] Erreur sous-panel avancé :", err);
+      await safeErrorReply(sub);
+    }
+  });
+}
+
 /**
  * `=antifast` — ouvre le panel interactif (statut, activer/désactiver,
- * gestion owners/whitelist). `=antifast on|off` reste un raccourci texte
- * rapide qui ne passe pas par le panel. Réservé aux "owners" anti-nuke (voir
- * isOwner) — jamais délégable via `.panel` > Permissions comme les autres
- * commandes, pour ne pas pouvoir être désactivé par un compte admin
+ * gestion owners/whitelist/avancé). `=antifast on|off` reste un raccourci
+ * texte rapide qui ne passe pas par le panel. Réservé aux "owners" anti-nuke
+ * (voir isOwner) — jamais délégable via `.panel` > Permissions comme les
+ * autres commandes, pour ne pas pouvoir être désactivé par un compte admin
  * compromis.
  * @param {import('discord.js').Message} message
  * @param {string[]} args

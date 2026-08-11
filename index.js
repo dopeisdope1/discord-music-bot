@@ -21,6 +21,7 @@ const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 const { registerAntiNuke } = require("./utils/antiNuke");
+const { registerToolsAutomation } = require("./utils/toolsCommands");
 
 const client = new Client({
   intents: [
@@ -478,6 +479,9 @@ client.on("guildMemberAdd", (member) => {
 
 // ---- Protection anti-nuke ("antifast") ----
 registerAntiNuke(client);
+
+// ---- Outils serveur (.dero automatique, .counter) ----
+registerToolsAutomation(client);
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);

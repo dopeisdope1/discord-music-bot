@@ -9,6 +9,10 @@ const {
   getRawGuildData: getRawAntiNuke,
   hydrateFromRemote: hydrateAntiNuke,
 } = require("./antiNukeStore");
+const {
+  getRawGuildData: getRawTools,
+  hydrateFromRemote: hydrateTools,
+} = require("./toolsStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, salons de logs) y disparaît au
@@ -79,6 +83,7 @@ function loadGuildConfig(guild) {
       hydrateLogChannels(guild.id, data.logChannels);
       hydratePermissionCategories(guild.id, data.permissionCategories);
       hydrateAntiNuke(guild.id, data.antiNuke);
+      hydrateTools(guild.id, data.tools);
       console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
     } catch (err) {
       console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
@@ -108,6 +113,7 @@ async function saveGuildConfig(guild) {
     logChannels: getRawLogChannels(guild.id),
     permissionCategories: getRawPermissionCategories(guild.id),
     antiNuke: getRawAntiNuke(guild.id),
+    tools: getRawTools(guild.id),
   };
   const content = "```json\n" + JSON.stringify(data, null, 2) + "\n```";
 

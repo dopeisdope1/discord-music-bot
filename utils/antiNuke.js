@@ -1,6 +1,17 @@
 const { AuditLogEvent, PermissionFlagsBits, ChannelType } = require("discord.js");
 const { sendLog } = require("./actionLogger");
-const { isEnabled, isOwner, isWhitelistedFor } = require("./antiNukeStore");
+const {
+  isEnabled,
+  isOwner,
+  isWhitelistedFor,
+  getRoleBypass,
+  getCategoryBypass,
+  getModuleOverride,
+  getAutoRestoreMs,
+  addPendingRestore,
+  getAllPendingRestores,
+  removePendingRestore,
+} = require("./antiNukeStore");
 const { MODULE_LABELS, ALL_MODULES } = require("./antiNukeModules");
 
 // Fenêtre glissante par défaut : au-delà du seuil d'un module (voir
@@ -45,13 +56,13 @@ const THRESHOLDS = {
 // Map<"guildId:userId:module", timestamp[]>
 const activity = new Map();
 
-function recordAndCheck(guildId, userId, moduleKey) {
+function recordAndCheck(guildId, userId, moduleKey, threshold, windowMs) {
   const key = `${guildId}:${userId}:${moduleKey}`;
   const now = Date.now();
-  const timestamps = (activity.get(key) || []).filter((t) => now - t < WINDOW_MS);
+  const timestamps = (activity.get(key) || []).filter((t) => now - t < windowMs);
   timestamps.push(now);
   activity.set(key, timestamps);
-  return timestamps.length >= THRESHOLDS[moduleKey];
+  return timestamps.length >= threshold;
 }
 
 // Fenêtre dédiée au retrait de rôles en masse : ici on ne compte pas des
@@ -83,6 +94,32 @@ function isExempt(guild, userId, moduleKey) {
     isOwner(guild, userId) ||
     isWhitelistedFor(guild.id, userId, moduleKey)
   );
+}
+
+/**
+ * @param {import('discord.js').Guild} guild
+ * @param {import('discord.js').GuildMember} member
+ * @returns {boolean} true si ce membre a un rôle de la liste "bypass" (voir
+ *   le sous-panel =antifast > Avancé)
+ */
+function hasRoleBypass(guild, member) {
+  const bypass = getRoleBypass(guild.id);
+  if (bypass.length === 0) return false;
+  return member.roles.cache.some((r) => bypass.includes(r.id));
+}
+
+/**
+ * @param {import('discord.js').Guild} guild
+ * @param {import('discord.js').GuildChannel|import('discord.js').ThreadChannel} channel
+ * @returns {boolean} true si le salon/thread est dans une catégorie "bypass"
+ *   (voir le sous-panel =antifast > Avancé)
+ */
+function isCategoryBypassed(guild, channel) {
+  const bypass = getCategoryBypass(guild.id);
+  if (bypass.length === 0) return false;
+  const categoryId =
+    channel.type === ChannelType.GuildCategory ? channel.id : channel.parentId || channel.parent?.parentId;
+  return Boolean(categoryId) && bypass.includes(categoryId);
 }
 
 /**
@@ -122,9 +159,11 @@ async function punish(guild, userId, moduleKey, reason) {
   if (isExempt(guild, userId, moduleKey)) return;
   const member = await guild.members.fetch(userId).catch(() => null);
   if (!member || !member.manageable) return;
+  if (hasRoleBypass(guild, member)) return;
 
   const rolesToRemove = member.roles.cache.filter((r) => r.id !== guild.id && !r.managed);
   if (rolesToRemove.size === 0) return;
+  const removedRoleIds = [...rolesToRemove.keys()];
 
   const removed = await member.roles
     .remove(rolesToRemove, `[Anti-nuke] ${reason}`)
@@ -136,15 +175,55 @@ async function punish(guild, userId, moduleKey, reason) {
   if (!removed) return;
 
   console.warn(`[antiNuke] "${member.user.tag}" neutralisé sur "${guild.name}" — ${reason}`);
+
+  // Réactivation automatique (voir =antifast > Avancé) : si configurée,
+  // programme le retour des rôles retirés après le délai choisi au lieu de
+  // laisser ça définitif tant qu'un admin ne les redonne pas à la main —
+  // persistée (pas un simple setTimeout) pour survivre à un redémarrage.
+  const autoRestoreMs = getAutoRestoreMs(guild.id);
+  let restoreNote = "";
+  if (autoRestoreMs > 0) {
+    const restoreAt = Date.now() + autoRestoreMs;
+    addPendingRestore(guild.id, userId, removedRoleIds, restoreAt);
+    restoreNote = ` Rôles réactivés automatiquement <t:${Math.floor(restoreAt / 1000)}:R>.`;
+  }
+
   sendLog(guild.client, guild.id, "securite", {
     title: "🚨 Anti-nuke déclenché",
-    description: reason,
+    description: reason + restoreNote,
     actor: member.user,
     fields: [
       { name: "Module", value: MODULE_LABELS[moduleKey] || moduleKey, inline: true },
       { name: "Action", value: "Tous les rôles retirés", inline: true },
     ],
   });
+}
+
+/**
+ * Vérifie périodiquement (voir registerAntiNuke) les réactivations de rôles
+ * en attente (voir punish/getAutoRestoreMs) et redonne les rôles dont le
+ * délai est écoulé.
+ * @param {import('discord.js').Client} client
+ */
+async function checkPendingRestores(client) {
+  const now = Date.now();
+  const due = getAllPendingRestores().filter((r) => r.restoreAt <= now);
+  for (const entry of due) {
+    try {
+      const guild = client.guilds.cache.get(entry.guildId);
+      if (guild) {
+        const member = await guild.members.fetch(entry.userId).catch(() => null);
+        const validRoleIds = entry.roleIds.filter((id) => guild.roles.cache.has(id));
+        if (member && validRoleIds.length) {
+          await member.roles.add(validRoleIds, "[Anti-nuke] Réactivation automatique des rôles").catch((err) => {
+            console.error("[antiNuke] Échec de la réactivation automatique :", err);
+          });
+        }
+      }
+    } finally {
+      removePendingRestore(entry.guildId, entry.userId, entry.restoreAt);
+    }
+  }
 }
 
 /**
@@ -158,11 +237,19 @@ async function punish(guild, userId, moduleKey, reason) {
  */
 async function detect(guild, moduleKey, auditLogType, targetId, reason) {
   if (!isEnabled(guild.id)) return;
+
+  // Réglages personnalisés (voir =antifast > Avancé) : un module mis en
+  // pause n'est jamais vérifié, et un seuil/délai custom remplace celui par
+  // défaut (THRESHOLDS/WINDOW_MS) sans y toucher pour les autres serveurs.
+  const override = getModuleOverride(guild.id, moduleKey);
+  if (override.paused) return;
+
   const executor = await findExecutor(guild, auditLogType, targetId);
   if (!executor || executor.bot) return;
 
-  const threshold = THRESHOLDS[moduleKey] ?? 1;
-  const shouldPunish = threshold <= 1 ? true : recordAndCheck(guild.id, executor.id, moduleKey);
+  const threshold = override.threshold ?? THRESHOLDS[moduleKey] ?? 1;
+  const windowMs = override.windowMs ?? WINDOW_MS;
+  const shouldPunish = threshold <= 1 ? true : recordAndCheck(guild.id, executor.id, moduleKey, threshold, windowMs);
   if (shouldPunish) {
     await punish(guild, executor.id, moduleKey, reason);
   }
@@ -185,7 +272,7 @@ async function detect(guild, moduleKey, auditLogType, targetId, reason) {
 function registerAntiNuke(client) {
   // ---- Salons / catégories (mêmes events gateway, distingués par type) ----
   client.on("channelCreate", async (channel) => {
-    if (!channel.guild) return;
+    if (!channel.guild || isCategoryBypassed(channel.guild, channel)) return;
     const isCategory = channel.type === ChannelType.GuildCategory;
     await detect(
       channel.guild,
@@ -197,7 +284,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("channelDelete", async (channel) => {
-    if (!channel.guild) return;
+    if (!channel.guild || isCategoryBypassed(channel.guild, channel)) return;
     const isCategory = channel.type === ChannelType.GuildCategory;
     await detect(
       channel.guild,
@@ -209,7 +296,7 @@ function registerAntiNuke(client) {
   });
 
   client.on("channelUpdate", async (oldChannel, newChannel) => {
-    if (!newChannel.guild) return;
+    if (!newChannel.guild || isCategoryBypassed(newChannel.guild, newChannel)) return;
     const isCategory = newChannel.type === ChannelType.GuildCategory;
     const permsChanged =
       oldChannel.permissionOverwrites?.cache.size !== newChannel.permissionOverwrites?.cache.size ||
@@ -260,15 +347,15 @@ function registerAntiNuke(client) {
 
   // ---- Threads ----
   client.on("threadCreate", async (thread) => {
-    if (!thread.guild) return;
+    if (!thread.guild || isCategoryBypassed(thread.guild, thread)) return;
     await detect(thread.guild, "threadCreate", AuditLogEvent.ThreadCreate, thread.id, `Création de ${THRESHOLDS.threadCreate}+ threads en moins de ${WINDOW_MS / 1000}s`);
   });
   client.on("threadDelete", async (thread) => {
-    if (!thread.guild) return;
+    if (!thread.guild || isCategoryBypassed(thread.guild, thread)) return;
     await detect(thread.guild, "threadDelete", AuditLogEvent.ThreadDelete, thread.id, `Suppression de ${THRESHOLDS.threadDelete}+ threads en moins de ${WINDOW_MS / 1000}s`);
   });
   client.on("threadUpdate", async (oldThread, newThread) => {
-    if (!newThread.guild) return;
+    if (!newThread.guild || isCategoryBypassed(newThread.guild, newThread)) return;
     if (oldThread.name === newThread.name && oldThread.archived === newThread.archived && oldThread.locked === newThread.locked) return;
     await detect(newThread.guild, "threadUpdate", AuditLogEvent.ThreadUpdate, newThread.id, `Modification de ${THRESHOLDS.threadUpdate}+ threads en moins de ${WINDOW_MS / 1000}s`);
   });
@@ -395,7 +482,12 @@ function registerAntiNuke(client) {
     await detect(newGuild, "guildUpdate", AuditLogEvent.GuildUpdate, newGuild.id, `${THRESHOLDS.guildUpdate}+ modifications des paramètres du serveur en moins de ${WINDOW_MS / 1000}s`);
   });
 
+  // Vérifie toutes les minutes les réactivations de rôles programmées (voir
+  // punish/getAutoRestoreMs) — persistées, donc ça reprend correctement
+  // même si le bot a redémarré entre-temps.
+  setInterval(() => checkPendingRestores(client), 60_000);
+
   console.log(`🛡️ Anti-nuke ("antifast") activé — ${ALL_MODULES.length} modules surveillés.`);
 }
 
-module.exports = { registerAntiNuke };
+module.exports = { registerAntiNuke, DEFAULT_THRESHOLDS: THRESHOLDS, DEFAULT_WINDOW_MS: WINDOW_MS };

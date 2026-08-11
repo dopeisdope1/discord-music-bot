@@ -55,19 +55,40 @@ function save() {
   }
 }
 
+const DEFAULT_GUILD_DATA = () => ({
+  enabled: true,
+  owners: [],
+  whitelist: {},
+  roleBypass: [],
+  categoryBypass: [],
+  moduleOverrides: {},
+  autoRestoreMs: 0,
+  pendingRestores: [],
+});
+
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { enabled: true, owners: [], whitelist: {} };
+  if (!data[guildId]) data[guildId] = DEFAULT_GUILD_DATA();
+  const g = data[guildId];
   // Migration depuis l'ancien format (whitelist: string[] à plat, exemption
   // totale) vers le nouveau (whitelist: { [userId]: string[] modules }) —
   // au premier accès après mise à jour du bot, convertit chaque ancienne
   // entrée en "all" pour ne rien perdre.
-  if (Array.isArray(data[guildId].whitelist)) {
+  if (Array.isArray(g.whitelist)) {
     const migrated = {};
-    for (const userId of data[guildId].whitelist) migrated[userId] = ["all"];
-    data[guildId].whitelist = migrated;
+    for (const userId of g.whitelist) migrated[userId] = ["all"];
+    g.whitelist = migrated;
   }
-  return data[guildId];
+  // Complète les champs manquants pour une config sauvegardée avant l'ajout
+  // du bypass rôles/catégories, des seuils par module et de la réactivation
+  // automatique (voir hydrateFromRemote — un vieux blob restauré depuis
+  // Discord n'a pas ces clés).
+  if (!g.roleBypass) g.roleBypass = [];
+  if (!g.categoryBypass) g.categoryBypass = [];
+  if (!g.moduleOverrides) g.moduleOverrides = {};
+  if (!g.autoRestoreMs) g.autoRestoreMs = 0;
+  if (!g.pendingRestores) g.pendingRestores = [];
+  return g;
 }
 
 /**
@@ -213,12 +234,143 @@ function isWhitelistedFor(guildId, userId, moduleKey) {
 }
 
 /**
+ * @param {string} guildId
+ * @returns {string[]} IDs des rôles exemptés de tous les déclencheurs anti-nuke
+ */
+function getRoleBypass(guildId) {
+  return [...guildData(guildId).roleBypass];
+}
+
+/**
+ * Remplace la liste complète des rôles bypass (le menu de sélection envoie
+ * toujours l'ensemble coché, pas un diff).
+ * @param {string} guildId
+ * @param {string[]} roleIds
+ */
+function setRoleBypass(guildId, roleIds) {
+  const g = guildData(guildId);
+  g.roleBypass = roleIds;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {string[]} IDs des catégories dont les salons/threads sont exemptés
+ *   des modules salons/catégories/threads
+ */
+function getCategoryBypass(guildId) {
+  return [...guildData(guildId).categoryBypass];
+}
+
+/**
+ * @param {string} guildId
+ * @param {string[]} categoryIds
+ */
+function setCategoryBypass(guildId, categoryIds) {
+  const g = guildData(guildId);
+  g.categoryBypass = categoryIds;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @param {string} moduleKey
+ * @returns {{ threshold?: number, windowMs?: number, paused?: boolean }} champs
+ *   personnalisés pour ce module (vide si tout est par défaut)
+ */
+function getModuleOverride(guildId, moduleKey) {
+  return { ...(guildData(guildId).moduleOverrides[moduleKey] || {}) };
+}
+
+/**
+ * @param {string} guildId
+ * @returns {{ [moduleKey: string]: { threshold?: number, windowMs?: number, paused?: boolean } }}
+ */
+function getAllModuleOverrides(guildId) {
+  return { ...guildData(guildId).moduleOverrides };
+}
+
+/**
+ * Fusionne `patch` dans la config existante d'un module (ne remplace que les
+ * champs fournis).
+ * @param {string} guildId
+ * @param {string} moduleKey
+ * @param {{ threshold?: number, windowMs?: number, paused?: boolean }} patch
+ */
+function setModuleOverride(guildId, moduleKey, patch) {
+  const g = guildData(guildId);
+  g.moduleOverrides[moduleKey] = { ...(g.moduleOverrides[moduleKey] || {}), ...patch };
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {number} délai (ms) avant réactivation auto des rôles retirés par
+ *   l'anti-nuke — 0 = désactivé (retrait permanent tant qu'un admin ne les
+ *   redonne pas à la main)
+ */
+function getAutoRestoreMs(guildId) {
+  return guildData(guildId).autoRestoreMs || 0;
+}
+
+/**
+ * @param {string} guildId
+ * @param {number} ms
+ */
+function setAutoRestoreMs(guildId, ms) {
+  const g = guildData(guildId);
+  g.autoRestoreMs = ms;
+  save();
+}
+
+/**
+ * Enregistre une restauration de rôles à faire plus tard (voir
+ * utils/antiNuke.js — vérifiée périodiquement, survit à un redémarrage
+ * puisque c'est persisté comme le reste de la config anti-nuke).
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string[]} roleIds
+ * @param {number} restoreAt timestamp ms
+ */
+function addPendingRestore(guildId, userId, roleIds, restoreAt) {
+  const g = guildData(guildId);
+  g.pendingRestores.push({ userId, roleIds, restoreAt });
+  save();
+}
+
+/**
+ * @returns {Array<{ guildId: string, userId: string, roleIds: string[], restoreAt: number }>}
+ *   toutes les restaurations en attente, tous serveurs confondus
+ */
+function getAllPendingRestores() {
+  const data = load();
+  const all = [];
+  for (const guildId of Object.keys(data)) {
+    for (const entry of guildData(guildId).pendingRestores) {
+      all.push({ guildId, ...entry });
+    }
+  }
+  return all;
+}
+
+/**
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {number} restoreAt
+ */
+function removePendingRestore(guildId, userId, restoreAt) {
+  const g = guildData(guildId);
+  g.pendingRestores = g.pendingRestores.filter((r) => !(r.userId === userId && r.restoreAt === restoreAt));
+  save();
+}
+
+/**
  * Valeurs brutes d'un serveur, utilisé par utils/configChannel.js pour
  * sauvegarder/restaurer via Discord.
  * @param {string} guildId
  */
 function getRawGuildData(guildId) {
-  return load()[guildId] || { enabled: true, owners: [], whitelist: {} };
+  return load()[guildId] || DEFAULT_GUILD_DATA();
 }
 
 /**
@@ -251,6 +403,18 @@ module.exports = {
   removeFromWhitelist,
   isWhitelisted,
   isWhitelistedFor,
+  getRoleBypass,
+  setRoleBypass,
+  getCategoryBypass,
+  setCategoryBypass,
+  getModuleOverride,
+  getAllModuleOverrides,
+  setModuleOverride,
+  getAutoRestoreMs,
+  setAutoRestoreMs,
+  addPendingRestore,
+  getAllPendingRestores,
+  removePendingRestore,
   getRawGuildData,
   hydrateFromRemote,
 };

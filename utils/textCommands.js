@@ -22,6 +22,8 @@ const {
   handleAllBotsCommand,
 } = require("./antiNukeCommands");
 const { isOwner, isBotOwner, getBotOwnerIds } = require("./antiNukeStore");
+const { handleNivCommand } = require("./nivPanel");
+const { handleDeroCommand, handleCounterCommand } = require("./toolsCommands");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
@@ -66,6 +68,9 @@ const DASH_ADMIN_COMMANDS = new Set([
   "create",
   "helpall",
   "perms",
+  "niv",
+  "dero",
+  "counter",
 ]);
 // "banall" est gérée à part (permission vérifiée dans son propre handler) :
 // contrairement au reste de DASH_ADMIN_COMMANDS, elle n'est PAS assignable à
@@ -984,6 +989,18 @@ const handlers = {
 
   async allbots(client, message) {
     await handleAllBotsCommand(message);
+  },
+
+  async niv(client, message) {
+    await handleNivCommand(message);
+  },
+
+  async dero(client, message, args) {
+    await handleDeroCommand(message, args);
+  },
+
+  async counter(client, message, args) {
+    await handleCounterCommand(message, args);
   },
 
   async pic(client, message) {

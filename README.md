@@ -106,7 +106,9 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`,
     `.delrole`, `.panel`, `.create <nom> <url>` (crée un emoji), `.helpall`
     (liste les commandes par catégorie), `.perms` (liste les rôles par
-    catégorie)
+    catégorie), `.niv` (qui n'est pas en vocal parmi un rôle), `.dero`
+    (rôle auto-appliqué aux nouveaux salons), `.counter` (salon-compteur de
+    membres, voir section 7quinquies)
   - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
     système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
     confirmation)
@@ -186,8 +188,8 @@ elles, contrairement à l'exemple à deux groupes fixes "mod"/"ban" d'avant) :
 
 Les commandes assignables : `.helpall`, `.perms`, `.panel`, `.renew`,
 `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`, `.delrole`,
-`.create`, `.ban`, `.unban`, `.unbanall`, `.clear` (`.banall` en est
-volontairement exclue).
+`.create`, `.ban`, `.unban`, `.unbanall`, `.clear`, `.niv`, `.dero`,
+`.counter` (`.banall` en est volontairement exclue).
 Ça s'ajoute aux permissions Discord natives (Administrateur toujours, plus
 Bannir des membres pour `.ban`/`.unban`/`.unbanall` spécifiquement), qui
 continuent de fonctionner normalement — les catégories ne font qu'ajouter
@@ -457,6 +459,46 @@ l'anti-nuke :
   (retrait de rôles) — voir plus haut, c'est de toute façon peu fiable
   quand le rôle du responsable est au même niveau ou au-dessus de celui du
   bot (limite de hiérarchie Discord, aucun code ne peut la contourner).
+
+**Panel `=antifast` > "⚙️ Avancé"** (bouton du panel principal, réservé aux
+owners anti-nuke) — réglages fins en plus des owners/whitelist :
+
+- **Rôles bypass** (menu de rôles, remplace la liste entière à chaque
+  sélection) : quiconque a un de ces rôles est exempté de **tous** les
+  modules, en plus du propriétaire/des owners/de la whitelist.
+- **Catégories bypass** (menu de salons, filtré aux catégories) : les
+  salons/threads de ces catégories n'alimentent plus les modules
+  salons/catégories/threads — utile pour une catégorie où la création/
+  suppression de salons est normale (ex: tickets).
+- **⏱️ Réactivation auto** : au lieu d'un retrait de rôles permanent, choisis
+  un délai (en minutes, 0 = désactivée) après lequel les rôles retirés sont
+  automatiquement redonnés. Persisté (pas un simple minuteur en mémoire) —
+  survit à un redémarrage du bot, vérifié toutes les minutes.
+- **🎯 Configurer un module** : choisis une catégorie puis un module (les 30
+  listés en haut de cette section) pour le mettre en pause (⏸️, il n'est
+  alors plus du tout vérifié) et/ou changer son seuil (nombre d'actions +
+  délai en secondes) par rapport à la valeur par défaut — "↩️ Défaut" repart
+  du réglage d'origine.
+
+## 7quinquies. `.niv` / `.dero` / `.counter` — outils serveur
+
+Trois commandes indépendantes de l'anti-nuke, sur le préfixe `.` classique
+(délégables via `.panel` > Permissions comme le reste des commandes admin) :
+
+- **`.niv`** — panel avec un menu de rôles : choisis un rôle, puis
+  "🔄 Envoyer la liste" affiche qui a ce rôle mais n'est actuellement dans
+  **aucun** salon vocal (pratique pour repérer un staff de garde absent).
+  Lecture seule, aucune action destructrice.
+- **`.dero set @role`** / **`.dero off`** — un rôle qui reçoit
+  automatiquement l'accès (Voir le salon, Envoyer des messages, Se
+  connecter) sur **chaque nouveau salon créé** sur le serveur, sans action
+  manuelle. `.dero` seul affiche le rôle actuellement configuré.
+- **`.counter set #salon [modèle]`** / **`.counter off`** — renomme
+  périodiquement un salon (vocal ou textuel) pour y afficher le nombre de
+  membres du serveur ; `{count}` dans le modèle est remplacé par le nombre
+  (modèle par défaut : `Membres: {count}`). Mis à jour **toutes les 10
+  minutes** — Discord limite fortement la fréquence des renommages de
+  salon, une mise à jour plus rapide échouerait silencieusement.
 
 ## 8. Notes sur Components V2
 
