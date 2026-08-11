@@ -4,6 +4,7 @@ const { handleAntifastTextCommand } = require("./utils/antifastCommands");
 const { registerAntiNuke } = require("./utils/antiNuke");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const { loadGuildConfig } = require("./utils/configChannel");
+const { handleBlacklistTextCommand, checkBlacklistOnJoin } = require("./utils/blacklistCommands");
 
 const client = new Client({
   intents: [
@@ -38,10 +39,24 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
+  // Blacklist fusionnée sur ce même bot (Security) : chaque dispatcher lit
+  // son propre préfixe configuré indépendamment (voir utils/prefixStore.js),
+  // donc les deux peuvent tourner sur le même messageCreate sans conflit.
+  handleBlacklistTextCommand(client, message).catch((err) => {
+    console.error(err);
+    message
+      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
+      .catch(() => {});
+  });
 });
 
 // ---- Protection anti-nuke ("=antifast") ----
 registerAntiNuke(client);
+
+// ---- Bannissement automatique d'un membre blacklisté qui rejoint ----
+client.on("guildMemberAdd", (member) => {
+  checkBlacklistOnJoin(member).catch((err) => console.error("[blacklist] Erreur au join :", err));
+});
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);

@@ -9,7 +9,6 @@
     "start:gestion": "node gestion.js",
     "start:logs": "node logs.js",
     "start:antifast": "node antifast.js",
-    "start:blacklist": "node blacklist.js",
     "deploy:musique": "node deploy-commands.js musique",
     "deploy:gestion": "node deploy-commands.js gestion"
   },
