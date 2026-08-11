@@ -15,7 +15,7 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 // de commandes de modération dupliqué sur le bot Musique (voir
 // utils/musicModerationCommands.js) ; logs/antifast = préfixes des bots
 // dédiés (blacklist est fusionné sur le bot antifast, même préfixe).
-const DEFAULT_PREFIXES = { main: "!", dash: ".", musicMod: "?", logs: "=", antifast: "+" };
+const DEFAULT_PREFIXES = { main: "!", dash: ".", musicMod: "?", logs: "=", antifast: "+", voiceHub: "%" };
 
 let cache = null;
 

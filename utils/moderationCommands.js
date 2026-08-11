@@ -29,6 +29,7 @@ const { addReminder } = require("./reminderStore");
 const { setSupportUrl, getSupportUrl } = require("./supportStore");
 const { getBlacklistEntry } = require("./blacklistStore");
 const { addGiveaway, getGiveaway, getActiveGiveaways, markEnded } = require("./giveawayStore");
+const { announceIdentity } = require("./botIntro");
 const {
   setCategory: setTicketCategory,
   getCategory: getTicketCategory,
@@ -114,6 +115,7 @@ const DASH_ADMIN_COMMANDS = new Set([
   "reroll",
   "setchannel",
   "ticket-stats",
+  "identify",
 ]);
 
 // Retire les tokens de mention ("<@id>"/"<@!id>") d'une liste d'arguments —
@@ -2034,6 +2036,18 @@ const handlers = {
           title: "Statistiques des tickets",
         }),
       ],
+    });
+  },
+
+  async identify(client, message, args, prefix) {
+    const dash = prefix || getPrefixes(message.guild.id).dash;
+    const ok = await announceIdentity(client, message.guild, {
+      emoji: "🛠️",
+      name: "Gestion",
+      description: `Modération complète (préfixe \`${dash}\`) : sanctions (warn/mute/tempban/kick/derank), rôles, salons, contenu (poll/embed/steal), giveaways, tickets, et les commandes publiques (ping/serverinfo/afk/reminder/...). Tape \`${dash}help\` pour tout voir.`,
+    });
+    await message.reply({
+      embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Pseudo mis à jour et message envoyé." : "Pseudo mis à jour, mais aucun salon accessible pour poster le message.")],
     });
   },
 };

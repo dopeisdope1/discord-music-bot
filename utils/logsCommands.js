@@ -6,6 +6,7 @@ const { waitForHydration, saveGuildConfig } = require("./configChannel");
 const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
 const { isOwner } = require("./antiNukeStore");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { announceIdentity } = require("./botIntro");
 
 function buildLogsHelpPanel(prefix) {
   return buildHelpPanel({
@@ -17,6 +18,7 @@ function buildLogsHelpPanel(prefix) {
         lines: [
           `\`${prefix}logs\` — Choisit le salon de destination par catégorie`,
           `\`${prefix}autologs\` — Crée et configure d'un coup tous les salons de logs manquants`,
+          `\`${prefix}identify\` — Renomme le bot et poste un message expliquant son rôle`,
         ],
       },
     ],
@@ -64,10 +66,25 @@ async function autologs(client, message) {
   await message.reply({ embeds: [buildStatusEmbed("success", `**${created}** salon(s) de logs créé(s) et configuré(s).`)] });
 }
 
+async function identify(client, message) {
+  if (!isOwner(message.guild, message.author.id)) {
+    return message.reply({ embeds: [buildStatusEmbed("error", "Réservé aux owners anti-nuke de ce serveur (voir `=owner`).")] });
+  }
+  const ok = await announceIdentity(client, message.guild, {
+    emoji: "📋",
+    name: "Logs",
+    description: "Tous les journaux du serveur : modération, salons, rôles, messages édités/supprimés, vocal, arrivées/départs, AutoMod, sécurité, blacklist. Configuration via `=logs` (ou `=autologs` pour tout créer d'un coup).",
+  });
+  await message.reply({
+    embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Pseudo mis à jour et message envoyé." : "Pseudo mis à jour, mais aucun salon accessible pour poster le message.")],
+  });
+}
+
 const handlers = {
   help: (client, message, args, prefix) => message.channel.send(buildLogsHelpPanel(prefix)),
   logs: (client, message) => handleLogsCommand(message),
   autologs: (client, message) => autologs(client, message),
+  identify: (client, message) => identify(client, message),
 };
 
 /**

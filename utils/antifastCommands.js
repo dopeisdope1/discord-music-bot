@@ -18,6 +18,7 @@ const {
 const { getSecuredRoles, addSecuredRole, removeSecuredRole } = require("./securedRoleStore");
 const { getBlacklistedRoles, addBlacklistedRole, removeBlacklistedRole } = require("./roleBlacklistStore");
 const { getAllRoleLimits, setRoleLimit, removeRoleLimit } = require("./roleLimitStore");
+const { announceIdentity } = require("./botIntro");
 
 function buildAntifastHelpPanel(prefix) {
   return buildHelpPanel({
@@ -48,6 +49,7 @@ function buildAntifastHelpPanel(prefix) {
           `\`${prefix}secur add|remove @role\` / \`${prefix}secur list\` — Rôles sécurisés : repris automatiquement si donnés par un non-owner`,
           `\`${prefix}blr add|remove @membre @role\` / \`${prefix}blr list @membre\` — Interdit un rôle précis à un membre précis (toujours appliqué)`,
           `\`${prefix}limit add @role <max> <fenêtre>\` / \`${prefix}limit remove @role\` / \`${prefix}limit list\` — Plafonne les actions anti-nuke des membres ayant ce rôle`,
+          `\`${prefix}identify\` — Renomme le bot et poste un message expliquant son rôle`,
         ],
       },
     ],
@@ -264,6 +266,18 @@ async function handleLimit(message, args, prefix) {
   });
 }
 
+async function handleIdentify(client, message) {
+  if (!requireOwner(message)) return;
+  const ok = await announceIdentity(client, message.guild, {
+    emoji: "🛡️",
+    name: "Security",
+    description: "Protection anti-nuke (`=antifast`) et blacklist (`=blacklist`) : 34 modules surveillés, raccourcis anti-* (antiban/antilink/antijoin/...), rôles sécurisés (`secur`), blacklist de rôle (`blr`), limiteur d'actions (`limit`).",
+  });
+  await message.reply({
+    embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Pseudo mis à jour et message envoyé." : "Pseudo mis à jour, mais aucun salon accessible pour poster le message.")],
+  });
+}
+
 const handlers = {
   help: (client, message, args, prefix) => message.channel.send(buildAntifastHelpPanel(prefix)),
   antifast: (client, message, args) => handleAntifastCommand(message, args),
@@ -276,6 +290,7 @@ const handlers = {
   secur: (client, message, args, prefix) => handleSecur(message, args, prefix),
   blr: (client, message, args, prefix) => handleBlr(message, args, prefix),
   limit: (client, message, args, prefix) => handleLimit(message, args, prefix),
+  identify: (client, message) => handleIdentify(client, message),
 };
 for (const cmd of Object.keys(ANTI_TOGGLE_MODULES)) {
   handlers[cmd] = (client, message, args) => handleAntiToggle(message, args, cmd);

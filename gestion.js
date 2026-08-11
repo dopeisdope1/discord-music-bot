@@ -9,6 +9,7 @@ const { loadGuildConfig } = require("./utils/configChannel");
 const { getAllTempBans, removeTempBan } = require("./utils/tempBanStore");
 const { getAllReminders, removeReminder } = require("./utils/reminderStore");
 const { getAllActiveGiveaways } = require("./utils/giveawayStore");
+const { startVoiceHub } = require("./utils/voiceHubBot");
 
 const client = new Client({
   intents: [
@@ -243,3 +244,7 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 client.login(process.env.DISCORD_TOKEN);
+
+// ---- Bot Voice-Hub : seconde identité Discord dans ce même process (voir
+// utils/voiceHubBot.js) — évite un 5e service Railway.
+startVoiceHub();
