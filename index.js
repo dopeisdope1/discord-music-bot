@@ -1,10 +1,11 @@
 require("dotenv").config();
+const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionFlagsBits, AuditLogEvent } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
-const { handleMusicTextCommand } = require("./utils/musicCommands");
+const { handleTextCommand, rememberSnipe } = require("./utils/textCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const {
   startNowPlayingTracking,
@@ -14,6 +15,9 @@ const {
 } = require("./utils/musicPlayer");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
+const { randomWelcomeMessage } = require("./utils/welcomeMessages");
+const { getLogChannelId } = require("./utils/logStore");
+const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 
@@ -30,16 +34,15 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
   ],
   // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de
-  // musique contenant littéralement "@everyone"). Les mentions
-  // d'utilisateurs restent autorisées.
+  // musique ou message sniped contenant littéralement "@everyone"). Les
+  // mentions d'utilisateurs restent autorisées.
   allowedMentions: { parse: ["users"], repliedUser: true },
 });
 
-// ---- Chargement des commandes slash musique uniquement ----
-const MUSIC_COMMAND_FILES = ["play.js", "pause.js", "resume.js", "skip.js", "stop.js", "queue.js", "volume.js", "loop.js"];
+// ---- Chargement des commandes slash ----
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, "commands");
-for (const file of MUSIC_COMMAND_FILES) {
+for (const file of fs.readdirSync(commandsPath).filter((f) => f.endsWith(".js"))) {
   const command = require(path.join(commandsPath, file));
   client.commands.set(command.data.name, command);
 }
@@ -95,6 +98,9 @@ client.nowPlayingMessages = new Collection();
 
 // Stocke l'intervalle de rafraîchissement du panel (position en direct) par serveur
 client.nowPlayingIntervals = new Collection();
+
+// Stocke le dernier message supprimé par salon (commande .snipe)
+client.snipes = new Collection();
 
 // Stocke qui chaque serveur suit actuellement via !join/spotify_join (voir
 // utils/joinSpotify.js) : Map<guildId, { targetUserId, lastSyncId }>
@@ -220,6 +226,11 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
+    // Boutons non-musicaux (ex: `.panel` — "prefix_edit:*", `.ban`/`.unban`) :
+    // gérés par leur propre collector attaché au message (voir utils/prefixPanel.js
+    // et utils/banPanel.js), pas ici. Sans ce garde-fou, ce handler global
+    // répondait "Aucune musique en cours." à la place du collector dédié, qui
+    // se retrouvait ensuite avec une interaction déjà "répondue".
     if (!MUSIC_BUTTON_IDS.has(interaction.customId)) return;
 
     const player = client.kazagumo.players.get(interaction.guildId);
@@ -299,14 +310,20 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-// ---- Commandes textuelles préfixées (! par défaut, configurable via .panel sur le bot Modération) ----
+// ---- Commandes textuelles préfixées (! pour la musique, . pour la modération/membres) ----
 client.on("messageCreate", (message) => {
-  handleMusicTextCommand(client, message).catch((err) => {
+  handleTextCommand(client, message).catch((err) => {
     console.error(err);
     message
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
+});
+
+// ---- Mémorise les messages supprimés pour la commande .snipe ----
+client.on("messageDelete", (message) => {
+  if (!message.guild) return;
+  rememberSnipe(client, message.channelId, message, "deleted");
 });
 
 // ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie
@@ -351,6 +368,46 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 });
 
+// ---- Logue les changements de rôle faits "à la main" (via le profil du membre
+// ou le menu de rôles Discord natif), dans la catégorie "Logs rôles" (voir
+// .panel > Logs). Les changements faits PAR le bot (.massrole ou le raccourci
+// add/del) sont déjà logués par leurs propres handlers — on les ignore ici
+// (exécuteur = le bot dans les logs d'audit Discord) pour éviter un doublon.
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (!getLogChannelId(newMember.guild.id, "roles")) return;
+
+  const oldRoles = oldMember.roles.cache;
+  const newRoles = newMember.roles.cache;
+  const added = newRoles.filter((r) => !oldRoles.has(r.id));
+  const removed = oldRoles.filter((r) => !newRoles.has(r.id));
+  if (added.size === 0 && removed.size === 0) return;
+
+  let executor = null;
+  try {
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 5 });
+    executor = auditLogs.entries.find(
+      (entry) => entry.target?.id === newMember.id && Date.now() - entry.createdTimestamp < 10_000
+    )?.executor;
+  } catch (err) {
+    console.warn("[logs] Impossible de lire les logs d'audit pour ce changement de rôle :", err.message);
+  }
+
+  if (executor?.id === client.user.id) return;
+
+  const fields = [{ name: "Membre", value: `${newMember.user.tag} (${newMember.id})`, inline: false }];
+  if (added.size) fields.push({ name: "Ajoutés", value: added.map((r) => r.toString()).join(", "), inline: true });
+  if (removed.size) fields.push({ name: "Retirés", value: removed.map((r) => r.toString()).join(", "), inline: true });
+
+  sendLog(client, newMember.guild.id, "roles", {
+    title: "Rôle modifié (manuel)",
+    description: executor
+      ? "Changement de rôle effectué à la main."
+      : "Changement de rôle effectué à la main (exécuteur inconnu — active **View Audit Log** pour l'attribution).",
+    actor: executor ?? undefined,
+    fields,
+  });
+});
+
 // ---- Suit en direct les changements de morceau Spotify de la personne suivie
 // via !join/spotify_join, et bascule la lecture instantanément dessus ----
 client.on("presenceUpdate", async (oldPresence, newPresence) => {
@@ -390,6 +447,26 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
   }
 });
 
+// ---- Message de bienvenue pour les nouveaux membres ----
+client.on("guildMemberAdd", (member) => {
+  console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
+  const botMember = member.guild.members.me;
+  const channel =
+    member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
+    member.guild.systemChannel ||
+    member.guild.channels.cache.find(
+      (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
+    );
+  if (!channel) {
+    console.warn("[bienvenue] Aucun salon disponible pour envoyer le message.");
+    return;
+  }
+  console.log(`[bienvenue] Envoi dans #${channel.name}`);
+  channel
+    .send(`${member} ${randomWelcomeMessage()}`)
+    .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
+});
+
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
@@ -403,11 +480,11 @@ client.once("ready", () => {
       console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
     });
 
-    // Restaure le préfixe musique configuré via .panel (sur le bot
-    // Modération) : le disque du container Railway est réinitialisé à
-    // chaque redéploiement, donc sans ça le préfixe reviendrait à sa valeur
-    // par défaut à chaque push (voir utils/configChannel.js, qui sauvegarde
-    // tout ça dans un salon Discord caché partagé avec le bot Modération).
+    // Restaure les préfixes/salons de logs configurés via .panel : le disque
+    // du container Railway est réinitialisé à chaque redéploiement, donc sans
+    // ça la config choisie reviendrait aux valeurs par défaut à chaque push
+    // (voir utils/configChannel.js, qui sauvegarde tout ça dans un salon
+    // Discord caché — jamais réinitialisé, lui).
     loadGuildConfig(guild).catch((err) => {
       console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
     });
@@ -426,13 +503,18 @@ client.on("guildCreate", (guild) => {
 
 // Sans handler, Node.js termine le process instantanément sur SIGTERM (le
 // signal que Railway envoie pour arrêter l'ancien conteneur à chaque
-// redéploiement) — on laisse une courte marge pour fermer proprement la
-// connexion Lavalink/Discord plutôt que de couper en plein milieu.
+// redéploiement), sans attendre la fin des appels réseau en cours — ce qui
+// pouvait couper une sauvegarde de config (ex: préfixe tout juste changé via
+// .panel, voir utils/configChannel.js) en plein vol si un push tombait juste
+// après, faisant revenir la config à l'ancienne valeur au redémarrage.
+// Enregistrer ce handler désactive la fermeture automatique de Node : on
+// laisse ici une courte marge pour que ces requêtes Discord en cours aient le
+// temps de se terminer avant de fermer nous-mêmes proprement.
 let isShuttingDown = false;
 async function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`[shutdown] Signal ${signal} reçu, arrêt dans 3s...`);
+  console.log(`[shutdown] Signal ${signal} reçu, arrêt dans 3s (le temps que les sauvegardes en cours se terminent)...`);
   await new Promise((resolve) => setTimeout(resolve, 3000));
   client.destroy();
   process.exit(0);

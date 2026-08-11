@@ -2,14 +2,11 @@
   "name": "discord-music-bot",
   "version": "1.0.0",
   "description": "Bot Discord de musique (YouTube + Spotify via Lavalink/Kazagumo) avec panel Components V2",
-  "main": "music.js",
+  "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node music.js",
-    "start:music": "node music.js",
-    "start:moderation": "node moderation.js",
-    "deploy:music": "node deploy-commands.js music",
-    "deploy:moderation": "node deploy-commands.js moderation"
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
