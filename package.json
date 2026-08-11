@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "start:security": "node security.js",
+    "start:logs": "node logs.js",
+    "start:antifast": "node antifast.js",
+    "start:blacklist": "node blacklist.js",
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {

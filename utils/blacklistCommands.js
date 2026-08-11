@@ -4,6 +4,10 @@ const { isOwner } = require("./antiNukeStore");
 const { addToBlacklist, removeFromBlacklist, getBlacklistEntry, getBlacklist } = require("./blacklistStore");
 const { saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
+const { buildHelpPanel } = require("./helpPanels");
+
+// Préfixe fixe, non configurable : ce bot est entièrement dédié à la blacklist.
+const BLACKLIST_PREFIX = "=";
 
 /**
  * Résout un membre visé par une sous-commande blacklist : mention, ou ID brut
@@ -176,4 +180,44 @@ async function checkBlacklistOnJoin(member) {
   }
 }
 
-module.exports = { handleBlacklistCommand, checkBlacklistOnJoin };
+function buildBlacklistHelpPanel() {
+  return buildHelpPanel({
+    title: "Aide — Bot Blacklist",
+    intro: "Préfixe : `=`",
+    sections: [
+      {
+        heading: "Blacklist",
+        lines: [
+          "`=blacklist add @membre|<id> [raison]` — Ajoute à la blacklist (banni tout de suite si déjà présent, banni automatiquement à l'arrivée sinon)",
+          "`=blacklist remove @membre|<id>` — Retire de la blacklist",
+          "`=blacklist check @membre|<id>` — Vérifie si quelqu'un est blacklisté",
+          "`=blacklist list` — Liste la blacklist du serveur",
+        ],
+      },
+    ],
+    footer: "Réservé aux owners anti-nuke de ce serveur (voir `=owner` sur le bot Antifast).",
+  });
+}
+
+const dispatchHandlers = {
+  help: (client, message) => message.channel.send(buildBlacklistHelpPanel()),
+  blacklist: (client, message, args) => handleBlacklistCommand(message, args),
+};
+
+/**
+ * À appeler dans l'écouteur "messageCreate" du bot Blacklist.
+ */
+async function handleBlacklistTextCommand(client, message) {
+  if (message.author.bot || !message.guild) return;
+
+  const content = message.content.trim();
+  if (!content.startsWith(BLACKLIST_PREFIX)) return;
+
+  const [cmdRaw, ...args] = content.slice(BLACKLIST_PREFIX.length).trim().split(/\s+/);
+  const cmd = (cmdRaw || "").toLowerCase();
+  if (!dispatchHandlers[cmd]) return;
+
+  return dispatchHandlers[cmd](client, message, args);
+}
+
+module.exports = { handleBlacklistCommand, checkBlacklistOnJoin, handleBlacklistTextCommand };
