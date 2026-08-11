@@ -21,6 +21,8 @@ const {
   addWelcomeMessage,
   removeWelcomeMessage,
 } = require("./welcomeStore");
+const { getWarns, addWarn, removeWarn } = require("./warnStore");
+const { addTempBan } = require("./tempBanStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
@@ -38,7 +40,56 @@ const DASH_ADMIN_COMMANDS = new Set([
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "warn",
+  "warns",
+  "delwarn",
+  "mute",
+  "unmute",
+  "unmuteall",
+  "tempban",
+  "kick",
+  "derank",
+  "slowmode",
 ]);
+
+// Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
+// en minutes si l'unité est omise). Retourne null si le format est invalide.
+function parseDuration(input) {
+  const match = /^(\d+)\s*(s|m|h|d|j)?$/i.exec((input || "").trim());
+  if (!match) return null;
+  const amount = parseInt(match[1], 10);
+  const unit = (match[2] || "m").toLowerCase();
+  const multipliers = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000, j: 86_400_000 };
+  return amount * multipliers[unit];
+}
+
+function formatDuration(ms) {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}j`;
+}
+
+// Retire les tokens de mention ("<@id>"/"<@!id>") d'une liste d'arguments —
+// utile pour isoler la durée/raison qui suit une mention de membre.
+function stripMentionArgs(args) {
+  return args.filter((a) => !/^<@!?\d+>$/.test(a));
+}
+
+const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000; // limite native Discord
+
+// Rôles considérés "sensibles" pour `derank` : administrateur ou tout
+// pouvoir de gestion susceptible d'être utilisé pour nuire au serveur.
+const DANGEROUS_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.ManageWebhooks,
+];
 // "banall" est gérée à part (vérification dans son propre handler) : action
 // trop destructrice pour être traitée comme les autres commandes admin.
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
@@ -849,6 +900,273 @@ const handlers = {
           title: "Messages de bienvenue",
         }),
       ],
+    });
+  },
+
+  async warn(client, message, args) {
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `warn @membre [raison]`")] });
+    }
+    const reason = stripMentionArgs(args).join(" ").trim() || "Aucune raison fournie";
+    const warnEntry = addWarn(message.guild.id, target.id, { reason, moderatorId: message.author.id });
+    await saveGuildConfig(message.guild, ["warns"]);
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Avertissement",
+      description: `**${target.user.tag}** averti (#${warnEntry.id}).`,
+      actor: message.author,
+      fields: [{ name: "Raison", value: reason, inline: false }],
+    });
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${target.user.tag}** averti (#${warnEntry.id}) : ${reason}`)],
+    });
+  },
+
+  async warns(client, message) {
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `warns @membre`")] });
+    }
+    const list = getWarns(message.guild.id, target.id);
+    if (!list.length) {
+      return message.reply({ embeds: [buildStatusEmbed("info", `**${target.user.tag}** n'a aucun avertissement.`)] });
+    }
+    const lines = list
+      .map((w) => `**#${w.id}** — ${w.reason} (par <@${w.moderatorId}>, <t:${Math.floor(w.timestamp / 1000)}:R>)`)
+      .join("\n");
+    await message.reply({
+      embeds: [buildStatusEmbed("info", lines, { title: `Avertissements de ${target.user.tag} (${list.length})` })],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async delwarn(client, message, args) {
+    const target = message.mentions.members?.first();
+    const warnId = parseInt(stripMentionArgs(args)[0], 10);
+    if (!target || !Number.isInteger(warnId)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `delwarn @membre <numéro>`")] });
+    }
+    const removed = removeWarn(message.guild.id, target.id, warnId);
+    if (!removed) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Avertissement introuvable.")] });
+    }
+    await saveGuildConfig(message.guild, ["warns"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Avertissement #${warnId} retiré pour **${target.user.tag}**.`)] });
+  },
+
+  // Timeout natif Discord (pas de rôle "muted" à gérer/configurer par
+  // salon) — durée obligatoirement bornée à 28 jours par l'API elle-même.
+  async mute(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Modérer les membres**.")] });
+    }
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `mute @membre [durée] [raison]` (ex: 10m, 1h, 1j — 10 min par défaut)")],
+      });
+    }
+    if (!target.moderatable) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Je ne peux pas rendre ce membre muet (rôle trop élevé).")] });
+    }
+
+    const rest = stripMentionArgs(args);
+    const parsedDuration = parseDuration(rest[0]);
+    const durationMs = Math.min(parsedDuration ?? 10 * 60_000, MAX_TIMEOUT_MS);
+    const reason = (parsedDuration !== null ? rest.slice(1) : rest).join(" ").trim() || "Aucune raison fournie";
+
+    const ok = await target
+      .timeout(durationMs, `${reason} — par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    if (!ok) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de rendre ce membre muet (erreur Discord).")] });
+    }
+
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Mute",
+      description: `**${target.user.tag}** rendu muet pour ${formatDuration(durationMs)}.`,
+      actor: message.author,
+      fields: [{ name: "Raison", value: reason, inline: false }],
+    });
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${target.user.tag}** rendu muet pour ${formatDuration(durationMs)}.`)],
+    });
+  },
+
+  async unmute(client, message) {
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `unmute @membre`")] });
+    }
+    await target.timeout(null, `Démute par ${message.author.tag}`).catch(() => {});
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Unmute",
+      description: `**${target.user.tag}** n'est plus muet.`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${target.user.tag}** n'est plus muet.`)] });
+  },
+
+  async unmuteall(client, message) {
+    let fetchErr = null;
+    const members = await fetchAllMembers(message.guild).catch((err) => {
+      fetchErr = err;
+      return null;
+    });
+    if (!members) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", memberFetchErrorMessage(fetchErr) || "Impossible de récupérer la liste des membres, réessaie.")],
+      });
+    }
+    const muted = members.filter(
+      (m) => m.communicationDisabledUntilTimestamp && m.communicationDisabledUntilTimestamp > Date.now()
+    );
+    let success = 0;
+    for (const member of muted.values()) {
+      const ok = await member
+        .timeout(null, `Unmuteall par ${message.author.tag}`)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Unmute All",
+      description: `**${success}** membre(s) démuté(s).`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${success}** membre(s) démuté(s).`)] });
+  },
+
+  async tempban(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
+    }
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `tempban @membre <durée> [raison]` (ex: 1j, 7j)")],
+      });
+    }
+    if (!target.bannable) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Je ne peux pas bannir ce membre (rôle trop élevé).")] });
+    }
+    const rest = stripMentionArgs(args);
+    const durationMs = parseDuration(rest[0]);
+    if (!durationMs) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Durée invalide. Utilise : `tempban @membre <durée> [raison]` (ex: 1j, 7j)")],
+      });
+    }
+    const reason = rest.slice(1).join(" ").trim() || "Aucune raison fournie";
+
+    const ok = await target
+      .ban({ reason: `${reason} — par ${message.author.tag} (temporaire)` })
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    if (!ok) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de bannir ce membre (erreur Discord).")] });
+    }
+
+    addTempBan(message.guild.id, target.id, Date.now() + durationMs);
+    await saveGuildConfig(message.guild, ["tempBans"]);
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Ban temporaire",
+      description: `**${target.user.tag}** banni pour ${formatDuration(durationMs)}.`,
+      actor: message.author,
+      fields: [{ name: "Raison", value: reason, inline: false }],
+    });
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${target.user.tag}** banni pour ${formatDuration(durationMs)}.`)],
+    });
+  },
+
+  async kick(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.KickMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Expulser des membres**.")] });
+    }
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `kick @membre [raison]`")] });
+    }
+    if (!target.kickable) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Je ne peux pas expulser ce membre (rôle trop élevé).")] });
+    }
+    const reason = stripMentionArgs(args).join(" ").trim() || "Aucune raison fournie";
+    const ok = await target
+      .kick(`${reason} — par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    if (!ok) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible d'expulser ce membre (erreur Discord).")] });
+    }
+    sendLog(client, message.guild.id, "moderation", {
+      title: "Kick",
+      description: `**${target.user.tag}** expulsé.`,
+      actor: message.author,
+      fields: [{ name: "Raison", value: reason, inline: false }],
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${target.user.tag}** expulsé.`)] });
+  },
+
+  // Retire tous les rôles ayant une permission sensible (Administrateur,
+  // gestion du serveur/rôles/salons, bannir/expulser, gérer les webhooks) —
+  // utile pour neutraliser rapidement un compte compromis ou un membre qui a
+  // reçu un rôle admin par erreur.
+  async derank(client, message) {
+    const target = message.mentions.members?.first();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `derank @membre`")] });
+    }
+    const rolesToRemove = target.roles.cache.filter(
+      (r) => r.id !== message.guild.id && DANGEROUS_PERMISSIONS.some((perm) => r.permissions.has(perm))
+    );
+    if (rolesToRemove.size === 0) {
+      return message.reply({ embeds: [buildStatusEmbed("info", `**${target.user.tag}** n'a aucun rôle avec des permissions sensibles.`)] });
+    }
+    const ok = await target.roles
+      .remove(rolesToRemove, `Derank par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    if (!ok) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de retirer ces rôles (hiérarchie Discord).")] });
+    }
+    sendLog(client, message.guild.id, "roles", {
+      title: "Derank",
+      description: `**${target.user.tag}** a perdu ${rolesToRemove.size} rôle(s) sensible(s).`,
+      actor: message.author,
+      fields: [{ name: "Rôles retirés", value: rolesToRemove.map((r) => r.name).join(", "), inline: false }],
+    });
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${rolesToRemove.size}** rôle(s) sensible(s) retiré(s) à **${target.user.tag}**.`)],
+    });
+  },
+
+  async slowmode(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const seconds = parseInt(args[0], 10);
+    if (isNaN(seconds) || seconds < 0 || seconds > 21600) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `slowmode <secondes>` (0 pour désactiver, max 21600 = 6h)")],
+      });
+    }
+    await message.channel.setRateLimitPerUser(seconds).catch((err) => console.error(err));
+    await message.reply({
+      embeds: [buildStatusEmbed("success", seconds === 0 ? "Mode lent désactivé." : `Mode lent réglé sur **${seconds}s**.`)],
     });
   },
 };

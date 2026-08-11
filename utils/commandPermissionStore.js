@@ -27,6 +27,16 @@ const DELEGABLE_COMMANDS = [
   "ban",
   "unban",
   "unbanall",
+  "warn",
+  "warns",
+  "delwarn",
+  "mute",
+  "unmute",
+  "unmuteall",
+  "tempban",
+  "kick",
+  "derank",
+  "slowmode",
 ];
 
 let cache = null;

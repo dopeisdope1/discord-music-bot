@@ -6,6 +6,7 @@ const { buildStatusEmbed } = require("./utils/statusEmbed");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
+const { getAllTempBans, removeTempBan } = require("./utils/tempBanStore");
 
 const client = new Client({
   intents: [
@@ -159,6 +160,29 @@ client.on("guildCreate", (guild) => {
     console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
   });
 });
+
+// ---- Débannissement automatique des bannissements temporaires (.tempban)
+// arrivés à expiration — vérifié chaque minute plutôt qu'avec un setTimeout
+// par bannissement (qui ne survivrait pas à un redéploiement Railway).
+setInterval(async () => {
+  for (const { guildId, userId, expiresAt } of getAllTempBans()) {
+    if (Date.now() < expiresAt) continue;
+    const guild = client.guilds.cache.get(guildId);
+    removeTempBan(guildId, userId);
+    if (!guild) continue;
+    try {
+      await guild.bans.remove(userId, "Ban temporaire expiré");
+      sendLog(client, guildId, "moderation", {
+        title: "Ban temporaire expiré",
+        description: `<@${userId}> (\`${userId}\`) a été débanni automatiquement.`,
+      });
+    } catch (err) {
+      // Déjà débanni manuellement entretemps, ou permission manquante — pas
+      // grave, l'entrée est de toute façon retirée du store ci-dessus.
+      console.warn(`[tempban] Impossible de débannir ${userId} sur ${guildId} :`, err.message);
+    }
+  }
+}, 60_000);
 
 // Sans handler, Node.js termine le process instantanément sur SIGTERM (le
 // signal que Railway envoie pour arrêter l'ancien conteneur à chaque

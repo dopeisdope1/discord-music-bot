@@ -31,6 +31,16 @@ const MODERATION_COMMANDS = [
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "warn",
+  "warns",
+  "delwarn",
+  "mute",
+  "unmute",
+  "unmuteall",
+  "tempban",
+  "kick",
+  "derank",
+  "slowmode",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -55,6 +65,16 @@ function assignableCommandLine(prefix, cmd) {
     addbienvenue: `\`${prefix}addbienvenue <texte>\` — Ajoute un message de bienvenue à la liste`,
     delbienvenue: `\`${prefix}delbienvenue <numéro>\` — Retire un message (voir \`${prefix}listbienvenue\`)`,
     listbienvenue: `\`${prefix}listbienvenue\` — Liste les messages de bienvenue et le salon configuré`,
+    warn: `\`${prefix}warn @membre [raison]\` — Avertit un membre`,
+    warns: `\`${prefix}warns @membre\` — Liste les avertissements d'un membre`,
+    delwarn: `\`${prefix}delwarn @membre <numéro>\` — Retire un avertissement`,
+    mute: `\`${prefix}mute @membre [durée] [raison]\` — Rend muet (timeout natif, 10 min par défaut)`,
+    unmute: `\`${prefix}unmute @membre\` — Retire le mute`,
+    unmuteall: `\`${prefix}unmuteall\` — Démute tous les membres actuellement muets`,
+    tempban: `\`${prefix}tempban @membre <durée> [raison]\` — Bannit temporairement (déban automatique)`,
+    kick: `\`${prefix}kick @membre [raison]\` — Expulse un membre`,
+    derank: `\`${prefix}derank @membre\` — Retire tous les rôles à permissions sensibles`,
+    slowmode: `\`${prefix}slowmode <secondes>\` — Règle le mode lent du salon (0 pour désactiver)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

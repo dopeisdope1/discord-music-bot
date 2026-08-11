@@ -25,6 +25,16 @@ const ADMIN_COMMANDS = new Set([
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "warn",
+  "warns",
+  "delwarn",
+  "mute",
+  "unmute",
+  "unmuteall",
+  "tempban",
+  "kick",
+  "derank",
+  "slowmode",
 ]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
@@ -46,6 +56,16 @@ const HELP_MODERATION_COMMANDS = [
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "warn",
+  "warns",
+  "delwarn",
+  "mute",
+  "unmute",
+  "unmuteall",
+  "tempban",
+  "kick",
+  "derank",
+  "slowmode",
 ];
 
 function requireCommandAccess(message, cmd) {
