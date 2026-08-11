@@ -18,8 +18,6 @@ const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
-const { getPrefixes } = require("./utils/prefixStore");
-const { announceIdentity } = require("./utils/botIntro");
 
 const client = new Client({
   intents: [
@@ -306,28 +304,6 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.update(buildStoppedPanel());
     }
   }
-});
-
-// ---- Commande `identify` : renomme le bot et poste un message expliquant
-// son rôle, pour le distinguer des autres bots (Gestion/Logs/Security) sur
-// le serveur — volontairement gérée ici, à part de musicCommands.js et
-// musicModerationCommands.js (pas une commande de modération dupliquée).
-client.on("messageCreate", async (message) => {
-  if (message.author.bot || !message.guild) return;
-  const { main: PREFIX } = getPrefixes(message.guild.id);
-  if (message.content.trim().toLowerCase() !== `${PREFIX}identify`) return;
-  if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
-
-  const ok = await announceIdentity(client, message.guild, {
-    emoji: "🎵",
-    name: "Musique",
-    description: `Musique (préfixe \`${PREFIX}\`) : lecture, file d'attente, panel Spotify. Duplique aussi un sous-ensemble des commandes de modération de Gestion (préfixe \`&\`).`,
-  });
-  await message
-    .reply({
-      embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Pseudo mis à jour et message envoyé." : "Pseudo mis à jour, mais aucun salon accessible pour poster le message.")],
-    })
-    .catch(() => {});
 });
 
 // ---- Commandes textuelles préfixées (! par défaut, configurable via .panel/?panel) ----

@@ -1,20 +1,8 @@
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { getRawGuildData: getRawPrefixes, hydrateFromRemote: hydratePrefixes } = require("./prefixStore");
 const { getRawGuildData: getRawLogChannels, hydrateFromRemote: hydrateLogChannels } = require("./logStore");
-const { getRawGuildData: getRawAntiNuke, hydrateFromRemote: hydrateAntiNuke } = require("./antiNukeStore");
-const { getRawGuildData: getRawBlacklist, hydrateFromRemote: hydrateBlacklist } = require("./blacklistStore");
 const { getRawGuildData: getRawCommandPermissions, hydrateFromRemote: hydrateCommandPermissions } = require("./commandPermissionStore");
 const { getRawGuildData: getRawWelcome, hydrateFromRemote: hydrateWelcome } = require("./welcomeStore");
-const { getRawGuildData: getRawWarns, hydrateFromRemote: hydrateWarns } = require("./warnStore");
-const { getRawGuildData: getRawTempBans, hydrateFromRemote: hydrateTempBans } = require("./tempBanStore");
-const { getRawGuildData: getRawReminders, hydrateFromRemote: hydrateReminders } = require("./reminderStore");
-const { getRawGuildData: getRawSupport, hydrateFromRemote: hydrateSupport } = require("./supportStore");
-const { getRawGuildData: getRawGiveaways, hydrateFromRemote: hydrateGiveaways } = require("./giveawayStore");
-const { getRawGuildData: getRawTickets, hydrateFromRemote: hydrateTickets } = require("./ticketStore");
-const { getRawGuildData: getRawSecuredRoles, hydrateFromRemote: hydrateSecuredRoles } = require("./securedRoleStore");
-const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
-const { getRawGuildData: getRawRoleLimits, hydrateFromRemote: hydrateRoleLimits } = require("./roleLimitStore");
-const { getRawGuildData: getRawStaffRoles, hydrateFromRemote: hydrateStaffRoles } = require("./staffRoleStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, salons de logs, config antifast,
@@ -34,38 +22,14 @@ const CONFIG_CHANNEL_NAME = "zinki-config";
 const CATEGORY_GETTERS = {
   prefixes: getRawPrefixes,
   logChannels: getRawLogChannels,
-  antiNuke: getRawAntiNuke,
-  blacklist: getRawBlacklist,
   commandPermissions: getRawCommandPermissions,
   welcome: getRawWelcome,
-  warns: getRawWarns,
-  tempBans: getRawTempBans,
-  reminders: getRawReminders,
-  support: getRawSupport,
-  giveaways: getRawGiveaways,
-  tickets: getRawTickets,
-  securedRoles: getRawSecuredRoles,
-  roleBlacklist: getRawRoleBlacklist,
-  roleLimits: getRawRoleLimits,
-  staffRoles: getRawStaffRoles,
 };
 const CATEGORY_HYDRATORS = {
   prefixes: hydratePrefixes,
   logChannels: hydrateLogChannels,
-  antiNuke: hydrateAntiNuke,
-  blacklist: hydrateBlacklist,
   commandPermissions: hydrateCommandPermissions,
   welcome: hydrateWelcome,
-  warns: hydrateWarns,
-  tempBans: hydrateTempBans,
-  reminders: hydrateReminders,
-  support: hydrateSupport,
-  giveaways: hydrateGiveaways,
-  tickets: hydrateTickets,
-  securedRoles: hydrateSecuredRoles,
-  roleBlacklist: hydrateRoleBlacklist,
-  roleLimits: hydrateRoleLimits,
-  staffRoles: hydrateStaffRoles,
 };
 const ALL_CATEGORIES = Object.keys(CATEGORY_GETTERS);
 
@@ -155,10 +119,9 @@ function loadGuildConfig(guild) {
 /**
  * À appeler après chaque changement de config pour sauvegarder l'état actuel
  * dans le salon de config Discord, en plus du fichier local. `categories`
- * précise QUELLES catégories ce bot possède/modifie (ex: `["prefixes"]` pour
- * le bot Musique+Modération, `["logChannels"]`/`["antiNuke"]`/`["blacklist"]`
- * pour le bot Sécurité) — écrire uniquement ce que ce bot possède évite qu'un
- * bot écrase la valeur plus fraîche d'un autre avec une copie obsolète.
+ * précise QUELLES catégories ce bot possède/modifie (ex: `["prefixes"]`) —
+ * écrire uniquement ce que ce bot possède évite qu'un bot écrase la valeur
+ * plus fraîche d'un autre avec une copie obsolète.
  * @param {import('discord.js').Guild} guild
  * @param {string[]} categories
  */

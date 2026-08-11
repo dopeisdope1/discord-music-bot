@@ -14,13 +14,7 @@ const DATA_FILE = path.join(DATA_DIR, "commandPermissions.json");
 // `?panel` > Permissions. Volontairement exclues : `panel` (accès à la
 // config elle-même) et `banall` (trop destructrice, voir
 // utils/moderationCommands.js — déjà soumise à l'autorisation du
-// propriétaire). Les commandes de gestion de salons/rôles ajoutées ensuite
-// (addrole/delrole/category/newsalon/delsalon/rename/topic/nsfw/voicemove/
-// rolemembers/lockall/hideall/unlockall/unhideall) ne sont volontairement
-// PAS incluses ici : le StringSelectMenu de la page Permissions est limité à
-// 25 options Discord, et cette liste est déjà à 21 — à revisiter (pagination
-// ou sous-catégories) si la délégation de ces commandes est explicitement
-// demandée.
+// propriétaire).
 const DELEGABLE_COMMANDS = [
   "clear",
   "renew",
@@ -33,16 +27,6 @@ const DELEGABLE_COMMANDS = [
   "ban",
   "unban",
   "unbanall",
-  "warn",
-  "warns",
-  "delwarn",
-  "mute",
-  "unmute",
-  "unmuteall",
-  "tempban",
-  "kick",
-  "derank",
-  "slowmode",
 ];
 
 let cache = null;

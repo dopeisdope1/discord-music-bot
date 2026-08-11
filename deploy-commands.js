@@ -2,17 +2,14 @@ require("dotenv").config();
 const path = require("path");
 const { REST, Routes } = require("discord.js");
 
-// Musique et Gestion sont deux applications Discord distinctes — chacune ne
-// déploie que ses propres commandes slash. Voir index.js et gestion.js pour
-// les mêmes listes de fichiers.
+// Voir index.js pour la même liste de fichiers.
 const BOT_COMMAND_FILES = {
   musique: ["play.js", "pause.js", "resume.js", "skip.js", "stop.js", "queue.js", "volume.js", "loop.js"],
-  gestion: ["ban.js", "unban.js"],
 };
 
 const target = process.argv[2];
 if (!BOT_COMMAND_FILES[target]) {
-  console.error("Utilisation : node deploy-commands.js musique|gestion");
+  console.error("Utilisation : node deploy-commands.js musique");
   console.error("(Assure-toi que DISCORD_TOKEN/CLIENT_ID dans .env correspondent bien au bot ciblé.)");
   process.exit(1);
 }
