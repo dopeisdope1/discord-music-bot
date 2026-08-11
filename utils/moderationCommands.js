@@ -13,6 +13,7 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { searchGif } = require("./gifSearch");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
+const { getBotOwnerIds } = require("./antiNukeStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
@@ -133,6 +134,88 @@ async function executeBanAll(client, message, statusMessage) {
       })
       .catch(() => {});
   }
+}
+
+/**
+ * Envoyée quand un administrateur qui n'est ni le propriétaire réel du
+ * serveur ni un propriétaire du bot (BOT_OWNER_IDS) tape `.banall`/`?banall` :
+ * ping le propriétaire réel ET tous les propriétaires du bot, avec des
+ * boutons Autoriser/Refuser. Seul l'un d'eux peut répondre ; un "autoriser"
+ * exécute directement le bannissement (le clic fait office de confirmation).
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Message} message
+ */
+async function requestBanAllAuthorization(client, message) {
+  const guild = message.guild;
+  const approverIds = [guild.ownerId, ...getBotOwnerIds().filter((id) => id !== guild.ownerId)];
+  const isApprover = (userId) => userId === guild.ownerId || getBotOwnerIds().includes(userId);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("banall_auth:accept").setLabel("Autoriser").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId("banall_auth:deny").setLabel("Refuser").setStyle(ButtonStyle.Secondary)
+  );
+
+  const authMessage = await message.reply({
+    content: approverIds.map((id) => `<@${id}>`).join(" "),
+    embeds: [
+      buildStatusEmbed(
+        "warning",
+        `**${message.author.tag}** veut exécuter un bannissement complet (bannir **tous les membres humains** du serveur). Autorises-tu ?`
+      ),
+    ],
+    components: [row],
+    allowedMentions: { users: approverIds },
+  });
+
+  sendLog(client, guild.id, "moderation", {
+    title: "Demande d'autorisation banall",
+    description: `**${message.author.tag}** a demandé à exécuter un bannissement complet.`,
+    actor: message.author,
+  });
+
+  const collector = authMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
+
+  collector.on("collect", async (i) => {
+    try {
+      if (!isApprover(i.user.id)) {
+        await i.reply({
+          content: "Seul le propriétaire du serveur (ou du bot) peut répondre à cette demande.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (i.customId === "banall_auth:deny") {
+        await i.update({ content: null, embeds: [buildStatusEmbed("info", `Refusé par **${i.user.tag}**.`)], components: [] });
+        sendLog(client, guild.id, "moderation", {
+          title: "Demande banall refusée",
+          description: `**${i.user.tag}** a refusé la demande de **${message.author.tag}**.`,
+          actor: i.user,
+        });
+        return;
+      }
+
+      await i.update({
+        content: null,
+        embeds: [buildStatusEmbed("warning", `Autorisé par **${i.user.tag}** — bannissement en cours...`)],
+        components: [],
+      });
+      sendLog(client, guild.id, "moderation", {
+        title: "Demande banall autorisée",
+        description: `**${i.user.tag}** a autorisé la demande de **${message.author.tag}**.`,
+        actor: i.user,
+      });
+      await executeBanAll(client, message, authMessage);
+    } catch (err) {
+      console.error("[banall] Erreur sur la demande d'autorisation :", err);
+    }
+  });
+
+  collector.on("end", (collected) => {
+    if (collected.size === 0) {
+      authMessage.edit({ content: null, embeds: [buildStatusEmbed("warning", "Demande expirée.")], components: [] }).catch(() => {});
+    }
+  });
 }
 
 const handlers = {
@@ -268,7 +351,9 @@ const handlers = {
   // Bannit tous les membres bannissables du serveur (hors bots et hors
   // l'auteur lui-même — pour ne pas se verrouiller dehors sans pouvoir
   // confirmer/annuler ni faire `.unbanall` derrière). Action extrêmement
-  // destructrice : réservée aux administrateurs natifs, jamais délégable.
+  // destructrice : réservée aux administrateurs natifs (canUseCommand), et
+  // en plus soumise à l'autorisation du propriétaire réel du serveur (ou du
+  // bot) si l'auteur n'est ni l'un ni l'autre — voir requestBanAllAuthorization.
   async banall(client, message) {
     if (!canUseCommand(message, "banall")) {
       return message.reply({
@@ -277,6 +362,11 @@ const handlers = {
     }
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
+    }
+
+    const isTopAuthority = message.author.id === message.guild.ownerId || getBotOwnerIds().includes(message.author.id);
+    if (!isTopAuthority) {
+      return requestBanAllAuthorization(client, message);
     }
 
     const confirmRow = new ActionRowBuilder().addComponents(
