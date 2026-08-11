@@ -79,7 +79,7 @@ async function handleMusicModerationTextCommand(client, message) {
   const SELF_CLEAR_TRIGGERS = new Set(["uo clear", "clear me", "anas clear", "yanis clear"]);
   const lowerContent = content.toLowerCase();
   if (SELF_CLEAR_TRIGGERS.has(lowerContent)) {
-    return handlers.clear(client, message, ["me"]);
+    return handlers.clear(client, message, ["me"], PREFIX);
   }
 
   const addDelMatch = content.match(/^(add|del)\s+(.+)$/i);
@@ -113,15 +113,15 @@ async function handleMusicModerationTextCommand(client, message) {
     return sendDashHelpPanel(message, PREFIX, { includePublic: false, moderationCommands: HELP_MODERATION_COMMANDS });
   }
   if (cmd === "clear") {
-    return handlers.clear(client, message, args);
+    return handlers.clear(client, message, args, PREFIX);
   }
   if (BAN_COMMANDS.has(cmd)) {
     if (!requireCommandAccess(message, cmd)) return;
-    return handlers[cmd](client, message, args);
+    return handlers[cmd](client, message, args, PREFIX);
   }
   if (!COMMANDS.has(cmd)) return;
   if (ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
-  return handlers[cmd](client, message, args);
+  return handlers[cmd](client, message, args, PREFIX);
 }
 
 module.exports = { handleMusicModerationTextCommand };

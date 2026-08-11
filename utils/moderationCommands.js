@@ -239,7 +239,7 @@ async function requestBanAllAuthorization(client, message) {
 }
 
 const handlers = {
-  async clear(client, message, args) {
+  async clear(client, message, args, prefix) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")],
@@ -312,7 +312,7 @@ const handlers = {
       }
       const amount = parseInt(rawArg, 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-        const { dash } = getPrefixes(message.guild.id);
+        const dash = prefix || getPrefixes(message.guild.id).dash;
         return sendTempReply(
           channel,
           {
@@ -625,7 +625,7 @@ const handlers = {
     });
   },
 
-  async massrole(client, message, args) {
+  async massrole(client, message, args, prefix) {
     const action = (args[0] || "").toLowerCase();
     const roleArg = (args[1] || "").replace(/[<>]/g, "");
     const role =
@@ -635,7 +635,7 @@ const handlers = {
         : null);
 
     if (!["add", "remove"].includes(action) || !role) {
-      const { dash } = getPrefixes(message.guild.id);
+      const dash = prefix || getPrefixes(message.guild.id).dash;
       return message.reply({
         embeds: [
           buildStatusEmbed(
@@ -724,10 +724,10 @@ const handlers = {
     });
   },
 
-  async gif(client, message, args) {
+  async gif(client, message, args, prefix) {
     const query = args.join(" ");
     if (!query) {
-      const { dash } = getPrefixes(message.guild.id);
+      const dash = prefix || getPrefixes(message.guild.id).dash;
       return message.reply({ embeds: [buildStatusEmbed("error", `Indique une recherche. Ex : \`${dash}gif chat\``)] });
     }
     try {
@@ -742,7 +742,7 @@ const handlers = {
     }
   },
 
-  async create(client, message, args) {
+  async create(client, message, args, prefix) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuildExpressions)) {
       return message.reply({
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les expressions du serveur**.")],
@@ -754,7 +754,7 @@ const handlers = {
     const source = attachment?.url || args[1];
 
     if (!name || !/^[a-zA-Z0-9_]{2,32}$/.test(name) || !source) {
-      const { dash } = getPrefixes(message.guild.id);
+      const dash = prefix || getPrefixes(message.guild.id).dash;
       return message.reply({
         embeds: [
           buildStatusEmbed(
@@ -794,10 +794,10 @@ const handlers = {
     });
   },
 
-  async addbienvenue(client, message, args) {
+  async addbienvenue(client, message, args, prefix) {
     const text = args.join(" ").trim();
     if (!text) {
-      const { dash } = getPrefixes(message.guild.id);
+      const dash = prefix || getPrefixes(message.guild.id).dash;
       return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}addbienvenue <texte>\``)] });
     }
     const count = addWelcomeMessage(message.guild.id, text);
@@ -805,10 +805,10 @@ const handlers = {
     await message.reply({ embeds: [buildStatusEmbed("success", `Message de bienvenue #${count} ajouté : "${text}"`)] });
   },
 
-  async delbienvenue(client, message, args) {
+  async delbienvenue(client, message, args, prefix) {
     const index = parseInt(args[0], 10);
     if (!Number.isInteger(index)) {
-      const { dash } = getPrefixes(message.guild.id);
+      const dash = prefix || getPrefixes(message.guild.id).dash;
       return message.reply({
         embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}delbienvenue <numéro>\` (voir \`${dash}listbienvenue\`)`)],
       });
@@ -869,7 +869,7 @@ async function handleModerationTextCommand(client, message) {
   const SELF_CLEAR_TRIGGERS = new Set(["uo clear", "clear me", "anas clear", "yanis clear"]);
   const lowerContent = content.toLowerCase();
   if (SELF_CLEAR_TRIGGERS.has(lowerContent)) {
-    return handlers.clear(client, message, ["me"]);
+    return handlers.clear(client, message, ["me"], DASH_PREFIX);
   }
 
   // Déclencheur spécial sans préfixe : "add <rôle>" / "del <rôle>" en
@@ -911,15 +911,15 @@ async function handleModerationTextCommand(client, message) {
   if (cmd === "clear") {
     // Permission gérée dans le handler : dépend de la cible (soi-même,
     // quelqu'un d'autre, ou un nombre).
-    return handlers.clear(client, message, args);
+    return handlers.clear(client, message, args, DASH_PREFIX);
   }
   if (BAN_COMMANDS.has(cmd)) {
     if (!requireCommandAccess(message, cmd)) return;
-    return handlers[cmd](client, message, args);
+    return handlers[cmd](client, message, args, DASH_PREFIX);
   }
   if (!DASH_COMMANDS.has(cmd)) return;
   if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
-  return handlers[cmd](client, message, args);
+  return handlers[cmd](client, message, args, DASH_PREFIX);
 }
 
 module.exports = { handleModerationTextCommand, rememberSnipe, handlers };
