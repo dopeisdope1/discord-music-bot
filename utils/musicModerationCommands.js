@@ -13,13 +13,40 @@ const { sendDashHelpPanel } = require("./helpPanels");
 // "comme au début", en plus du bot Gestion dédié. Sous-ensemble volontaire :
 // pas de pic/avatar/snipe/gif/create ici (ceux-là restent uniquement sur
 // Gestion).
-const ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel"]);
+const ADMIN_COMMANDS = new Set([
+  "renew",
+  "hide",
+  "unhide",
+  "lock",
+  "unlock",
+  "massrole",
+  "panel",
+  "setbienvenue",
+  "addbienvenue",
+  "delbienvenue",
+  "listbienvenue",
+]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
 // Pour `?help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
 // ci-dessus (add/del inclus, sans préfixe), sans "create" qui n'existe pas
 // sur ce bot.
-const HELP_MODERATION_COMMANDS = ["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "clear", "add", "del"];
+const HELP_MODERATION_COMMANDS = [
+  "renew",
+  "hide",
+  "unhide",
+  "lock",
+  "unlock",
+  "massrole",
+  "panel",
+  "clear",
+  "add",
+  "del",
+  "setbienvenue",
+  "addbienvenue",
+  "delbienvenue",
+  "listbienvenue",
+];
 
 function requireCommandAccess(message, cmd) {
   if (!canUseCommand(message, cmd)) {

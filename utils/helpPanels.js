@@ -15,13 +15,29 @@ const HELP_TIMEOUT_MS = 5 * 60_000;
 // Commandes de modération gardées, gérées via canUseCommand (Administrateur
 // natif, ou permission Discord native "Bannir des membres" pour ban/unban/
 // unbanall uniquement — voir utils/permissions.js).
-const MODERATION_COMMANDS = ["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create", "clear", "add", "del"];
+const MODERATION_COMMANDS = [
+  "renew",
+  "hide",
+  "unhide",
+  "lock",
+  "unlock",
+  "massrole",
+  "panel",
+  "create",
+  "clear",
+  "add",
+  "del",
+  "setbienvenue",
+  "addbienvenue",
+  "delbienvenue",
+  "listbienvenue",
+];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
 // Description affichée par commande dans `.help`.
 function assignableCommandLine(prefix, cmd) {
   const lines = {
-    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs)`,
+    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions)`,
     renew: `\`${prefix}renew\` — Recrée le salon (vide)`,
     hide: `\`${prefix}hide\` — Cache le salon à @everyone`,
     unhide: `\`${prefix}unhide\` — Affiche le salon à @everyone`,
@@ -35,6 +51,10 @@ function assignableCommandLine(prefix, cmd) {
     unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
     unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
     clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
+    setbienvenue: `\`${prefix}setbienvenue\` — Envoie les messages de bienvenue dans ce salon`,
+    addbienvenue: `\`${prefix}addbienvenue <texte>\` — Ajoute un message de bienvenue à la liste`,
+    delbienvenue: `\`${prefix}delbienvenue <numéro>\` — Retire un message (voir \`${prefix}listbienvenue\`)`,
+    listbienvenue: `\`${prefix}listbienvenue\` — Liste les messages de bienvenue et le salon configuré`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

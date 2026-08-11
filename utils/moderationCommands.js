@@ -6,7 +6,7 @@ const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
-const { waitForHydration } = require("./configChannel");
+const { waitForHydration, saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
@@ -14,11 +14,31 @@ const { randomClearJoke } = require("./jokes");
 const { searchGif } = require("./gifSearch");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
 const { getBotOwnerIds } = require("./antiNukeStore");
+const {
+  setWelcomeChannel,
+  getWelcomeChannel,
+  getWelcomeMessages,
+  addWelcomeMessage,
+  removeWelcomeMessage,
+} = require("./welcomeStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
-const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
+const DASH_ADMIN_COMMANDS = new Set([
+  "renew",
+  "hide",
+  "unhide",
+  "lock",
+  "unlock",
+  "massrole",
+  "panel",
+  "create",
+  "setbienvenue",
+  "addbienvenue",
+  "delbienvenue",
+  "listbienvenue",
+]);
 // "banall" est gérée à part (vérification dans son propre handler) : action
 // trop destructrice pour être traitée comme les autres commandes admin.
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
@@ -763,6 +783,57 @@ const handlers = {
         ],
       });
     }
+  },
+
+  // Configure le salon de bienvenue : celui où la commande est tapée.
+  async setbienvenue(client, message) {
+    setWelcomeChannel(message.guild.id, message.channel.id);
+    await saveGuildConfig(message.guild, ["welcome"]);
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `Les messages de bienvenue seront envoyés ici (${message.channel}).`)],
+    });
+  },
+
+  async addbienvenue(client, message, args) {
+    const text = args.join(" ").trim();
+    if (!text) {
+      const { dash } = getPrefixes(message.guild.id);
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}addbienvenue <texte>\``)] });
+    }
+    const count = addWelcomeMessage(message.guild.id, text);
+    await saveGuildConfig(message.guild, ["welcome"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Message de bienvenue #${count} ajouté : "${text}"`)] });
+  },
+
+  async delbienvenue(client, message, args) {
+    const index = parseInt(args[0], 10);
+    if (!Number.isInteger(index)) {
+      const { dash } = getPrefixes(message.guild.id);
+      return message.reply({
+        embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}delbienvenue <numéro>\` (voir \`${dash}listbienvenue\`)`)],
+      });
+    }
+    const removed = removeWelcomeMessage(message.guild.id, index);
+    if (!removed) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Numéro invalide.")] });
+    }
+    await saveGuildConfig(message.guild, ["welcome"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Message retiré : "${removed}"`)] });
+  },
+
+  async listbienvenue(client, message) {
+    const channelId = getWelcomeChannel(message.guild.id);
+    const messages = getWelcomeMessages(message.guild.id);
+    const lines = messages.length
+      ? messages.map((m, i) => `${i + 1}. ${m}`).join("\n")
+      : "*Aucun message personnalisé — les messages par défaut sont utilisés.*";
+    await message.reply({
+      embeds: [
+        buildStatusEmbed("info", `**Salon :** ${channelId ? `<#${channelId}>` : "*non configuré — voir \`setbienvenue\`*"}\n\n${lines}`, {
+          title: "Messages de bienvenue",
+        }),
+      ],
+    });
   },
 };
 

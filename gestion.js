@@ -3,7 +3,7 @@ const path = require("path");
 const { Client, GatewayIntentBits, Collection, PermissionFlagsBits, AuditLogEvent } = require("discord.js");
 const { handleModerationTextCommand, rememberSnipe } = require("./utils/moderationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-const { randomWelcomeMessage } = require("./utils/welcomeMessages");
+const { getWelcomeChannel, getRandomWelcomeMessage } = require("./utils/welcomeStore");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
@@ -137,7 +137,9 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 client.on("guildMemberAdd", (member) => {
   console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
   const botMember = member.guild.members.me;
+  const configuredChannelId = getWelcomeChannel(member.guild.id);
   const channel =
+    (configuredChannelId && member.guild.channels.cache.get(configuredChannelId)) ||
     member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
     member.guild.systemChannel ||
     member.guild.channels.cache.find(
@@ -149,7 +151,7 @@ client.on("guildMemberAdd", (member) => {
   }
   console.log(`[bienvenue] Envoi dans #${channel.name}`);
   channel
-    .send(`${member} ${randomWelcomeMessage()}`)
+    .send(`${member} ${getRandomWelcomeMessage(member.guild.id)}`)
     .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
 });
 
