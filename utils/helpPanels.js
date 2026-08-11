@@ -76,6 +76,11 @@ const MODERATION_COMMANDS = [
   "setsupport",
   "support",
   "blinfo",
+  "giveaway",
+  "gcancel",
+  "gend",
+  "glist",
+  "reroll",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -145,6 +150,11 @@ function assignableCommandLine(prefix, cmd) {
     setsupport: `\`${prefix}setsupport <url>\` — Définit le lien de support du serveur`,
     support: `\`${prefix}support\` — Affiche le lien de support`,
     blinfo: `\`${prefix}blinfo [@membre]\` — Vérifie si un membre est blacklist`,
+    giveaway: `\`${prefix}giveaway <durée> <gagnants> <prix>\` — Lance un giveaway (réaction 🎉)`,
+    gcancel: `\`${prefix}gcancel <id>\` — Annule un giveaway en cours`,
+    gend: `\`${prefix}gend <id>\` — Termine un giveaway immédiatement`,
+    glist: `\`${prefix}glist\` — Liste les giveaways en cours`,
+    reroll: `\`${prefix}reroll <id>\` — Retire un nouveau gagnant`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

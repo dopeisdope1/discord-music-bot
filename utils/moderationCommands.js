@@ -27,6 +27,7 @@ const { setAfk, getAfk, clearAfk } = require("./afkStore");
 const { addReminder } = require("./reminderStore");
 const { setSupportUrl, getSupportUrl } = require("./supportStore");
 const { getBlacklistEntry } = require("./blacklistStore");
+const { addGiveaway, getGiveaway, getActiveGiveaways, markEnded } = require("./giveawayStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set([
@@ -49,6 +50,7 @@ const DASH_MEMBER_COMMANDS = new Set([
   "translate",
   "support",
   "blinfo",
+  "glist",
 ]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set([
@@ -94,6 +96,10 @@ const DASH_ADMIN_COMMANDS = new Set([
   "export-emojis",
   "say",
   "setsupport",
+  "giveaway",
+  "gcancel",
+  "gend",
+  "reroll",
 ]);
 
 // Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
@@ -1849,6 +1855,105 @@ const handlers = {
       allowedMentions: { parse: [] },
     });
   },
+
+  async giveaway(client, message, args, prefix) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les messages**.")] });
+    }
+    const [durationRaw, winnersRaw, ...prizeParts] = args;
+    const ms = parseDuration(durationRaw);
+    const winnerCount = parseInt(winnersRaw, 10);
+    const prize = prizeParts.join(" ").trim();
+    if (!ms || !Number.isInteger(winnerCount) || winnerCount < 1 || !prize) {
+      const dash = prefix || getPrefixes(message.guild.id).dash;
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            `Utilisation : \`${dash}giveaway <durée> <nombre de gagnants> <prix>\` (ex : \`${dash}giveaway 1h 1 Nitro\`)`
+          ),
+        ],
+      });
+    }
+    const endAt = Date.now() + ms;
+    const embed = new EmbedBuilder()
+      .setTitle(`🎉 ${prize}`)
+      .setDescription(
+        `Réagis avec 🎉 pour participer !\n**Gagnant(s) :** ${winnerCount}\n**Fin :** <t:${Math.floor(
+          endAt / 1000
+        )}:R>\n**Organisé par :** ${message.author}`
+      );
+    const sent = await message.channel.send({ embeds: [embed] });
+    await sent.react("🎉").catch(() => {});
+    addGiveaway(message.guild.id, {
+      channelId: message.channel.id,
+      messageId: sent.id,
+      prize,
+      winnerCount,
+      endAt,
+      hostId: message.author.id,
+    });
+    await saveGuildConfig(message.guild, ["giveaways"]);
+    await message.delete().catch(() => {});
+  },
+
+  async gcancel(client, message, args) {
+    const giveaway = getGiveaway(message.guild.id, args[0]);
+    if (!giveaway || giveaway.ended) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `gcancel <id>` (voir `glist`)")] });
+    }
+    markEnded(message.guild.id, giveaway.id);
+    const channel = message.guild.channels.cache.get(giveaway.channelId);
+    const msg = channel ? await channel.messages.fetch(giveaway.messageId).catch(() => null) : null;
+    if (msg) {
+      await msg.edit({ embeds: [buildStatusEmbed("error", `🎉 ${giveaway.prize} — Annulé`)] }).catch(() => {});
+    }
+    await message.reply({ embeds: [buildStatusEmbed("success", "Giveaway annulé.")] });
+  },
+
+  async gend(client, message, args) {
+    const giveaway = getGiveaway(message.guild.id, args[0]);
+    if (!giveaway || giveaway.ended) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `gend <id>` (voir `glist`)")] });
+    }
+    await endGiveaway(client, message.guild.id, giveaway.id);
+    await message.reply({ embeds: [buildStatusEmbed("success", "Giveaway terminé.")] });
+  },
+
+  async glist(client, message) {
+    const active = getActiveGiveaways(message.guild.id);
+    if (!active.length) {
+      return message.reply({ embeds: [buildStatusEmbed("info", "Aucun giveaway en cours.")] });
+    }
+    const lines = active.map(
+      (g) => `**#${g.id}** — ${g.prize} (${g.winnerCount} gagnant(s), fin <t:${Math.floor(g.endAt / 1000)}:R>) dans <#${g.channelId}>`
+    );
+    await message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Giveaways en cours" })] });
+  },
+
+  async reroll(client, message, args) {
+    const giveaway = getGiveaway(message.guild.id, args[0]);
+    if (!giveaway || !giveaway.ended) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `reroll <id>` sur un giveaway déjà terminé.")] });
+    }
+    const channel = message.guild.channels.cache.get(giveaway.channelId);
+    const msg = channel ? await channel.messages.fetch(giveaway.messageId).catch(() => null) : null;
+    if (!msg) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Message du giveaway introuvable (supprimé ?).")] });
+    }
+    const reaction = msg.reactions.cache.get("🎉");
+    const users = reaction ? await reaction.users.fetch().catch(() => null) : null;
+    const entrants = users ? [...users.values()].filter((u) => !u.bot) : [];
+    if (!entrants.length) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Personne n'a participé à ce giveaway.")] });
+    }
+    const winner = entrants[Math.floor(Math.random() * entrants.length)];
+    await message.channel.send({
+      content: `${winner}`,
+      embeds: [buildStatusEmbed("success", `Nouveau gagnant pour **${giveaway.prize}** : ${winner} !`)],
+      allowedMentions: { parse: ["users"] },
+    });
+  },
 };
 
 /**
@@ -1876,6 +1981,63 @@ function rememberEditSnipe(client, channelId, oldMessage, newMessage) {
     authorTag: oldMessage.author.tag,
     timestamp: Date.now(),
   });
+}
+
+/**
+ * Termine un giveaway (tirage au sort parmi les réactions 🎉, message mis à
+ * jour, résultat annoncé) — appelée à la fois par le handler `gend` et par
+ * le vérificateur périodique (voir gestion.js) pour les giveaways arrivés à
+ * échéance.
+ * @param {import('discord.js').Client} client
+ * @param {string} guildId
+ * @param {number} giveawayId
+ */
+async function endGiveaway(client, guildId, giveawayId) {
+  const giveaway = getGiveaway(guildId, giveawayId);
+  if (!giveaway || giveaway.ended) return null;
+  markEnded(guildId, giveaway.id);
+
+  const channel = client.channels.cache.get(giveaway.channelId);
+  if (!channel) return null;
+  const msg = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+
+  let winners = [];
+  if (msg) {
+    const reaction = msg.reactions.cache.get("🎉");
+    const users = reaction ? await reaction.users.fetch().catch(() => null) : null;
+    const pool = users ? [...users.values()].filter((u) => !u.bot) : [];
+    for (let i = 0; i < giveaway.winnerCount && pool.length; i++) {
+      winners.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+  }
+
+  const resultText = winners.length ? winners.map((w) => `<@${w.id}>`).join(", ") : "Personne n'a participé.";
+  if (msg) {
+    await msg
+      .edit({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle(`🎉 ${giveaway.prize} — Terminé`)
+            .setDescription(`**Gagnant(s) :** ${resultText}\n**Organisé par :** <@${giveaway.hostId}>`),
+        ],
+      })
+      .catch(() => {});
+  }
+  await channel
+    .send({
+      content: winners.length ? winners.map((w) => `<@${w.id}>`).join(", ") : undefined,
+      embeds: [
+        buildStatusEmbed(
+          "success",
+          winners.length
+            ? `Félicitations ${resultText} ! Vous remportez **${giveaway.prize}**.`
+            : `Personne n'a participé au giveaway **${giveaway.prize}**.`
+        ),
+      ],
+      allowedMentions: { parse: ["users"] },
+    })
+    .catch(() => {});
+  return winners;
 }
 
 /**
@@ -1974,4 +2136,4 @@ async function handleModerationTextCommand(client, message) {
   return handlers[cmd](client, message, args, DASH_PREFIX);
 }
 
-module.exports = { handleModerationTextCommand, rememberSnipe, rememberEditSnipe, handlers };
+module.exports = { handleModerationTextCommand, rememberSnipe, rememberEditSnipe, endGiveaway, handlers };

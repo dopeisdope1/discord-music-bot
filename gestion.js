@@ -1,13 +1,14 @@
 require("dotenv").config();
 const path = require("path");
 const { Client, GatewayIntentBits, Collection, AuditLogEvent } = require("discord.js");
-const { handleModerationTextCommand, rememberSnipe, rememberEditSnipe } = require("./utils/moderationCommands");
+const { handleModerationTextCommand, rememberSnipe, rememberEditSnipe, endGiveaway } = require("./utils/moderationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
 const { getAllTempBans, removeTempBan } = require("./utils/tempBanStore");
 const { getAllReminders, removeReminder } = require("./utils/reminderStore");
+const { getAllActiveGiveaways } = require("./utils/giveawayStore");
 
 const client = new Client({
   intents: [
@@ -206,6 +207,17 @@ setInterval(() => {
         embeds: [buildStatusEmbed("info", reminder.text, { title: "⏰ Rappel" })],
       })
       .catch(() => {});
+  }
+}, 60_000);
+
+// ---- Tirage au sort automatique des giveaways arrivés à échéance
+// (.giveaway) — même logique de vérification périodique que ci-dessus.
+setInterval(async () => {
+  for (const giveaway of getAllActiveGiveaways()) {
+    if (Date.now() < giveaway.endAt) continue;
+    await endGiveaway(client, giveaway.guildId, giveaway.id).catch((err) =>
+      console.warn(`[giveaway] Impossible de terminer le giveaway #${giveaway.id} sur ${giveaway.guildId} :`, err.message)
+    );
   }
 }, 60_000);
 
