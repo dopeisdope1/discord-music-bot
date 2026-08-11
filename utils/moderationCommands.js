@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require("discord.js");
 const { sendDashHelpPanel } = require("./helpPanels");
 const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
@@ -50,6 +50,20 @@ const DASH_ADMIN_COMMANDS = new Set([
   "kick",
   "derank",
   "slowmode",
+  "addrole",
+  "delrole",
+  "category",
+  "newsalon",
+  "delsalon",
+  "rename",
+  "topic",
+  "nsfw",
+  "voicemove",
+  "rolemembers",
+  "lockall",
+  "hideall",
+  "unlockall",
+  "unhideall",
 ]);
 
 // Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
@@ -1168,6 +1182,280 @@ const handlers = {
     await message.reply({
       embeds: [buildStatusEmbed("success", seconds === 0 ? "Mode lent désactivé." : `Mode lent réglé sur **${seconds}s**.`)],
     });
+  },
+
+  // Version explicite du raccourci texte "add <rôle>" (mention/ID direct au
+  // lieu de répondre à un message + nom de rôle) — réutilise directement
+  // addRoleDirect, déjà utilisée par le raccourci.
+  async addrole(client, message) {
+    const target = message.mentions.members?.first();
+    const role = message.mentions.roles?.first();
+    if (!target || !role) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `addrole @membre @role`")] });
+    }
+    return addRoleDirect(message, target.id, role.id);
+  },
+
+  async delrole(client, message) {
+    const target = message.mentions.members?.first();
+    const role = message.mentions.roles?.first();
+    if (!target || !role) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `delrole @membre @role`")] });
+    }
+    return delRoleDirect(message, target.id, role.id);
+  },
+
+  async category(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const name = args.join(" ").trim();
+    if (!name) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `category <nom>`")] });
+    }
+    const created = await message.guild.channels
+      .create({ name, type: ChannelType.GuildCategory, reason: `Créée par ${message.author.tag}` })
+      .catch((err) => {
+        console.error(err);
+        return null;
+      });
+    if (!created) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de créer la catégorie.")] });
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Catégorie créée",
+      description: `Catégorie **${created.name}** créée.`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `Catégorie **${created.name}** créée.`)] });
+  },
+
+  async newsalon(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const name = args.join(" ").trim();
+    if (!name) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `newsalon <nom>`")] });
+    }
+    const created = await message.guild.channels
+      .create({ name, type: ChannelType.GuildText, reason: `Créé par ${message.author.tag}` })
+      .catch((err) => {
+        console.error(err);
+        return null;
+      });
+    if (!created) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de créer le salon.")] });
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Salon créé",
+      description: `Salon **#${created.name}** créé.`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `Salon ${created} créé.`)] });
+  },
+
+  async delsalon(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const target = message.mentions.channels?.first() || message.channel;
+    const name = target.name;
+    const ok = await target
+      .delete(`Supprimé par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    if (!ok) {
+      return message.reply({ embeds: [buildStatusEmbed("error", `Impossible de supprimer **#${name}**.`)] });
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Salon supprimé",
+      description: `Salon **#${name}** supprimé.`,
+      actor: message.author,
+    });
+  },
+
+  async rename(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const name = args.join(" ").trim();
+    if (!name) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `rename <nouveau nom>`")] });
+    }
+    const oldName = message.channel.name;
+    await message.channel.setName(name, `Renommé par ${message.author.tag}`).catch((err) => console.error(err));
+    sendLog(client, message.guild.id, "salon", {
+      title: "Salon renommé",
+      description: `**#${oldName}** renommé en **#${name}**.`,
+      actor: message.author,
+    });
+    await sendTempReply(message.channel, { embeds: [buildStatusEmbed("success", `Salon renommé en **#${name}**.`)] }, 10_000);
+  },
+
+  async topic(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const text = args.join(" ").trim();
+    await message.channel.setTopic(text || null, `Modifié par ${message.author.tag}`).catch((err) => console.error(err));
+    await message.reply({
+      embeds: [buildStatusEmbed("success", text ? `Description mise à jour : ${text}` : "Description retirée.")],
+    });
+  },
+
+  async nsfw(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const next = !message.channel.nsfw;
+    await message.channel.setNSFW(next, `Modifié par ${message.author.tag}`).catch((err) => console.error(err));
+    await message.reply({
+      embeds: [buildStatusEmbed("success", next ? "Salon marqué NSFW." : "Salon n'est plus marqué NSFW.")],
+    });
+  },
+
+  // Déplace tous les membres actuellement dans le même salon vocal que
+  // l'auteur vers le salon vocal ciblé.
+  async voicemove(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.MoveMembers)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Déplacer des membres**.")] });
+    }
+    const target = message.mentions.channels?.first();
+    if (!target || target.type !== ChannelType.GuildVoice) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `voicemove #salon-vocal` (mentionne un salon vocal)")] });
+    }
+    const sourceVoiceChannel = message.member.voice.channel;
+    if (!sourceVoiceChannel) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal pour indiquer d'où déplacer les membres.")] });
+    }
+    let success = 0;
+    let failed = 0;
+    for (const member of sourceVoiceChannel.members.values()) {
+      const ok = await member.voice
+        .setChannel(target, `Voicemove par ${message.author.tag}`)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+      else failed += 1;
+    }
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${success}** membre(s) déplacé(s) vers ${target}${failed ? ` (${failed} échec(s))` : ""}.`)],
+    });
+  },
+
+  async rolemembers(client, message) {
+    const role = message.mentions.roles?.first();
+    if (!role) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `rolemembers @role`")] });
+    }
+    const members = [...role.members.values()];
+    if (!members.length) {
+      return message.reply({ embeds: [buildStatusEmbed("info", `Aucun membre n'a le rôle **${role.name}**.`)] });
+    }
+    const lines = members
+      .slice(0, 50)
+      .map((m) => `<@${m.id}>`)
+      .join(", ");
+    await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          lines + (members.length > 50 ? `\n*+${members.length - 50} autre(s)*` : ""),
+          { title: `Membres avec ${role.name} (${members.length})` }
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  // Versions "tout le serveur" de lock/hide/unlock/unhide : appliquent le
+  // même changement de permission sur tous les salons textuels d'un coup.
+  async lockall(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")] });
+    }
+    const channels = message.guild.channels.cache.filter((c) => c.type === ChannelType.GuildText);
+    let success = 0;
+    for (const channel of channels.values()) {
+      const ok = await channel.permissionOverwrites
+        .edit(message.guild.roles.everyone, { SendMessages: false })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Lock All",
+      description: `${success} salon(s) verrouillé(s).`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("warning", `**${success}** salon(s) verrouillé(s).`)] });
+  },
+
+  async unlockall(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")] });
+    }
+    const channels = message.guild.channels.cache.filter((c) => c.type === ChannelType.GuildText);
+    let success = 0;
+    for (const channel of channels.values()) {
+      const ok = await channel.permissionOverwrites
+        .edit(message.guild.roles.everyone, { SendMessages: null })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Unlock All",
+      description: `${success} salon(s) déverrouillé(s).`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${success}** salon(s) déverrouillé(s).`)] });
+  },
+
+  async hideall(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")] });
+    }
+    const channels = message.guild.channels.cache.filter((c) => c.type === ChannelType.GuildText);
+    let success = 0;
+    for (const channel of channels.values()) {
+      const ok = await channel.permissionOverwrites
+        .edit(message.guild.roles.everyone, { ViewChannel: false })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Hide All",
+      description: `${success} salon(s) caché(s).`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("warning", `**${success}** salon(s) caché(s).`)] });
+  },
+
+  async unhideall(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les rôles**.")] });
+    }
+    const channels = message.guild.channels.cache.filter((c) => c.type === ChannelType.GuildText);
+    let success = 0;
+    for (const channel of channels.values()) {
+      const ok = await channel.permissionOverwrites
+        .edit(message.guild.roles.everyone, { ViewChannel: null })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    sendLog(client, message.guild.id, "salon", {
+      title: "Unhide All",
+      description: `${success} salon(s) rendu(s) visible(s).`,
+      actor: message.author,
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${success}** salon(s) rendu(s) visible(s).`)] });
   },
 };
 

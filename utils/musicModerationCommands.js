@@ -35,6 +35,20 @@ const ADMIN_COMMANDS = new Set([
   "kick",
   "derank",
   "slowmode",
+  "addrole",
+  "delrole",
+  "category",
+  "newsalon",
+  "delsalon",
+  "rename",
+  "topic",
+  "nsfw",
+  "voicemove",
+  "rolemembers",
+  "lockall",
+  "hideall",
+  "unlockall",
+  "unhideall",
 ]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
@@ -66,6 +80,20 @@ const HELP_MODERATION_COMMANDS = [
   "kick",
   "derank",
   "slowmode",
+  "addrole",
+  "delrole",
+  "category",
+  "newsalon",
+  "delsalon",
+  "rename",
+  "topic",
+  "nsfw",
+  "voicemove",
+  "rolemembers",
+  "lockall",
+  "hideall",
+  "unlockall",
+  "unhideall",
 ];
 
 function requireCommandAccess(message, cmd) {

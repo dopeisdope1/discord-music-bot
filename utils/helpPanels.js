@@ -41,6 +41,20 @@ const MODERATION_COMMANDS = [
   "kick",
   "derank",
   "slowmode",
+  "addrole",
+  "delrole",
+  "category",
+  "newsalon",
+  "delsalon",
+  "rename",
+  "topic",
+  "nsfw",
+  "voicemove",
+  "rolemembers",
+  "lockall",
+  "hideall",
+  "unlockall",
+  "unhideall",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -75,6 +89,20 @@ function assignableCommandLine(prefix, cmd) {
     kick: `\`${prefix}kick @membre [raison]\` — Expulse un membre`,
     derank: `\`${prefix}derank @membre\` — Retire tous les rôles à permissions sensibles`,
     slowmode: `\`${prefix}slowmode <secondes>\` — Règle le mode lent du salon (0 pour désactiver)`,
+    addrole: `\`${prefix}addrole @membre @role\` — Ajoute un rôle (version directe du raccourci \`add\`)`,
+    delrole: `\`${prefix}delrole @membre @role\` — Retire un rôle (version directe du raccourci \`del\`)`,
+    category: `\`${prefix}category <nom>\` — Crée une catégorie`,
+    newsalon: `\`${prefix}newsalon <nom>\` — Crée un salon textuel`,
+    delsalon: `\`${prefix}delsalon [#salon]\` — Supprime un salon (celui-ci par défaut)`,
+    rename: `\`${prefix}rename <nom>\` — Renomme le salon actuel`,
+    topic: `\`${prefix}topic <texte>\` — Modifie la description du salon`,
+    nsfw: `\`${prefix}nsfw\` — Active/désactive le filtre NSFW du salon`,
+    voicemove: `\`${prefix}voicemove #salon\` — Déplace tous les membres de ton salon vocal vers un autre`,
+    rolemembers: `\`${prefix}rolemembers @role\` — Liste les membres ayant ce rôle`,
+    lockall: `\`${prefix}lockall\` — Verrouille tous les salons textuels`,
+    hideall: `\`${prefix}hideall\` — Cache tous les salons textuels`,
+    unlockall: `\`${prefix}unlockall\` — Déverrouille tous les salons textuels`,
+    unhideall: `\`${prefix}unhideall\` — Affiche tous les salons textuels`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
