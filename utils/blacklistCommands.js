@@ -2,10 +2,11 @@ const { EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { isOwner } = require("./antiNukeStore");
 const { addToBlacklist, removeFromBlacklist, getBlacklistEntry, getBlacklist } = require("./blacklistStore");
-const { saveGuildConfig } = require("./configChannel");
+const { saveGuildConfig, waitForHydration } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { buildHelpPanel } = require("./helpPanels");
 const { getPrefixes } = require("./prefixStore");
+const { handleBlacklistPanel } = require("./blacklistPanel");
 
 /**
  * Résout un membre visé par une sous-commande blacklist : mention, ou ID brut
@@ -44,6 +45,11 @@ function requireOwner(message, prefix) {
  */
 async function handleBlacklistCommand(message, args, prefix = "=") {
   const sub = (args[0] || "").toLowerCase();
+
+  if (!sub) {
+    if (!requireOwner(message, prefix)) return;
+    return handleBlacklistPanel(message);
+  }
 
   if (sub === "list") {
     if (!requireOwner(message, prefix)) return;
@@ -210,6 +216,10 @@ const dispatchHandlers = {
  */
 async function handleBlacklistTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
+
+  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
+  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
+  await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
   const { blacklist: BLACKLIST_PREFIX } = getPrefixes(message.guild.id);

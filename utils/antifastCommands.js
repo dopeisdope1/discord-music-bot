@@ -1,6 +1,7 @@
 const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand, handleAllBotsCommand } = require("./antiNukeCommands");
 const { buildHelpPanel } = require("./helpPanels");
 const { getPrefixes } = require("./prefixStore");
+const { waitForHydration } = require("./configChannel");
 
 function buildAntifastHelpPanel(prefix) {
   return buildHelpPanel({
@@ -36,6 +37,10 @@ const handlers = {
  */
 async function handleAntifastTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
+
+  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
+  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
+  await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
   const { antifast: ANTIFAST_PREFIX } = getPrefixes(message.guild.id);

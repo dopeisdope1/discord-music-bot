@@ -10,6 +10,7 @@ const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
+const { waitForHydration } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
@@ -908,6 +909,13 @@ function rememberSnipe(client, channelId, message, type) {
  */
 async function handleTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
+
+  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
+  // restauré depuis Discord avant de lire quoi que ce soit — sinon une
+  // commande tapée dans les toutes premières secondes après un redéploiement
+  // pourrait lire (et si elle sauvegarde, écraser) la valeur par défaut au
+  // lieu du préfixe réellement configuré (voir utils/configChannel.js).
+  await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
   const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);

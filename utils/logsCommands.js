@@ -1,6 +1,7 @@
 const { handleLogsCommand } = require("./logsPanel");
 const { buildHelpPanel } = require("./helpPanels");
 const { getPrefixes } = require("./prefixStore");
+const { waitForHydration } = require("./configChannel");
 
 function buildLogsHelpPanel(prefix) {
   return buildHelpPanel({
@@ -30,6 +31,10 @@ const handlers = {
  */
 async function handleLogsTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
+
+  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
+  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
+  await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
   const { logs: LOGS_PREFIX } = getPrefixes(message.guild.id);
