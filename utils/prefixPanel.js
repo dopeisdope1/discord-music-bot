@@ -1,8 +1,6 @@
 const {
   ContainerBuilder,
   TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -17,24 +15,39 @@ const { saveGuildConfig, waitForHydration } = require("./configChannel");
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
 
+// Un type par bot — chacun lit son propre préfixe via getPrefixes(guildId)
+// (voir utils/prefixStore.js) dans son propre process (music+modération pour
+// main/dash, logs.js/antifast.js/blacklist.js pour les 3 autres).
 const TYPE_LABELS = {
   main: "musique",
   dash: "membres/modération",
+  logs: "logs",
+  antifast: "antifast",
+  blacklist: "blacklist",
 };
 
 function buildPrefixesPage(guildId) {
-  const { main, dash } = getPrefixes(guildId);
+  const prefixes = getPrefixes(guildId);
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `## Préfixes du bot\n> Musique : \`${main}\`\n> Membres/modération (dont \`${dash}ban\`/\`${dash}unban\`) : \`${dash}\`\n> Logs/Blacklist/Antifast : bot Sécurité, préfixe fixe \`=\``
+      "## Préfixes des bots\n" +
+        `> Musique : \`${prefixes.main}\`\n` +
+        `> Membres/modération (dont \`${prefixes.dash}ban\`/\`${prefixes.dash}unban\`) : \`${prefixes.dash}\`\n` +
+        `> Logs : \`${prefixes.logs}\`\n` +
+        `> Antifast : \`${prefixes.antifast}\`\n` +
+        `> Blacklist : \`${prefixes.blacklist}\``
     )
   );
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("prefix_edit:main").setLabel("Changer préfixe musique").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("prefix_edit:dash").setLabel("Changer préfixe membres/modération").setStyle(ButtonStyle.Secondary)
+      Object.keys(TYPE_LABELS).map((type) =>
+        new ButtonBuilder()
+          .setCustomId(`prefix_edit:${type}`)
+          .setLabel(`Changer préfixe ${TYPE_LABELS[type]}`)
+          .setStyle(ButtonStyle.Secondary)
+      )
     )
   );
 
@@ -74,9 +87,11 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 
 /**
  * Ouvre le panel d'administration (`.panel`, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction) : uniquement les
- * préfixes musique et membres/modération. Les logs se configurent désormais
- * via `=logs` sur le bot Sécurité (voir utils/logsPanel.js).
+ * vérification se fait avant l'appel de cette fonction) : les préfixes des 5
+ * bots (musique, membres/modération, logs, antifast, blacklist). Chaque bot
+ * relit sa propre valeur via utils/prefixStore.js, synchronisée entre tous
+ * les process via le salon Discord partagé "zinki-config" (voir
+ * utils/configChannel.js).
  * @param {import('discord.js').Message} message
  */
 async function handlePrefixPanel(message) {
@@ -100,7 +115,7 @@ async function handlePrefixPanel(message) {
 
       if (!i.isButton() || !i.customId.startsWith("prefix_edit:")) return;
 
-      const type = i.customId.split(":")[1]; // "main" | "dash"
+      const type = i.customId.split(":")[1];
       const current = getPrefixes(guildId)[type];
       await i.showModal(buildPrefixModal(type, current));
 
@@ -117,8 +132,6 @@ async function handlePrefixPanel(message) {
       try {
         const raw = submitted.fields.getTextInputValue("value").trim();
         const prefixes = getPrefixes(guildId);
-        const otherType = type === "main" ? "dash" : "main";
-        const other = prefixes[otherType];
 
         if (!raw || /\s/.test(raw) || raw.length > MAX_PREFIX_LENGTH) {
           await submitted.reply({
@@ -127,19 +140,18 @@ async function handlePrefixPanel(message) {
           });
           return;
         }
-        // "=" est réservé au bot Sécurité (=antifast/=owner/=wl/=allbots/
-        // =blacklist/=logs), volontairement à part de ce système de préfixes
-        // configurables.
-        if (raw.startsWith("=")) {
+
+        // Un seul préfixe par bot à la fois : évite qu'un message tape dans
+        // deux bots différents (ou soit ambigu à lire) si deux préfixes se
+        // chevauchent (ex: l'un est le début de l'autre).
+        const conflict = Object.keys(TYPE_LABELS).find((otherType) => {
+          if (otherType === type) return false;
+          const other = prefixes[otherType];
+          return raw === other || raw.startsWith(other) || other.startsWith(raw);
+        });
+        if (conflict) {
           await submitted.reply({
-            content: "`=` est réservé au bot Sécurité, choisis un autre préfixe.",
-            ephemeral: true,
-          });
-          return;
-        }
-        if (raw === other || raw.startsWith(other) || other.startsWith(raw)) {
-          await submitted.reply({
-            content: `Ce préfixe entre en conflit avec le préfixe ${TYPE_LABELS[otherType]} actuel (\`${other}\`), choisis-en un autre.`,
+            content: `Ce préfixe entre en conflit avec le préfixe ${TYPE_LABELS[conflict]} actuel (\`${prefixes[conflict]}\`), choisis-en un autre.`,
             ephemeral: true,
           });
           return;

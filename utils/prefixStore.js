@@ -12,7 +12,9 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 // "?" car c'est la valeur actuellement configurée sur le serveur : tant que
 // data/prefixes.json ne survit pas à un redéploiement (voir DATA_DIR
 // ci-dessus), c'est cette valeur par défaut qui s'applique après coup.
-const DEFAULT_PREFIXES = { main: "?", dash: "." };
+// logs/antifast/blacklist : préfixes des 3 bots dédiés (voir logs.js,
+// antifast.js, blacklist.js), configurables comme le reste depuis `.panel`.
+const DEFAULT_PREFIXES = { main: "?", dash: ".", logs: "=", antifast: "+", blacklist: "~" };
 
 let cache = null;
 

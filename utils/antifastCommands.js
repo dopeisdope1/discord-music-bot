@@ -1,30 +1,28 @@
 const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand, handleAllBotsCommand } = require("./antiNukeCommands");
 const { buildHelpPanel } = require("./helpPanels");
+const { getPrefixes } = require("./prefixStore");
 
-// Préfixe fixe, non configurable : ce bot est entièrement dédié à l'anti-nuke.
-const ANTIFAST_PREFIX = "=";
-
-function buildAntifastHelpPanel() {
+function buildAntifastHelpPanel(prefix) {
   return buildHelpPanel({
     title: "Aide — Bot Antifast",
-    intro: "Préfixe : `=`",
+    intro: `Préfixe : \`${prefix}\``,
     sections: [
       {
         heading: "Anti-nuke",
         lines: [
-          "`=antifast` — Panel (statut, activer/désactiver, owners, whitelist, avancé). `=antifast on|off` en raccourci direct",
-          "`=owner add|remove|list [@membre]` — Qui peut configurer ce bot (réservé au propriétaire réel du serveur)",
-          "`=wl add|remove|list [@membre] [module|catégorie|all]` — Exempte un membre d'un ou plusieurs modules anti-nuke précis (`all` par défaut)",
-          "`=allbots` — Liste tous les bots du serveur (repérer un ajout suspect)",
+          `\`${prefix}antifast\` — Panel (statut, activer/désactiver, owners, whitelist, avancé). \`${prefix}antifast on|off\` en raccourci direct`,
+          `\`${prefix}owner add|remove|list [@membre]\` — Qui peut configurer ce bot (réservé au propriétaire réel du serveur)`,
+          `\`${prefix}wl add|remove|list [@membre] [module|catégorie|all]\` — Exempte un membre d'un ou plusieurs modules anti-nuke précis (\`all\` par défaut)`,
+          `\`${prefix}allbots\` — Liste tous les bots du serveur (repérer un ajout suspect)`,
         ],
       },
     ],
-    footer: "Réservé aux owners anti-nuke de ce serveur, sauf mention contraire (voir `=owner`).",
+    footer: `Réservé aux owners anti-nuke de ce serveur, sauf mention contraire (voir \`${prefix}owner\`).`,
   });
 }
 
 const handlers = {
-  help: (client, message) => message.channel.send(buildAntifastHelpPanel()),
+  help: (client, message, args, prefix) => message.channel.send(buildAntifastHelpPanel(prefix)),
   antifast: (client, message, args) => handleAntifastCommand(message, args),
   owner: (client, message, args) => handleOwnerCommand(message, args),
   wl: (client, message, args) => handleWhitelistCommand(message, args),
@@ -32,19 +30,22 @@ const handlers = {
 };
 
 /**
- * À appeler dans l'écouteur "messageCreate" du bot Antifast.
+ * À appeler dans l'écouteur "messageCreate" du bot Antifast. Le préfixe est
+ * configurable par serveur via `.panel` (bot Musique+Modération) — voir
+ * utils/prefixStore.js/prefixPanel.js.
  */
 async function handleAntifastTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
+  const { antifast: ANTIFAST_PREFIX } = getPrefixes(message.guild.id);
   if (!content.startsWith(ANTIFAST_PREFIX)) return;
 
   const [cmdRaw, ...args] = content.slice(ANTIFAST_PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
   if (!handlers[cmd]) return;
 
-  return handlers[cmd](client, message, args);
+  return handlers[cmd](client, message, args, ANTIFAST_PREFIX);
 }
 
 module.exports = { handleAntifastTextCommand };

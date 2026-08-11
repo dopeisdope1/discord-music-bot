@@ -5,9 +5,7 @@ const { addToBlacklist, removeFromBlacklist, getBlacklistEntry, getBlacklist } =
 const { saveGuildConfig } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { buildHelpPanel } = require("./helpPanels");
-
-// Préfixe fixe, non configurable : ce bot est entièrement dédié à la blacklist.
-const BLACKLIST_PREFIX = "=";
+const { getPrefixes } = require("./prefixStore");
 
 /**
  * Résout un membre visé par une sous-commande blacklist : mention, ou ID brut
@@ -28,9 +26,9 @@ async function resolveUserArg(message, raw) {
   return { id, tag: user?.tag || id };
 }
 
-function requireOwner(message) {
+function requireOwner(message, prefix) {
   if (!isOwner(message.guild, message.author.id)) {
-    message.reply({ embeds: [buildStatusEmbed("error", "Réservé aux owners anti-nuke de ce serveur (voir `=owner`).")] });
+    message.reply({ embeds: [buildStatusEmbed("error", `Réservé aux owners anti-nuke de ce serveur (voir \`${prefix}owner\` sur le bot Antifast).`)] });
     return false;
   }
   return true;
@@ -39,15 +37,16 @@ function requireOwner(message) {
 /**
  * `=blacklist add|remove|check|list` — liste noire locale à ce serveur.
  * Un membre blacklisté est automatiquement banni s'il rejoint (voir
- * checkBlacklistOnJoin, appelé sur "guildMemberAdd" dans security.js).
+ * checkBlacklistOnJoin, appelé sur "guildMemberAdd" dans blacklist.js).
  * @param {import('discord.js').Message} message
  * @param {string[]} args
+ * @param {string} prefix — préfixe configuré de ce bot, pour les messages d'usage
  */
-async function handleBlacklistCommand(message, args) {
+async function handleBlacklistCommand(message, args, prefix = "=") {
   const sub = (args[0] || "").toLowerCase();
 
   if (sub === "list") {
-    if (!requireOwner(message)) return;
+    if (!requireOwner(message, prefix)) return;
     const entries = getBlacklist(message.guildId);
     if (entries.length === 0) {
       return message.reply({ embeds: [buildStatusEmbed("info", "Blacklist vide sur ce serveur.")] });
@@ -68,10 +67,10 @@ async function handleBlacklistCommand(message, args) {
   }
 
   if (sub === "add") {
-    if (!requireOwner(message)) return;
+    if (!requireOwner(message, prefix)) return;
     const target = await resolveUserArg(message, args[1]);
     if (!target) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `=blacklist add @membre|<id> [raison]`")] });
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${prefix}blacklist add @membre|<id> [raison]\``)] });
     }
     if (target.id === message.author.id || target.id === message.client.user.id) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Tu ne peux pas blacklister ça.")] });
@@ -109,10 +108,10 @@ async function handleBlacklistCommand(message, args) {
   }
 
   if (sub === "remove") {
-    if (!requireOwner(message)) return;
+    if (!requireOwner(message, prefix)) return;
     const target = await resolveUserArg(message, args[1]);
     if (!target) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `=blacklist remove @membre|<id>`")] });
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${prefix}blacklist remove @membre|<id>\``)] });
     }
     const removed = removeFromBlacklist(message.guildId, target.id);
     if (!removed) {
@@ -128,10 +127,10 @@ async function handleBlacklistCommand(message, args) {
   }
 
   if (sub === "check") {
-    if (!requireOwner(message)) return;
+    if (!requireOwner(message, prefix)) return;
     const target = await resolveUserArg(message, args[1]);
     if (!target) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `=blacklist check @membre|<id>`")] });
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${prefix}blacklist check @membre|<id>\``)] });
     }
     const entry = getBlacklistEntry(message.guildId, target.id);
     if (!entry) {
@@ -149,7 +148,7 @@ async function handleBlacklistCommand(message, args) {
   }
 
   return message.reply({
-    embeds: [buildStatusEmbed("error", "Utilisation : `=blacklist add|remove|check|list [@membre|<id>] [raison]`")],
+    embeds: [buildStatusEmbed("error", `Utilisation : \`${prefix}blacklist add|remove|check|list [@membre|<id>] [raison]\``)],
   });
 }
 
@@ -180,44 +179,47 @@ async function checkBlacklistOnJoin(member) {
   }
 }
 
-function buildBlacklistHelpPanel() {
+function buildBlacklistHelpPanel(prefix) {
   return buildHelpPanel({
     title: "Aide — Bot Blacklist",
-    intro: "Préfixe : `=`",
+    intro: `Préfixe : \`${prefix}\``,
     sections: [
       {
         heading: "Blacklist",
         lines: [
-          "`=blacklist add @membre|<id> [raison]` — Ajoute à la blacklist (banni tout de suite si déjà présent, banni automatiquement à l'arrivée sinon)",
-          "`=blacklist remove @membre|<id>` — Retire de la blacklist",
-          "`=blacklist check @membre|<id>` — Vérifie si quelqu'un est blacklisté",
-          "`=blacklist list` — Liste la blacklist du serveur",
+          `\`${prefix}blacklist add @membre|<id> [raison]\` — Ajoute à la blacklist (banni tout de suite si déjà présent, banni automatiquement à l'arrivée sinon)`,
+          `\`${prefix}blacklist remove @membre|<id>\` — Retire de la blacklist`,
+          `\`${prefix}blacklist check @membre|<id>\` — Vérifie si quelqu'un est blacklisté`,
+          `\`${prefix}blacklist list\` — Liste la blacklist du serveur`,
         ],
       },
     ],
-    footer: "Réservé aux owners anti-nuke de ce serveur (voir `=owner` sur le bot Antifast).",
+    footer: `Réservé aux owners anti-nuke de ce serveur (voir \`${prefix}owner\` sur le bot Antifast).`,
   });
 }
 
 const dispatchHandlers = {
-  help: (client, message) => message.channel.send(buildBlacklistHelpPanel()),
-  blacklist: (client, message, args) => handleBlacklistCommand(message, args),
+  help: (client, message, args, prefix) => message.channel.send(buildBlacklistHelpPanel(prefix)),
+  blacklist: (client, message, args, prefix) => handleBlacklistCommand(message, args, prefix),
 };
 
 /**
- * À appeler dans l'écouteur "messageCreate" du bot Blacklist.
+ * À appeler dans l'écouteur "messageCreate" du bot Blacklist. Le préfixe est
+ * configurable par serveur via `.panel` (bot Musique+Modération) — voir
+ * utils/prefixStore.js/prefixPanel.js.
  */
 async function handleBlacklistTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
+  const { blacklist: BLACKLIST_PREFIX } = getPrefixes(message.guild.id);
   if (!content.startsWith(BLACKLIST_PREFIX)) return;
 
   const [cmdRaw, ...args] = content.slice(BLACKLIST_PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
   if (!dispatchHandlers[cmd]) return;
 
-  return dispatchHandlers[cmd](client, message, args);
+  return dispatchHandlers[cmd](client, message, args, BLACKLIST_PREFIX);
 }
 
 module.exports = { handleBlacklistCommand, checkBlacklistOnJoin, handleBlacklistTextCommand };
