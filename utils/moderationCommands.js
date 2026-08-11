@@ -25,7 +25,20 @@ const { getWarns, addWarn, removeWarn } = require("./warnStore");
 const { addTempBan } = require("./tempBanStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
-const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
+const DASH_MEMBER_COMMANDS = new Set([
+  "pic",
+  "avatar",
+  "snipe",
+  "gif",
+  "ping",
+  "serverinfo",
+  "role-info",
+  "user",
+  "whois",
+  "banner",
+  "calc",
+  "emojis",
+]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set([
   "renew",
@@ -64,6 +77,11 @@ const DASH_ADMIN_COMMANDS = new Set([
   "hideall",
   "unlockall",
   "unhideall",
+  "poll",
+  "embed",
+  "steal",
+  "export-emojis",
+  "say",
 ]);
 
 // Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
@@ -1456,6 +1474,224 @@ const handlers = {
       actor: message.author,
     });
     await message.reply({ embeds: [buildStatusEmbed("success", `**${success}** salon(s) rendu(s) visible(s).`)] });
+  },
+
+  // Sondage simple : réactions 👍/👎ou options numérotées (jusqu'à 9) séparées
+  // par "|". Le message d'origine est supprimé pour ne laisser que le sondage.
+  async poll(client, message, args) {
+    const raw = args.join(" ").trim();
+    if (!raw) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `poll <question>` ou `poll <question> | <option1> | <option2> | ...`")],
+      });
+    }
+    const parts = raw.split("|").map((p) => p.trim()).filter(Boolean);
+    const question = parts[0];
+    const options = parts.slice(1, 10);
+
+    const numberEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+    const description = options.length ? options.map((opt, i) => `${numberEmojis[i]} ${opt}`).join("\n") : "Réagis avec 👍 ou 👎.";
+
+    const sent = await message.channel.send({ embeds: [buildStatusEmbed("info", description, { title: `📊 ${question}` })] });
+    const reactions = options.length ? numberEmojis.slice(0, options.length) : ["👍", "👎"];
+    for (const emoji of reactions) {
+      await sent.react(emoji).catch(() => {});
+    }
+    await message.delete().catch(() => {});
+  },
+
+  // Éditeur d'embed simplifié : "embed <titre> | <description>" ou juste
+  // "embed <description>" sans titre.
+  async embed(client, message, args) {
+    const raw = args.join(" ").trim();
+    if (!raw) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `embed <titre> | <description>` ou `embed <description>`")],
+      });
+    }
+    const [titlePart, ...rest] = raw.split("|");
+    const hasTitle = rest.length > 0;
+    const title = hasTitle ? titlePart.trim() : null;
+    const description = (hasTitle ? rest.join("|") : titlePart).trim();
+    if (!description) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "La description ne peut pas être vide.")] });
+    }
+    const embed = new EmbedBuilder().setDescription(description);
+    if (title) embed.setTitle(title);
+    await message.channel.send({ embeds: [embed] });
+    await message.delete().catch(() => {});
+  },
+
+  // Clone un emoji d'un autre serveur (collé sous forme "<:nom:id>" ou
+  // "<a:nom:id>") dans ce serveur.
+  async steal(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuildExpressions)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les expressions du serveur**.")],
+      });
+    }
+    const match = /<(a?):(\w+):(\d+)>/.exec(args[0] || "");
+    if (!match) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `steal <emoji> [nom]` (colle l'emoji d'un autre serveur)")],
+      });
+    }
+    const [, animatedFlag, emojiName, emojiId] = match;
+    const name = (args[1] || emojiName).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || emojiName;
+    const url = `https://cdn.discordapp.com/emojis/${emojiId}.${animatedFlag ? "gif" : "png"}`;
+    try {
+      const emoji = await message.guild.emojis.create({ attachment: url, name, reason: `Volé par ${message.author.tag}` });
+      await message.reply({ embeds: [buildStatusEmbed("success", `Emoji ${emoji} ajouté : \`:${emoji.name}:\``)] });
+    } catch (err) {
+      console.error(err);
+      await message.reply({
+        embeds: [buildStatusEmbed("error", "Impossible de récupérer cet emoji (limite atteinte, ou permission insuffisante).")],
+      });
+    }
+  },
+
+  // Exporte tous les emojis personnalisés du serveur dans un fichier texte
+  // (utile pour les recréer ailleurs avec `steal`).
+  async "export-emojis"(client, message) {
+    const emojis = [...message.guild.emojis.cache.values()];
+    if (!emojis.length) {
+      return message.reply({ embeds: [buildStatusEmbed("info", "Ce serveur n'a aucun emoji personnalisé.")] });
+    }
+    const lines = emojis.map((e) => `${e.name}: <${e.animated ? "a" : ""}:${e.name}:${e.id}>`).join("\n");
+    await message.reply({
+      embeds: [buildStatusEmbed("success", `**${emojis.length}** emoji(s) exporté(s).`)],
+      files: [{ attachment: Buffer.from(lines, "utf8"), name: `emojis-${message.guild.id}.txt` }],
+    });
+  },
+
+  async ping(client, message) {
+    const sent = await message.reply({ embeds: [buildStatusEmbed("info", "Calcul en cours...")] });
+    const roundTrip = sent.createdTimestamp - message.createdTimestamp;
+    await sent.edit({
+      embeds: [buildStatusEmbed("info", `🏓 Pong ! **${roundTrip}ms** (latence API : **${Math.round(client.ws.ping)}ms**)`)],
+    });
+  },
+
+  async serverinfo(client, message) {
+    const guild = message.guild;
+    const owner = await guild.fetchOwner().catch(() => null);
+    const embed = new EmbedBuilder()
+      .setTitle(guild.name)
+      .setThumbnail(guild.iconURL({ size: 256 }))
+      .addFields(
+        { name: "Propriétaire", value: owner ? owner.user.tag : "Inconnu", inline: true },
+        { name: "Membres", value: `${guild.memberCount}`, inline: true },
+        { name: "Boosts", value: `Niveau ${guild.premiumTier} (${guild.premiumSubscriptionCount || 0})`, inline: true },
+        { name: "Salons", value: `${guild.channels.cache.size}`, inline: true },
+        { name: "Rôles", value: `${guild.roles.cache.size}`, inline: true },
+        { name: "Emojis", value: `${guild.emojis.cache.size}`, inline: true },
+        { name: "Créé", value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>`, inline: true }
+      );
+    await message.reply({ embeds: [embed] });
+  },
+
+  async "role-info"(client, message) {
+    const role = message.mentions.roles?.first();
+    if (!role) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `role-info @role`")] });
+    }
+    const embed = new EmbedBuilder()
+      .setTitle(role.name)
+      .setColor(role.color || null)
+      .addFields(
+        { name: "ID", value: role.id, inline: true },
+        { name: "Membres", value: `${role.members.size}`, inline: true },
+        { name: "Couleur", value: role.hexColor, inline: true },
+        { name: "Mentionnable", value: role.mentionable ? "Oui" : "Non", inline: true },
+        { name: "Affiché séparément", value: role.hoist ? "Oui" : "Non", inline: true },
+        { name: "Position", value: `${role.position}`, inline: true },
+        { name: "Créé", value: `<t:${Math.floor(role.createdTimestamp / 1000)}:D>`, inline: true }
+      );
+    await message.reply({ embeds: [embed] });
+  },
+
+  async user(client, message) {
+    const target = message.mentions.members?.first() || message.member;
+    const roles = target.roles.cache.filter((r) => r.id !== message.guild.id);
+    const embed = new EmbedBuilder()
+      .setTitle(target.user.tag)
+      .setThumbnail(target.displayAvatarURL({ size: 256 }))
+      .addFields(
+        { name: "ID", value: target.id, inline: true },
+        { name: "Compte créé", value: `<t:${Math.floor(target.user.createdTimestamp / 1000)}:D>`, inline: true },
+        {
+          name: "A rejoint",
+          value: target.joinedTimestamp ? `<t:${Math.floor(target.joinedTimestamp / 1000)}:D>` : "Inconnu",
+          inline: true,
+        },
+        { name: `Rôles (${roles.size})`, value: roles.map((r) => r.toString()).join(", ") || "Aucun" }
+      );
+    await message.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+  },
+
+  async whois(client, message, args, prefix) {
+    return handlers.user(client, message, args, prefix);
+  },
+
+  async banner(client, message) {
+    const target = message.mentions.users?.first() || message.author;
+    const fetched = await client.users.fetch(target.id, { force: true }).catch(() => null);
+    const bannerUrl = fetched?.bannerURL({ size: 1024 });
+    if (!bannerUrl) {
+      return message.reply({ embeds: [buildStatusEmbed("info", `${target.tag} n'a pas de bannière de profil.`)] });
+    }
+    await message.reply({ embeds: [new EmbedBuilder().setTitle(`Bannière de ${target.tag}`).setImage(bannerUrl)] });
+  },
+
+  // Whitelist stricte de caractères avant Function() : uniquement chiffres,
+  // opérateurs et parenthèses, donc aucun accès possible à une variable ou
+  // fonction globale — pas d'exécution de code arbitraire.
+  async calc(client, message, args) {
+    const expr = args.join(" ").trim();
+    if (!expr) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `calc <expression>` (ex : `calc (2+3)*4`)")] });
+    }
+    if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Expression invalide : seuls les chiffres et + - * / ( ) sont autorisés.")],
+      });
+    }
+    let result;
+    try {
+      result = Function(`"use strict"; return (${expr})`)();
+    } catch {
+      result = NaN;
+    }
+    if (typeof result !== "number" || !Number.isFinite(result)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de calculer cette expression.")] });
+    }
+    await message.reply({ embeds: [buildStatusEmbed("success", `**${expr}** = **${result}**`)] });
+  },
+
+  async emojis(client, message) {
+    const emojis = [...message.guild.emojis.cache.values()];
+    if (!emojis.length) {
+      return message.reply({ embeds: [buildStatusEmbed("info", "Ce serveur n'a aucun emoji personnalisé.")] });
+    }
+    const list = emojis.slice(0, 100).map((e) => e.toString()).join(" ");
+    await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          list + (emojis.length > 100 ? `\n*+${emojis.length - 100} autre(s)*` : ""),
+          { title: `Emojis (${emojis.length})` }
+        ),
+      ],
+    });
+  },
+
+  async say(client, message, args) {
+    const text = args.join(" ").trim();
+    if (!text) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>`")] });
+    }
+    await message.delete().catch(() => {});
+    await message.channel.send({ content: text, allowedMentions: { parse: [] } });
   },
 };
 

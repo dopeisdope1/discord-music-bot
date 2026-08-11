@@ -49,9 +49,17 @@ const ADMIN_COMMANDS = new Set([
   "hideall",
   "unlockall",
   "unhideall",
+  "poll",
+  "embed",
+  "steal",
+  "export-emojis",
+  "say",
 ]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
-const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
+// Commandes publiques/utilitaires, ouvertes à tout le monde (pas de
+// vérification de permission dans le dispatcher ci-dessous).
+const MEMBER_COMMANDS = new Set(["ping", "serverinfo", "role-info", "user", "whois", "banner", "calc", "emojis"]);
+const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, ...MEMBER_COMMANDS, "banall", "clear"]);
 // Pour `?help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
 // ci-dessus (add/del inclus, sans préfixe), sans "create" qui n'existe pas
 // sur ce bot.
@@ -94,6 +102,19 @@ const HELP_MODERATION_COMMANDS = [
   "hideall",
   "unlockall",
   "unhideall",
+  "poll",
+  "embed",
+  "steal",
+  "export-emojis",
+  "say",
+  "ping",
+  "serverinfo",
+  "role-info",
+  "user",
+  "whois",
+  "banner",
+  "calc",
+  "emojis",
 ];
 
 function requireCommandAccess(message, cmd) {

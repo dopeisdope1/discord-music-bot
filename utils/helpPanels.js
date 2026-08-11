@@ -55,6 +55,19 @@ const MODERATION_COMMANDS = [
   "hideall",
   "unlockall",
   "unhideall",
+  "poll",
+  "embed",
+  "steal",
+  "export-emojis",
+  "say",
+  "ping",
+  "serverinfo",
+  "role-info",
+  "user",
+  "whois",
+  "banner",
+  "calc",
+  "emojis",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -103,6 +116,19 @@ function assignableCommandLine(prefix, cmd) {
     hideall: `\`${prefix}hideall\` — Cache tous les salons textuels`,
     unlockall: `\`${prefix}unlockall\` — Déverrouille tous les salons textuels`,
     unhideall: `\`${prefix}unhideall\` — Affiche tous les salons textuels`,
+    poll: `\`${prefix}poll <question>\` ou \`${prefix}poll <question> | <option1> | <option2>...\` — Lance un sondage`,
+    embed: `\`${prefix}embed <titre> | <description>\` — Envoie un embed simple`,
+    steal: `\`${prefix}steal <emoji> [nom]\` — Clone un emoji d'un autre serveur`,
+    "export-emojis": `\`${prefix}export-emojis\` — Exporte tous les emojis du serveur dans un fichier`,
+    say: `\`${prefix}say <texte>\` — Fait répéter un message par le bot`,
+    ping: `\`${prefix}ping\` — Latence du bot`,
+    serverinfo: `\`${prefix}serverinfo\` — Informations sur le serveur`,
+    "role-info": `\`${prefix}role-info @role\` — Informations sur un rôle`,
+    user: `\`${prefix}user [@membre]\` — Informations sur un membre`,
+    whois: `\`${prefix}whois [@membre]\` — Alias de \`user\``,
+    banner: `\`${prefix}banner [@membre]\` — Affiche la bannière de profil`,
+    calc: `\`${prefix}calc <expression>\` — Calculatrice simple`,
+    emojis: `\`${prefix}emojis\` — Liste les emojis du serveur`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
