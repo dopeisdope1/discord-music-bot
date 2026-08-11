@@ -11,7 +11,11 @@ const {
   addPendingRestore,
   getAllPendingRestores,
   removePendingRestore,
+  getMinAccountAgeMs,
+  getPingRaidRoleId,
+  getPunition,
 } = require("./antiNukeStore");
+const { getLogChannelId } = require("./logStore");
 const { MODULE_LABELS, ALL_MODULES } = require("./antiNukeModules");
 
 // Fenêtre glissante par défaut : au-delà du seuil d'un module (voir
@@ -51,7 +55,15 @@ const THRESHOLDS = {
   massRoleRemoval: 5,
   guildUpdate: 3,
   boostLevelDisable: 1,
+  unban: 3,
+  everyoneMention: 1,
+  linkSpam: 1,
+  // raidJoin ne passe pas par recordAndCheck/detect() (pas d'exécuteur
+  // unique) — voir checkRaidJoin, sa propre fenêtre glissante plus bas.
+  raidJoin: 10,
 };
+const RAID_JOIN_WINDOW_MS = 10_000;
+const INVITE_LINK_REGEX = /(discord\.gg|discord(?:app)?\.com\/invite)\/[a-z0-9-]+/i;
 
 // Map<"guildId:userId:module", timestamp[]>
 const activity = new Map();
@@ -146,10 +158,13 @@ async function findExecutor(guild, auditLogType, targetId) {
   return entry?.executor || null;
 }
 
+const MUTE_DURATION_MS = 10 * 60_000;
+
 /**
- * Neutralise le responsable en lui retirant tous ses rôles (hors @everyone
- * et rôles gérés par une intégration) — réversible (un admin peut les
- * redonner ensuite), contrairement à un kick/ban qui ne l'est pas.
+ * Neutralise le responsable — la sanction appliquée dépend de `punition`
+ * (voir `=punition`, par défaut "derank" : retrait de tous ses rôles hors
+ * @everyone et rôles gérés par une intégration, réversible contrairement à
+ * un kick/ban).
  * @param {import('discord.js').Guild} guild
  * @param {string} userId
  * @param {string} moduleKey
@@ -161,32 +176,47 @@ async function punish(guild, userId, moduleKey, reason) {
   if (!member || !member.manageable) return;
   if (hasRoleBypass(guild, member)) return;
 
-  const rolesToRemove = member.roles.cache.filter((r) => r.id !== guild.id && !r.managed);
-  if (rolesToRemove.size === 0) return;
-  const removedRoleIds = [...rolesToRemove.keys()];
+  const punitionType = getPunition(guild.id);
+  let actionLabel;
+  let restoreNote = "";
 
-  const removed = await member.roles
-    .remove(rolesToRemove, `[Anti-nuke] ${reason}`)
-    .then(() => true)
-    .catch((err) => {
-      console.error("[antiNuke] Impossible de retirer les rôles :", err);
-      return false;
-    });
-  if (!removed) return;
+  if (punitionType === "kick") {
+    const ok = await member.kick(`[Anti-nuke] ${reason}`).then(() => true).catch(() => false);
+    if (!ok) return;
+    actionLabel = "Expulsion";
+  } else if (punitionType === "ban") {
+    const ok = await member.ban({ reason: `[Anti-nuke] ${reason}` }).then(() => true).catch(() => false);
+    if (!ok) return;
+    actionLabel = "Bannissement";
+  } else if (punitionType === "mute") {
+    const ok = await member.timeout(MUTE_DURATION_MS, `[Anti-nuke] ${reason}`).then(() => true).catch(() => false);
+    if (!ok) return;
+    actionLabel = `Timeout (${MUTE_DURATION_MS / 60_000} min)`;
+  } else {
+    const rolesToRemove = member.roles.cache.filter((r) => r.id !== guild.id && !r.managed);
+    if (rolesToRemove.size === 0) return;
+    const removedRoleIds = [...rolesToRemove.keys()];
+    const ok = await member.roles
+      .remove(rolesToRemove, `[Anti-nuke] ${reason}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error("[antiNuke] Impossible de retirer les rôles :", err);
+        return false;
+      });
+    if (!ok) return;
+    actionLabel = "Tous les rôles retirés";
+
+    // Réactivation automatique (voir =antifast > Avancé) — uniquement
+    // pertinente pour le derank, les autres sanctions n'ont rien à restaurer.
+    const autoRestoreMs = getAutoRestoreMs(guild.id);
+    if (autoRestoreMs > 0) {
+      const restoreAt = Date.now() + autoRestoreMs;
+      addPendingRestore(guild.id, userId, removedRoleIds, restoreAt);
+      restoreNote = ` Rôles réactivés automatiquement <t:${Math.floor(restoreAt / 1000)}:R>.`;
+    }
+  }
 
   console.warn(`[antiNuke] "${member.user.tag}" neutralisé sur "${guild.name}" — ${reason}`);
-
-  // Réactivation automatique (voir =antifast > Avancé) : si configurée,
-  // programme le retour des rôles retirés après le délai choisi au lieu de
-  // laisser ça définitif tant qu'un admin ne les redonne pas à la main —
-  // persistée (pas un simple setTimeout) pour survivre à un redémarrage.
-  const autoRestoreMs = getAutoRestoreMs(guild.id);
-  let restoreNote = "";
-  if (autoRestoreMs > 0) {
-    const restoreAt = Date.now() + autoRestoreMs;
-    addPendingRestore(guild.id, userId, removedRoleIds, restoreAt);
-    restoreNote = ` Rôles réactivés automatiquement <t:${Math.floor(restoreAt / 1000)}:R>.`;
-  }
 
   sendLog(guild.client, guild.id, "securite", {
     title: "🚨 Anti-nuke déclenché",
@@ -194,8 +224,95 @@ async function punish(guild, userId, moduleKey, reason) {
     actor: member.user,
     fields: [
       { name: "Module", value: MODULE_LABELS[moduleKey] || moduleKey, inline: true },
-      { name: "Action", value: "Tous les rôles retirés", inline: true },
+      { name: "Action", value: actionLabel, inline: true },
     ],
+  });
+}
+
+/**
+ * Envoie l'alerte anti-raid dans le salon "securite" (voir `=logs`), et ping
+ * en plus le rôle configuré via `pingraid` s'il y en a un — les logs étant
+ * en Components V2 (voir utils/actionLogger.js), un ping de rôle doit être
+ * un message texte à part, Discord n'autorisant pas `content` sur un message
+ * qui porte le flag IsComponentsV2.
+ * @param {import('discord.js').Guild} guild
+ * @param {string} reason
+ */
+async function alertRaid(guild, reason) {
+  await sendLog(guild.client, guild.id, "securite", { title: "🚨 Anti-raid déclenché", description: reason });
+
+  const roleId = getPingRaidRoleId(guild.id);
+  if (!roleId) return;
+  const channelId = getLogChannelId(guild.id, "securite");
+  const channel = channelId ? guild.client.channels.cache.get(channelId) : null;
+  if (channel?.isTextBased()) {
+    await channel.send({ content: `<@&${roleId}>`, allowedMentions: { roles: [roleId] } }).catch(() => {});
+  }
+}
+
+// Map<guildId, { member, at: number }[]> — fenêtre glissante des arrivées
+// récentes, pour détecter une vague de rejoins (`raidJoin`) : contrairement
+// aux autres modules, il n'y a pas un "exécuteur" unique à identifier via
+// les logs d'audit, donc ça ne passe pas par detect()/recordAndCheck.
+const joinActivity = new Map();
+
+/**
+ * Anti-raid "arrivées" : si trop de membres rejoignent en peu de temps,
+ * expulse par précaution ceux qui viennent de rejoindre dans la fenêtre
+ * détectée (pas de derank/ban : ils n'ont aucun rôle et aucun historique sur
+ * le serveur, un kick est la réponse la plus proportionnée) et alerte
+ * (`pingraid`).
+ * @param {import('discord.js').GuildMember} member
+ */
+async function checkRaidJoin(member) {
+  const guild = member.guild;
+  if (!isEnabled(guild.id)) return;
+  const override = getModuleOverride(guild.id, "raidJoin");
+  if (override.paused) return;
+
+  const threshold = override.threshold ?? THRESHOLDS.raidJoin;
+  const windowMs = override.windowMs ?? RAID_JOIN_WINDOW_MS;
+  const now = Date.now();
+  const entries = (joinActivity.get(guild.id) || []).filter((e) => now - e.at < windowMs);
+  entries.push({ member, at: now });
+  joinActivity.set(guild.id, entries);
+
+  if (entries.length < threshold) return;
+  joinActivity.set(guild.id, []); // évite de redéclencher en boucle sur les mêmes arrivées
+
+  let kicked = 0;
+  for (const entry of entries) {
+    if (isExempt(guild, entry.member.id, "raidJoin")) continue;
+    const m = await guild.members.fetch(entry.member.id).catch(() => null);
+    if (!m?.kickable) continue;
+    const ok = await m.kick("[Anti-nuke] Vague d'arrivées suspecte (anti-raid)").then(() => true).catch(() => false);
+    if (ok) kicked += 1;
+  }
+
+  await alertRaid(guild, `${entries.length}+ arrivées en moins de ${windowMs / 1000}s — ${kicked} membre(s) expulsé(s) par précaution.`);
+}
+
+/**
+ * Porte d'entrée "âge du compte" (`creation`) : expulse à l'arrivée tout
+ * compte plus récent que la limite configurée — protection anti-raid
+ * classique contre les comptes jetables créés juste pour l'occasion.
+ * @param {import('discord.js').GuildMember} member
+ */
+async function checkAccountAge(member) {
+  const guild = member.guild;
+  const minAgeMs = getMinAccountAgeMs(guild.id);
+  if (!minAgeMs || !isEnabled(guild.id)) return;
+  if (isExempt(guild, member.id, "raidJoin")) return;
+
+  const accountAgeMs = Date.now() - member.user.createdTimestamp;
+  if (accountAgeMs >= minAgeMs) return;
+  if (!member.kickable) return;
+
+  await member.kick("[Anti-nuke] Compte trop récent (protection anti-raid, voir `creation`)").catch(() => {});
+  sendLog(guild.client, guild.id, "securite", {
+    title: "🚨 Compte trop récent expulsé",
+    description: `${member.user.tag} (\`${member.id}\`) — compte créé <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>.`,
+    actor: member.user,
   });
 }
 
@@ -403,9 +520,13 @@ function registerAntiNuke(client) {
     await detect(event.guild, "eventDelete", AuditLogEvent.GuildScheduledEventDelete, event.id, `Suppression de ${THRESHOLDS.eventDelete}+ événements en moins de ${WINDOW_MS / 1000}s`);
   });
 
-  // ---- Membres : ban/kick ----
+  // ---- Membres : ban/unban/kick ----
   client.on("guildBanAdd", async (ban) => {
     await detect(ban.guild, "ban", AuditLogEvent.MemberBanAdd, ban.user.id, `${THRESHOLDS.ban}+ bannissements en moins de ${WINDOW_MS / 1000}s`);
+  });
+
+  client.on("guildBanRemove", async (ban) => {
+    await detect(ban.guild, "unban", AuditLogEvent.MemberBanRemove, ban.user.id, `${THRESHOLDS.unban}+ débannissements en moins de ${WINDOW_MS / 1000}s`);
   });
 
   client.on("guildMemberRemove", async (member) => {
@@ -469,8 +590,38 @@ function registerAntiNuke(client) {
   });
 
   client.on("guildMemberAdd", async (member) => {
-    if (!member.user.bot) return;
-    await detect(member.guild, "botAdd", AuditLogEvent.BotAdd, member.id, `A ajouté le bot **${member.user.tag}**`);
+    if (member.user.bot) {
+      await detect(member.guild, "botAdd", AuditLogEvent.BotAdd, member.id, `A ajouté le bot **${member.user.tag}**`);
+      return;
+    }
+    await checkAccountAge(member);
+    await checkRaidJoin(member);
+  });
+
+  // ---- Contenu : ping @everyone/@here abusif, liens d'invitation Discord ----
+  client.on("messageCreate", async (message) => {
+    if (!message.guild || message.author.bot || !isEnabled(message.guild.id)) return;
+
+    // Le flag `mentions.everyone` est posé dès que le texte contient
+    // littéralement "@everyone"/"@here", même sans notifier personne — on ne
+    // déclenche que si l'auteur avait réellement la permission de ping
+    // (sinon c'est juste du texte, personne n'a été notifié).
+    if (message.mentions.everyone && message.member?.permissions.has(PermissionFlagsBits.MentionEveryone)) {
+      const override = getModuleOverride(message.guild.id, "everyoneMention");
+      if (!override.paused && !isExempt(message.guild, message.author.id, "everyoneMention")) {
+        await message.delete().catch(() => {});
+        await punish(message.guild, message.author.id, "everyoneMention", "A mentionné @everyone/@here");
+      }
+      return;
+    }
+
+    if (INVITE_LINK_REGEX.test(message.content)) {
+      const override = getModuleOverride(message.guild.id, "linkSpam");
+      if (!override.paused && !isExempt(message.guild, message.author.id, "linkSpam")) {
+        await message.delete().catch(() => {});
+        await punish(message.guild, message.author.id, "linkSpam", "A posté un lien d'invitation Discord");
+      }
+    }
   });
 
   // ---- Serveur ----

@@ -64,6 +64,9 @@ const DEFAULT_GUILD_DATA = () => ({
   moduleOverrides: {},
   autoRestoreMs: 0,
   pendingRestores: [],
+  minAccountAgeMs: 0,
+  pingRaidRoleId: null,
+  punition: "derank",
 });
 
 function guildData(guildId) {
@@ -88,6 +91,9 @@ function guildData(guildId) {
   if (!g.moduleOverrides) g.moduleOverrides = {};
   if (!g.autoRestoreMs) g.autoRestoreMs = 0;
   if (!g.pendingRestores) g.pendingRestores = [];
+  if (g.minAccountAgeMs === undefined) g.minAccountAgeMs = 0;
+  if (g.pingRaidRoleId === undefined) g.pingRaidRoleId = null;
+  if (!g.punition) g.punition = "derank";
   return g;
 }
 
@@ -365,6 +371,62 @@ function removePendingRestore(guildId, userId, restoreAt) {
 }
 
 /**
+ * @param {string} guildId
+ * @returns {number} âge minimum d'un compte (ms) pour rejoindre sans être
+ *   expulsé automatiquement — 0 = désactivé (voir `creation`)
+ */
+function getMinAccountAgeMs(guildId) {
+  return guildData(guildId).minAccountAgeMs || 0;
+}
+
+/**
+ * @param {string} guildId
+ * @param {number} ms
+ */
+function setMinAccountAgeMs(guildId, ms) {
+  const g = guildData(guildId);
+  g.minAccountAgeMs = ms;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {string|null} rôle pingé sur une alerte anti-raid (voir `pingraid`)
+ */
+function getPingRaidRoleId(guildId) {
+  return guildData(guildId).pingRaidRoleId || null;
+}
+
+/**
+ * @param {string} guildId
+ * @param {string|null} roleId
+ */
+function setPingRaidRoleId(guildId, roleId) {
+  const g = guildData(guildId);
+  g.pingRaidRoleId = roleId;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {"derank"|"kick"|"ban"|"mute"} sanction appliquée par défaut
+ *   quand un module anti-nuke se déclenche (voir `punition`, utils/antiNuke.js)
+ */
+function getPunition(guildId) {
+  return guildData(guildId).punition || "derank";
+}
+
+/**
+ * @param {string} guildId
+ * @param {"derank"|"kick"|"ban"|"mute"} type
+ */
+function setPunition(guildId, type) {
+  const g = guildData(guildId);
+  g.punition = type;
+  save();
+}
+
+/**
  * Valeurs brutes d'un serveur, utilisé par utils/configChannel.js pour
  * sauvegarder/restaurer via Discord.
  * @param {string} guildId
@@ -415,6 +477,12 @@ module.exports = {
   addPendingRestore,
   getAllPendingRestores,
   removePendingRestore,
+  getMinAccountAgeMs,
+  setMinAccountAgeMs,
+  getPingRaidRoleId,
+  setPingRaidRoleId,
+  getPunition,
+  setPunition,
   getRawGuildData,
   hydrateFromRemote,
 };

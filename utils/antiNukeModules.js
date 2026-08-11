@@ -52,12 +52,21 @@ const MODULE_GROUPS = {
     modules: {
       kick: "Expulser un membre",
       ban: "Bannir un membre",
+      unban: "Débannir un membre",
       timeout: "Timeout d'un membre",
       nickname: "Modification de pseudo",
       voiceDisconnect: "Déconnexion vocale d'un membre",
       voiceMove: "Déplacement vocal d'un membre",
       voiceMuteDeafen: "Mute/Sourdine serveur d'un membre",
       massRoleRemoval: "Retrait de rôles massif",
+    },
+  },
+  raid: {
+    label: "Anti-raid",
+    modules: {
+      raidJoin: "Vague d'arrivées suspecte (anti-raid)",
+      everyoneMention: "Ping @everyone/@here suspect",
+      linkSpam: "Lien d'invitation Discord posté",
     },
   },
   serveur: {
