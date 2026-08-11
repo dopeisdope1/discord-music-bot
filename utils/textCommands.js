@@ -15,7 +15,12 @@ const {
   addRoleDirect,
   delRoleDirect,
 } = require("./rolePanels");
-const { handleAntifastCommand, handleOwnerCommand, handleWhitelistCommand } = require("./antiNukeCommands");
+const {
+  handleAntifastCommand,
+  handleOwnerCommand,
+  handleWhitelistCommand,
+  handleAllBotsCommand,
+} = require("./antiNukeCommands");
 const { isOwner, isBotOwner, getBotOwnerIds } = require("./antiNukeStore");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
@@ -79,7 +84,7 @@ const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 // un compte admin compromis que ça doit couvrir. Accessibles uniquement via
 // le préfixe fixe "=" (SECURITY_PREFIX, non configurable via `.panel`), pas
 // via `!`/`.` — une séparation de plus par rapport au reste des commandes.
-const SECURITY_COMMANDS = new Set(["antifast", "owner", "wl"]);
+const SECURITY_COMMANDS = new Set(["antifast", "owner", "wl", "allbots"]);
 const SECURITY_PREFIX = "=";
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -975,6 +980,10 @@ const handlers = {
 
   async wl(client, message, args) {
     await handleWhitelistCommand(message, args);
+  },
+
+  async allbots(client, message) {
+    await handleAllBotsCommand(message);
   },
 
   async pic(client, message) {

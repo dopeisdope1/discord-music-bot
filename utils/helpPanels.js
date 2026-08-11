@@ -163,11 +163,12 @@ function buildDashCategories(prefix, message) {
     categories.push({
       key: "securite",
       label: "🛡️ Sécurité",
-      names: ["antifast", "owner", "wl"],
+      names: ["antifast", "owner", "wl", "allbots"],
       lines: [
         "`=antifast` — Panel (statut, activer/désactiver, owners, whitelist). `=antifast on|off` en raccourci direct",
         "`=owner add|remove|list [@membre]` — Qui peut configurer l'anti-nuke (réservé au propriétaire réel)",
-        "`=wl add|remove|list [@membre]` — Membres exemptés de l'anti-nuke",
+        "`=wl add|remove|list [@membre] [module|catégorie|all]` — Exempte un membre d'un ou plusieurs modules anti-nuke précis (`all` par défaut)",
+        "`=allbots` — Liste tous les bots du serveur (repérer un ajout suspect)",
       ],
       footer: "Préfixe fixe `=`, séparé de tes préfixes configurables — pas `!`/`.`.",
     });

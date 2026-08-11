@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ALL_MODULES } = require("./antiNukeModules");
 
 // DATA_DIR est configurable via la variable d'env DATA_DIR : sur Railway, le
 // disque du container est réinitialisé à chaque redéploiement, donc tout ce
@@ -56,7 +57,16 @@ function save() {
 
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { enabled: true, owners: [], whitelist: [] };
+  if (!data[guildId]) data[guildId] = { enabled: true, owners: [], whitelist: {} };
+  // Migration depuis l'ancien format (whitelist: string[] à plat, exemption
+  // totale) vers le nouveau (whitelist: { [userId]: string[] modules }) —
+  // au premier accès après mise à jour du bot, convertit chaque ancienne
+  // entrée en "all" pour ne rien perdre.
+  if (Array.isArray(data[guildId].whitelist)) {
+    const migrated = {};
+    for (const userId of data[guildId].whitelist) migrated[userId] = ["all"];
+    data[guildId].whitelist = migrated;
+  }
   return data[guildId];
 }
 
@@ -115,26 +125,91 @@ function isOwner(guild, userId) {
 
 /**
  * @param {string} guildId
- * @returns {string[]}
+ * @returns {{ [userId: string]: string[] }} modules par membre whitelisté
+ *   ("all" = tous les modules)
  */
 function getWhitelist(guildId) {
-  return [...guildData(guildId).whitelist];
+  return { ...guildData(guildId).whitelist };
 }
 
-function addToWhitelist(guildId, userId) {
+/**
+ * @param {string} guildId
+ * @param {string} userId
+ * @returns {string[]} modules dont ce membre est exempté (vide si pas whitelisté)
+ */
+function getWhitelistEntry(guildId, userId) {
+  return [...(guildData(guildId).whitelist[userId] || [])];
+}
+
+/**
+ * Ajoute un ou plusieurs modules à la whitelist d'un membre (fusionne avec
+ * ses modules déjà présents). `modules` peut valoir `["all"]` pour tout
+ * exempter d'un coup — dans ce cas ça remplace toute liste existante,
+ * puisque "all" rend les entrées précédentes redondantes.
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string[]} modules
+ */
+function addToWhitelist(guildId, userId, modules) {
   const g = guildData(guildId);
-  if (!g.whitelist.includes(userId)) g.whitelist.push(userId);
+  if (modules.includes("all")) {
+    g.whitelist[userId] = ["all"];
+  } else {
+    const current = new Set(g.whitelist[userId] || []);
+    if (current.has("all")) current.delete("all");
+    for (const m of modules) current.add(m);
+    g.whitelist[userId] = [...current];
+  }
   save();
 }
 
-function removeFromWhitelist(guildId, userId) {
+/**
+ * Retire un ou plusieurs modules de la whitelist d'un membre. `modules`
+ * peut valoir `["all"]` pour le retirer entièrement de la whitelist, peu
+ * importe ce qu'il avait.
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string[]} modules
+ */
+function removeFromWhitelist(guildId, userId, modules) {
   const g = guildData(guildId);
-  g.whitelist = g.whitelist.filter((id) => id !== userId);
+  if (!g.whitelist[userId]) return;
+  if (modules.includes("all")) {
+    delete g.whitelist[userId];
+  } else {
+    const current = new Set(g.whitelist[userId]);
+    // "all" équivaut à tous les modules : retirer un module précis d'une
+    // entrée "all" la remplace par la liste complète moins ce module.
+    if (current.has("all")) {
+      current.delete("all");
+      for (const m of ALL_MODULES) current.add(m);
+    }
+    for (const m of modules) current.delete(m);
+    if (current.size === 0) delete g.whitelist[userId];
+    else g.whitelist[userId] = [...current];
+  }
   save();
 }
 
+/**
+ * @param {string} guildId
+ * @param {string} userId
+ * @returns {boolean} true s'il a au moins une entrée de whitelist (peu importe le module)
+ */
 function isWhitelisted(guildId, userId) {
-  return getWhitelist(guildId).includes(userId);
+  return Boolean(guildData(guildId).whitelist[userId]?.length);
+}
+
+/**
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {string} moduleKey
+ * @returns {boolean} true si ce membre est exempté de ce module précis (ou de "all")
+ */
+function isWhitelistedFor(guildId, userId, moduleKey) {
+  const entry = guildData(guildId).whitelist[userId];
+  if (!entry) return false;
+  return entry.includes("all") || entry.includes(moduleKey);
 }
 
 /**
@@ -143,7 +218,7 @@ function isWhitelisted(guildId, userId) {
  * @param {string} guildId
  */
 function getRawGuildData(guildId) {
-  return load()[guildId] || { enabled: true, owners: [], whitelist: [] };
+  return load()[guildId] || { enabled: true, owners: [], whitelist: {} };
 }
 
 /**
@@ -171,9 +246,11 @@ module.exports = {
   isBotOwner,
   getBotOwnerIds,
   getWhitelist,
+  getWhitelistEntry,
   addToWhitelist,
   removeFromWhitelist,
   isWhitelisted,
+  isWhitelistedFor,
   getRawGuildData,
   hydrateFromRemote,
 };

@@ -120,7 +120,8 @@ En plus des commandes slash, le bot répond aussi aux préfixes classiques :
     voir section 7quater pour la vraie détection anti-nuke générale)
   - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
     catégorie de permission, voir section 7quater) : `=antifast`, `=owner`,
-    `=wl` — préfixe fixe `=`, pas `!`/`.` (non configurable via `.panel`)
+    `=wl`, `=allbots` — préfixe fixe `=`, pas `!`/`.` (non configurable via
+    `.panel`)
   - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
     (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
     pour voir le détail sans tout afficher d'un coup. La liste "Commandes
@@ -339,20 +340,34 @@ systématiquement "n'écoute rien sur Spotify", même si c'est faux.
 Protection automatique contre les nukes (destruction rapide du serveur),
 activée par défaut — voir `utils/antiNuke.js`. Détecte les rafales d'actions
 destructrices faites **à la main via Discord** (pas par le bot lui-même,
-voir plus bas) par le même membre en moins de 10 secondes :
+voir plus bas) par le même membre, module par module (voir
+`utils/antiNukeModules.js` pour la liste canonique) :
 
-- Suppression ou création de **3 rôles**
-- Suppression ou création de **3 salons**
-- **3 bannissements** ou **3 expulsions**
-- Création de **2 webhooks**
-- Attribution de la permission **Administrateur** à un rôle (déclenché dès la
-  1ère fois, pas besoin de répétition — c'est déjà un signal fort à lui seul)
+| Catégorie | Modules |
+|---|---|
+| Salons | Création, suppression, modification, modification des permissions |
+| Catégories | Création, suppression, modification, modification des permissions |
+| Rôles | Création, suppression, modification, **Administrateur donné à un rôle** |
+| Threads | Création, suppression, modification |
+| Événements | Création, modification, suppression |
+| Membres | Kick, ban, timeout, changement de pseudo, déconnexion vocale forcée, déplacement vocal forcé, mute/sourdine serveur, **retrait de rôle en masse** (5+ membres distincts touchés) |
+| Serveur | Modification générale, **désactivation de la barre de boost** |
+| Webhooks / bots | Création de webhook, **ajout d'un bot** |
+
+Chaque module a son propre seuil (3 à 8 occurrences en 10s selon la gravité) ;
+les plus dangereux (Administrateur sur un rôle, ajout d'un bot, désactivation
+des boosts) se déclenchent dès la 1ère fois, pas besoin de répétition. Un
+simple **réordonnancement de rôles/salons** (glisser-déposer dans la
+hiérarchie/la liste) est explicitement ignoré — ça décale la position de
+plein d'autres éléments d'un coup sans rien changer de dangereux, ce n'est
+pas un signal de nuke.
 
 Dès qu'un seuil est franchi, le responsable est neutralisé : **tous ses
 rôles lui sont retirés** (hors @everyone et rôles gérés par une intégration).
 C'est réversible (un admin peut les redonner ensuite), volontairement moins
 radical qu'un kick/ban. Une alerte est envoyée dans "Logs sécurité" (voir
-"Page Logs" ci-dessus) avec qui a été neutralisé et pourquoi.
+"Page Logs" ci-dessus) avec qui a été neutralisé, pour quel module et
+pourquoi.
 
 Seul le **propriétaire du serveur** est exempté par défaut (ainsi que le bot
 lui-même) — volontairement aucune liste d'admins de confiance automatique :
@@ -361,7 +376,7 @@ un compte staff compromis est justement le scénario que ça doit couvrir.
 coup en configurant le serveur peut se faire neutraliser par erreur — c'est
 le compromis de tout système anti-nuke (mêmes seuils que la plupart des bots
 équivalents). D'où les commandes `=owner`/`=wl` ci-dessous, pour élargir
-volontairement le cercle des gens exemptés.
+volontairement le cercle des gens exemptés, module par module si besoin.
 
 **Les commandes du bot lui-même ne se déclenchent jamais entre elles** :
 `.massrole`, `.banall`/`.unbanall`, la création/suppression de rôles via
@@ -383,27 +398,35 @@ donner accès :**
 
 - `=antifast` — ouvre un panel interactif (Components V2) : statut, bouton
   Activer/Désactiver, et un menu déroulant natif Discord par action
-  (ajouter/retirer un owner, ajouter/retirer un whitelisté). `=antifast on` /
+  (ajouter/retirer un owner, ajouter/retirer un whitelisté — **exemption
+  totale**, voir `=wl` pour une exemption module par module). `=antifast on` /
   `=antifast off` restent des raccourcis texte rapides qui ne passent pas par
   le panel. Réservé aux **owners anti-nuke** (voir `=owner`) pour voir/ouvrir
   le panel ; les deux menus "owner" restent en plus réservés au propriétaire
   réel du serveur ou du bot, même depuis le panel.
-- `=owner add @membre` / `=owner remove @membre` / `=owner list` — gère qui,
-  en plus du vrai propriétaire Discord du serveur, peut configurer
-  l'anti-nuke (`=antifast`, `=wl`). **Réservé au propriétaire réel du
-  serveur** (`guild.ownerId`) **ou à un propriétaire du bot** (voir
-  `BOT_OWNER_IDS` ci-dessous) — même un owner anti-nuke ajouté via cette
-  commande ne peut pas en ajouter d'autres, pour éviter qu'un owner compromis
-  étende la liste.
-- `=wl add @membre` / `=wl remove @membre` / `=wl list` — liste des membres
-  exemptés des déclencheurs anti-nuke, en plus du propriétaire/des owners/du
-  bot. Gérée par les owners anti-nuke (contrairement à `=owner`, réservée au
+- `=owner add @membre` / `=owner remove @membre` / `=owner list` (liste
+  paginée, ◀️/▶️) — gère qui, en plus du vrai propriétaire Discord du
+  serveur, peut configurer l'anti-nuke (`=antifast`, `=wl`). **Réservé au
+  propriétaire réel du serveur** (`guild.ownerId`) **ou à un propriétaire du
+  bot** (voir `BOT_OWNER_IDS` ci-dessous) — même un owner anti-nuke ajouté
+  via cette commande ne peut pas en ajouter d'autres, pour éviter qu'un owner
+  compromis étende la liste.
+- `=wl add @membre [module|catégorie|all]` / `=wl remove @membre [...]` /
+  `=wl list` (liste paginée) — exempte un membre des déclencheurs anti-nuke,
+  **module par module** plutôt qu'en bloc : `all` (ou l'argument omis)
+  exempte tout, le nom d'une catégorie (`salons`, `categories`, `roles`,
+  `threads`, `evenements`, `membres`, `serveur`, `webhooksEtBots`) exempte
+  tous ses modules, le nom exact d'un module (ex: `roleCreate`) n'exempte que
+  lui. Gérée par les owners anti-nuke (contrairement à `=owner`, réservée au
   propriétaire).
+- `=allbots` — liste paginée de tous les bots présents sur le serveur (nom,
+  ID), pour repérer un bot ajouté sans autorisation — le module "Ajout d'un
+  bot" de l'anti-nuke le détecte aussi en direct.
 
-Toute action sur ces trois commandes (activer/désactiver, ajout/retrait d'un
-owner ou d'un whitelisté), ainsi que chaque étape d'une demande `.banall`
-(demande envoyée, autorisée ou refusée — voir plus bas), est loguée dans
-"Logs sécurité".
+Toute action sur `=antifast`/`=owner`/`=wl` (activer/désactiver, ajout/retrait
+d'un owner ou d'un whitelisté), ainsi que chaque étape d'une demande
+`.banall` (demande envoyée, autorisée ou refusée — voir plus bas), est
+loguée dans "Logs sécurité".
 
 **`BOT_OWNER_IDS`** (variable d'env, IDs Discord séparés par des virgules,
 ex: `BOT_OWNER_IDS=123456789012345678,987654321098765432`) — pour toi, en

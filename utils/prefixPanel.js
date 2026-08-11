@@ -28,7 +28,7 @@ const {
   ASSIGNABLE_COMMANDS,
 } = require("./permissionCategoryStore");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
-const { saveGuildConfig } = require("./configChannel");
+const { saveGuildConfig, waitForHydration } = require("./configChannel");
 const { sendLog } = require("./actionLogger");
 const { memberFetchErrorMessage } = require("./guildMembers");
 
@@ -492,6 +492,11 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 async function handlePrefixPanel(message) {
   const guild = message.guild;
   const guildId = guild.id;
+  // Si le bot vient de redémarrer, attend que la config (préfixes, logs,
+  // permissions...) ait fini d'être restaurée depuis Discord avant de lire
+  // quoi que ce soit — sinon le panel afficherait/repartirait de valeurs par
+  // défaut le temps que la restauration se termine (voir configChannel.js).
+  await waitForHydration(guildId);
   let currentPage = "prefixes";
   // Nom saisi dans la modale de création de rôle, en attente du choix de
   // couleur (interaction suivante) — voir "role_create_open"/"role_create_color".

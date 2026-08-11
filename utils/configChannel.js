@@ -122,4 +122,19 @@ async function saveGuildConfig(guild) {
   }
 }
 
-module.exports = { loadGuildConfig, saveGuildConfig };
+/**
+ * Attend que la restauration initiale d'un serveur (voir loadGuildConfig)
+ * soit terminée, si elle est en cours — ne fait rien si loadGuildConfig n'a
+ * jamais été appelée pour ce serveur (ne devrait pas arriver en pratique,
+ * appelée pour chaque serveur au "ready"/"guildCreate"). À utiliser avant de
+ * LIRE une config potentiellement pas encore restaurée (ex: `.panel` juste
+ * après un redémarrage), en plus de saveGuildConfig qui protège déjà les
+ * écritures.
+ * @param {string} guildId
+ */
+async function waitForHydration(guildId) {
+  const pending = hydrationPromises.get(guildId);
+  if (pending) await pending;
+}
+
+module.exports = { loadGuildConfig, saveGuildConfig, waitForHydration };

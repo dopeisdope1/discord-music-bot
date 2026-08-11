@@ -34,10 +34,12 @@ const client = new Client({
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
     // Nécessaires pour que l'anti-nuke détecte les bannissements
-    // (guildBanAdd) et les créations de webhook (webhooksUpdate) — pas des
-    // intents privilégiés, rien à activer sur le portail développeur.
+    // (guildBanAdd), les créations de webhook (webhooksUpdate) et les
+    // événements planifiés (guildScheduledEvent*) — aucun n'est privilégié,
+    // rien à activer sur le portail développeur.
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildWebhooks,
+    GatewayIntentBits.GuildScheduledEvents,
   ],
   // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de musique
   // ou message sniped contenant littéralement "@everyone"). Les mentions
