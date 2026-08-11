@@ -4,6 +4,7 @@ const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlers } = require("./moderationCommands");
+const { sendDashHelpPanel } = require("./helpPanels");
 
 // Même jeu de commandes de modération que le bot Gestion (voir
 // utils/moderationCommands.js, dont on réutilise directement les handlers),
@@ -15,6 +16,10 @@ const { handlers } = require("./moderationCommands");
 const ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel"]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
+// Pour `?help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
+// ci-dessus (add/del inclus, sans préfixe), sans "create" qui n'existe pas
+// sur ce bot.
+const HELP_MODERATION_COMMANDS = ["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "clear", "add", "del"];
 
 function requireCommandAccess(message, cmd) {
   if (!canUseCommand(message, cmd)) {
@@ -77,6 +82,9 @@ async function handleMusicModerationTextCommand(client, message) {
 
   const [cmdRaw, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
+  if (cmd === "help") {
+    return sendDashHelpPanel(message, PREFIX, { includePublic: false, moderationCommands: HELP_MODERATION_COMMANDS });
+  }
   if (cmd === "clear") {
     return handlers.clear(client, message, args);
   }

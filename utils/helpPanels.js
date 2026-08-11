@@ -78,8 +78,9 @@ function buildHelpPanel({ title, intro, sections, footer }) {
 /**
  * Panel d'aide des commandes musique (préfixe principal).
  * @param {string} prefix
+ * @param {string} [modPrefix] — préfixe des commandes de modération dupliquées sur ce bot (voir utils/musicModerationCommands.js)
  */
-function buildMusicHelpPanel(prefix = "!") {
+function buildMusicHelpPanel(prefix = "!", modPrefix) {
   return buildHelpPanel({
     title: "Aide — Commandes musique",
     intro: `Préfixe : \`${prefix}\``,
@@ -106,7 +107,10 @@ function buildMusicHelpPanel(prefix = "!") {
       },
     ],
     footer:
-      "Tu dois être dans un salon vocal pour lancer une lecture. Seule la personne qui a amené le bot en vocal peut utiliser pause/resume/skip/stop/leave/volume/loop — les autres doivent lui demander la permission (un message avec Accepter/Refuser lui est envoyé automatiquement).",
+      "Tu dois être dans un salon vocal pour lancer une lecture. Seule la personne qui a amené le bot en vocal peut utiliser pause/resume/skip/stop/leave/volume/loop — les autres doivent lui demander la permission (un message avec Accepter/Refuser lui est envoyé automatiquement)." +
+      (modPrefix
+        ? `\nCe bot gère aussi des commandes de modération (clear/ban/renew/lock...) sur un préfixe séparé — tape \`${modPrefix}help\` pour les voir.`
+        : ""),
   });
 }
 
@@ -119,10 +123,17 @@ function buildMusicHelpPanel(prefix = "!") {
  * pour un administrateur.
  * @param {string} prefix
  * @param {import('discord.js').Message} message
+ * @param {{ includePublic?: boolean, moderationCommands?: string[] }} [options]
+ *   includePublic: inclut pic/avatar/snipe/gif (absentes du sous-ensemble
+ *   dupliqué sur le bot Musique) ; moderationCommands: liste des commandes
+ *   de modération réellement disponibles sur CE bot (voir
+ *   utils/musicModerationCommands.js pour un sous-ensemble réduit).
  */
-function buildDashCategories(prefix, message) {
-  const categories = [
-    {
+function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS } = {}) {
+  const categories = [];
+
+  if (includePublic) {
+    categories.push({
       key: "public",
       label: "Commandes publiques",
       names: ["pic", "avatar", "snipe", "clear me", "gif"],
@@ -132,10 +143,10 @@ function buildDashCategories(prefix, message) {
         `\`${prefix}clear me\` (ou \`uo clear\`) — Supprime tes messages récents (5×/25 min)`,
         `\`${prefix}gif <recherche>\` — Envoie un gif`,
       ],
-    },
-  ];
+    });
+  }
 
-  const allowed = [...MODERATION_COMMANDS, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
+  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
   if (allowed.length) {
     categories.push({
       key: "allowed",
@@ -207,12 +218,15 @@ function buildHelpCategoryPanel(categories, key) {
  * Envoie le panel d'aide "-help" interactif : un écran d'accueil qui résume
  * chaque catégorie (nom des commandes), puis un menu déroulant pour naviguer
  * dedans sans tout afficher d'un coup — voir buildDashCategories pour le
- * filtrage par permission (commande par commande, propre à l'auteur).
+ * filtrage par permission (commande par commande, propre à l'auteur) et pour
+ * les options permettant de réutiliser ce panel sur un sous-ensemble réduit
+ * de commandes (voir utils/musicModerationCommands.js).
  * @param {import('discord.js').Message} message
  * @param {string} prefix
+ * @param {{ includePublic?: boolean, moderationCommands?: string[] }} [options]
  */
-async function sendDashHelpPanel(message, prefix) {
-  const categories = buildDashCategories(prefix, message);
+async function sendDashHelpPanel(message, prefix, options) {
+  const categories = buildDashCategories(prefix, message, options);
   const panelMessage = await message.reply(buildHelpOverview(categories));
 
   const collector = panelMessage.createMessageComponentCollector({ time: HELP_TIMEOUT_MS });
