@@ -6,10 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
+    "start:gestion": "node gestion.js",
     "start:logs": "node logs.js",
     "start:antifast": "node antifast.js",
     "start:blacklist": "node blacklist.js",
-    "deploy": "node deploy-commands.js"
+    "deploy:musique": "node deploy-commands.js musique",
+    "deploy:gestion": "node deploy-commands.js gestion"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

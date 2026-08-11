@@ -1,11 +1,7 @@
 const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel, sendDashHelpPanel } = require("./helpPanels");
+const { sendDashHelpPanel } = require("./helpPanels");
 const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { handleSpotifyPlay } = require("./spotifyPlay");
-const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
-const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
@@ -15,68 +11,23 @@ const { sendLog } = require("./actionLogger");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
-const { playbackErrorMessage } = require("./musicErrors");
 const { searchGif } = require("./gifSearch");
-const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
 
-const URL_REGEX = /^https?:\/\//i;
-const LOOP_KEYWORDS = {
-  off: "none",
-  désactivé: "none",
-  "0": "none",
-  song: "track",
-  chanson: "track",
-  "1": "track",
-  queue: "queue",
-  file: "queue",
-  "2": "queue",
-};
-
-// Commandes "." accessibles à tout le monde, sans permission particulière
+// Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
-// Commandes "." réservées aux administrateurs (natif Discord, voir utils/permissions.js)
+// Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
 // "banall" est gérée à part (vérification dans son propre handler) : action
 // trop destructrice pour être traitée comme les autres commandes admin.
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
-// Commandes "." dont la permission accepte aussi la permission Discord native
+// Commandes dont la permission accepte aussi la permission Discord native
 // "Bannir des membres" en plus d'Administrateur (voir utils/permissions.js).
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
 const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
-
-function getPlayerOrReply(client, message) {
-  const player = client.kazagumo.players.get(message.guildId);
-  if (!player) {
-    message.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")] });
-    return null;
-  }
-  return player;
-}
-
-/**
- * Vérifie que l'auteur du message peut utiliser une commande de contrôle
- * (pause/skip/stop/volume/loop/leave) : seule la personne qui a amené le bot
- * en vocal (ou quelqu'un qu'elle a autorisé) le peut — voir utils/playerControl.js.
- * Si ce n'est pas le cas, envoie une demande d'autorisation au propriétaire.
- * @returns {Promise<boolean>} true si la commande peut continuer
- */
-async function requirePlayerControl(client, message) {
-  if (canControlPlayer(client, message.guildId, message.author.id)) return true;
-  requestPlayerAccess(client, message.channel, message.author, message.guildId);
-  await message.reply({
-    embeds: [
-      buildStatusEmbed(
-        "info",
-        "Cette commande est réservée à la personne qui a lancé la musique. Une demande d'autorisation lui a été envoyée."
-      ),
-    ],
-  });
-  return false;
-}
 
 function requireCommandAccess(message, cmd) {
   if (!canUseCommand(message, cmd)) {
@@ -185,172 +136,6 @@ async function executeBanAll(client, message, statusMessage) {
 }
 
 const handlers = {
-  // ---- Musique ----
-  async play(client, message, args) {
-    const query = args.join(" ");
-    if (!query)
-      return message.reply({
-        embeds: [buildStatusEmbed("error", "Indique un nom de musique/artiste, ou un lien YouTube/Spotify.")],
-      });
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    if (URL_REGEX.test(query)) {
-      try {
-        const outcome = await queueAndPlay(client.kazagumo, {
-          voiceChannel: vc,
-          textChannel: message.channel,
-          member: message.member,
-          query,
-          client,
-        });
-        if (!outcome) {
-          return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
-        }
-        const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
-        await message.reply({
-          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
-        });
-      } catch (err) {
-        console.error(err);
-        await message.reply({
-          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, "Impossible de jouer ce titre. Vérifie le lien."))],
-        });
-      }
-      return;
-    }
-
-    await handleSpotifyPlay({
-      kazagumo: client.kazagumo,
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      member: message.member,
-      query,
-      requesterId: message.author.id,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async join(client, message) {
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    const listenerMember = message.mentions.members?.first() || message.member;
-
-    await handleJoinSpotify({
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      listenerMember,
-      playerMember: message.member,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async skip(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    if (!player.queue.current) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
-    }
-    player.skip();
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
-  },
-
-  async stop(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({
-      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
-    });
-  },
-
-  async leave(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({ embeds: [buildStatusEmbed("success", "J'ai quitté le salon vocal.")] });
-  },
-
-  async pause(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, true);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
-  },
-
-  async resume(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, false);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
-  },
-
-  async queue(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    const tracks = [player.queue.current, ...player.queue].filter(Boolean);
-    if (tracks.length === 0)
-      return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
-    const list = tracks
-      .slice(0, 15)
-      .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} **${t.title}**`)
-      .join("\n");
-    await message.reply({
-      embeds: [
-        buildStatusEmbed("info", list, { title: `File d'attente (${tracks.length} titres)` }),
-      ],
-    });
-  },
-
-  async volume(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const niveau = parseInt(args[0], 10);
-    if (isNaN(niveau) || niveau < 0 || niveau > 150) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Indique un volume entre 0 et 150. Ex : \`${main}volume 80\``)],
-      });
-    }
-    player.setVolume(niveau);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`)],
-    });
-  },
-
-  async loop(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
-    if (!mode) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Mode invalide. Utilise : \`${main}loop off|song|queue\``)],
-      });
-    }
-    player.setLoop(mode);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`)],
-    });
-  },
-
-  // ---- Modération (préfixe ".") ----
   async clear(client, message, args) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
@@ -905,20 +690,17 @@ function rememberSnipe(client, channelId, message, type) {
 }
 
 /**
- * À appeler dans l'écouteur "messageCreate" du client.
+ * À appeler dans l'écouteur "messageCreate" du bot Gestion.
  */
-async function handleTextCommand(client, message) {
+async function handleModerationTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
-  // restauré depuis Discord avant de lire quoi que ce soit — sinon une
-  // commande tapée dans les toutes premières secondes après un redéploiement
-  // pourrait lire (et si elle sauvegarde, écraser) la valeur par défaut au
-  // lieu du préfixe réellement configuré (voir utils/configChannel.js).
+  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
   await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
-  const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);
+  const { dash: DASH_PREFIX } = getPrefixes(message.guild.id);
 
   // Déclencheurs spéciaux sans préfixe, tous équivalents à ".clear me"
   // (supprime tes propres messages), ouverts à tout le monde (limite gérée
@@ -958,38 +740,25 @@ async function handleTextCommand(client, message) {
     }
   }
 
-  // Préfixe "." (configurable via .panel) : commandes membres + modération + ban/unban
-  if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (cmd === "help") {
-      return sendDashHelpPanel(message, DASH_PREFIX);
-    }
-    if (cmd === "clear") {
-      // Permission gérée dans le handler : dépend de la cible (soi-même,
-      // quelqu'un d'autre, ou un nombre).
-      return handlers.clear(client, message, args);
-    }
-    if (BAN_COMMANDS.has(cmd)) {
-      if (!requireCommandAccess(message, cmd)) return;
-      return handlers[cmd](client, message, args);
-    }
-    if (!DASH_COMMANDS.has(cmd)) return;
-    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
+  if (!content.startsWith(DASH_PREFIX)) return;
+
+  const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
+  const cmd = (cmdRaw || "").toLowerCase();
+  if (cmd === "help") {
+    return sendDashHelpPanel(message, DASH_PREFIX);
+  }
+  if (cmd === "clear") {
+    // Permission gérée dans le handler : dépend de la cible (soi-même,
+    // quelqu'un d'autre, ou un nombre).
+    return handlers.clear(client, message, args);
+  }
+  if (BAN_COMMANDS.has(cmd)) {
+    if (!requireCommandAccess(message, cmd)) return;
     return handlers[cmd](client, message, args);
   }
-
-  // Préfixe principal (! par défaut, configurable via .panel)
-  if (content.startsWith(MAIN_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (cmd === "help") {
-      return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX));
-    }
-    if (handlers[cmd]) {
-      return handlers[cmd](client, message, args);
-    }
-  }
+  if (!DASH_COMMANDS.has(cmd)) return;
+  if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
+  return handlers[cmd](client, message, args);
 }
 
-module.exports = { handleTextCommand, rememberSnipe };
+module.exports = { handleModerationTextCommand, rememberSnipe };
