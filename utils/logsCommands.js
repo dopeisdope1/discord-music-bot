@@ -1,7 +1,11 @@
+const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { handleLogsCommand } = require("./logsPanel");
 const { buildHelpPanel } = require("./helpPanels");
 const { getPrefixes } = require("./prefixStore");
-const { waitForHydration } = require("./configChannel");
+const { waitForHydration, saveGuildConfig } = require("./configChannel");
+const { getLogChannels, setLogChannel, LOG_CATEGORIES } = require("./logStore");
+const { isOwner } = require("./antiNukeStore");
+const { buildStatusEmbed } = require("./statusEmbed");
 
 function buildLogsHelpPanel(prefix) {
   return buildHelpPanel({
@@ -11,7 +15,8 @@ function buildLogsHelpPanel(prefix) {
       {
         heading: "Logs",
         lines: [
-          `\`${prefix}logs\` — Choisit le salon de destination par catégorie (modération, salon, rôles, sécurité, blacklist)`,
+          `\`${prefix}logs\` — Choisit le salon de destination par catégorie`,
+          `\`${prefix}autologs\` — Crée et configure d'un coup tous les salons de logs manquants`,
         ],
       },
     ],
@@ -19,9 +24,50 @@ function buildLogsHelpPanel(prefix) {
   });
 }
 
+// Crée une catégorie "📁 Logs" avec un salon par catégorie de logs pas encore
+// configurée (voir utils/logStore.js) — évite d'avoir à faire `=logs` +
+// créer chaque salon à la main un par un pour un nouveau serveur.
+async function autologs(client, message) {
+  if (!isOwner(message.guild, message.author.id)) {
+    return message.reply({ embeds: [buildStatusEmbed("error", "Réservé aux owners anti-nuke de ce serveur (voir `=owner`).")] });
+  }
+  if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+  }
+
+  const existing = getLogChannels(message.guild.id);
+  const missing = Object.values(LOG_CATEGORIES).filter((cat) => !existing[cat.key]);
+  if (!missing.length) {
+    return message.reply({ embeds: [buildStatusEmbed("info", "Toutes les catégories de logs sont déjà configurées.")] });
+  }
+
+  const category = await message.guild.channels
+    .create({ name: "📁 Logs", type: ChannelType.GuildCategory, reason: `Autologs par ${message.author.tag}` })
+    .catch(() => null);
+
+  let created = 0;
+  for (const cat of missing) {
+    const channel = await message.guild.channels
+      .create({
+        name: cat.key,
+        type: ChannelType.GuildText,
+        parent: category?.id,
+        permissionOverwrites: [{ id: message.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }],
+        reason: `Autologs par ${message.author.tag}`,
+      })
+      .catch(() => null);
+    if (!channel) continue;
+    setLogChannel(message.guild.id, cat.key, channel.id);
+    created += 1;
+  }
+  await saveGuildConfig(message.guild, ["logChannels"]);
+  await message.reply({ embeds: [buildStatusEmbed("success", `**${created}** salon(s) de logs créé(s) et configuré(s).`)] });
+}
+
 const handlers = {
   help: (client, message, args, prefix) => message.channel.send(buildLogsHelpPanel(prefix)),
   logs: (client, message) => handleLogsCommand(message),
+  autologs: (client, message) => autologs(client, message),
 };
 
 /**

@@ -20,6 +20,11 @@ const LOG_CATEGORIES = {
   roles: { key: "roles", label: "Logs rôles", description: "`.massrole` + changements manuels de rôle" },
   securite: { key: "securite", label: "Logs sécurité", description: "Alertes anti-nuke (\"antifast\")" },
   blacklist: { key: "blacklist", label: "Logs blacklist", description: "Ajouts/retraits et bannissements automatiques" },
+  messages: { key: "messages", label: "Logs messages", description: "Messages supprimés/édités (contenu complet)" },
+  embeds: { key: "embeds", label: "Logs embeds", description: "Contenu des embeds perdus lors d'une suppression" },
+  vocal: { key: "vocal", label: "Logs vocal", description: "Arrivées/départs/déplacements en salon vocal" },
+  joinleave: { key: "joinleave", label: "Logs arrivées/départs", description: "Membres qui rejoignent/quittent le serveur" },
+  automod: { key: "automod", label: "Logs AutoMod", description: "Messages bloqués par l'AutoMod natif de Discord" },
 };
 
 let cache = null;
