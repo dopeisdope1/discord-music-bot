@@ -75,36 +75,52 @@ async function sendTempReply(channel, content, ms = 5000) {
  * `maxCount` (ou tout le salon si non précisé) et jusqu'à 14 jours d'ancienneté
  * (limite du bulk delete). Si `targetMemberId` est fourni, ne supprime que ses
  * messages ; sinon, supprime tout ce qui passe (le plus récent en premier).
+ *
+ * Le fetch du lot suivant est lancé sans attendre la fin du bulkDelete du lot
+ * en cours : ce sont deux routes API différentes qui ne se bloquent pas entre
+ * elles côté Discord, donc les enchaîner en série ne fait que perdre du temps
+ * sur les grosses suppressions (100+ messages). Le curseur de pagination
+ * avance toujours sur le dernier message *fetché* (peu importe s'il a déjà
+ * été supprimé) — ce qui reste valide côté API et permet ce chevauchement.
  */
 async function clearMessages(client, channel, { targetMemberId, maxCount = Infinity } = {}) {
-  let deletedTotal = 0;
+  let requestedTotal = 0; // pilote la boucle, incrémenté dès qu'un lot est mis en file
+  let confirmedTotal = 0; // réellement confirmé supprimé par Discord — valeur renvoyée
   let beforeId;
+  const pendingDeletes = [];
+  let snipeCandidate = null;
 
-  for (let i = 0; i < 10 && deletedTotal < maxCount; i++) {
-    const fetchLimit = Math.min(100, maxCount - deletedTotal);
+  for (let i = 0; i < 10 && requestedTotal < maxCount; i++) {
+    const fetchLimit = Math.min(100, maxCount - requestedTotal);
     const fetched = await channel.messages.fetch({ limit: fetchLimit, before: beforeId });
     if (fetched.size === 0) break;
 
     const eligible = fetched.filter((m) => Date.now() - m.createdTimestamp < FOURTEEN_DAYS_MS);
     const toDelete = targetMemberId ? eligible.filter((m) => m.author.id === targetMemberId) : eligible;
 
+    beforeId = fetched.last().id;
+    requestedTotal += toDelete.size;
+
     if (toDelete.size > 0) {
-      const deleted = await channel.bulkDelete(toDelete, true).catch(() => null);
-      if (deleted) {
-        deletedTotal += deleted.size;
-        const last = [...deleted.values()][0];
-        if (last) rememberSnipe(client, channel.id, last, "cleared");
-      }
+      pendingDeletes.push(
+        channel
+          .bulkDelete(toDelete, true)
+          .then((deleted) => {
+            if (!deleted?.size) return;
+            confirmedTotal += deleted.size;
+            if (!snipeCandidate) snipeCandidate = [...deleted.values()][0];
+          })
+          .catch(() => {})
+      );
     }
 
-    // Sans filtre par membre, les messages supprimés libèrent naturellement
-    // la place : on peut re-fetcher "les plus récents" sans curseur. Avec un
-    // filtre, il faut avancer le curseur pour dépasser les messages ignorés.
-    beforeId = targetMemberId ? fetched.last().id : undefined;
     if (fetched.size < fetchLimit) break;
   }
 
-  return deletedTotal;
+  await Promise.all(pendingDeletes);
+  if (snipeCandidate) rememberSnipe(client, channel.id, snipeCandidate, "cleared");
+
+  return confirmedTotal;
 }
 
 /**
