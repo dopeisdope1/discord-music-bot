@@ -1,19 +1,25 @@
 const {
   ContainerBuilder,
   TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  StringSelectMenuBuilder,
+  RoleSelectMenuBuilder,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { saveGuildConfig, waitForHydration } = require("./configChannel");
+const { DELEGABLE_COMMANDS, getAllGrants, setRolesForCommand } = require("./commandPermissionStore");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
+const MAX_ROLES_PER_COMMAND = 10;
 
 // Un type par bot — chacun lit son propre préfixe via getPrefixes(guildId)
 // (voir utils/prefixStore.js) dans son propre process. Blacklist tourne sur
@@ -26,6 +32,20 @@ const TYPE_LABELS = {
   logs: "logs",
   antifast: "antifast/blacklist",
 };
+
+const PAGES = { prefixes: "Préfixes", permissions: "Permissions" };
+
+function buildNavRow(currentPage) {
+  return new ActionRowBuilder().addComponents(
+    Object.entries(PAGES).map(([page, label]) =>
+      new ButtonBuilder()
+        .setCustomId(`panel_page:${page}`)
+        .setLabel(label)
+        .setStyle(page === currentPage ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(page === currentPage)
+    )
+  );
+}
 
 function buildPrefixesPage(guildId) {
   const prefixes = getPrefixes(guildId);
@@ -51,6 +71,70 @@ function buildPrefixesPage(guildId) {
       )
     )
   );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildNavRow("prefixes"));
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/**
+ * Page "Permissions" : délègue une commande de modération à un ou plusieurs
+ * rôles (en plus d'Administrateur natif, toujours autorisé). Choisir une
+ * commande dans le menu déroulant affiche un second menu (rôles) pré-rempli
+ * avec les rôles déjà autorisés pour cette commande — le choix remplace
+ * l'ensemble complet (comme un RoleSelectMenu classique).
+ * @param {string} guildId
+ * @param {string|null} selectedCommand
+ * @param {string} [statusText]
+ */
+function buildPermissionsPage(guildId, selectedCommand, statusText) {
+  const grants = getAllGrants(guildId);
+  const container = new ContainerBuilder();
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  const summary = DELEGABLE_COMMANDS.map((cmd) => {
+    const roles = grants[cmd] || [];
+    return `**${cmd}** — ${roles.length ? roles.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle (Administrateur uniquement)*"}`;
+  }).join("\n");
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Permissions\n> Choisis une commande, puis les rôles autorisés à l'utiliser — en plus d'Administrateur, " +
+        "toujours autorisé nativement. S'applique sur les deux bots (Gestion et Musique).\n\n" +
+        summary
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("perm_command_select")
+        .setPlaceholder("Choisir une commande")
+        .addOptions(
+          DELEGABLE_COMMANDS.map((cmd) => ({ label: cmd, value: cmd, default: cmd === selectedCommand }))
+        )
+    )
+  );
+
+  if (selectedCommand) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`perm_role_select:${selectedCommand}`)
+          .setPlaceholder(`Rôles autorisés pour "${selectedCommand}"`)
+          .setMinValues(0)
+          .setMaxValues(MAX_ROLES_PER_COMMAND)
+          .setDefaultRoles(grants[selectedCommand] || [])
+      )
+    );
+  }
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildNavRow("permissions"));
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
@@ -89,10 +173,10 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 /**
  * Ouvre le panel d'administration (accessible via `.panel` sur le bot
  * Gestion ET `?panel` sur le bot Musique, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction) : les préfixes des
- * bots (musique, modération×2, logs, antifast/blacklist). Chaque bot relit
- * sa propre valeur via utils/prefixStore.js, synchronisée entre tous les
- * process via le salon Discord partagé "zinki-config" (voir
+ * vérification se fait avant l'appel de cette fonction) : préfixes des bots
+ * et délégation de commandes à des rôles. Chaque bot relit ses propres
+ * valeurs via utils/prefixStore.js/commandPermissionStore.js, synchronisées
+ * entre tous les process via le salon Discord partagé "zinki-config" (voir
  * utils/configChannel.js).
  * @param {import('discord.js').Message} message
  */
@@ -104,6 +188,10 @@ async function handlePrefixPanel(message) {
   // sinon le panel afficherait/repartirait de valeurs par défaut le temps
   // que la restauration se termine (voir configChannel.js).
   await waitForHydration(guildId);
+  let currentPage = "prefixes";
+  // Commande actuellement sélectionnée sur la page Permissions (état local
+  // au panel, pas persisté — un nouveau `.panel` repart sans sélection).
+  let selectedCommand = null;
   const panelMessage = await message.reply(buildPrefixesPage(guildId));
 
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
@@ -112,6 +200,29 @@ async function handlePrefixPanel(message) {
     try {
       if (i.user.id !== message.author.id) {
         await i.reply({ content: "Seul l'auteur de la commande peut utiliser ce panel.", ephemeral: true });
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("panel_page:")) {
+        currentPage = i.customId.split(":")[1];
+        selectedCommand = null;
+        await i.update(currentPage === "permissions" ? buildPermissionsPage(guildId, null) : buildPrefixesPage(guildId));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "perm_command_select") {
+        selectedCommand = i.values[0];
+        await i.update(buildPermissionsPage(guildId, selectedCommand));
+        return;
+      }
+
+      if (i.isRoleSelectMenu() && i.customId.startsWith("perm_role_select:")) {
+        const command = i.customId.split(":")[1];
+        setRolesForCommand(guildId, command, i.values);
+        await saveGuildConfig(i.guild, ["commandPermissions"]);
+        selectedCommand = command;
+        const roleList = i.values.length ? i.values.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+        await i.update(buildPermissionsPage(guildId, command, `Rôles pour **${command}** mis à jour : ${roleList}`));
         return;
       }
 
