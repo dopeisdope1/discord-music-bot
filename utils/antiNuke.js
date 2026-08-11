@@ -16,6 +16,9 @@ const {
   getPunition,
 } = require("./antiNukeStore");
 const { getLogChannelId } = require("./logStore");
+const { isSecuredRole } = require("./securedRoleStore");
+const { isRoleBlacklistedFor } = require("./roleBlacklistStore");
+const { getAllRoleLimits } = require("./roleLimitStore");
 const { MODULE_LABELS, ALL_MODULES } = require("./antiNukeModules");
 
 // Fenêtre glissante par défaut : au-delà du seuil d'un module (voir
@@ -316,6 +319,42 @@ async function checkAccountAge(member) {
   });
 }
 
+// Map<"guildId:roleId", timestamp[]> — utilisé uniquement si `limit` a été
+// configuré sur au moins un rôle de ce serveur (voir checkRoleLimit).
+const roleLimitActivity = new Map();
+
+/**
+ * Limiteur d'actions par rôle (`limit`) : complète les seuils par module
+ * (voir THRESHOLDS/detect) avec un plafond compté au niveau du RÔLE plutôt
+ * que du compte — détecte un abus réparti sur plusieurs membres partageant
+ * un rôle (ex: équipe modération compromise en masse), invisible si on ne
+ * regarde que chaque compte individuellement.
+ * @param {import('discord.js').Guild} guild
+ * @param {string} executorId
+ * @returns {Promise<boolean>} true si au moins un rôle de l'exécuteur a atteint sa limite
+ */
+async function checkRoleLimit(guild, executorId) {
+  const limits = getAllRoleLimits(guild.id);
+  const roleIds = Object.keys(limits);
+  if (!roleIds.length) return false;
+
+  const member = await guild.members.fetch(executorId).catch(() => null);
+  if (!member) return false;
+
+  let hit = false;
+  const now = Date.now();
+  for (const roleId of roleIds) {
+    if (!member.roles.cache.has(roleId)) continue;
+    const { threshold, windowMs } = limits[roleId];
+    const key = `${guild.id}:${roleId}`;
+    const timestamps = (roleLimitActivity.get(key) || []).filter((t) => now - t < windowMs);
+    timestamps.push(now);
+    roleLimitActivity.set(key, timestamps);
+    if (timestamps.length >= threshold) hit = true;
+  }
+  return hit;
+}
+
 /**
  * Vérifie périodiquement (voir registerAntiNuke) les réactivations de rôles
  * en attente (voir punish/getAutoRestoreMs) et redonne les rôles dont le
@@ -369,6 +408,14 @@ async function detect(guild, moduleKey, auditLogType, targetId, reason) {
   const shouldPunish = threshold <= 1 ? true : recordAndCheck(guild.id, executor.id, moduleKey, threshold, windowMs);
   if (shouldPunish) {
     await punish(guild, executor.id, moduleKey, reason);
+    return;
+  }
+
+  // Pas assez pour déclencher CE module précis, mais peut-être assez pour
+  // dépasser la limite d'un rôle qu'il porte (voir `limit`) — un signal que
+  // les seuils par compte, pris isolément, ne peuvent pas voir.
+  if (await checkRoleLimit(guild, executor.id)) {
+    await punish(guild, executor.id, moduleKey, "Limite d'actions atteinte pour un rôle (voir `limit`)");
   }
 }
 
@@ -550,9 +597,13 @@ function registerAntiNuke(client) {
     }
 
     const removedRoles = oldMember.roles.cache.filter((r) => !newMember.roles.cache.has(r.id));
-    if (removedRoles.size > 0) {
+    const addedRoles = newMember.roles.cache.filter((r) => !oldMember.roles.cache.has(r.id));
+
+    if (removedRoles.size > 0 || addedRoles.size > 0) {
       const executor = await findExecutor(guild, AuditLogEvent.MemberRoleUpdate, newMember.id);
-      if (executor && !executor.bot) {
+      const executorIsBot = Boolean(executor?.bot);
+
+      if (removedRoles.size > 0 && executor && !executorIsBot) {
         for (const role of removedRoles.values()) {
           if (recordMassRoleRemoval(guild.id, executor.id, role.id, newMember.id)) {
             await punish(
@@ -562,6 +613,34 @@ function registerAntiNuke(client) {
               `Retrait du rôle **${role.name}** à ${MASS_ROLE_THRESHOLD}+ membres en moins de ${MASS_ROLE_WINDOW_MS / 1000}s`
             );
           }
+        }
+      }
+
+      for (const role of addedRoles.values()) {
+        // BLR (`blr`) : toujours appliqué, peu importe qui a donné le rôle —
+        // restriction propre à CE membre, pas une question de confiance
+        // envers l'exécuteur (contrairement à Secur ci-dessous).
+        if (isRoleBlacklistedFor(guild.id, newMember.id, role.id)) {
+          await newMember.roles.remove(role, "[Anti-nuke] Rôle blacklist pour ce membre (voir `blr`)").catch(() => {});
+          sendLog(guild.client, guild.id, "securite", {
+            title: "🚨 Rôle blacklist retiré",
+            description: `${newMember} a reçu **${role.name}**, qui lui est interdit (voir \`blr\`) — retiré automatiquement.`,
+            actor: newMember.user,
+          });
+          continue;
+        }
+
+        // Secur (`secur`) : un rôle sécurisé donné par quelqu'un qui n'est
+        // PAS owner anti-nuke est automatiquement repris — protège contre un
+        // compte staff compromis (ou peu scrupuleux) qui distribuerait un
+        // rôle admin en douce.
+        if (isSecuredRole(guild.id, role.id) && executor && !executorIsBot && !isOwner(guild, executor.id)) {
+          await newMember.roles.remove(role, "[Anti-nuke] Rôle sécurisé donné par un non-owner (voir `secur`)").catch(() => {});
+          sendLog(guild.client, guild.id, "securite", {
+            title: "🚨 Rôle sécurisé retiré",
+            description: `${newMember} a reçu le rôle sécurisé **${role.name}** de la part de **${executor.tag}**, qui n'est pas owner anti-nuke — retiré automatiquement.`,
+            actor: executor,
+          });
         }
       }
     }

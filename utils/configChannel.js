@@ -11,6 +11,9 @@ const { getRawGuildData: getRawReminders, hydrateFromRemote: hydrateReminders } 
 const { getRawGuildData: getRawSupport, hydrateFromRemote: hydrateSupport } = require("./supportStore");
 const { getRawGuildData: getRawGiveaways, hydrateFromRemote: hydrateGiveaways } = require("./giveawayStore");
 const { getRawGuildData: getRawTickets, hydrateFromRemote: hydrateTickets } = require("./ticketStore");
+const { getRawGuildData: getRawSecuredRoles, hydrateFromRemote: hydrateSecuredRoles } = require("./securedRoleStore");
+const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
+const { getRawGuildData: getRawRoleLimits, hydrateFromRemote: hydrateRoleLimits } = require("./roleLimitStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, salons de logs, config antifast,
@@ -40,6 +43,9 @@ const CATEGORY_GETTERS = {
   support: getRawSupport,
   giveaways: getRawGiveaways,
   tickets: getRawTickets,
+  securedRoles: getRawSecuredRoles,
+  roleBlacklist: getRawRoleBlacklist,
+  roleLimits: getRawRoleLimits,
 };
 const CATEGORY_HYDRATORS = {
   prefixes: hydratePrefixes,
@@ -54,6 +60,9 @@ const CATEGORY_HYDRATORS = {
   support: hydrateSupport,
   giveaways: hydrateGiveaways,
   tickets: hydrateTickets,
+  securedRoles: hydrateSecuredRoles,
+  roleBlacklist: hydrateRoleBlacklist,
+  roleLimits: hydrateRoleLimits,
 };
 const ALL_CATEGORIES = Object.keys(CATEGORY_GETTERS);
 
