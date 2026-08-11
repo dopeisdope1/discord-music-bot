@@ -86,6 +86,16 @@ const MODERATION_COMMANDS = [
   "close",
   "ticket-stats",
   "identify",
+  "invite",
+  "invite-admin",
+  "helpall",
+  "change",
+  "changeall",
+  "serverbanner",
+  "serverpic",
+  "staff",
+  "staff-list",
+  "mutelist",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -165,6 +175,16 @@ function assignableCommandLine(prefix, cmd) {
     close: `\`${prefix}close\` — Ferme le ticket (dans son salon)`,
     "ticket-stats": `\`${prefix}ticket-stats\` — Statistiques des tickets`,
     identify: `\`${prefix}identify\` — Renomme le bot et poste un message expliquant son rôle`,
+    invite: `\`${prefix}invite\` — Lien d'invitation du bot`,
+    "invite-admin": `\`${prefix}invite-admin\` — Crée une invitation permanente pour ce serveur`,
+    helpall: `\`${prefix}helpall\` — Liste toutes les commandes, sans filtrage par permission`,
+    change: `\`${prefix}change @membre <nom>\` — Renomme un membre (vide pour réinitialiser)`,
+    changeall: `\`${prefix}changeall <nom>\` — Renomme tous les membres renommables`,
+    serverbanner: `\`${prefix}serverbanner <url>\` — Change la bannière du serveur`,
+    serverpic: `\`${prefix}serverpic <url>\` — Change l'icône du serveur`,
+    staff: `\`${prefix}staff add|remove @role\` / \`${prefix}staff list\` — Gère les rôles désignés staff`,
+    "staff-list": `\`${prefix}staff-list\` — Liste les rôles staff (alias de \`staff list\`)`,
+    mutelist: `\`${prefix}mutelist\` — Liste les membres actuellement muets`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
@@ -259,7 +279,7 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
  *   de modération réellement disponibles sur CE bot (voir
  *   utils/musicModerationCommands.js pour un sous-ensemble réduit).
  */
-function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS } = {}) {
+function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS, showAll = false } = {}) {
   const categories = [];
 
   if (includePublic) {
@@ -276,11 +296,11 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
+  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => showAll || canUseCommand(message, cmd));
   if (allowed.length) {
     categories.push({
       key: "allowed",
-      label: "Commandes autorisées",
+      label: showAll ? "Toutes les commandes" : "Commandes autorisées",
       names: allowed,
       lines: allowed.map((cmd) => assignableCommandLine(prefix, cmd)),
       footer: allowed.includes("clear")
@@ -289,7 +309,7 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+  if (showAll || message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
     categories.push({
       key: "danger",
       label: "⚠️ Danger",

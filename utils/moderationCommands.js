@@ -30,6 +30,7 @@ const { setSupportUrl, getSupportUrl } = require("./supportStore");
 const { getBlacklistEntry } = require("./blacklistStore");
 const { addGiveaway, getGiveaway, getActiveGiveaways, markEnded } = require("./giveawayStore");
 const { announceIdentity } = require("./botIntro");
+const { getStaffRoles, addStaffRole, removeStaffRole } = require("./staffRoleStore");
 const {
   setCategory: setTicketCategory,
   getCategory: getTicketCategory,
@@ -64,6 +65,7 @@ const DASH_MEMBER_COMMANDS = new Set([
   "glist",
   "ticket",
   "close",
+  "invite",
 ]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set([
@@ -116,6 +118,15 @@ const DASH_ADMIN_COMMANDS = new Set([
   "setchannel",
   "ticket-stats",
   "identify",
+  "invite-admin",
+  "helpall",
+  "change",
+  "changeall",
+  "serverbanner",
+  "serverpic",
+  "staff",
+  "staff-list",
+  "mutelist",
 ]);
 
 // Retire les tokens de mention ("<@id>"/"<@!id>") d'une liste d'arguments —
@@ -2048,6 +2059,164 @@ const handlers = {
     });
     await message.reply({
       embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Pseudo mis à jour et message envoyé." : "Pseudo mis à jour, mais aucun salon accessible pour poster le message.")],
+    });
+  },
+
+  async invite(client, message) {
+    const url = `https://discord.com/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
+    await message.reply({ embeds: [buildStatusEmbed("info", url, { title: "Inviter ce bot" })] });
+  },
+
+  async "invite-admin"(client, message) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.CreateInstantInvite)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Créer une invitation**.")] });
+    }
+    const invite = await message.channel
+      .createInvite({ maxAge: 0, maxUses: 0, reason: `Généré par ${message.author.tag}` })
+      .catch(() => null);
+    if (!invite) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de créer une invitation.")] });
+    }
+    await message.reply({ embeds: [buildStatusEmbed("success", `https://discord.gg/${invite.code}`, { title: "Invitation du serveur (permanente)" })] });
+  },
+
+  async helpall(client, message, args, prefix) {
+    const dash = prefix || getPrefixes(message.guild.id).dash;
+    return sendDashHelpPanel(message, dash, { showAll: true });
+  },
+
+  async change(client, message, args) {
+    const target = message.mentions.members?.first();
+    const newName = args.slice(1).join(" ").trim();
+    if (!target) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `change @membre <nouveau pseudo>` (vide pour réinitialiser)")] });
+    }
+    if (!target.manageable) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Je ne peux pas renommer ce membre (rôle trop haut, ou c'est le propriétaire).")] });
+    }
+    await target.setNickname(newName || null, `Renommé par ${message.author.tag}`).catch(() => {});
+    await message.reply({
+      embeds: [buildStatusEmbed("success", newName ? `${target} renommé en **${newName}**.` : `Pseudo de ${target} réinitialisé.`)],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async changeall(client, message, args) {
+    const newName = args.join(" ").trim();
+    if (!newName) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `changeall <nom>` (renomme tous les membres renommables — irréversible en masse, à utiliser avec précaution)")] });
+    }
+    let fetchErr = null;
+    const members = await fetchAllMembers(message.guild).catch((err) => {
+      fetchErr = err;
+      return null;
+    });
+    if (!members) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", memberFetchErrorMessage(fetchErr) || "Impossible de récupérer la liste des membres, réessaie.")],
+      });
+    }
+    const status = await message.reply({ embeds: [buildStatusEmbed("warning", "Renommage en cours...")] });
+    let success = 0;
+    for (const member of members.values()) {
+      if (!member.manageable) continue;
+      const ok = await member
+        .setNickname(newName, `Changeall par ${message.author.tag}`)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) success += 1;
+    }
+    await status.edit({ embeds: [buildStatusEmbed("success", `**${success}** membre(s) renommé(s) en **${newName}**.`)] });
+  },
+
+  async serverbanner(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer le serveur**.")] });
+    }
+    const url = args[0] || message.attachments.first()?.url;
+    if (!url) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `serverbanner <url>` ou avec une image en pièce jointe.")] });
+    }
+    const ok = await message.guild
+      .setBanner(url, `Modifié par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    await message.reply({
+      embeds: [
+        buildStatusEmbed(
+          ok ? "success" : "error",
+          ok ? "Bannière du serveur mise à jour." : "Échec (le serveur n'a peut-être pas assez de boosts pour une bannière, ou l'image est invalide)."
+        ),
+      ],
+    });
+  },
+
+  async serverpic(client, message, args) {
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer le serveur**.")] });
+    }
+    const url = args[0] || message.attachments.first()?.url;
+    if (!url) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `serverpic <url>` ou avec une image en pièce jointe.")] });
+    }
+    const ok = await message.guild
+      .setIcon(url, `Modifié par ${message.author.tag}`)
+      .then(() => true)
+      .catch((err) => {
+        console.error(err);
+        return false;
+      });
+    await message.reply({ embeds: [buildStatusEmbed(ok ? "success" : "error", ok ? "Icône du serveur mise à jour." : "Échec (image invalide ou inaccessible).")] });
+  },
+
+  async staff(client, message, args) {
+    const sub = (args[0] || "list").toLowerCase();
+    const role = message.mentions.roles?.first();
+
+    if (sub === "list") {
+      const roles = getStaffRoles(message.guild.id);
+      return message.reply({
+        embeds: [buildStatusEmbed("info", roles.length ? roles.map((id) => `<@&${id}>`).join(", ") : "Aucun rôle staff configuré.", { title: "Rôles staff" })],
+        allowedMentions: { parse: [] },
+      });
+    }
+    if ((sub === "add" || sub === "remove") && role) {
+      if (sub === "add") addStaffRole(message.guild.id, role.id);
+      else removeStaffRole(message.guild.id, role.id);
+      await saveGuildConfig(message.guild, ["staffRoles"]);
+      return message.reply({ embeds: [buildStatusEmbed("success", `${role} ${sub === "add" ? "ajouté aux" : "retiré des"} rôles staff.`)] });
+    }
+    return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `staff add|remove @role` ou `staff list`.")] });
+  },
+
+  "staff-list": (client, message, args, prefix) => handlers.staff(client, message, ["list"], prefix),
+
+  async mutelist(client, message) {
+    let fetchErr = null;
+    const members = await fetchAllMembers(message.guild).catch((err) => {
+      fetchErr = err;
+      return null;
+    });
+    if (!members) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", memberFetchErrorMessage(fetchErr) || "Impossible de récupérer la liste des membres, réessaie.")],
+      });
+    }
+    const muted = members.filter((m) => m.communicationDisabledUntilTimestamp && m.communicationDisabledUntilTimestamp > Date.now());
+    if (!muted.size) {
+      return message.reply({ embeds: [buildStatusEmbed("info", "Aucun membre muet actuellement.")] });
+    }
+    const lines = [...muted.values()].slice(0, 30).map((m) => `${m} — jusqu'à <t:${Math.floor(m.communicationDisabledUntilTimestamp / 1000)}:R>`);
+    await message.reply({
+      embeds: [
+        buildStatusEmbed("info", lines.join("\n") + (muted.size > 30 ? `\n*+${muted.size - 30} autre(s)*` : ""), {
+          title: `Membres muets (${muted.size})`,
+        }),
+      ],
+      allowedMentions: { parse: [] },
     });
   },
 };
