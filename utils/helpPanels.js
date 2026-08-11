@@ -8,35 +8,33 @@ const {
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
-const { getCategories, ASSIGNABLE_COMMANDS } = require("./permissionCategoryStore");
 const { canUseCommand } = require("./permissions");
-const { isOwner } = require("./antiNukeStore");
 
 const HELP_TIMEOUT_MS = 5 * 60_000;
 
-// Description affichée par commande assignable dans `.help` — voir
-// utils/permissionCategoryStore.js pour la liste canonique des commandes.
+// Commandes de modération gardées, gérées via canUseCommand (Administrateur
+// natif, ou permission Discord native "Bannir des membres" pour ban/unban/
+// unbanall uniquement — voir utils/permissions.js).
+const MODERATION_COMMANDS = ["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create", "clear", "add", "del"];
+const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
+
+// Description affichée par commande dans `.help`.
 function assignableCommandLine(prefix, cmd) {
   const lines = {
-    helpall: `\`${prefix}helpall\` — Liste les commandes par catégorie de permission`,
-    perms: `\`${prefix}perms\` — Liste les rôles par catégorie de permission`,
-    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions, rôles)`,
+    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs)`,
     renew: `\`${prefix}renew\` — Recrée le salon (vide)`,
     hide: `\`${prefix}hide\` — Cache le salon à @everyone`,
     unhide: `\`${prefix}unhide\` — Affiche le salon à @everyone`,
     lock: `\`${prefix}lock\` — Bloque l'écriture pour @everyone`,
     unlock: `\`${prefix}unlock\` — Débloque l'écriture pour @everyone`,
     massrole: `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
-    addrole: `\`${prefix}addrole [@membre] [@role]\` — Ajoute un rôle à un membre (menus déroulants pour ce qui manque). Raccourci : répondre à son message avec \`add <nom du rôle>\``,
-    delrole: `\`${prefix}delrole [@membre] [@role]\` — Retire un rôle à un membre (menus déroulants pour ce qui manque). Raccourci : répondre à son message avec \`del <nom du rôle>\``,
+    add: "`add <nom du rôle>` (en réponse au message du membre, ou en le mentionnant) — Ajoute ce rôle",
+    del: "`del <nom du rôle>` (en réponse au message du membre, ou en le mentionnant) — Retire ce rôle",
     create: `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
     ban: `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
     unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
     unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
     clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
-    niv: `\`${prefix}niv\` — Liste qui a un rôle donné mais n'est pas en vocal`,
-    dero: `\`${prefix}dero set @role\` / \`${prefix}dero off\` — Rôle appliqué automatiquement (accès complet) sur chaque nouveau salon`,
-    counter: `\`${prefix}counter set #salon [modèle]\` / \`${prefix}counter off\` — Salon vocal renommé toutes les 10 min pour afficher un compteur (\`{count}\`)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
@@ -114,14 +112,11 @@ function buildMusicHelpPanel(prefix = "!") {
 
 /**
  * Catégories du panel d'aide "-help", construites commande par commande via
- * canUseCommand plutôt qu'avec des groupes fixes "mod"/"ban" — chaque
- * commande assignable (voir ASSIGNABLE_COMMANDS) n'apparaît que si l'auteur
- * y a réellement accès (admin, permission Discord native pour ban/unban/
- * unbanall, ou rôle autorisé pour une catégorie de `.panel` > Permissions
- * qui l'inclut). Deux personnes avec des catégories différentes voient donc
- * des listes différentes. "⚠️ Danger" (`.banall`) n'apparaît que pour un
- * vrai administrateur, jamais via une catégorie de permission (exclue de
- * ASSIGNABLE_COMMANDS).
+ * canUseCommand : chaque commande de modération n'apparaît que si l'auteur y
+ * a réellement accès (administrateur, ou permission Discord native pour
+ * ban/unban/unbanall). Deux personnes avec des permissions différentes
+ * voient donc des listes différentes. "⚠️ Danger" (`.banall`) n'apparaît que
+ * pour un administrateur.
  * @param {string} prefix
  * @param {import('discord.js').Message} message
  */
@@ -140,7 +135,7 @@ function buildDashCategories(prefix, message) {
     },
   ];
 
-  const allowed = ASSIGNABLE_COMMANDS.filter((cmd) => canUseCommand(message, cmd));
+  const allowed = [...MODERATION_COMMANDS, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
   if (allowed.length) {
     categories.push({
       key: "allowed",
@@ -159,21 +154,6 @@ function buildDashCategories(prefix, message) {
       label: "⚠️ Danger",
       names: ["banall"],
       lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
-    });
-  }
-
-  if (isOwner(message.guild, message.author.id)) {
-    categories.push({
-      key: "securite",
-      label: "🛡️ Sécurité",
-      names: ["antifast", "owner", "wl", "allbots"],
-      lines: [
-        "`=antifast` — Panel (statut, activer/désactiver, owners, whitelist). `=antifast on|off` en raccourci direct",
-        "`=owner add|remove|list [@membre]` — Qui peut configurer l'anti-nuke (réservé au propriétaire réel)",
-        "`=wl add|remove|list [@membre] [module|catégorie|all]` — Exempte un membre d'un ou plusieurs modules anti-nuke précis (`all` par défaut)",
-        "`=allbots` — Liste tous les bots du serveur (repérer un ajout suspect)",
-      ],
-      footer: "Préfixe fixe `=`, séparé de tes préfixes configurables — pas `!`/`.`.",
     });
   }
 
@@ -255,72 +235,4 @@ async function sendDashHelpPanel(message, prefix) {
   });
 }
 
-/**
- * `.helpall` : liste chaque catégorie de permission (voir `.panel` >
- * Permissions, utils/permissionCategoryStore.js) avec les commandes qui lui
- * sont associées — un aperçu de "qui peut faire quoi", sans les rôles
- * (voir `.perms` pour ça).
- * @param {import('discord.js').Message} message
- */
-async function sendHelpAllPanel(message) {
-  const categories = getCategories(message.guildId);
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "## Permissions liées aux commandes\n> Voici les différentes permissions ainsi que les commandes accessibles."
-    )
-  );
-
-  if (categories.length === 0) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("*Aucune catégorie configurée — voir `.panel` > Permissions.*")
-    );
-  }
-
-  for (const cat of categories) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `**Permission ${cat.id}**\n↳ ${cat.commands.length ? cat.commands.join(", ") : "*aucune commande*"}`
-      )
-    );
-  }
-
-  await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
-}
-
-/**
- * `.perms` : liste chaque catégorie de permission avec les rôles qui y sont
- * autorisés — le pendant "rôles" de `.helpall` (qui liste les commandes).
- * @param {import('discord.js').Message} message
- */
-async function sendPermsPanel(message) {
-  const categories = getCategories(message.guildId);
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "## Permissions\n> Voici les différentes permissions ainsi que les rôles associés."
-    )
-  );
-
-  if (categories.length === 0) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("*Aucune catégorie configurée — voir `.panel` > Permissions.*")
-    );
-  }
-
-  for (const cat of categories) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `**Permission ${cat.id}**\n↳ ${cat.roles.length ? cat.roles.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*"}`
-      )
-    );
-  }
-
-  await message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
-}
-
-module.exports = { buildMusicHelpPanel, sendDashHelpPanel, sendHelpAllPanel, sendPermsPanel, buildHelpPanel };
+module.exports = { buildMusicHelpPanel, sendDashHelpPanel, buildHelpPanel };

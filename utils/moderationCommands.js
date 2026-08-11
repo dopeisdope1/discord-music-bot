@@ -1,130 +1,32 @@
 const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel, sendDashHelpPanel, sendHelpAllPanel, sendPermsPanel } = require("./helpPanels");
+const { sendDashHelpPanel } = require("./helpPanels");
 const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { handleSpotifyPlay } = require("./spotifyPlay");
-const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
-const { handleJoinSpotify } = require("./joinSpotify");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
-const {
-  handleAddRolePanel,
-  handleDelRolePanel,
-  handleAddRoleForMember,
-  handleDelRoleForMember,
-  addRoleDirect,
-  delRoleDirect,
-} = require("./rolePanels");
-const {
-  handleAntifastCommand,
-  handleOwnerCommand,
-  handleWhitelistCommand,
-  handleAllBotsCommand,
-} = require("./antiNukeCommands");
-const { isOwner, isBotOwner, getBotOwnerIds } = require("./antiNukeStore");
-const { handleNivCommand } = require("./nivPanel");
-const { handleDeroCommand, handleCounterCommand } = require("./toolsCommands");
+const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlePrefixPanel } = require("./prefixPanel");
 const { getPrefixes } = require("./prefixStore");
 const { sendLog } = require("./actionLogger");
 const { validateMassRoleTarget, runMassRole } = require("./massRole");
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
-const { playbackErrorMessage } = require("./musicErrors");
 const { searchGif } = require("./gifSearch");
-const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
 
-const URL_REGEX = /^https?:\/\//i;
-const LOOP_KEYWORDS = {
-  off: "none",
-  désactivé: "none",
-  "0": "none",
-  song: "track",
-  chanson: "track",
-  "1": "track",
-  queue: "queue",
-  file: "queue",
-  "2": "queue",
-};
-
-// Commandes "." accessibles à tout le monde, sans permission particulière
+// Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
-// Commandes "." dont l'accès se décide au cas par cas via canUseCommand :
-// admin, permission Discord native (ban/unban/unbanall uniquement), ou rôle
-// autorisé pour une catégorie de permission qui inclut cette commande précise
-// (voir .panel > Permissions, utils/permissionCategoryStore.js — chaque
-// catégorie est indépendante, pas de groupe "mod"/"ban" figé).
-const DASH_ADMIN_COMMANDS = new Set([
-  "renew",
-  "hide",
-  "unhide",
-  "lock",
-  "unlock",
-  "massrole",
-  "addrole",
-  "delrole",
-  "panel",
-  "create",
-  "helpall",
-  "perms",
-  "niv",
-  "dero",
-  "counter",
-]);
-// "banall" est gérée à part (permission vérifiée dans son propre handler) :
-// contrairement au reste de DASH_ADMIN_COMMANDS, elle n'est PAS assignable à
-// une catégorie de permission — bannir tout le serveur est trop destructeur
-// pour être délégable autrement qu'à un vrai administrateur.
+// Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
+const DASH_ADMIN_COMMANDS = new Set(["renew", "hide", "unhide", "lock", "unlock", "massrole", "panel", "create"]);
+// "banall" est gérée à part (vérification dans son propre handler) : action
+// trop destructrice pour être traitée comme les autres commandes admin.
 const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
-// Commandes "." dont la permission est aussi vérifiée via canUseCommand (qui
-// accepte en plus la permission Discord native "Bannir des membres" pour
-// celles-ci spécifiquement — voir utils/permissions.js).
+// Commandes dont la permission accepte aussi la permission Discord native
+// "Bannir des membres" en plus d'Administrateur (voir utils/permissions.js).
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
-// Commandes de config de l'anti-nuke — jamais assignables à une catégorie de
-// permission ni gérées via canUseCommand (Administrateur natif compris) :
-// leur permission est vérifiée par leur propre handler (owners anti-nuke /
-// propriétaire réel du serveur, voir utils/antiNukeCommands.js), un cercle
-// volontairement séparé de l'Administrateur Discord natif — c'est justement
-// un compte admin compromis que ça doit couvrir. Accessibles uniquement via
-// le préfixe fixe "=" (SECURITY_PREFIX, non configurable via `.panel`), pas
-// via `!`/`.` — une séparation de plus par rapport au reste des commandes.
-const SECURITY_COMMANDS = new Set(["antifast", "owner", "wl", "allbots"]);
-const SECURITY_PREFIX = "=";
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-// "-clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
+// "clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
 const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
-
-function getPlayerOrReply(client, message) {
-  const player = client.kazagumo.players.get(message.guildId);
-  if (!player) {
-    message.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")] });
-    return null;
-  }
-  return player;
-}
-
-/**
- * Vérifie que l'auteur du message peut utiliser une commande de contrôle
- * (pause/skip/stop/volume/loop/leave) : seule la personne qui a amené le bot
- * en vocal (ou quelqu'un qu'elle a autorisé) le peut — voir utils/playerControl.js.
- * Si ce n'est pas le cas, envoie une demande d'autorisation au propriétaire.
- * @returns {Promise<boolean>} true si la commande peut continuer
- */
-async function requirePlayerControl(client, message) {
-  if (canControlPlayer(client, message.guildId, message.author.id)) return true;
-  requestPlayerAccess(client, message.channel, message.author, message.guildId);
-  await message.reply({
-    embeds: [
-      buildStatusEmbed(
-        "info",
-        "Cette commande est réservée à la personne qui a lancé la musique. Une demande d'autorisation lui a été envoyée."
-      ),
-    ],
-  });
-  return false;
-}
 
 function requireCommandAccess(message, cmd) {
   if (!canUseCommand(message, cmd)) {
@@ -185,10 +87,7 @@ async function clearMessages(client, channel, { targetMemberId, maxCount = Infin
 
 /**
  * Bannit tous les membres bannissables du serveur (hors bots et hors
- * l'auteur de `.banall`) et édite `statusMessage` avec le résultat — partagé
- * entre le flux "propriétaire tape .banall directement" (confirmation
- * classique) et le flux "owner délégué autorisé par le propriétaire réel"
- * (voir requestBanAllAuthorization).
+ * l'auteur de `.banall`) et édite `statusMessage` avec le résultat.
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').Message} message
  * @param {import('discord.js').Message} statusMessage
@@ -235,261 +134,7 @@ async function executeBanAll(client, message, statusMessage) {
   }
 }
 
-/**
- * Envoyée quand un "owner" délégué (ajouté via `.owner add`, pas le vrai
- * propriétaire ni un propriétaire du bot) tape `.banall` : ping le
- * propriétaire réel du serveur ET tous les propriétaires du bot, avec des
- * boutons Autoriser/Refuser. Seul l'un d'eux peut répondre ; un "accepter"
- * exécute directement le bannissement (le clic fait office de confirmation,
- * pas besoin d'une seconde étape).
- * @param {import('discord.js').Client} client
- * @param {import('discord.js').Message} message
- */
-async function requestBanAllAuthorization(client, message) {
-  const guild = message.guild;
-  const approverIds = [guild.ownerId, ...getBotOwnerIds().filter((id) => id !== guild.ownerId)];
-  const isApprover = (userId) => userId === guild.ownerId || isBotOwner(userId);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("banall_auth:accept").setLabel("Autoriser").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("banall_auth:deny").setLabel("Refuser").setStyle(ButtonStyle.Secondary)
-  );
-
-  const authMessage = await message.reply({
-    content: approverIds.map((id) => `<@${id}>`).join(" "),
-    embeds: [
-      buildStatusEmbed(
-        "warning",
-        `**${message.author.tag}** veut exécuter \`.banall\` (bannir **tous les membres humains** du serveur). Autorises-tu ?`
-      ),
-    ],
-    components: [row],
-    allowedMentions: { users: approverIds },
-  });
-
-  sendLog(client, guild.id, "securite", {
-    title: "Demande d'autorisation .banall",
-    description: `**${message.author.tag}** (owner délégué) a demandé à exécuter \`.banall\`.`,
-    actor: message.author,
-  });
-
-  const collector = authMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
-
-  collector.on("collect", async (i) => {
-    try {
-      if (!isApprover(i.user.id)) {
-        await i.reply({
-          content: "Seul le propriétaire du serveur (ou du bot) peut répondre à cette demande.",
-          ephemeral: true,
-        });
-        return;
-      }
-
-      if (i.customId === "banall_auth:deny") {
-        await i.update({ content: null, embeds: [buildStatusEmbed("info", `Refusé par **${i.user.tag}**.`)], components: [] });
-        sendLog(client, guild.id, "securite", {
-          title: "Demande .banall refusée",
-          description: `**${i.user.tag}** a refusé la demande de **${message.author.tag}**.`,
-          actor: i.user,
-        });
-        return;
-      }
-
-      await i.update({
-        content: null,
-        embeds: [buildStatusEmbed("warning", `Autorisé par **${i.user.tag}** — bannissement en cours...`)],
-        components: [],
-      });
-      sendLog(client, guild.id, "securite", {
-        title: "Demande .banall autorisée",
-        description: `**${i.user.tag}** a autorisé la demande de **${message.author.tag}**.`,
-        actor: i.user,
-      });
-      await executeBanAll(client, message, authMessage);
-    } catch (err) {
-      console.error("[banall] Erreur sur la demande d'autorisation :", err);
-    }
-  });
-
-  collector.on("end", (collected) => {
-    if (collected.size === 0) {
-      authMessage.edit({ content: null, embeds: [buildStatusEmbed("warning", "Demande expirée.")], components: [] }).catch(() => {});
-    }
-  });
-}
-
 const handlers = {
-  // ---- Musique ----
-  async play(client, message, args) {
-    const query = args.join(" ");
-    if (!query)
-      return message.reply({
-        embeds: [buildStatusEmbed("error", "Indique un nom de musique/artiste, ou un lien YouTube/Spotify.")],
-      });
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    if (URL_REGEX.test(query)) {
-      try {
-        const outcome = await queueAndPlay(client.kazagumo, {
-          voiceChannel: vc,
-          textChannel: message.channel,
-          member: message.member,
-          query,
-          client,
-        });
-        if (!outcome) {
-          return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
-        }
-        const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
-        await message.reply({
-          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
-        });
-      } catch (err) {
-        console.error(err);
-        await message.reply({
-          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, "Impossible de jouer ce titre. Vérifie le lien."))],
-        });
-      }
-      return;
-    }
-
-    await handleSpotifyPlay({
-      kazagumo: client.kazagumo,
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      member: message.member,
-      query,
-      requesterId: message.author.id,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async join(client, message) {
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    const listenerMember = message.mentions.members?.first() || message.member;
-
-    await handleJoinSpotify({
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      listenerMember,
-      playerMember: message.member,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async skip(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    if (!player.queue.current) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
-    }
-    player.skip();
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
-  },
-
-  async stop(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({
-      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
-    });
-  },
-
-  async leave(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({ embeds: [buildStatusEmbed("success", "J'ai quitté le salon vocal.")] });
-  },
-
-  async pause(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, true);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
-  },
-
-  async resume(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, false);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
-  },
-
-  async queue(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    const tracks = [player.queue.current, ...player.queue].filter(Boolean);
-    if (tracks.length === 0)
-      return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
-    const list = tracks
-      .slice(0, 15)
-      .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} **${t.title}**`)
-      .join("\n");
-    await message.reply({
-      embeds: [
-        buildStatusEmbed("info", list, { title: `File d'attente (${tracks.length} titres)` }),
-      ],
-    });
-  },
-
-  async volume(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const niveau = parseInt(args[0], 10);
-    if (isNaN(niveau) || niveau < 0 || niveau > 150) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Indique un volume entre 0 et 150. Ex : \`${main}volume 80\``)],
-      });
-    }
-    player.setVolume(niveau);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`)],
-    });
-  },
-
-  async loop(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
-    if (!mode) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Mode invalide. Utilise : \`${main}loop off|song|queue\``)],
-      });
-    }
-    player.setLoop(mode);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`)],
-    });
-  },
-
-  // ---- Aide ----
-  async help(client, message) {
-    await message.channel.send(buildMusicHelpPanel());
-  },
-
-  // ---- Modération (préfixe ".") ----
   async clear(client, message, args) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return message.reply({
@@ -553,7 +198,7 @@ const handlers = {
         );
       }
     } else {
-      // -clear <nombre> : nécessite l'accès à "clear"
+      // .clear <nombre> : nécessite l'accès à "clear"
       if (!canUseCommand(message, "clear")) {
         return sendTempReply(
           channel,
@@ -607,14 +252,6 @@ const handlers = {
     await handlePrefixPanel(message);
   },
 
-  async helpall(client, message) {
-    await sendHelpAllPanel(message);
-  },
-
-  async perms(client, message) {
-    await sendPermsPanel(message);
-  },
-
   async ban(client, message) {
     await handleBanPanel(message);
   },
@@ -630,32 +267,15 @@ const handlers = {
   // Bannit tous les membres bannissables du serveur (hors bots et hors
   // l'auteur lui-même — pour ne pas se verrouiller dehors sans pouvoir
   // confirmer/annuler ni faire `.unbanall` derrière). Action extrêmement
-  // destructrice, jamais assignable via `.panel` > Permissions, à trois
-  // niveaux : le propriétaire réel du serveur ou un propriétaire du bot
-  // (BOT_OWNER_IDS) l'exécute directement (confirmation classique) ; un
-  // owner délégué (ajouté via `.owner add`) déclenche une demande
-  // d'autorisation envoyée au propriétaire réel/du bot (voir
-  // requestBanAllAuthorization) — rien ne se passe tant que ce n'est pas
-  // accepté ; n'importe qui d'autre est juste refusé (pas de rétorsion —
-  // retirer les rôles ne marche de toute façon pas si son rôle est au même
-  // niveau ou au-dessus de celui du bot, voir utils/antiNuke.js pour la
-  // vraie détection anti-nuke générale).
+  // destructrice : réservée aux administrateurs natifs, jamais délégable.
   async banall(client, message) {
-    const author = message.author;
-    const isTopOwner = author.id === message.guild.ownerId || isBotOwner(author.id);
-    const isDelegatedOwner = !isTopOwner && isOwner(message.guild, author.id);
-
-    if (!isTopOwner && !isDelegatedOwner) {
+    if (!canUseCommand(message, "banall")) {
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Commande réservée au propriétaire du serveur (ou du bot).")],
+        embeds: [buildStatusEmbed("error", "Commande réservée aux administrateurs.")],
       });
     }
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
-    }
-
-    if (isDelegatedOwner) {
-      return requestBanAllAuthorization(client, message);
     }
 
     const confirmRow = new ActionRowBuilder().addComponents(
@@ -703,9 +323,7 @@ const handlers = {
 
   // Débannit tous les membres actuellement bannis du serveur. Moins
   // destructeur que `.banall` (ne touche aucun membre actif), donc gérée
-  // comme `.ban`/`.unban` : admin, permission "Bannir des membres", ou rôle
-  // autorisé via `.panel` > Permissions (vérifié dans le dispatcher, voir
-  // BAN_COMMANDS).
+  // comme `.ban`/`.unban` : admin, ou permission native "Bannir des membres".
   async unbanall(client, message) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Bannir des membres**.")] });
@@ -911,7 +529,7 @@ const handlers = {
         embeds: [
           buildStatusEmbed(
             "error",
-            `Utilisation : \`${dash}massrole add @role\`/\`<id>\` ou \`${dash}massrole remove @role\`/\`<id>\` (utilise l'ID pour ne pas ping tout le rôle). Aussi disponible dans \`${dash}panel\`.`
+            `Utilisation : \`${dash}massrole add @role\`/\`<id>\` ou \`${dash}massrole remove @role\`/\`<id>\` (utilise l'ID pour ne pas ping tout le rôle).`
           ),
         ],
       });
@@ -961,46 +579,6 @@ const handlers = {
         ],
       });
     }
-  },
-
-  async addrole(client, message, args) {
-    if (args.length >= 2) return addRoleDirect(message, args[0], args[1]);
-    if (args.length === 1) return handleAddRoleForMember(message, args[0]);
-    await handleAddRolePanel(message);
-  },
-
-  async delrole(client, message, args) {
-    if (args.length >= 2) return delRoleDirect(message, args[0], args[1]);
-    if (args.length === 1) return handleDelRoleForMember(message, args[0]);
-    await handleDelRolePanel(message);
-  },
-
-  async antifast(client, message, args) {
-    await handleAntifastCommand(message, args);
-  },
-
-  async owner(client, message, args) {
-    await handleOwnerCommand(message, args);
-  },
-
-  async wl(client, message, args) {
-    await handleWhitelistCommand(message, args);
-  },
-
-  async allbots(client, message) {
-    await handleAllBotsCommand(message);
-  },
-
-  async niv(client, message) {
-    await handleNivCommand(message);
-  },
-
-  async dero(client, message, args) {
-    await handleDeroCommand(message, args);
-  },
-
-  async counter(client, message, args) {
-    await handleCounterCommand(message, args);
   },
 
   async pic(client, message) {
@@ -1098,7 +676,7 @@ const handlers = {
 };
 
 /**
- * Enregistre un message pour la commande -snipe.
+ * Enregistre un message pour la commande .snipe.
  */
 function rememberSnipe(client, channelId, message, type) {
   if (!message?.author || message.author.bot) return;
@@ -1111,13 +689,13 @@ function rememberSnipe(client, channelId, message, type) {
 }
 
 /**
- * À appeler dans l'écouteur "messageCreate" du client.
+ * À appeler dans l'écouteur "messageCreate" du bot Modération.
  */
-async function handleTextCommand(client, message) {
+async function handleModerationTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
-  const { main: MAIN_PREFIX, dash: DASH_PREFIX } = getPrefixes(message.guild.id);
+  const { dash: DASH_PREFIX } = getPrefixes(message.guild.id);
 
   // Déclencheurs spéciaux sans préfixe, tous équivalents à ".clear me"
   // (supprime tes propres messages), ouverts à tout le monde (limite gérée
@@ -1129,8 +707,7 @@ async function handleTextCommand(client, message) {
   }
 
   // Déclencheur spécial sans préfixe : "add <rôle>" / "del <rôle>" en
-  // répondant au message de la cible (ou en la mentionnant) — raccourci de
-  // .addrole/.delrole par nom de rôle plutôt que mention/ID. Volontairement
+  // répondant au message de la cible (ou en la mentionnant). Volontairement
   // strict (cible requise + nom de rôle exact + permission) pour ne pas
   // réagir à une phrase normale qui commencerait par "add"/"del" par hasard ;
   // si une condition ne colle pas, on ignore silencieusement plutôt que de
@@ -1151,56 +728,32 @@ async function handleTextCommand(client, message) {
     const role = target ? message.guild.roles.cache.find((r) => r.id !== message.guild.id && r.name.toLowerCase() === roleName) : null;
 
     if (target && role) {
-      const permCommand = action === "add" ? "addrole" : "delrole";
-      if (canUseCommand(message, permCommand)) {
+      if (canUseCommand(message, action)) {
         return (action === "add" ? addRoleDirect : delRoleDirect)(message, target.id, role.id);
       }
       return;
     }
   }
 
-  // Préfixe fixe "=" (non configurable, séparé de `.panel`) : uniquement les
-  // commandes de config de l'anti-nuke — voir SECURITY_COMMANDS/SECURITY_PREFIX.
-  if (content.startsWith(SECURITY_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(SECURITY_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (!SECURITY_COMMANDS.has(cmd)) return;
-    // Permission vérifiée dans chaque handler (isOwner / propriétaire réel).
+  if (!content.startsWith(DASH_PREFIX)) return;
+
+  const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
+  const cmd = (cmdRaw || "").toLowerCase();
+  if (cmd === "help") {
+    return sendDashHelpPanel(message, DASH_PREFIX);
+  }
+  if (cmd === "clear") {
+    // Permission gérée dans le handler : dépend de la cible (soi-même,
+    // quelqu'un d'autre, ou un nombre).
+    return handlers.clear(client, message, args);
+  }
+  if (BAN_COMMANDS.has(cmd)) {
+    if (!requireCommandAccess(message, cmd)) return;
     return handlers[cmd](client, message, args);
   }
-
-  // Préfixe "." (configurable via .panel) : commandes membres + modération + ban/unban
-  if (content.startsWith(DASH_PREFIX) && !content.startsWith(MAIN_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (cmd === "help") {
-      return sendDashHelpPanel(message, DASH_PREFIX);
-    }
-    if (cmd === "clear") {
-      // Permission gérée dans le handler : dépend de la cible (soi-même,
-      // quelqu'un d'autre, ou un nombre).
-      return handlers.clear(client, message, args);
-    }
-    if (BAN_COMMANDS.has(cmd)) {
-      if (!requireCommandAccess(message, cmd)) return;
-      return handlers[cmd](client, message, args);
-    }
-    if (!DASH_COMMANDS.has(cmd)) return;
-    if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
-    return handlers[cmd](client, message, args);
-  }
-
-  // Préfixe principal (! par défaut, configurable via .panel)
-  if (content.startsWith(MAIN_PREFIX)) {
-    const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
-    const cmd = (cmdRaw || "").toLowerCase();
-    if (cmd === "help") {
-      return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX));
-    }
-    if (handlers[cmd]) {
-      return handlers[cmd](client, message, args);
-    }
-  }
+  if (!DASH_COMMANDS.has(cmd)) return;
+  if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
+  return handlers[cmd](client, message, args);
 }
 
-module.exports = { handleTextCommand, rememberSnipe };
+module.exports = { handleModerationTextCommand, rememberSnipe };

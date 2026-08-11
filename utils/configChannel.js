@@ -1,18 +1,6 @@
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { getRawGuildData: getRawPrefixes, hydrateFromRemote: hydratePrefixes } = require("./prefixStore");
 const { getRawGuildData: getRawLogChannels, hydrateFromRemote: hydrateLogChannels } = require("./logStore");
-const {
-  getRawGuildData: getRawPermissionCategories,
-  hydrateFromRemote: hydratePermissionCategories,
-} = require("./permissionCategoryStore");
-const {
-  getRawGuildData: getRawAntiNuke,
-  hydrateFromRemote: hydrateAntiNuke,
-} = require("./antiNukeStore");
-const {
-  getRawGuildData: getRawTools,
-  hydrateFromRemote: hydrateTools,
-} = require("./toolsStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, salons de logs) y disparaît au
@@ -20,18 +8,21 @@ const {
 // dépendre d'un Volume Railway (configuration manuelle sur leur dashboard,
 // hors de portée depuis ici), on la sauvegarde AUSSI dans un salon Discord
 // caché : Discord, contrairement au disque du bot, n'est jamais réinitialisé.
+// Salon partagé entre les deux bots (musique et modération) : le bot
+// Modération est seul à y écrire (via `.panel`), le bot Musique se contente
+// de le lire au démarrage pour connaître son propre préfixe.
 const CONFIG_CHANNEL_NAME = "zinki-config";
 
-// Le "ready" de index.js appelle loadGuildConfig(guild) SANS l'attendre (une
+// Le "ready" de chaque bot appelle loadGuildConfig(guild) SANS l'attendre (une
 // boucle for classique, pas de Promise.all) : le bot commence donc à traiter
 // des commandes avant que la restauration ait fini pour chaque serveur. Si
-// une commande qui sauvegarde la config (`.panel`, `.owner`, `.antifast`...)
-// tourne dans cette fenêtre, saveGuildConfig lirait des valeurs par
-// défaut/vides pour les catégories pas encore restaurées et écraserait la
-// vraie config sur Discord avec — c'est ce qui faisait revenir le préfixe à
-// sa valeur par défaut après un redéploiement qui tombait juste après un
-// test de commande. Map<guildId, Promise> pour que saveGuildConfig puisse
-// attendre la restauration en cours avant de composer les données à écrire.
+// une commande qui sauvegarde la config (`.panel`) tourne dans cette fenêtre,
+// saveGuildConfig lirait des valeurs par défaut/vides pour les catégories pas
+// encore restaurées et écraserait la vraie config sur Discord avec — c'est ce
+// qui faisait revenir le préfixe à sa valeur par défaut après un redéploiement
+// qui tombait juste après un test de commande. Map<guildId, Promise> pour que
+// saveGuildConfig puisse attendre la restauration en cours avant de composer
+// les données à écrire.
 const hydrationPromises = new Map();
 
 async function getConfigChannel(guild, { create = false } = {}) {
@@ -63,9 +54,9 @@ async function findConfigMessage(channel) {
 }
 
 /**
- * À appeler une fois par serveur au démarrage du bot (voir index.js "ready"
- * et "guildCreate") pour recharger la config sauvegardée sur Discord — celle
- * qui survit aux redéploiements Railway — dans le cache local.
+ * À appeler une fois par serveur au démarrage du bot (voir music.js/moderation.js
+ * "ready" et "guildCreate") pour recharger la config sauvegardée sur Discord —
+ * celle qui survit aux redéploiements Railway — dans le cache local.
  * @param {import('discord.js').Guild} guild
  */
 function loadGuildConfig(guild) {
@@ -81,9 +72,6 @@ function loadGuildConfig(guild) {
       const data = JSON.parse(raw);
       hydratePrefixes(guild.id, data.prefixes);
       hydrateLogChannels(guild.id, data.logChannels);
-      hydratePermissionCategories(guild.id, data.permissionCategories);
-      hydrateAntiNuke(guild.id, data.antiNuke);
-      hydrateTools(guild.id, data.tools);
       console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
     } catch (err) {
       console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
@@ -111,9 +99,6 @@ async function saveGuildConfig(guild) {
   const data = {
     prefixes: getRawPrefixes(guild.id),
     logChannels: getRawLogChannels(guild.id),
-    permissionCategories: getRawPermissionCategories(guild.id),
-    antiNuke: getRawAntiNuke(guild.id),
-    tools: getRawTools(guild.id),
   };
   const content = "```json\n" + JSON.stringify(data, null, 2) + "\n```";
 
