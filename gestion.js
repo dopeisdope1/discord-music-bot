@@ -1,9 +1,8 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionFlagsBits, AuditLogEvent } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, AuditLogEvent } = require("discord.js");
 const { handleModerationTextCommand, rememberSnipe } = require("./utils/moderationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-const { getWelcomeChannel, getRandomWelcomeMessage } = require("./utils/welcomeStore");
 const { getLogChannelId } = require("./utils/logStore");
 const { sendLog } = require("./utils/actionLogger");
 const { loadGuildConfig } = require("./utils/configChannel");
@@ -133,27 +132,11 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   });
 });
 
-// ---- Message de bienvenue pour les nouveaux membres ----
-client.on("guildMemberAdd", (member) => {
-  console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
-  const botMember = member.guild.members.me;
-  const configuredChannelId = getWelcomeChannel(member.guild.id);
-  const channel =
-    (configuredChannelId && member.guild.channels.cache.get(configuredChannelId)) ||
-    member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
-    member.guild.systemChannel ||
-    member.guild.channels.cache.find(
-      (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
-    );
-  if (!channel) {
-    console.warn("[bienvenue] Aucun salon disponible pour envoyer le message.");
-    return;
-  }
-  console.log(`[bienvenue] Envoi dans #${channel.name}`);
-  channel
-    .send(`${member} ${getRandomWelcomeMessage(member.guild.id)}`)
-    .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
-});
+// Note : l'envoi du message de bienvenue à l'arrivée d'un membre est géré
+// par le bot Musique (voir index.js) — son intent "Server Members" est
+// confirmé actif depuis le début de la session. `.setbienvenue`/
+// `.addbienvenue`/etc. restent disponibles ici (config partagée via
+// utils/welcomeStore.js), seul l'envoi effectif est ailleurs.
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);

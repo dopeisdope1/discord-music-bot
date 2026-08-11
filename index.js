@@ -1,12 +1,13 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { handleMusicModerationTextCommand } = require("./utils/musicModerationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
+const { getWelcomeChannel, getRandomWelcomeMessage } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -403,6 +404,32 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
   } catch (err) {
     console.error(err);
   }
+});
+
+// ---- Message de bienvenue pour les nouveaux membres ----
+// Hébergé sur ce bot (plutôt que Gestion) car son intent "Server Members"
+// est déjà confirmé actif depuis le début de la session (utilisé pour la
+// présence Spotify) — voir `?setbienvenue`/`?addbienvenue`/etc. (aussi
+// disponibles sur `.` via le bot Gestion, config partagée).
+client.on("guildMemberAdd", (member) => {
+  console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
+  const botMember = member.guild.members.me;
+  const configuredChannelId = getWelcomeChannel(member.guild.id);
+  const channel =
+    (configuredChannelId && member.guild.channels.cache.get(configuredChannelId)) ||
+    member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
+    member.guild.systemChannel ||
+    member.guild.channels.cache.find(
+      (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
+    );
+  if (!channel) {
+    console.warn("[bienvenue] Aucun salon disponible pour envoyer le message.");
+    return;
+  }
+  console.log(`[bienvenue] Envoi dans #${channel.name}`);
+  channel
+    .send(`${member} ${getRandomWelcomeMessage(member.guild.id)}`)
+    .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
 });
 
 client.once("ready", () => {
