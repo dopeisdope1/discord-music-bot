@@ -28,6 +28,15 @@ const { addReminder } = require("./reminderStore");
 const { setSupportUrl, getSupportUrl } = require("./supportStore");
 const { getBlacklistEntry } = require("./blacklistStore");
 const { addGiveaway, getGiveaway, getActiveGiveaways, markEnded } = require("./giveawayStore");
+const {
+  setCategory: setTicketCategory,
+  getCategory: getTicketCategory,
+  hasOpenTicket,
+  addTicket,
+  getTicketByChannel,
+  closeTicket,
+  getStats: getTicketStats,
+} = require("./ticketStore");
 
 // Commandes accessibles à tout le monde, sans permission particulière
 const DASH_MEMBER_COMMANDS = new Set([
@@ -51,6 +60,8 @@ const DASH_MEMBER_COMMANDS = new Set([
   "support",
   "blinfo",
   "glist",
+  "ticket",
+  "close",
 ]);
 // Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
 const DASH_ADMIN_COMMANDS = new Set([
@@ -100,6 +111,8 @@ const DASH_ADMIN_COMMANDS = new Set([
   "gcancel",
   "gend",
   "reroll",
+  "setchannel",
+  "ticket-stats",
 ]);
 
 // Analyse une durée courte type "10m"/"1h"/"1j" en millisecondes (par défaut
@@ -1952,6 +1965,93 @@ const handlers = {
       content: `${winner}`,
       embeds: [buildStatusEmbed("success", `Nouveau gagnant pour **${giveaway.prize}** : ${winner} !`)],
       allowedMentions: { parse: ["users"] },
+    });
+  },
+
+  async setchannel(client, message, args, prefix) {
+    const category = message.mentions.channels?.first();
+    if (!category || category.type !== ChannelType.GuildCategory) {
+      const dash = prefix || getPrefixes(message.guild.id).dash;
+      return message.reply({
+        embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}setchannel #catégorie\` (mentionne la catégorie où créer les tickets)`)],
+      });
+    }
+    setTicketCategory(message.guild.id, category.id);
+    await saveGuildConfig(message.guild, ["tickets"]);
+    await message.reply({ embeds: [buildStatusEmbed("success", `Les tickets seront créés dans la catégorie **${category.name}**.`)] });
+  },
+
+  async ticket(client, message) {
+    const categoryId = getTicketCategory(message.guild.id);
+    if (!categoryId || !message.guild.channels.cache.has(categoryId)) {
+      const dash = getPrefixes(message.guild.id).dash;
+      return message.reply({
+        embeds: [buildStatusEmbed("error", `Aucune catégorie configurée pour les tickets. Un admin doit d'abord faire \`${dash}setchannel #catégorie\`.`)],
+      });
+    }
+    if (hasOpenTicket(message.guild.id, message.author.id)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Tu as déjà un ticket ouvert.")] });
+    }
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")] });
+    }
+    const channel = await message.guild.channels
+      .create({
+        name: `ticket-${message.author.username}`.toLowerCase().slice(0, 90),
+        type: ChannelType.GuildText,
+        parent: categoryId,
+        permissionOverwrites: [
+          { id: message.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: message.author.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+        ],
+        reason: `Ticket ouvert par ${message.author.tag}`,
+      })
+      .catch((err) => {
+        console.error(err);
+        return null;
+      });
+    if (!channel) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de créer le salon du ticket.")] });
+    }
+    addTicket(message.guild.id, { channelId: channel.id, userId: message.author.id });
+    await saveGuildConfig(message.guild, ["tickets"]);
+    const dash = getPrefixes(message.guild.id).dash;
+    await channel.send({
+      embeds: [
+        buildStatusEmbed(
+          "info",
+          `Ticket ouvert par ${message.author}. Un membre du staff va te répondre.\nTape \`${dash}close\` ici pour le fermer.`,
+          { title: "🎫 Nouveau ticket" }
+        ),
+      ],
+    });
+    await message.reply({ embeds: [buildStatusEmbed("success", `Ticket créé : ${channel}`)] });
+  },
+
+  async close(client, message) {
+    const ticket = getTicketByChannel(message.guild.id, message.channel.id);
+    if (!ticket || ticket.status !== "open") {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Cette commande ne fonctionne que dans un salon de ticket ouvert.")] });
+    }
+    if (ticket.userId !== message.author.id && !canUseCommand(message, "close")) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Seul l'auteur du ticket ou un admin peut le fermer.")] });
+    }
+    closeTicket(message.guild.id, message.channel.id);
+    await saveGuildConfig(message.guild, ["tickets"]);
+    await message.reply({ embeds: [buildStatusEmbed("warning", "Ticket fermé — suppression du salon dans 5 secondes.")] });
+    setTimeout(() => {
+      message.channel.delete("Ticket fermé").catch(() => {});
+    }, 5000);
+  },
+
+  async "ticket-stats"(client, message) {
+    const stats = getTicketStats(message.guild.id);
+    await message.reply({
+      embeds: [
+        buildStatusEmbed("info", `**Total :** ${stats.total}\n**Ouverts :** ${stats.open}\n**Fermés :** ${stats.closed}`, {
+          title: "Statistiques des tickets",
+        }),
+      ],
     });
   },
 };

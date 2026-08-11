@@ -81,6 +81,10 @@ const MODERATION_COMMANDS = [
   "gend",
   "glist",
   "reroll",
+  "setchannel",
+  "ticket",
+  "close",
+  "ticket-stats",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -155,6 +159,10 @@ function assignableCommandLine(prefix, cmd) {
     gend: `\`${prefix}gend <id>\` — Termine un giveaway immédiatement`,
     glist: `\`${prefix}glist\` — Liste les giveaways en cours`,
     reroll: `\`${prefix}reroll <id>\` — Retire un nouveau gagnant`,
+    setchannel: `\`${prefix}setchannel #catégorie\` — Définit la catégorie des tickets`,
+    ticket: `\`${prefix}ticket\` — Ouvre un ticket privé`,
+    close: `\`${prefix}close\` — Ferme le ticket (dans son salon)`,
+    "ticket-stats": `\`${prefix}ticket-stats\` — Statistiques des tickets`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
