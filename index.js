@@ -314,9 +314,8 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
-  // Jeu de commandes de modération dupliqué sur ce bot (préfixe `?` par
-  // défaut, distinct du `!` musique et du `.` du bot Gestion) — voir
-  // utils/musicModerationCommands.js.
+  // Jeu de commandes de modération de ce bot, sur son propre préfixe
+  // (distinct du `!` musique) — voir utils/musicModerationCommands.js.
   handleMusicModerationTextCommand(client, message).catch((err) => {
     console.error(err);
     message
@@ -407,10 +406,8 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 });
 
 // ---- Message de bienvenue pour les nouveaux membres ----
-// Hébergé sur ce bot (plutôt que Gestion) car son intent "Server Members"
-// est déjà confirmé actif depuis le début de la session (utilisé pour la
-// présence Spotify) — voir `?setbienvenue`/`?addbienvenue`/etc. (aussi
-// disponibles sur `.` via le bot Gestion, config partagée).
+// Voir les commandes de config `setbienvenue`/`addbienvenue`/etc. (préfixe
+// modération de ce bot).
 client.on("guildMemberAdd", (member) => {
   console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
   const botMember = member.guild.members.me;
@@ -445,11 +442,11 @@ client.once("ready", () => {
       console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
     });
 
-    // Restaure le préfixe musique configuré via .panel (sur le bot Gestion) :
-    // le disque du container Railway est réinitialisé à chaque redéploiement,
-    // donc sans ça le préfixe reviendrait à sa valeur par défaut à chaque
-    // push (voir utils/configChannel.js, qui sauvegarde tout ça dans un salon
-    // Discord caché partagé avec les autres bots).
+    // Restaure les préfixes configurés via &panel : le disque du container
+    // Railway est réinitialisé à chaque redéploiement, donc sans ça ils
+    // reviendraient à leur valeur par défaut à chaque push (voir
+    // utils/configChannel.js, qui sauvegarde tout ça dans un salon Discord
+    // caché).
     loadGuildConfig(guild).catch((err) => {
       console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
     });

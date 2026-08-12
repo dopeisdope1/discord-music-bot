@@ -21,16 +21,10 @@ const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
 const MAX_ROLES_PER_COMMAND = 10;
 
-// Un type par bot — chacun lit son propre préfixe via getPrefixes(guildId)
-// (voir utils/prefixStore.js) dans son propre process. Blacklist tourne sur
-// le même bot/préfixe qu'antifast (voir utils/blacklistCommands.js), donc
-// pas de clé séparée ici.
+// Un bot, deux préfixes indépendants — voir utils/prefixStore.js.
 const TYPE_LABELS = {
   main: "musique",
-  dash: "modération (bot Gestion)",
-  musicMod: "modération (bot Musique)",
-  logs: "logs",
-  antifast: "antifast/blacklist",
+  musicMod: "modération",
 };
 
 const PAGES = { prefixes: "Préfixes", permissions: "Permissions" };
@@ -53,12 +47,9 @@ function buildPrefixesPage(guildId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Préfixes des bots\n" +
+      "## Préfixes\n" +
         `> Musique : \`${prefixes.main}\`\n` +
-        `> Modération — bot Gestion (dont \`${prefixes.dash}ban\`/\`${prefixes.dash}unban\`) : \`${prefixes.dash}\`\n` +
-        `> Modération — bot Musique (mêmes commandes, même bot que la musique) : \`${prefixes.musicMod}\`\n` +
-        `> Logs : \`${prefixes.logs}\`\n` +
-        `> Antifast/Blacklist : \`${prefixes.antifast}\``
+        `> Modération (ban/unban/clear/lock/...) : \`${prefixes.musicMod}\``
     )
   );
   container.addActionRowComponents(
@@ -104,7 +95,7 @@ function buildPermissionsPage(guildId, selectedCommand, statusText) {
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       "## Permissions\n> Choisis une commande, puis les rôles autorisés à l'utiliser — en plus d'Administrateur, " +
-        "toujours autorisé nativement. S'applique sur les deux bots (Gestion et Musique).\n\n" +
+        "toujours autorisé nativement.\n\n" +
         summary
     )
   );
@@ -171,13 +162,11 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 }
 
 /**
- * Ouvre le panel d'administration (accessible via `.panel` sur le bot
- * Gestion ET `?panel` sur le bot Musique, réservé aux administrateurs — la
- * vérification se fait avant l'appel de cette fonction) : préfixes des bots
- * et délégation de commandes à des rôles. Chaque bot relit ses propres
- * valeurs via utils/prefixStore.js/commandPermissionStore.js, synchronisées
- * entre tous les process via le salon Discord partagé "zinki-config" (voir
- * utils/configChannel.js).
+ * Ouvre le panel d'administration (accessible via `&panel`, réservé aux
+ * administrateurs — la vérification se fait avant l'appel de cette
+ * fonction) : préfixes et délégation de commandes à des rôles. Les valeurs
+ * sont synchronisées via le salon Discord partagé "zinki-config" (voir
+ * utils/configChannel.js), pour survivre aux redéploiements Railway.
  * @param {import('discord.js').Message} message
  */
 async function handlePrefixPanel(message) {

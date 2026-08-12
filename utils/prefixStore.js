@@ -11,11 +11,9 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
 // Valeurs par défaut avant toute config (la vraie valeur, une fois changée
 // via un panel, est restaurée depuis Discord — voir utils/configChannel.js).
-// dash = préfixe modération du bot Gestion ; musicMod = préfixe du même jeu
-// de commandes de modération dupliqué sur le bot Musique (voir
-// utils/musicModerationCommands.js) ; logs/antifast = préfixes des bots
-// dédiés (blacklist est fusionné sur le bot antifast, même préfixe).
-const DEFAULT_PREFIXES = { main: "!", dash: ".", musicMod: "?", logs: "=", antifast: "+" };
+// main = préfixe musique ; musicMod = préfixe des commandes de modération
+// dupliquées sur ce même bot (voir utils/musicModerationCommands.js).
+const DEFAULT_PREFIXES = { main: "!", musicMod: "?" };
 
 let cache = null;
 
@@ -40,7 +38,7 @@ function save() {
 
 /**
  * @param {string} guildId
- * @returns {{ main: string, dash: string }} main = préfixe musique (!), dash = préfixe membres/modération (.)
+ * @returns {{ main: string, musicMod: string }} main = préfixe musique (!), musicMod = préfixe modération (?)
  */
 function getPrefixes(guildId) {
   const data = load();
@@ -49,7 +47,7 @@ function getPrefixes(guildId) {
 
 /**
  * @param {string} guildId
- * @param {"main"|"dash"} type
+ * @param {"main"|"musicMod"} type
  * @param {string} value
  */
 function setPrefix(guildId, type, value) {

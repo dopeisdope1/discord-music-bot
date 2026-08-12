@@ -23,45 +23,9 @@ const {
   removeWelcomeMessage,
 } = require("./welcomeStore");
 
-// Commandes accessibles à tout le monde, sans permission particulière
-const DASH_MEMBER_COMMANDS = new Set(["pic", "avatar", "snipe", "gif"]);
-// Commandes réservées aux administrateurs (natif Discord, voir utils/permissions.js)
-const DASH_ADMIN_COMMANDS = new Set([
-  "renew",
-  "hide",
-  "unhide",
-  "lock",
-  "unlock",
-  "massrole",
-  "panel",
-  "create",
-  "setbienvenue",
-  "addbienvenue",
-  "delbienvenue",
-  "listbienvenue",
-  "perms",
-  "helpall",
-]);
-// "banall" est gérée à part (vérification dans son propre handler) : action
-// trop destructrice pour être traitée comme les autres commandes admin.
-const DASH_COMMANDS = new Set([...DASH_MEMBER_COMMANDS, ...DASH_ADMIN_COMMANDS, "banall"]);
-// Commandes dont la permission accepte aussi la permission Discord native
-// "Bannir des membres" en plus d'Administrateur (voir utils/permissions.js).
-const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
-
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
 const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
-
-function requireCommandAccess(message, cmd) {
-  if (!canUseCommand(message, cmd)) {
-    message.reply({
-      embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")],
-    });
-    return false;
-  }
-  return true;
-}
 
 async function sendTempReply(channel, content, ms = 5000) {
   try {
@@ -315,7 +279,7 @@ const handlers = {
       }
       const amount = parseInt(rawArg, 10);
       if (isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) {
-        const dash = prefix || getPrefixes(message.guild.id).dash;
+        const dash = prefix || getPrefixes(message.guild.id).musicMod;
         return sendTempReply(
           channel,
           {
@@ -638,7 +602,7 @@ const handlers = {
         : null);
 
     if (!["add", "remove"].includes(action) || !role) {
-      const dash = prefix || getPrefixes(message.guild.id).dash;
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
       return message.reply({
         embeds: [
           buildStatusEmbed(
@@ -730,7 +694,7 @@ const handlers = {
   async gif(client, message, args, prefix) {
     const query = args.join(" ");
     if (!query) {
-      const dash = prefix || getPrefixes(message.guild.id).dash;
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
       return message.reply({ embeds: [buildStatusEmbed("error", `Indique une recherche. Ex : \`${dash}gif chat\``)] });
     }
     try {
@@ -757,7 +721,7 @@ const handlers = {
     const source = attachment?.url || args[1];
 
     if (!name || !/^[a-zA-Z0-9_]{2,32}$/.test(name) || !source) {
-      const dash = prefix || getPrefixes(message.guild.id).dash;
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
       return message.reply({
         embeds: [
           buildStatusEmbed(
@@ -800,7 +764,7 @@ const handlers = {
   async addbienvenue(client, message, args, prefix) {
     const text = args.join(" ").trim();
     if (!text) {
-      const dash = prefix || getPrefixes(message.guild.id).dash;
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
       return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}addbienvenue <texte>\``)] });
     }
     const count = addWelcomeMessage(message.guild.id, text);
@@ -811,7 +775,7 @@ const handlers = {
   async delbienvenue(client, message, args, prefix) {
     const index = parseInt(args[0], 10);
     if (!Number.isInteger(index)) {
-      const dash = prefix || getPrefixes(message.guild.id).dash;
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
       return message.reply({
         embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}delbienvenue <numéro>\` (voir \`${dash}listbienvenue\`)`)],
       });
@@ -877,7 +841,7 @@ const handlers = {
   },
 
   async helpall(client, message, args, prefix) {
-    const dash = prefix || getPrefixes(message.guild.id).dash;
+    const dash = prefix || getPrefixes(message.guild.id).musicMod;
     return sendDashHelpPanel(message, dash, { showAll: true });
   },
 };
@@ -895,76 +859,5 @@ function rememberSnipe(client, channelId, message, type) {
   });
 }
 
-/**
- * À appeler dans l'écouteur "messageCreate" du bot Gestion.
- */
-async function handleModerationTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
 
-  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
-  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
-  await waitForHydration(message.guild.id);
-
-  const content = message.content.trim();
-  const { dash: DASH_PREFIX } = getPrefixes(message.guild.id);
-
-  // Déclencheurs spéciaux sans préfixe, tous équivalents à ".clear me"
-  // (supprime tes propres messages), ouverts à tout le monde (limite gérée
-  // dans le handler)
-  const SELF_CLEAR_TRIGGERS = new Set(["uo clear", "clear me", "anas clear", "yanis clear"]);
-  const lowerContent = content.toLowerCase();
-  if (SELF_CLEAR_TRIGGERS.has(lowerContent)) {
-    return handlers.clear(client, message, ["me"], DASH_PREFIX);
-  }
-
-  // Déclencheur spécial sans préfixe : "add <rôle>" / "del <rôle>" en
-  // répondant au message de la cible (ou en la mentionnant) — cible requise
-  // + nom de rôle exact + permission, pour ne pas réagir à une phrase
-  // normale qui commencerait par "add"/"del" par hasard ; si une condition
-  // ne colle pas, on ignore silencieusement plutôt que de spammer une erreur
-  // dans une conversation qui n'était pas une commande.
-  const addDelMatch = content.match(/^(add|del)\s+(.+)$/i);
-  if (addDelMatch) {
-    const action = addDelMatch[1].toLowerCase();
-    const roleName = addDelMatch[2].trim().toLowerCase();
-
-    const target =
-      message.mentions.members?.first() ||
-      (message.reference
-        ? await message
-            .fetchReference()
-            .then((ref) => ref.member || message.guild.members.fetch(ref.author.id).catch(() => null))
-            .catch(() => null)
-        : null);
-    const role = target ? message.guild.roles.cache.find((r) => r.id !== message.guild.id && r.name.toLowerCase() === roleName) : null;
-
-    if (target && role) {
-      if (canUseCommand(message, action)) {
-        return (action === "add" ? addRoleDirect : delRoleDirect)(message, target.id, role.id);
-      }
-      return;
-    }
-  }
-
-  if (!content.startsWith(DASH_PREFIX)) return;
-
-  const [cmdRaw, ...args] = content.slice(DASH_PREFIX.length).trim().split(/\s+/);
-  const cmd = (cmdRaw || "").toLowerCase();
-  if (cmd === "help") {
-    return sendDashHelpPanel(message, DASH_PREFIX);
-  }
-  if (cmd === "clear") {
-    // Permission gérée dans le handler : dépend de la cible (soi-même,
-    // quelqu'un d'autre, ou un nombre).
-    return handlers.clear(client, message, args, DASH_PREFIX);
-  }
-  if (BAN_COMMANDS.has(cmd)) {
-    if (!requireCommandAccess(message, cmd)) return;
-    return handlers[cmd](client, message, args, DASH_PREFIX);
-  }
-  if (!DASH_COMMANDS.has(cmd)) return;
-  if (DASH_ADMIN_COMMANDS.has(cmd) && !requireCommandAccess(message, cmd)) return;
-  return handlers[cmd](client, message, args, DASH_PREFIX);
-}
-
-module.exports = { handleModerationTextCommand, rememberSnipe, handlers };
+module.exports = { rememberSnipe, handlers };

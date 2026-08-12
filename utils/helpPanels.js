@@ -148,10 +148,9 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
  * @param {string} prefix
  * @param {import('discord.js').Message} message
  * @param {{ includePublic?: boolean, moderationCommands?: string[] }} [options]
- *   includePublic: inclut pic/avatar/snipe/gif (absentes du sous-ensemble
- *   dupliqué sur le bot Musique) ; moderationCommands: liste des commandes
- *   de modération réellement disponibles sur CE bot (voir
- *   utils/musicModerationCommands.js pour un sous-ensemble réduit).
+ *   includePublic: inclut pic/avatar/snipe/gif (non disponibles sur ce bot,
+ *   voir utils/musicModerationCommands.js) ; moderationCommands: liste des
+ *   commandes de modération réellement disponibles.
  */
 function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS, showAll = false } = {}) {
   const categories = [];
