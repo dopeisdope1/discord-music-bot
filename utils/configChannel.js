@@ -76,13 +76,31 @@ async function getConfigChannel(guild, { create = false } = {}) {
  * gagne toujours, même si plusieurs messages contiennent encore la même clé
  * (ex: juste après ce changement, le temps qu'un bot re-sauvegarde et
  * abandonne une clé qu'il ne possède plus).
+ *
+ * Réessaie automatiquement si le résultat est vide : juste après une
+ * reconnexion, le fetch peut échouer ou revenir vide en silence (cache/
+ * permissions pas encore complètement synchronisés côté Discord) sans que
+ * le salon soit réellement vide — sans nouvelle tentative, ça se lisait à
+ * tort comme "plus de config du tout" et risquait d'écraser la vraie
+ * sauvegarde au prochain saveGuildConfig.
+ * @param {import('discord.js').TextChannel} channel
+ * @param {number} [retriesLeft]
  */
-async function findConfigMessages(channel) {
-  const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-  if (!messages) return [];
-  return [...messages.values()]
-    .filter((m) => m.author.bot && m.content.startsWith("```json"))
-    .sort((a, b) => (a.editedTimestamp || a.createdTimestamp) - (b.editedTimestamp || b.createdTimestamp));
+async function findConfigMessages(channel, retriesLeft = 3) {
+  const messages = await channel.messages.fetch({ limit: 10 }).catch((err) => {
+    console.warn(`[config] Échec de la récupération des messages de "${channel.name}" :`, err.message);
+    return null;
+  });
+  const found = messages
+    ? [...messages.values()]
+        .filter((m) => m.author.bot && m.content.startsWith("```json"))
+        .sort((a, b) => (a.editedTimestamp || a.createdTimestamp) - (b.editedTimestamp || b.createdTimestamp))
+    : [];
+
+  if (found.length > 0 || retriesLeft <= 0) return found;
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  return findConfigMessages(channel, retriesLeft - 1);
 }
 
 /**
