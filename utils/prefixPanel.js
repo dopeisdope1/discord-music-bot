@@ -19,7 +19,6 @@ const { getPrefixes, setPrefix } = require("./prefixStore");
 const { saveGuildConfig, waitForHydration } = require("./configChannel");
 const { DELEGABLE_COMMANDS, getAllGrants, setRolesForCommand } = require("./commandPermissionStore");
 const {
-  TIER_DEFINITIONS,
   ALL_TIER_COMMANDS,
   getRoleTiers,
   setRoleTier,
@@ -27,6 +26,9 @@ const {
   getCommandTierMap,
   getCumulativeCommands,
   setCommandTier,
+  getAllTierDefinitions,
+  addTier,
+  removeTier,
 } = require("./permTierStore");
 const {
   setWelcomeChannel,
@@ -177,6 +179,7 @@ function buildPermissionsPage(guildId, selectedCommand, statusText) {
  * @param {string} [statusText]
  */
 function buildTiersPage(guildId, selectedTier, statusText) {
+  const tierDefs = getAllTierDefinitions(guildId);
   const roleMapping = getRoleTiers(guildId);
   const commandMap = getCommandTierMap(guildId);
 
@@ -192,17 +195,30 @@ function buildTiersPage(guildId, selectedTier, statusText) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   }
 
-  const summary = TIER_DEFINITIONS.map((t) => {
-    const roleIds = byTier[t.level] || [];
-    const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
-    const cmds = (commandsByTier[t.level] || []).join(", ") || "*aucune*";
-    return `**${t.label}**\n> Commandes : ${cmds}\n> Rôles : ${rolesText}`;
-  }).join("\n\n");
+  const summary = tierDefs
+    .map((t) => {
+      const roleIds = byTier[t.level] || [];
+      const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+      const cmds = (commandsByTier[t.level] || []).join(", ") || "*aucune*";
+      return `**${t.label}**\n> Commandes : ${cmds}\n> Rôles : ${rolesText}`;
+    })
+    .join("\n\n");
+
+  // Section "Personnalisée" : délégations individuelles par commande (voir
+  // &panel > Permissions) — système à part des paliers, affiché ici aussi
+  // pour une vue complète en un coup d'œil.
+  const grants = getAllGrants(guildId);
+  const customLines = DELEGABLE_COMMANDS.filter((cmd) => grants[cmd]?.length).map(
+    (cmd) => `**Personnalisée — ${cmd}**\n> ${grants[cmd].map((id) => `<@&${id}>`).join(", ")}`
+  );
+  const customSection = customLines.length ? `\n\n${customLines.join("\n\n")}` : "";
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Paliers\n> Choisis un palier pour éditer ses rôles et cocher/décocher les commandes débloquées (cumulatif : un palier a aussi tout ce que les paliers en dessous ont).\n\n" +
-        summary
+      "## Paliers\n> Choisis un palier pour éditer ses rôles et cocher/décocher les commandes débloquées (cumulatif : un palier a aussi tout ce que les paliers en dessous ont). " +
+        "Crée d'autres paliers avec le bouton ci-dessous. La délégation individuelle par commande (\"Personnalisée\") se gère sur la page Permissions.\n\n" +
+        summary +
+        customSection
     )
   );
 
@@ -211,11 +227,24 @@ function buildTiersPage(guildId, selectedTier, statusText) {
       new StringSelectMenuBuilder()
         .setCustomId("palier_select")
         .setPlaceholder("Choisir un palier")
-        .addOptions(
-          TIER_DEFINITIONS.map((t) => ({ label: t.label, value: String(t.level), default: t.level === selectedTier }))
-        )
+        .addOptions(tierDefs.map((t) => ({ label: t.label, value: String(t.level), default: t.level === selectedTier })))
     )
   );
+
+  const isDefaultTier = selectedTier && selectedTier <= 5;
+  const actionButtons = [
+    new ButtonBuilder().setCustomId("palier_create_button").setLabel("Créer un palier").setStyle(ButtonStyle.Secondary),
+  ];
+  if (selectedTier && !isDefaultTier) {
+    actionButtons.push(
+      new ButtonBuilder()
+        .setCustomId(`palier_delete_button:${selectedTier}`)
+        .setLabel(`Supprimer le palier ${selectedTier}`)
+        .setStyle(ButtonStyle.Danger)
+    );
+  }
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(actionButtons));
+
   if (selectedTier) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -241,7 +270,29 @@ function buildTiersPage(guildId, selectedTier, statusText) {
     );
   }
 
+  // 2 à 4 ActionRow au-dessus selon l'état (tier-select + boutons [+
+  // role-select + commands-select si un palier est choisi]) : la nav reste
+  // dans le budget de 5 ActionRow max par message dans tous les cas.
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildNavRow("tiers"));
+
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildTierCreateModal() {
+  return new ModalBuilder()
+    .setCustomId("palier_create_modal")
+    .setTitle("Créer un palier")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel("Nom du palier (vide = \"Permission N\")")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(80)
+          .setRequired(false)
+      )
+    );
 }
 
 /**
@@ -484,6 +535,39 @@ async function handlePrefixPanel(message) {
         await saveGuildConfig(i.guild, ["permTiers"]);
         selectedTier = level;
         await i.update(buildTiersPage(guildId, level, `Commandes du palier ${level} mises à jour.`));
+        return;
+      }
+
+      if (i.isButton() && i.customId === "palier_create_button") {
+        await i.showModal(buildTierCreateModal());
+        let submitted;
+        try {
+          submitted = await i.awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === "palier_create_modal" && m.user.id === message.author.id,
+          });
+        } catch {
+          return;
+        }
+        try {
+          const label = submitted.fields.getTextInputValue("value").trim();
+          const level = addTier(guildId, label);
+          await saveGuildConfig(submitted.guild, ["permTiers"]);
+          selectedTier = level;
+          await submitted.update(buildTiersPage(guildId, level, `Palier ${level} créé.`));
+        } catch (err) {
+          console.error("[panel] Erreur lors de la création d'un palier :", err);
+          await replyWithError(submitted);
+        }
+        return;
+      }
+
+      if (i.isButton() && i.customId.startsWith("palier_delete_button:")) {
+        const level = parseInt(i.customId.split(":")[1], 10);
+        removeTier(guildId, level);
+        await saveGuildConfig(i.guild, ["permTiers"]);
+        selectedTier = null;
+        await i.update(buildTiersPage(guildId, null, `Palier ${level} supprimé.`));
         return;
       }
 

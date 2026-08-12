@@ -69,10 +69,67 @@ function save() {
 
 function ensureGuild(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { roles: {}, commands: {} };
+  if (!data[guildId]) data[guildId] = { roles: {}, commands: {}, extraTiers: [] };
   if (!data[guildId].roles) data[guildId].roles = {};
   if (!data[guildId].commands) data[guildId].commands = {};
+  if (!data[guildId].extraTiers) data[guildId].extraTiers = [];
   return data[guildId];
+}
+
+/**
+ * Paliers ajoutés par ce serveur en plus des 5 par défaut (voir
+ * TIER_DEFINITIONS) — `&panel` > Paliers permet d'en créer autant que
+ * voulu (ex: palier 6, 7, 8...), sans commandes par défaut : à cocher
+ * ensuite via le menu de commandes de ce palier.
+ * @param {string} guildId
+ * @returns {{ level: number, label: string }[]}
+ */
+function getExtraTiers(guildId) {
+  return [...ensureGuild(guildId).extraTiers];
+}
+
+/**
+ * @param {string} guildId
+ * @returns {{ level: number, label: string }[]} les 5 paliers par défaut +
+ *   les paliers ajoutés par ce serveur, triés par niveau
+ */
+function getAllTierDefinitions(guildId) {
+  return [...TIER_DEFINITIONS.map((t) => ({ level: t.level, label: t.label })), ...getExtraTiers(guildId)].sort(
+    (a, b) => a.level - b.level
+  );
+}
+
+/**
+ * Crée un nouveau palier (niveau suivant le plus haut existant sur ce
+ * serveur) — utilisé par `&panel` > Paliers.
+ * @param {string} guildId
+ * @param {string} [label]
+ * @returns {number} le niveau du palier créé
+ */
+function addTier(guildId, label) {
+  const existing = getAllTierDefinitions(guildId);
+  const nextLevel = existing.length ? Math.max(...existing.map((t) => t.level)) + 1 : 1;
+  const g = ensureGuild(guildId);
+  g.extraTiers.push({ level: nextLevel, label: label?.trim() || `Permission ${nextLevel}` });
+  save();
+  return nextLevel;
+}
+
+/**
+ * Supprime un palier ajouté par ce serveur (les 5 paliers par défaut ne
+ * peuvent pas être supprimés). Les rôles/commandes qui y étaient assignés
+ * restent à ce niveau (invisibles tant qu'aucun palier n'a ce niveau) —
+ * à réassigner à la main si besoin.
+ * @param {string} guildId
+ * @param {number} level
+ * @returns {boolean} true si un palier correspondant a été supprimé
+ */
+function removeTier(guildId, level) {
+  const g = ensureGuild(guildId);
+  const before = g.extraTiers.length;
+  g.extraTiers = g.extraTiers.filter((t) => t.level !== level);
+  save();
+  return g.extraTiers.length < before;
 }
 
 /**
@@ -202,8 +259,9 @@ function getMemberTier(guildId, member) {
  * hauts placés), et hors rôles qui ne sont portés que par des bots (un rôle
  * "robots" avec une permission de gestion n'est pas un palier de modération
  * humain). Les rôles retenus sont ensuite triés par position et répartis en
- * TIER_COUNT groupes de taille égale, les plus hauts placés récupérant les
- * paliers les plus élevés.
+ * autant de groupes que ce serveur a de paliers (voir getAllTierDefinitions
+ * — 5 par défaut, plus si des paliers ont été ajoutés), les plus hauts
+ * placés récupérant les paliers les plus élevés.
  * @param {import('discord.js').Guild} guild
  * @returns {{ [roleId: string]: number }}
  */
@@ -214,12 +272,13 @@ function autoSyncFromHierarchy(guild) {
     .filter((r) => r.members.size === 0 || [...r.members.values()].some((m) => !m.user.bot))
     .sort((a, b) => b.position - a.position);
 
+  const tierCount = getAllTierDefinitions(guild.id).length || TIER_COUNT;
   const mapping = {};
   if (roles.length) {
-    const perTier = Math.ceil(roles.length / TIER_COUNT);
+    const perTier = Math.ceil(roles.length / tierCount);
     roles.forEach((role, index) => {
       const groupFromTop = Math.floor(index / perTier);
-      mapping[role.id] = Math.max(1, TIER_COUNT - groupFromTop);
+      mapping[role.id] = Math.max(1, tierCount - groupFromTop);
     });
   }
   setRoleTiers(guild.id, mapping);
@@ -227,7 +286,7 @@ function autoSyncFromHierarchy(guild) {
 }
 
 function getRawGuildData(guildId) {
-  return load()[guildId] || { roles: {}, commands: {} };
+  return load()[guildId] || { roles: {}, commands: {}, extraTiers: [] };
 }
 
 function hydrateFromRemote(guildId, remoteData) {
@@ -251,6 +310,10 @@ module.exports = {
   getCommandTierMap,
   getMemberTier,
   autoSyncFromHierarchy,
+  getExtraTiers,
+  getAllTierDefinitions,
+  addTier,
+  removeTier,
   getRawGuildData,
   hydrateFromRemote,
 };
