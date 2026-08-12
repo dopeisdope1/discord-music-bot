@@ -25,6 +25,7 @@ const {
   setRoleTier,
   removeRoleTier,
   getCommandTierMap,
+  getCumulativeCommands,
   setCommandTier,
 } = require("./permTierStore");
 const {
@@ -165,14 +166,17 @@ function buildPermissionsPage(guildId, selectedCommand, statusText) {
 /**
  * Page "Paliers" : gère le système de paliers de permission (voir
  * utils/permTierStore.js — `&perms`/`&helpall`) directement depuis le
- * panel. Deux sélections indépendantes sur la même page : un palier (pour
- * éditer ses rôles) et une commande (pour la réassigner à un autre palier).
+ * panel. Un palier sélectionné affiche ses rôles (RoleSelectMenu) ET une
+ * case à cocher par commande (StringSelectMenu multi-select) : cocher une
+ * commande la rend disponible à partir de ce palier, la décocher la
+ * repousse au palier suivant (elle reste débloquée pour un palier plus
+ * élevé, sauf à la décocher aussi là-bas — jusqu'à disparaître de tous les
+ * paliers si décochée au palier le plus haut).
  * @param {string} guildId
  * @param {number|null} selectedTier
- * @param {string|null} selectedCommand
  * @param {string} [statusText]
  */
-function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
+function buildTiersPage(guildId, selectedTier, statusText) {
   const roleMapping = getRoleTiers(guildId);
   const commandMap = getCommandTierMap(guildId);
 
@@ -197,7 +201,7 @@ function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Paliers\n> Choisis un palier pour éditer ses rôles, ou une commande pour la déplacer vers un autre palier.\n\n" +
+      "## Paliers\n> Choisis un palier pour éditer ses rôles et cocher/décocher les commandes débloquées (cumulatif : un palier a aussi tout ce que les paliers en dessous ont).\n\n" +
         summary
     )
   );
@@ -206,7 +210,7 @@ function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId("palier_select")
-        .setPlaceholder("Choisir un palier (rôles)")
+        .setPlaceholder("Choisir un palier")
         .addOptions(
           TIER_DEFINITIONS.map((t) => ({ label: t.label, value: String(t.level), default: t.level === selectedTier }))
         )
@@ -223,31 +227,16 @@ function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
           .setDefaultRoles(byTier[selectedTier] || [])
       )
     );
-  }
 
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId("palier_cmd_select")
-        .setPlaceholder("Choisir une commande (palier)")
-        .addOptions(
-          ALL_TIER_COMMANDS.map((cmd) => ({ label: cmd, value: cmd, default: cmd === selectedCommand }))
-        )
-    )
-  );
-  if (selectedCommand) {
+    const cumulative = new Set(getCumulativeCommands(guildId, selectedTier));
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`palier_cmd_tier_select:${selectedCommand}`)
-          .setPlaceholder(`Palier pour "${selectedCommand}"`)
-          .addOptions(
-            TIER_DEFINITIONS.map((t) => ({
-              label: t.label,
-              value: String(t.level),
-              default: commandMap[selectedCommand] === t.level,
-            }))
-          )
+          .setCustomId(`palier_commands_select:${selectedTier}`)
+          .setPlaceholder(`Commandes débloquées au palier ${selectedTier}`)
+          .setMinValues(0)
+          .setMaxValues(ALL_TIER_COMMANDS.length)
+          .addOptions(ALL_TIER_COMMANDS.map((cmd) => ({ label: cmd, value: cmd, default: cumulative.has(cmd) })))
       )
     );
   }
@@ -412,7 +401,6 @@ async function handlePrefixPanel(message) {
   // repart sans sélection).
   let selectedCommand = null;
   let selectedTier = null;
-  let selectedTierCommand = null;
   const panelMessage = await message.reply(buildPrefixesPage(guildId));
 
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
@@ -428,10 +416,9 @@ async function handlePrefixPanel(message) {
         currentPage = i.customId.split(":")[1];
         selectedCommand = null;
         selectedTier = null;
-        selectedTierCommand = null;
         const builders = {
           permissions: () => buildPermissionsPage(guildId, null),
-          tiers: () => buildTiersPage(guildId, null, null),
+          tiers: () => buildTiersPage(guildId, null),
           welcome: () => buildWelcomePage(guildId),
         };
         await i.update((builders[currentPage] || (() => buildPrefixesPage(guildId)))());
@@ -456,7 +443,7 @@ async function handlePrefixPanel(message) {
 
       if (i.isStringSelectMenu() && i.customId === "palier_select") {
         selectedTier = parseInt(i.values[0], 10);
-        await i.update(buildTiersPage(guildId, selectedTier, selectedTierCommand));
+        await i.update(buildTiersPage(guildId, selectedTier));
         return;
       }
 
@@ -472,25 +459,31 @@ async function handlePrefixPanel(message) {
         await saveGuildConfig(i.guild, ["permTiers"]);
         selectedTier = level;
         const roleList = i.values.length ? i.values.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
-        await i.update(buildTiersPage(guildId, level, selectedTierCommand, `Rôles du palier ${level} mis à jour : ${roleList}`));
+        await i.update(buildTiersPage(guildId, level, `Rôles du palier ${level} mis à jour : ${roleList}`));
         return;
       }
 
-      if (i.isStringSelectMenu() && i.customId === "palier_cmd_select") {
-        selectedTierCommand = i.values[0];
-        await i.update(buildTiersPage(guildId, selectedTier, selectedTierCommand));
-        return;
-      }
+      if (i.isStringSelectMenu() && i.customId.startsWith("palier_commands_select:")) {
+        const level = parseInt(i.customId.split(":")[1], 10);
+        const selected = new Set(i.values);
+        const wasIncluded = new Set(getCumulativeCommands(guildId, level));
 
-      if (i.isStringSelectMenu() && i.customId.startsWith("palier_cmd_tier_select:")) {
-        const command = i.customId.split(":")[1];
-        const level = parseInt(i.values[0], 10);
-        setCommandTier(guildId, command, level);
+        for (const cmd of ALL_TIER_COMMANDS) {
+          const included = wasIncluded.has(cmd);
+          const nowIncluded = selected.has(cmd);
+          if (included && !nowIncluded) {
+            // Décoché : repoussé au palier suivant (invisible à celui-ci et
+            // en dessous, mais reste débloqué à partir du palier suivant —
+            // sauf à le décocher là-bas aussi).
+            setCommandTier(guildId, cmd, level + 1);
+          } else if (!included && nowIncluded) {
+            // Coché : débloqué à partir de ce palier.
+            setCommandTier(guildId, cmd, level);
+          }
+        }
         await saveGuildConfig(i.guild, ["permTiers"]);
-        selectedTierCommand = command;
-        await i.update(
-          buildTiersPage(guildId, selectedTier, command, `Commande **${command}** déplacée vers le palier ${level}.`)
-        );
+        selectedTier = level;
+        await i.update(buildTiersPage(guildId, level, `Commandes du palier ${level} mises à jour.`));
         return;
       }
 
