@@ -9,6 +9,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { canUseCommand } = require("./permissions");
+const { DELEGABLE_COMMANDS } = require("./commandPermissionStore");
 
 const HELP_TIMEOUT_MS = 5 * 60_000;
 
@@ -37,30 +38,32 @@ const MODERATION_COMMANDS = [
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
-// Description affichée par commande dans `.help`.
+// Description affichée par commande dans `&help` — format "`cmd` (description)".
 function assignableCommandLine(prefix, cmd) {
   const lines = {
-    panel: `\`${prefix}panel\` — Config du bot (préfixes, logs, permissions)`,
-    renew: `\`${prefix}renew\` — Recrée le salon (vide)`,
-    hide: `\`${prefix}hide\` — Cache le salon à @everyone`,
-    unhide: `\`${prefix}unhide\` — Affiche le salon à @everyone`,
-    lock: `\`${prefix}lock\` — Bloque l'écriture pour @everyone`,
-    unlock: `\`${prefix}unlock\` — Débloque l'écriture pour @everyone`,
-    massrole: `\`${prefix}massrole add|remove @role\` — Rôle en masse (utilise l'ID pour ne pas ping)`,
-    add: "`add <nom du rôle>` (en réponse au message du membre, ou en le mentionnant) — Ajoute ce rôle",
-    del: "`del <nom du rôle>` (en réponse au message du membre, ou en le mentionnant) — Retire ce rôle",
-    create: `\`${prefix}create <nom> <url ou pièce jointe>\` — Crée un emoji`,
-    ban: `\`${prefix}ban\` — Panel **Zinki Assassini** pour bannir un membre`,
-    unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
-    unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
-    clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
-    greet: `\`${prefix}greet #salon\` — Envoie les messages de bienvenue dans ce salon`,
-    addbienvenue: `\`${prefix}addbienvenue <texte>\` — Ajoute un message de bienvenue à la liste`,
-    delbienvenue: `\`${prefix}delbienvenue <numéro>\` — Retire un message (voir \`${prefix}listbienvenue\`)`,
-    listbienvenue: `\`${prefix}listbienvenue\` — Liste les messages de bienvenue et le salon configuré`,
-    perms: `\`${prefix}perms\` — Affiche les rôles de chaque palier de permission (\`${prefix}perms sync\` pour resynchroniser avec la hiérarchie des rôles)`,
-    helpall: `\`${prefix}helpall\` — Affiche les commandes débloquées à chaque palier de permission`,
-    say: `\`${prefix}say <texte>\` — Fait parler le bot à ta place (ton message est supprimé)`,
+    help: `\`${prefix}help\` (Affiche la liste des commandes en fonction de tes permissions)`,
+    panel: `\`${prefix}panel\` (Configuration du bot : préfixes, permissions, paliers, bienvenue)`,
+    renew: `\`${prefix}renew\` (Recrée le salon actuel, vide)`,
+    hide: `\`${prefix}hide\` (Cache le salon à @everyone)`,
+    unhide: `\`${prefix}unhide\` (Affiche le salon à @everyone)`,
+    lock: `\`${prefix}lock\` (Bloque l'écriture pour @everyone)`,
+    unlock: `\`${prefix}unlock\` (Débloque l'écriture pour @everyone)`,
+    massrole: `\`${prefix}massrole add|remove @role\` (Ajoute/retire un rôle en masse)`,
+    add: "`add <rôle>` (en réponse à un membre ou en le mentionnant — Ajoute ce rôle)",
+    del: "`del <rôle>` (en réponse à un membre ou en le mentionnant — Retire ce rôle)",
+    create: `\`${prefix}create <nom> <url ou pièce jointe>\` (Crée un emoji)`,
+    ban: `\`${prefix}ban\` (Panel pour bannir un membre)`,
+    unban: `\`${prefix}unban [id]\` (Débannit un membre)`,
+    unbanall: `\`${prefix}unbanall\` (Débannit tout le monde, confirmation demandée)`,
+    clear: `\`${prefix}clear <nombre>\`/\`@membre\` (Supprime des messages d'un salon ou d'un membre)`,
+    greet: `\`${prefix}greet #salon\` (Définit le salon des messages de bienvenue)`,
+    addbienvenue: `\`${prefix}addbienvenue <texte>\` (Ajoute un message de bienvenue)`,
+    delbienvenue: `\`${prefix}delbienvenue <numéro>\` (Retire un message de bienvenue)`,
+    listbienvenue: `\`${prefix}listbienvenue\` (Liste les messages de bienvenue et le salon configuré)`,
+    perms: `\`${prefix}perms\` (Affiche les rôles liés à chaque permission)`,
+    helpall: `\`${prefix}helpall\` (Affiche les commandes liées à chaque permission)`,
+    say: `\`${prefix}say <texte>\` (Fait parler le bot à ta place — réservé au propriétaire du bot)`,
+    banall: `\`${prefix}banall\` (Bannit tout le monde sauf toi, confirmation demandée)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
@@ -141,55 +144,52 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
 }
 
 /**
- * Catégories du panel d'aide "-help", construites commande par commande via
- * canUseCommand : chaque commande de modération n'apparaît que si l'auteur y
- * a réellement accès (administrateur, ou permission Discord native pour
- * ban/unban/unbanall). Deux personnes avec des permissions différentes
- * voient donc des listes différentes. "⚠️ Danger" (`.banall`) n'apparaît que
- * pour un administrateur.
+ * Catégories du panel d'aide "&help", dans le style Public / Sanction /
+ * Owner : Public est toujours visible, Sanction regroupe les commandes
+ * délégables à un rôle (voir DELEGABLE_COMMANDS, utils/commandPermissionStore.js),
+ * Owner les commandes réservées aux administrateurs natifs (jamais
+ * délégables : panel/perms/helpall/say/banall). Chaque commande de
+ * modération n'apparaît que si l'auteur y a réellement accès (canUseCommand)
+ * — deux personnes avec des permissions différentes voient donc des listes
+ * différentes.
  * @param {string} prefix
  * @param {import('discord.js').Message} message
- * @param {{ includePublic?: boolean, moderationCommands?: string[] }} [options]
- *   includePublic: inclut pic/avatar/snipe/gif (non disponibles sur ce bot,
- *   voir utils/musicModerationCommands.js) ; moderationCommands: liste des
- *   commandes de modération réellement disponibles.
+ * @param {{ moderationCommands?: string[] }} [options] moderationCommands :
+ *   liste des commandes de modération réellement disponibles sur ce bot.
  */
-function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS } = {}) {
-  const categories = [];
-
-  if (includePublic) {
-    categories.push({
+function buildDashCategories(prefix, message, { moderationCommands = MODERATION_COMMANDS } = {}) {
+  const categories = [
+    {
       key: "public",
-      label: "Commandes publiques",
-      names: ["pic", "avatar", "snipe", "clear me", "gif"],
-      lines: [
-        `\`${prefix}pic\`/\`${prefix}avatar [@membre]\` — Photo de profil (toi par défaut)`,
-        `\`${prefix}snipe\` — Dernier message supprimé du salon`,
-        `\`${prefix}clear me\` (ou \`uo clear\`) — Supprime tes messages récents (5×/25 min)`,
-        `\`${prefix}gif <recherche>\` — Envoie un gif`,
-      ],
-    });
-  }
+      label: "Public",
+      names: ["help"],
+      lines: [assignableCommandLine(prefix, "help")],
+    },
+  ];
 
-  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
-  if (allowed.length) {
+  const allCommands = [...moderationCommands, ...BAN_COMMAND_NAMES];
+
+  const sanction = allCommands.filter((cmd) => DELEGABLE_COMMANDS.includes(cmd) && canUseCommand(message, cmd));
+  if (sanction.length) {
     categories.push({
-      key: "allowed",
-      label: "Commandes autorisées",
-      names: allowed,
-      lines: allowed.map((cmd) => assignableCommandLine(prefix, cmd)),
-      footer: allowed.includes("clear")
+      key: "sanction",
+      label: "Sanction",
+      names: sanction,
+      lines: sanction.map((cmd) => assignableCommandLine(prefix, cmd)),
+      footer: sanction.includes("clear")
         ? "Les messages de plus de 14 jours ne peuvent pas être supprimés en masse (limite Discord)."
         : undefined,
     });
   }
 
-  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+  const owner = allCommands.filter((cmd) => !DELEGABLE_COMMANDS.includes(cmd) && canUseCommand(message, cmd));
+  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) owner.push("banall");
+  if (owner.length) {
     categories.push({
-      key: "danger",
-      label: "⚠️ Danger",
-      names: ["banall"],
-      lines: [`\`${prefix}banall\` — Bannit tout le monde sauf toi (confirmation demandée, irréversible)`],
+      key: "owner",
+      label: "Owner",
+      names: owner,
+      lines: owner.map((cmd) => assignableCommandLine(prefix, cmd)),
     });
   }
 
@@ -209,8 +209,8 @@ function buildHelpOverview(categories) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "## Aide — Commandes\n" +
-        "Sélectionne une catégorie dans le menu ci-dessous pour voir ses commandes.\n" +
+      "## Page d'aide\n" +
+        "Permet de voir la liste des commandes en fonction de tes permissions sur le bot.\n" +
         "Les arguments entre `[]` sont facultatifs, ceux entre `<>` sont obligatoires."
     )
   );
@@ -240,15 +240,14 @@ function buildHelpCategoryPanel(categories, key) {
 }
 
 /**
- * Envoie le panel d'aide "-help" interactif : un écran d'accueil qui résume
- * chaque catégorie (nom des commandes), puis un menu déroulant pour naviguer
- * dedans sans tout afficher d'un coup — voir buildDashCategories pour le
- * filtrage par permission (commande par commande, propre à l'auteur) et pour
- * les options permettant de réutiliser ce panel sur un sous-ensemble réduit
- * de commandes (voir utils/musicModerationCommands.js).
+ * Envoie le panel d'aide "&help" interactif : un écran d'accueil qui résume
+ * chaque catégorie (Public/Sanction/Owner, nom des commandes), puis un menu
+ * déroulant pour naviguer dedans sans tout afficher d'un coup — voir
+ * buildDashCategories pour le filtrage par permission (commande par
+ * commande, propre à l'auteur).
  * @param {import('discord.js').Message} message
  * @param {string} prefix
- * @param {{ includePublic?: boolean, moderationCommands?: string[] }} [options]
+ * @param {{ moderationCommands?: string[] }} [options]
  */
 async function sendDashHelpPanel(message, prefix, options) {
   const categories = buildDashCategories(prefix, message, options);

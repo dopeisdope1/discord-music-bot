@@ -6,12 +6,13 @@ const { EmbedBuilder } = require("discord.js");
  * avoir à retoucher tous les appels) ; `options.icon` est ignoré.
  * @param {"success"|"error"|"info"|"warning"} type
  * @param {string} description
- * @param {{ title?: string }} [options]
+ * @param {{ title?: string, thumbnail?: string }} [options]
  * @returns {EmbedBuilder}
  */
 function buildStatusEmbed(type, description, options = {}) {
   const embed = new EmbedBuilder().setDescription(description);
   if (options.title) embed.setTitle(options.title);
+  if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   return embed;
 }
 

@@ -12,8 +12,9 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { searchGif } = require("./gifSearch");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
-const { getBotOwnerIds } = require("./botOwners");
+const { getBotOwnerIds, isBotOwner } = require("./botOwners");
 const { TIER_DEFINITIONS, getCumulativeCommands, getRoleTiers, autoSyncFromHierarchy } = require("./permTierStore");
+const { DELEGABLE_COMMANDS, getAllGrants } = require("./commandPermissionStore");
 const {
   setWelcomeChannel,
   getWelcomeChannel,
@@ -202,6 +203,22 @@ async function requestBanAllAuthorization(client, message) {
       authMessage.edit({ content: null, embeds: [buildStatusEmbed("warning", "Demande expirée.")], components: [] }).catch(() => {});
     }
   });
+}
+
+/**
+ * Section "Personnalisée" ajoutée à la suite de `&perms`/`&helpall` : les
+ * délégations individuelles par commande (`&panel` > Permissions, voir
+ * utils/commandPermissionStore.js) sont un système à part des paliers, mais
+ * affichées ensemble pour avoir une vue complète en un coup d'œil.
+ * @param {string} guildId
+ * @returns {string} vide si aucune commande n'a de délégation
+ */
+function buildCustomDelegationSection(guildId) {
+  const grants = getAllGrants(guildId);
+  const lines = DELEGABLE_COMMANDS.filter((cmd) => grants[cmd]?.length).map(
+    (cmd) => `**Personnalisée — ${cmd}**\n> ${grants[cmd].map((id) => `<@&${id}>`).join(", ")}`
+  );
+  return lines.join("\n\n");
 }
 
 const handlers = {
@@ -816,8 +833,14 @@ const handlers = {
     const lines = TIER_DEFINITIONS.map(
       (t) => `**${t.label}**\n> ${getCumulativeCommands(message.guild.id, t.level).join(", ")}`
     );
+    const custom = buildCustomDelegationSection(message.guild.id);
     await message.reply({
-      embeds: [buildStatusEmbed("info", lines.join("\n\n"), { title: "Permissions liées aux commandes" })],
+      embeds: [
+        buildStatusEmbed("info", lines.join("\n\n") + (custom ? `\n\n${custom}` : ""), {
+          title: "Permissions liées aux commandes",
+        }),
+      ],
+      allowedMentions: { parse: [] },
     });
   },
 
@@ -847,21 +870,30 @@ const handlers = {
       const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
       return `**${t.label}**\n> ${rolesText}`;
     });
+    const custom = buildCustomDelegationSection(message.guild.id);
 
     await message.reply({
       embeds: [
-        buildStatusEmbed("info", lines.join("\n\n") + "\n\n*Tape `perms sync` pour recalculer après un changement de rôles.*", {
-          title: "Permissions",
-        }),
+        buildStatusEmbed(
+          "info",
+          lines.join("\n\n") + (custom ? `\n\n${custom}` : "") + "\n\n*Tape `perms sync` pour recalculer après un changement de rôles.*",
+          { title: "Niveaux de Permissions", thumbnail: message.guild.iconURL() || undefined }
+        ),
       ],
       allowedMentions: { parse: [] },
     });
   },
 
   // Supprime le message d'origine et renvoie le texte comme s'il venait du
-  // bot lui-même (pas un embed) — volontairement non délégable (voir
-  // utils/commandPermissionStore.js), réservé aux administrateurs natifs.
+  // bot lui-même (pas un embed) — réservé au(x) propriétaire(s) du bot
+  // (BOT_OWNER_IDS, voir utils/botOwners.js), même un autre administrateur
+  // du serveur n'y a pas accès. Vérifié ici directement (pas via
+  // canUseCommand/DELEGABLE_COMMANDS/paliers) : demande explicite de
+  // l'utilisateur, "y'a que moi qui a le droit".
   async say(client, message, args) {
+    if (!isBotOwner(message.author.id)) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Cette commande est réservée au propriétaire du bot.")] });
+    }
     const text = args.join(" ").trim();
     if (!text) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>`")] });

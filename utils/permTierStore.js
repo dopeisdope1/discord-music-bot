@@ -35,11 +35,11 @@ const DATA_FILE = path.join(DATA_DIR, "permTiers.json");
 // `&panel` > Paliers permet de réassigner une commande à un autre palier
 // par serveur (voir getCommandTierOverrides/setCommandTier ci-dessous).
 const TIER_DEFINITIONS = [
-  { level: 1, label: "Palier 1 — Junior", commands: ["clear", "listbienvenue", "helpall"] },
-  { level: 2, label: "Palier 2 — Modérateur", commands: ["hide", "unhide", "lock", "unlock", "renew"] },
-  { level: 3, label: "Palier 3 — Modérateur senior", commands: ["massrole", "greet", "addbienvenue", "delbienvenue"] },
-  { level: 4, label: "Palier 4 — Administrateur", commands: ["ban", "unban", "unbanall"] },
-  { level: 5, label: "Palier 5 — Direction", commands: ["banall", "panel", "perms"] },
+  { level: 1, label: "Permission 1 — Utilisateur", commands: ["clear", "listbienvenue", "helpall"] },
+  { level: 2, label: "Permission 2 — Modération de base", commands: ["hide", "unhide", "lock", "unlock", "renew"] },
+  { level: 3, label: "Permission 3 — Modération avancée", commands: ["massrole", "greet", "addbienvenue", "delbienvenue"] },
+  { level: 4, label: "Permission 4 — Administration", commands: ["ban", "unban", "unbanall"] },
+  { level: 5, label: "Permission 5 — Owner Global", commands: ["banall", "panel", "perms", "say"] },
 ];
 const TIER_COUNT = TIER_DEFINITIONS.length;
 // Toutes les commandes qui participent au système de paliers (union des

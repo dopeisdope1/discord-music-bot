@@ -107,7 +107,7 @@ async function handleMusicModerationTextCommand(client, message) {
   const [cmdRaw, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
   if (cmd === "help") {
-    return sendDashHelpPanel(message, PREFIX, { includePublic: false, moderationCommands: HELP_MODERATION_COMMANDS });
+    return sendDashHelpPanel(message, PREFIX, { moderationCommands: HELP_MODERATION_COMMANDS });
   }
   if (cmd === "clear") {
     return handlers.clear(client, message, args, PREFIX);
