@@ -12,9 +12,8 @@ const DATA_FILE = path.join(DATA_DIR, "commandPermissions.json");
 
 // Commandes qu'un administrateur peut déléguer à un rôle depuis `&panel` >
 // Permissions. Volontairement exclues : `panel` (accès à la config
-// elle-même), `banall` (trop destructrice, voir utils/moderationCommands.js
-// — déjà soumise à l'autorisation du propriétaire), et `say` (réservée aux
-// administrateurs natifs, jamais délégable).
+// elle-même) et `banall` (trop destructrice, voir utils/moderationCommands.js
+// — déjà soumise à l'autorisation du propriétaire).
 const DELEGABLE_COMMANDS = [
   "clear",
   "renew",

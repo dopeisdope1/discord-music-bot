@@ -12,7 +12,7 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { searchGif } = require("./gifSearch");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
-const { getBotOwnerIds, isBotOwner } = require("./botOwners");
+const { getBotOwnerIds } = require("./botOwners");
 const { TIER_DEFINITIONS, getCumulativeCommands, getRoleTiers, autoSyncFromHierarchy } = require("./permTierStore");
 const { DELEGABLE_COMMANDS, getAllGrants } = require("./commandPermissionStore");
 const {
@@ -915,50 +915,6 @@ const handlers = {
     });
   },
 
-  // Supprime le message d'origine et renvoie le texte comme s'il venait du
-  // bot lui-même (pas un embed) — réservé au(x) propriétaire(s) du bot
-  // (BOT_OWNER_IDS, voir utils/botOwners.js), même un autre administrateur
-  // du serveur n'y a pas accès. Vérifié ici directement (pas via
-  // canUseCommand/DELEGABLE_COMMANDS/paliers) : demande explicite de
-  // l'utilisateur, "y'a que moi qui a le droit".
-  async say(client, message, args) {
-    if (!isBotOwner(message.author.id)) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Cette commande est réservée au propriétaire du bot.")] });
-    }
-    const text = args.join(" ").trim();
-    if (!text) {
-      return message.reply({
-        embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>` (fonctionne aussi en réponse à un message, pour répondre à quelqu'un via le bot)")],
-      });
-    }
-
-    // Si `&say` est tapé en réponse à un message, le bot répond à CE message
-    // (même effet visuel qu'une vraie réponse) plutôt que d'envoyer un
-    // message "flottant" dans le salon — sinon le lien avec la conversation
-    // se perdait dès que le message d'origine (le tien) était supprimé.
-    // La suppression part EN PARALLÈLE de cette recherche (pas après) :
-    // attendre le fetch avant de supprimer laissait ton message visible plus
-    // longtemps, assez pour que d'autres le voient avant qu'il disparaisse.
-    const referencedId = message.reference?.messageId;
-    const [deleted, target] = await Promise.all([
-      message.delete().then(() => true).catch(() => false),
-      referencedId ? message.channel.messages.fetch(referencedId).catch(() => null) : Promise.resolve(null),
-    ]);
-    if (!deleted) {
-      await sendTempReply(
-        message.channel,
-        { embeds: [buildStatusEmbed("warning", "Il me manque la permission **Gérer les messages** ici : ton message n'a pas pu être supprimé.")] },
-        8000
-      );
-    }
-
-    const payload = { content: text, allowedMentions: { parse: [] } };
-    if (target) {
-      await target.reply(payload).catch(() => message.channel.send(payload));
-    } else {
-      await message.channel.send(payload);
-    }
-  },
 };
 
 /**

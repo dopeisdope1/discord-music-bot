@@ -1,11 +1,12 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, Collection, PermissionFlagsBits } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { handleMusicModerationTextCommand } = require("./utils/musicModerationCommands");
+const { handleSayDirectMessage } = require("./utils/sayDm");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
@@ -30,7 +31,14 @@ const client = new Client({
     // intents privilégiés).
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
+    // Requis pour recevoir les messages privés au bot (voir utils/sayDm.js
+    // — `&say` en DM, seul moyen d'envoyer un message via le bot sans jamais
+    // rien poster de visible sous ton propre compte dans le salon visé).
+    GatewayIntentBits.DirectMessages,
   ],
+  // Partials.Channel : un salon DM pas encore en cache arrive "partiel" sans
+  // ça, et l'événement messageCreate serait silencieusement ignoré.
+  partials: [Partials.Channel],
   // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de
   // musique contenant littéralement "@everyone"). Les mentions
   // d'utilisateurs restent autorisées.
@@ -321,6 +329,11 @@ client.on("messageCreate", (message) => {
     message
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
+  });
+  // `&say` en message privé au bot uniquement — voir utils/sayDm.js.
+  handleSayDirectMessage(client, message).catch((err) => {
+    console.error(err);
+    message.reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] }).catch(() => {});
   });
 });
 

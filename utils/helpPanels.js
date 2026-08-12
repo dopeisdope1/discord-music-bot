@@ -33,7 +33,6 @@ const MODERATION_COMMANDS = [
   "listbienvenue",
   "perms",
   "helpall",
-  "say",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -61,7 +60,6 @@ function assignableCommandLine(prefix, cmd) {
     listbienvenue: `\`${prefix}listbienvenue\` (Liste les messages de bienvenue et le salon configuré)`,
     perms: `\`${prefix}perms\` (Affiche les rôles liés à chaque permission)`,
     helpall: `\`${prefix}helpall\` (Affiche les commandes liées à chaque permission)`,
-    say: `\`${prefix}say <texte>\` (Fait parler le bot à ta place — réservé au propriétaire du bot)`,
     banall: `\`${prefix}banall\` (Bannit tout le monde sauf toi, confirmation demandée)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;

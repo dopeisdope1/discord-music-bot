@@ -39,7 +39,7 @@ const TIER_DEFINITIONS = [
   { level: 2, label: "Permission 2 — Modération de base", commands: ["hide", "unhide", "lock", "unlock", "renew"] },
   { level: 3, label: "Permission 3 — Modération avancée", commands: ["massrole", "create", "greet", "addbienvenue", "delbienvenue"] },
   { level: 4, label: "Permission 4 — Administration", commands: ["ban", "unban", "unbanall"] },
-  { level: 5, label: "Permission 5 — Owner Global", commands: ["banall", "panel", "perms", "say"] },
+  { level: 5, label: "Permission 5 — Owner Global", commands: ["banall", "panel", "perms"] },
 ];
 const TIER_COUNT = TIER_DEFINITIONS.length;
 // Toutes les commandes qui participent au système de paliers (union des
