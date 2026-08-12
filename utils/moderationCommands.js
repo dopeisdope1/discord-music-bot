@@ -896,10 +896,36 @@ const handlers = {
     }
     const text = args.join(" ").trim();
     if (!text) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>`")] });
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>` (fonctionne aussi en réponse à un message, pour répondre à quelqu'un via le bot)")],
+      });
     }
-    await message.delete().catch(() => {});
-    await message.channel.send({ content: text, allowedMentions: { parse: [] } });
+
+    // Si `&say` est tapé en réponse à un message, le bot répond à CE message
+    // (même effet visuel qu'une vraie réponse) plutôt que d'envoyer un
+    // message "flottant" dans le salon — sinon le lien avec la conversation
+    // se perdait dès que le message d'origine (le tien) était supprimé.
+    const referencedId = message.reference?.messageId;
+    const target = referencedId ? await message.channel.messages.fetch(referencedId).catch(() => null) : null;
+
+    const deleted = await message
+      .delete()
+      .then(() => true)
+      .catch(() => false);
+    if (!deleted) {
+      await sendTempReply(
+        message.channel,
+        { embeds: [buildStatusEmbed("warning", "Il me manque la permission **Gérer les messages** ici : ton message n'a pas pu être supprimé.")] },
+        8000
+      );
+    }
+
+    const payload = { content: text, allowedMentions: { parse: [] } };
+    if (target) {
+      await target.reply(payload).catch(() => message.channel.send(payload));
+    } else {
+      await message.channel.send(payload);
+    }
   },
 };
 
