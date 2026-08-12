@@ -1,6 +1,7 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { isBotOwner } = require("./botOwners");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { getLastChannel, setLastChannel } = require("./sayDmStore");
 
 // `&say` fonctionne UNIQUEMENT en message privé au bot, jamais dans un salon
 // : contrairement à un message envoyé puis supprimé, Discord diffuse tout
@@ -19,7 +20,8 @@ function usageEmbed() {
     "Utilisation en DM : `&say <lien du message ou ID du salon> <texte>`\n" +
       "> Colle un lien de message (clic droit sur le message > **Copier le lien**) pour répondre à ce message précis.\n" +
       "> Ou juste l'ID d'un salon pour y envoyer un message normal (clic droit sur le salon > **Copier l'ID**).\n" +
-      "> Le texte peut tenir sur plusieurs lignes."
+      "> Le texte peut tenir sur plusieurs lignes.\n" +
+      "> Une fois un salon donné une première fois, il est retenu : `&say <texte>` suffit ensuite pour y renvoyer (sans réponse à un message précis)."
   );
 }
 
@@ -59,28 +61,48 @@ async function handleSayDirectMessage(client, message) {
   if (!message.content.trim().toLowerCase().startsWith(SAY_PREFIX)) return;
   if (!isBotOwner(message.author.id)) return;
 
-  // Ne sépare que le premier "mot" (lien/ID de salon) : le reste est gardé
-  // tel quel (retours à la ligne, espaces multiples...) au lieu d'être
-  // aplati par un split/join sur tous les espaces, qui détruisait le texte
-  // sur plusieurs lignes.
+  // Ne sépare que le premier "mot" (lien/ID de salon, s'il y en a un) : le
+  // reste est gardé tel quel (retours à la ligne, espaces multiples...) au
+  // lieu d'être aplati par un split/join sur tous les espaces, qui
+  // détruisait le texte sur plusieurs lignes.
   const rest = message.content.slice(SAY_PREFIX.length).trim();
-  const match = rest.match(/^(\S+)\s+([\s\S]+)$/);
-  const firstArg = match?.[1];
-  const text = match?.[2]?.trim();
+  if (!rest) return message.reply({ embeds: [usageEmbed()] });
 
-  if (!firstArg || !text) {
-    return message.reply({ embeds: [usageEmbed()] });
-  }
+  const splitMatch = rest.match(/^(\S+)(?:\s+([\s\S]+))?$/);
+  const firstToken = splitMatch[1];
+  const afterFirstToken = splitMatch[2]?.trim();
+  const linkMatch = firstToken.match(MESSAGE_LINK_REGEX);
+  const looksLikeSelector = Boolean(linkMatch) || /^\d{15,}$/.test(firstToken);
 
   let channelId;
   let messageId;
-  const linkMatch = firstArg.match(MESSAGE_LINK_REGEX);
-  if (linkMatch) {
-    [, channelId, messageId] = linkMatch;
-  } else if (/^\d{15,}$/.test(firstArg)) {
-    channelId = firstArg;
+  let text;
+
+  if (looksLikeSelector) {
+    // Salon/lien explicitement donné : on l'utilise, et on le retient pour
+    // la prochaine fois — plus besoin de le recopier à chaque `&say`.
+    if (!afterFirstToken) return message.reply({ embeds: [usageEmbed()] });
+    if (linkMatch) {
+      [, channelId, messageId] = linkMatch;
+    } else {
+      channelId = firstToken;
+    }
+    text = afterFirstToken;
   } else {
-    return message.reply({ embeds: [usageEmbed()] });
+    // Pas de salon/lien reconnaissable en premier : on suppose que tout
+    // "rest" est le texte, et on réutilise le dernier salon enregistré.
+    channelId = getLastChannel(message.author.id);
+    text = rest;
+    if (!channelId) {
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            "Aucun salon enregistré pour l'instant — précise-le une première fois avec `&say <lien ou ID de salon> <texte>`."
+          ),
+        ],
+      });
+    }
   }
 
   const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -92,6 +114,11 @@ async function handleSayDirectMessage(client, message) {
   if (!botPermissions?.has(PermissionFlagsBits.SendMessages)) {
     return message.reply({ embeds: [buildStatusEmbed("error", "Je n'ai pas la permission d'écrire dans ce salon.")] });
   }
+
+  // Ne retient que les salons donnés explicitement et validés (existants,
+  // accessibles) — pas la peine de re-sauvegarder si on vient déjà de le
+  // relire depuis le store.
+  if (looksLikeSelector) setLastChannel(message.author.id, channelId);
 
   const target = messageId ? await channel.messages.fetch(messageId).catch(() => null) : null;
   if (messageId && !target) {
