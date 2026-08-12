@@ -206,19 +206,21 @@ async function requestBanAllAuthorization(client, message) {
 }
 
 /**
- * Section "Personnalisée" ajoutée à la suite de `&perms`/`&helpall` : les
+ * Section "Permissions personnalisées" ajoutée à la suite de `&perms` : les
  * délégations individuelles par commande (`&panel` > Permissions, voir
  * utils/commandPermissionStore.js) sont un système à part des paliers, mais
- * affichées ensemble pour avoir une vue complète en un coup d'œil.
+ * affichées ensemble pour avoir une vue complète en un coup d'œil. Uniquement
+ * sur `&perms` (niveaux de permissions par rôle) — pas sur `&helpall`, qui
+ * liste des commandes par palier et n'a pas ce même axe rôle.
  * @param {string} guildId
  * @returns {string} vide si aucune commande n'a de délégation
  */
 function buildCustomDelegationSection(guildId) {
   const grants = getAllGrants(guildId);
   const lines = DELEGABLE_COMMANDS.filter((cmd) => grants[cmd]?.length).map(
-    (cmd) => `**Personnalisée — ${cmd}**\n> ${grants[cmd].map((id) => `<@&${id}>`).join(", ")}`
+    (cmd) => `> **${cmd}** — ${grants[cmd].map((id) => `<@&${id}>`).join(", ")}`
   );
-  return lines.join("\n\n");
+  return lines.length ? `**Permissions personnalisées**\n${lines.join("\n")}` : "";
 }
 
 const handlers = {
@@ -833,10 +835,9 @@ const handlers = {
     const lines = TIER_DEFINITIONS.map(
       (t) => `**${t.label}**\n> ${getCumulativeCommands(message.guild.id, t.level).join(", ")}`
     );
-    const custom = buildCustomDelegationSection(message.guild.id);
     await message.reply({
       embeds: [
-        buildStatusEmbed("info", lines.join("\n\n") + (custom ? `\n\n${custom}` : ""), {
+        buildStatusEmbed("info", lines.join("\n\n"), {
           title: "Permissions liées aux commandes",
         }),
       ],
