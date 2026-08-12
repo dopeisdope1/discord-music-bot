@@ -10,10 +10,11 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
 // Valeurs par défaut avant toute config (la vraie valeur, une fois changée
-// via un panel, est restaurée depuis Discord — voir utils/configChannel.js).
+// via &panel, est restaurée depuis Discord — voir utils/configChannel.js ;
+// ces valeurs ne servent que si cette restauration ne trouve rien du tout).
 // main = préfixe musique ; musicMod = préfixe des commandes de modération
 // dupliquées sur ce même bot (voir utils/musicModerationCommands.js).
-const DEFAULT_PREFIXES = { main: "!", musicMod: "?" };
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&" };
 
 let cache = null;
 

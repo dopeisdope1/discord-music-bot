@@ -95,10 +95,16 @@ async function findConfigMessages(channel) {
 function loadGuildConfig(guild) {
   const promise = (async () => {
     const channel = await getConfigChannel(guild);
-    if (!channel) return;
+    if (!channel) {
+      console.warn(`[config] Salon "${CONFIG_CHANNEL_NAME}" introuvable sur "${guild.name}" — config par défaut.`);
+      return;
+    }
 
     const configMessages = await findConfigMessages(channel);
-    if (configMessages.length === 0) return;
+    if (configMessages.length === 0) {
+      console.warn(`[config] Salon "${CONFIG_CHANNEL_NAME}" trouvé mais vide sur "${guild.name}" — config par défaut.`);
+      return;
+    }
 
     try {
       const merged = {};
@@ -109,7 +115,11 @@ function loadGuildConfig(guild) {
       for (const key of ALL_CATEGORIES) {
         CATEGORY_HYDRATORS[key](guild.id, merged[key]);
       }
-      console.log(`[config] Config restaurée depuis Discord pour "${guild.name}".`);
+      console.log(
+        `[config] Config restaurée depuis Discord pour "${guild.name}" (${configMessages.length} message(s) : ${configMessages
+          .map((m) => `${m.author.tag}${m.editedTimestamp ? " édité" : ""}`)
+          .join(", ")}).`
+      );
     } catch (err) {
       console.warn(`[config] Config invalide sur "${guild.name}" :`, err.message);
     }
@@ -122,9 +132,16 @@ function loadGuildConfig(guild) {
 /**
  * À appeler après chaque changement de config pour sauvegarder l'état actuel
  * dans le salon de config Discord, en plus du fichier local. `categories`
- * précise QUELLES catégories ce bot possède/modifie (ex: `["prefixes"]`) —
- * écrire uniquement ce que ce bot possède évite qu'un bot écrase la valeur
- * plus fraîche d'un autre avec une copie obsolète.
+ * documente quelles catégories viennent de changer (utile pour lire le code
+ * aux call sites), mais la sauvegarde écrit TOUJOURS l'état complet de
+ * toutes les catégories (voir ALL_CATEGORIES) — un seul bot (Musique)
+ * possède désormais toute la config, contrairement à l'époque multi-bots où
+ * chacun n'écrivait que ce qu'il possédait. Nettoie aussi au passage tout
+ * message de config laissé par d'anciennes identités de bot (Gestion/Logs/
+ * Security, supprimés) : sans ça, leur contenu figé pouvait regagner la
+ * fusion au prochain redémarrage si son horodatage se retrouvait plus
+ * récent, faisant "revenir en arrière" un préfixe (ou une autre config)
+ * pourtant changé depuis sur ce bot.
  * @param {import('discord.js').Guild} guild
  * @param {string[]} categories
  */
@@ -139,7 +156,7 @@ async function saveGuildConfig(guild, categories) {
   if (pending) await pending;
 
   const data = {};
-  for (const key of categories) data[key] = CATEGORY_GETTERS[key](guild.id);
+  for (const key of ALL_CATEGORIES) data[key] = CATEGORY_GETTERS[key](guild.id);
   const content = "```json\n" + JSON.stringify(data, null, 2) + "\n```";
 
   const channel = await getConfigChannel(guild, { create: true });
@@ -147,10 +164,16 @@ async function saveGuildConfig(guild, categories) {
 
   const configMessages = await findConfigMessages(channel);
   const own = configMessages.find((m) => m.author.id === guild.client.user.id);
+  const stale = configMessages.filter((m) => m.author.id !== guild.client.user.id);
+
   if (own) {
     await own.edit(content).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
   } else {
     await channel.send(content).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
+  }
+
+  for (const msg of stale) {
+    await msg.delete().catch((err) => console.warn("[config] Échec du nettoyage d'un ancien message de config :", err.message));
   }
 }
 
