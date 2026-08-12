@@ -26,6 +26,12 @@ const {
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 // "clear me" / "uo clear" : ouvert à tout le monde, mais limité en fréquence
 const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
+// Empêche plusieurs `renew` tapés à la suite sur le même salon (avant que le
+// premier ait fini son clonage+suppression) de créer plusieurs clones : les
+// appels suivants pendant qu'un renew est déjà en cours sur ce salon sont
+// ignorés — de toute façon le salon d'origine (et tous les messages dedans,
+// donc les `renew` en trop) disparaît avec la suppression du premier.
+const renewInProgress = new Set();
 
 async function sendTempReply(channel, content, ms = 5000) {
   try {
@@ -499,6 +505,10 @@ const handlers = {
         embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")],
       });
     }
+    // Un renew déjà en cours sur ce salon : on ignore, sinon plusieurs
+    // `renew` tapés à la suite créeraient chacun leur propre clone.
+    if (renewInProgress.has(channel.id)) return;
+    renewInProgress.add(channel.id);
     try {
       const clone = await channel.clone({ reason: `Salon renouvelé par ${message.author.tag}` });
       await clone.setPosition(channel.position).catch(() => {});
@@ -514,6 +524,8 @@ const handlers = {
       await message.channel.send({
         embeds: [buildStatusEmbed("error", "Impossible de renouveler le salon.")],
       });
+    } finally {
+      renewInProgress.delete(channel.id);
     }
   },
 
