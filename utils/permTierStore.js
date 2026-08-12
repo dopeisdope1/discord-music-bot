@@ -37,7 +37,7 @@ const DATA_FILE = path.join(DATA_DIR, "permTiers.json");
 const TIER_DEFINITIONS = [
   { level: 1, label: "Permission 1 — Utilisateur", commands: ["clear", "listbienvenue", "helpall"] },
   { level: 2, label: "Permission 2 — Modération de base", commands: ["hide", "unhide", "lock", "unlock", "renew"] },
-  { level: 3, label: "Permission 3 — Modération avancée", commands: ["massrole", "greet", "addbienvenue", "delbienvenue"] },
+  { level: 3, label: "Permission 3 — Modération avancée", commands: ["massrole", "create", "greet", "addbienvenue", "delbienvenue"] },
   { level: 4, label: "Permission 4 — Administration", commands: ["ban", "unban", "unbanall"] },
   { level: 5, label: "Permission 5 — Owner Global", commands: ["banall", "panel", "perms", "say"] },
 ];

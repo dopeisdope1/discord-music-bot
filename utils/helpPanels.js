@@ -50,7 +50,7 @@ function assignableCommandLine(prefix, cmd) {
     massrole: `\`${prefix}massrole add|remove @role\` (Ajoute/retire un rôle en masse)`,
     add: "`add <rôle>` (en réponse à un membre ou en le mentionnant — Ajoute ce rôle)",
     del: "`del <rôle>` (en réponse à un membre ou en le mentionnant — Retire ce rôle)",
-    create: `\`${prefix}create <nom> <url ou pièce jointe>\` (Crée un emoji)`,
+    create: `\`${prefix}create <nom> <url|pièce jointe|emoji à copier>\` (Crée un emoji, aussi en réponse à un message contenant une image/un emoji)`,
     ban: `\`${prefix}ban\` (Panel pour bannir un membre)`,
     unban: `\`${prefix}unban [id]\` (Débannit un membre)`,
     unbanall: `\`${prefix}unbanall\` (Débannit tout le monde, confirmation demandée)`,

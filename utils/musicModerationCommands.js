@@ -8,7 +8,7 @@ const { sendDashHelpPanel } = require("./helpPanels");
 
 // Jeu de commandes de modération du bot Musique (voir
 // utils/moderationCommands.js, dont on réutilise directement les handlers).
-// Sous-ensemble volontaire : pas de pic/avatar/snipe/gif/create ici.
+// Sous-ensemble volontaire : pas de pic/avatar/snipe/gif ici.
 const ADMIN_COMMANDS = new Set([
   "renew",
   "hide",
@@ -17,6 +17,7 @@ const ADMIN_COMMANDS = new Set([
   "unlock",
   "massrole",
   "panel",
+  "create",
   "greet",
   "addbienvenue",
   "delbienvenue",
@@ -28,8 +29,7 @@ const ADMIN_COMMANDS = new Set([
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
 // Pour `&help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
-// ci-dessus (add/del inclus, sans préfixe), sans "create" qui n'existe pas
-// sur ce bot.
+// ci-dessus (add/del inclus, sans préfixe).
 const HELP_MODERATION_COMMANDS = [
   "renew",
   "hide",
@@ -38,6 +38,7 @@ const HELP_MODERATION_COMMANDS = [
   "unlock",
   "massrole",
   "panel",
+  "create",
   "clear",
   "add",
   "del",

@@ -727,6 +727,10 @@ const handlers = {
     }
   },
 
+  // Accepte toutes les sources possibles pour créer un emoji : pièce jointe
+  // (sur le message ou celui auquel on répond), URL directe, ou un emoji
+  // personnalisé collé/dans le message référencé (le copie, avec son nom
+  // d'origine sauf si un autre nom est donné en argument).
   async create(client, message, args, prefix) {
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuildExpressions)) {
       return message.reply({
@@ -734,21 +738,47 @@ const handlers = {
       });
     }
 
-    const name = args[0];
-    const attachment = message.attachments.first();
-    const source = attachment?.url || args[1];
-
-    if (!name || !/^[a-zA-Z0-9_]{2,32}$/.test(name) || !source) {
-      const dash = prefix || getPrefixes(message.guild.id).musicMod;
-      return message.reply({
+    const dash = prefix || getPrefixes(message.guild.id).musicMod;
+    const usage = () =>
+      message.reply({
         embeds: [
           buildStatusEmbed(
             "error",
-            `Utilisation : \`${dash}create <nom> <url>\` ou \`${dash}create <nom>\` avec une image en pièce jointe. Le nom doit faire 2 à 32 caractères (lettres, chiffres, _).`
+            `Utilisation : \`${dash}create <nom> <url>\`, \`${dash}create <nom>\` avec une image en pièce jointe, ` +
+              `\`${dash}create <emoji>\` pour en copier un (nom optionnel pour le renommer), ou en réponse à un message ` +
+              `contenant une image ou un emoji. Le nom doit faire 2 à 32 caractères (lettres, chiffres, _).`
           ),
         ],
       });
+
+    const referenced = message.reference ? await message.fetchReference().catch(() => null) : null;
+    const EMOJI_REGEX = /<(a)?:(\w{2,32}):(\d{15,})>/;
+
+    let source = null;
+    let copiedName = null;
+
+    const emojiArg = args.find((a) => EMOJI_REGEX.test(a));
+    const emojiMatch = emojiArg?.match(EMOJI_REGEX) || referenced?.content?.match(EMOJI_REGEX);
+    if (emojiMatch) {
+      const [, animatedFlag, emojiName, id] = emojiMatch;
+      copiedName = emojiName;
+      source = `https://cdn.discordapp.com/emojis/${id}.${animatedFlag ? "gif" : "png"}`;
     }
+
+    if (!source) {
+      const attachment = message.attachments.first() || referenced?.attachments?.first();
+      if (attachment) source = attachment.url;
+    }
+
+    if (!source) {
+      const urlArg = args.find((a) => /^https?:\/\//i.test(a));
+      if (urlArg) source = urlArg;
+    }
+
+    if (!source) return usage();
+
+    const name = args.find((a) => a !== emojiArg && !/^https?:\/\//i.test(a)) || copiedName;
+    if (!name || !/^[a-zA-Z0-9_]{2,32}$/.test(name)) return usage();
 
     try {
       const emoji = await message.guild.emojis.create({
