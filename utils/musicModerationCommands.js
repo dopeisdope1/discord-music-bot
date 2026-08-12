@@ -6,13 +6,9 @@ const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 const { handlers } = require("./moderationCommands");
 const { sendDashHelpPanel } = require("./helpPanels");
 
-// Même jeu de commandes de modération que le bot Gestion (voir
-// utils/moderationCommands.js, dont on réutilise directement les handlers),
-// mais hébergé en plus sur le bot Musique avec son propre préfixe — demande
-// explicite de garder ces commandes accessibles depuis le bot Musique
-// "comme au début", en plus du bot Gestion dédié. Sous-ensemble volontaire :
-// pas de pic/avatar/snipe/gif/create ici (ceux-là restent uniquement sur
-// Gestion).
+// Jeu de commandes de modération du bot Musique (voir
+// utils/moderationCommands.js, dont on réutilise directement les handlers).
+// Sous-ensemble volontaire : pas de pic/avatar/snipe/gif/create ici.
 const ADMIN_COMMANDS = new Set([
   "renew",
   "hide",
@@ -25,10 +21,12 @@ const ADMIN_COMMANDS = new Set([
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "perms",
+  "helpall",
 ]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
-// Pour `?help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
+// Pour `&help` (voir utils/helpPanels.js) — mêmes commandes que COMMANDS
 // ci-dessus (add/del inclus, sans préfixe), sans "create" qui n'existe pas
 // sur ce bot.
 const HELP_MODERATION_COMMANDS = [
@@ -46,6 +44,8 @@ const HELP_MODERATION_COMMANDS = [
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "perms",
+  "helpall",
 ];
 
 function requireCommandAccess(message, cmd) {
@@ -61,12 +61,7 @@ function requireCommandAccess(message, cmd) {
 /**
  * À appeler dans l'écouteur "messageCreate" du bot Musique, en plus de
  * handleMusicTextCommand — dispatch indépendant sur son propre préfixe
- * (`musicMod`, `?` par défaut, configurable via `?panel`/`.panel`).
- *
- * Note : les déclencheurs sans préfixe ("clear me", "add"/"del" en réponse)
- * sont aussi actifs ici, comme sur le bot Gestion — si les deux bots sont
- * sur le même serveur, les deux répondront chacun de leur côté à ces
- * phrases (pas d'erreur, juste une réponse en double).
+ * (`musicMod`, `&` par défaut, configurable via `&panel`).
  */
 async function handleMusicModerationTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;

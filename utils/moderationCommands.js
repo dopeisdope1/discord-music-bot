@@ -14,6 +14,7 @@ const { randomClearJoke } = require("./jokes");
 const { searchGif } = require("./gifSearch");
 const { fetchAllMembers, memberFetchErrorMessage } = require("./guildMembers");
 const { getBotOwnerIds } = require("./botOwners");
+const { TIER_DEFINITIONS, getCumulativeCommands, getRoleTiers, autoSyncFromHierarchy } = require("./permTierStore");
 const {
   setWelcomeChannel,
   getWelcomeChannel,
@@ -38,6 +39,8 @@ const DASH_ADMIN_COMMANDS = new Set([
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "perms",
+  "helpall",
 ]);
 // "banall" est gérée à part (vérification dans son propre handler) : action
 // trop destructrice pour être traitée comme les autres commandes admin.
@@ -834,6 +837,48 @@ const handlers = {
         }),
       ],
     });
+  },
+
+  // Paliers de permission (voir utils/permTierStore.js) : jeu de commandes
+  // cumulatif par palier, rôles assignés automatiquement selon leur position
+  // dans la hiérarchie du serveur — indépendant du système de délégation par
+  // commande (`.panel`/`&panel` > Permissions), pas de mélange entre les deux.
+  async perms(client, message, args) {
+    if ((args[0] || "").toLowerCase() === "sync") {
+      autoSyncFromHierarchy(message.guild);
+      await saveGuildConfig(message.guild, ["permTiers"]);
+      return message.reply({
+        embeds: [buildStatusEmbed("success", "Rôles resynchronisés avec la hiérarchie actuelle du serveur.")],
+      });
+    }
+
+    let mapping = getRoleTiers(message.guild.id);
+    if (!Object.keys(mapping).length) {
+      mapping = autoSyncFromHierarchy(message.guild);
+      await saveGuildConfig(message.guild, ["permTiers"]);
+    }
+
+    const byTier = {};
+    for (const [roleId, tier] of Object.entries(mapping)) {
+      if (!message.guild.roles.cache.has(roleId)) continue;
+      (byTier[tier] ||= []).push(roleId);
+    }
+
+    const lines = TIER_DEFINITIONS.map((t) => {
+      const roleIds = byTier[t.level] || [];
+      const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+      return `**${t.label}**\n> Commandes : ${getCumulativeCommands(t.level).join(", ")}\n> Rôles : ${rolesText}`;
+    });
+
+    await message.reply({
+      embeds: [buildStatusEmbed("info", lines.join("\n\n") + "\n\n*Tape `perms sync` pour recalculer après un changement de rôles.*", { title: "Paliers de permission" })],
+      allowedMentions: { parse: [] },
+    });
+  },
+
+  async helpall(client, message, args, prefix) {
+    const dash = prefix || getPrefixes(message.guild.id).dash;
+    return sendDashHelpPanel(message, dash, { showAll: true });
   },
 };
 

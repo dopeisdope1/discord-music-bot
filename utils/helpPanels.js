@@ -31,6 +31,8 @@ const MODERATION_COMMANDS = [
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
+  "perms",
+  "helpall",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -55,6 +57,8 @@ function assignableCommandLine(prefix, cmd) {
     addbienvenue: `\`${prefix}addbienvenue <texte>\` — Ajoute un message de bienvenue à la liste`,
     delbienvenue: `\`${prefix}delbienvenue <numéro>\` — Retire un message (voir \`${prefix}listbienvenue\`)`,
     listbienvenue: `\`${prefix}listbienvenue\` — Liste les messages de bienvenue et le salon configuré`,
+    perms: `\`${prefix}perms\` — Affiche les paliers de permission (\`${prefix}perms sync\` pour resynchroniser avec la hiérarchie des rôles)`,
+    helpall: `\`${prefix}helpall\` — Liste toutes les commandes, sans filtrage par permission`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }
@@ -149,7 +153,7 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
  *   de modération réellement disponibles sur CE bot (voir
  *   utils/musicModerationCommands.js pour un sous-ensemble réduit).
  */
-function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS } = {}) {
+function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS, showAll = false } = {}) {
   const categories = [];
 
   if (includePublic) {
@@ -166,11 +170,11 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
+  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => showAll || canUseCommand(message, cmd));
   if (allowed.length) {
     categories.push({
       key: "allowed",
-      label: "Commandes autorisées",
+      label: showAll ? "Toutes les commandes" : "Commandes autorisées",
       names: allowed,
       lines: allowed.map((cmd) => assignableCommandLine(prefix, cmd)),
       footer: allowed.includes("clear")
@@ -179,7 +183,7 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+  if (showAll || message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
     categories.push({
       key: "danger",
       label: "⚠️ Danger",
