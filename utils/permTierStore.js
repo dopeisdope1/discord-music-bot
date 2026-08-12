@@ -1,5 +1,24 @@
 const fs = require("fs");
 const path = require("path");
+const { PermissionFlagsBits } = require("discord.js");
+
+// Permissions natives qui trahissent un rôle "staff" — sert à filtrer les
+// rôles purement cosmétiques/organisationnels (ex: un rôle "robots" qui
+// étiquette des bots, ou un rôle "membre" de base donné à tout le monde) qui
+// se retrouvaient inclus par le seul tri par position dans la hiérarchie.
+const STAFF_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.ManageMessages,
+  PermissionFlagsBits.ModerateMembers,
+  PermissionFlagsBits.ManageWebhooks,
+  PermissionFlagsBits.ManageNicknames,
+  PermissionFlagsBits.MentionEveryone,
+];
 
 // Système de paliers de permission (`&perms`) : chaque palier débloque un
 // jeu CUMULATIF de commandes (le palier 3 a aussi tout ce que le palier 1 et
@@ -97,8 +116,13 @@ function getMemberTier(guildId, member) {
 
 /**
  * Recalcule la correspondance rôle -> palier à partir de la hiérarchie
- * actuelle du serveur : tous les rôles (hors @everyone et rôles gérés par
- * une intégration — bot, boost...) triés par position, répartis en
+ * actuelle du serveur, en ne retenant que les rôles qui ressemblent
+ * vraiment à des rôles de staff : hors @everyone, hors rôles gérés par une
+ * intégration (bot, boost...), hors rôles qui n'ont AUCUNE permission
+ * "staff" (voir STAFF_PERMISSIONS — élimine les rôles cosmétiques/tags même
+ * hauts placés), et hors rôles qui ne sont portés que par des bots (un rôle
+ * "robots" avec une permission de gestion n'est pas un palier de modération
+ * humain). Les rôles retenus sont ensuite triés par position et répartis en
  * TIER_COUNT groupes de taille égale, les plus hauts placés récupérant les
  * paliers les plus élevés.
  * @param {import('discord.js').Guild} guild
@@ -107,6 +131,8 @@ function getMemberTier(guildId, member) {
 function autoSyncFromHierarchy(guild) {
   const roles = [...guild.roles.cache.values()]
     .filter((r) => r.id !== guild.id && !r.managed)
+    .filter((r) => STAFF_PERMISSIONS.some((p) => r.permissions.has(p)))
+    .filter((r) => r.members.size === 0 || [...r.members.values()].some((m) => !m.user.bot))
     .sort((a, b) => b.position - a.position);
 
   const mapping = {};
