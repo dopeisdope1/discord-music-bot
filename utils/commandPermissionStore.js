@@ -10,11 +10,11 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "commandPermissions.json");
 
-// Commandes qu'un administrateur peut déléguer à un rôle depuis `.panel`/
-// `?panel` > Permissions. Volontairement exclues : `panel` (accès à la
-// config elle-même) et `banall` (trop destructrice, voir
-// utils/moderationCommands.js — déjà soumise à l'autorisation du
-// propriétaire).
+// Commandes qu'un administrateur peut déléguer à un rôle depuis `&panel` >
+// Permissions. Volontairement exclues : `panel` (accès à la config
+// elle-même), `banall` (trop destructrice, voir utils/moderationCommands.js
+// — déjà soumise à l'autorisation du propriétaire), et `say` (réservée aux
+// administrateurs natifs, jamais délégable).
 const DELEGABLE_COMMANDS = [
   "clear",
   "renew",
@@ -27,6 +27,10 @@ const DELEGABLE_COMMANDS = [
   "ban",
   "unban",
   "unbanall",
+  "greet",
+  "addbienvenue",
+  "delbienvenue",
+  "listbienvenue",
 ];
 
 let cache = null;

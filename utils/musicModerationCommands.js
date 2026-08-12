@@ -17,12 +17,13 @@ const ADMIN_COMMANDS = new Set([
   "unlock",
   "massrole",
   "panel",
-  "setbienvenue",
+  "greet",
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
   "perms",
   "helpall",
+  "say",
 ]);
 const BAN_COMMANDS = new Set(["ban", "unban", "unbanall"]);
 const COMMANDS = new Set([...ADMIN_COMMANDS, ...BAN_COMMANDS, "banall", "clear"]);
@@ -40,12 +41,13 @@ const HELP_MODERATION_COMMANDS = [
   "clear",
   "add",
   "del",
-  "setbienvenue",
+  "greet",
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
   "perms",
   "helpall",
+  "say",
 ];
 
 function requireCommandAccess(message, cmd) {

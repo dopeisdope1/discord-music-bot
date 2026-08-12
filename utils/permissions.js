@@ -29,7 +29,7 @@ function canUseCommand(message, command) {
   if (hasRoleAccess(message.member, message.guildId, command)) return true;
   if (message.member) {
     const tier = getMemberTier(message.guildId, message.member);
-    if (tier && tierHasCommand(tier, command)) return true;
+    if (tier && tierHasCommand(message.guildId, tier, command)) return true;
   }
   return false;
 }

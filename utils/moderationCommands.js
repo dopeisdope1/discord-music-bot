@@ -752,11 +752,16 @@ const handlers = {
   },
 
   // Configure le salon de bienvenue : celui où la commande est tapée.
-  async setbienvenue(client, message) {
-    setWelcomeChannel(message.guild.id, message.channel.id);
+  async greet(client, message, args, prefix) {
+    const channel = message.mentions.channels?.first();
+    if (!channel) {
+      const dash = prefix || getPrefixes(message.guild.id).musicMod;
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : \`${dash}greet #salon\``)] });
+    }
+    setWelcomeChannel(message.guild.id, channel.id);
     await saveGuildConfig(message.guild, ["welcome"]);
     await message.reply({
-      embeds: [buildStatusEmbed("success", `Les messages de bienvenue seront envoyés ici (${message.channel}).`)],
+      embeds: [buildStatusEmbed("success", `Les messages de bienvenue seront envoyés dans ${channel}.`)],
     });
   },
 
@@ -795,7 +800,7 @@ const handlers = {
       : "*Aucun message personnalisé — les messages par défaut sont utilisés.*";
     await message.reply({
       embeds: [
-        buildStatusEmbed("info", `**Salon :** ${channelId ? `<#${channelId}>` : "*non configuré — voir \`setbienvenue\`*"}\n\n${lines}`, {
+        buildStatusEmbed("info", `**Salon :** ${channelId ? `<#${channelId}>` : "*non configuré — voir \`greet\`*"}\n\n${lines}`, {
           title: "Messages de bienvenue",
         }),
       ],
@@ -808,7 +813,9 @@ const handlers = {
   // commande (`.panel`/`&panel` > Permissions), pas de mélange entre les deux.
   // `helpall` affiche les commandes par palier, `perms` affiche les rôles.
   async helpall(client, message) {
-    const lines = TIER_DEFINITIONS.map((t) => `**${t.label}**\n> ${getCumulativeCommands(t.level).join(", ")}`);
+    const lines = TIER_DEFINITIONS.map(
+      (t) => `**${t.label}**\n> ${getCumulativeCommands(message.guild.id, t.level).join(", ")}`
+    );
     await message.reply({
       embeds: [buildStatusEmbed("info", lines.join("\n\n"), { title: "Permissions liées aux commandes" })],
     });
@@ -849,6 +856,18 @@ const handlers = {
       ],
       allowedMentions: { parse: [] },
     });
+  },
+
+  // Supprime le message d'origine et renvoie le texte comme s'il venait du
+  // bot lui-même (pas un embed) — volontairement non délégable (voir
+  // utils/commandPermissionStore.js), réservé aux administrateurs natifs.
+  async say(client, message, args) {
+    const text = args.join(" ").trim();
+    if (!text) {
+      return message.reply({ embeds: [buildStatusEmbed("error", "Utilisation : `say <texte>`")] });
+    }
+    await message.delete().catch(() => {});
+    await message.channel.send({ content: text, allowedMentions: { parse: [] } });
   },
 };
 

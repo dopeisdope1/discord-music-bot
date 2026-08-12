@@ -27,12 +27,13 @@ const MODERATION_COMMANDS = [
   "clear",
   "add",
   "del",
-  "setbienvenue",
+  "greet",
   "addbienvenue",
   "delbienvenue",
   "listbienvenue",
   "perms",
   "helpall",
+  "say",
 ];
 const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 
@@ -53,12 +54,13 @@ function assignableCommandLine(prefix, cmd) {
     unban: `\`${prefix}unban [id]\` — Idem pour débannir (ou direct par ID)`,
     unbanall: `\`${prefix}unbanall\` — Débannit tout le monde (confirmation demandée)`,
     clear: `\`${prefix}clear <nombre>\`/\`@membre\`/\`<id>\` — Supprime des messages`,
-    setbienvenue: `\`${prefix}setbienvenue\` — Envoie les messages de bienvenue dans ce salon`,
+    greet: `\`${prefix}greet #salon\` — Envoie les messages de bienvenue dans ce salon`,
     addbienvenue: `\`${prefix}addbienvenue <texte>\` — Ajoute un message de bienvenue à la liste`,
     delbienvenue: `\`${prefix}delbienvenue <numéro>\` — Retire un message (voir \`${prefix}listbienvenue\`)`,
     listbienvenue: `\`${prefix}listbienvenue\` — Liste les messages de bienvenue et le salon configuré`,
-    perms: `\`${prefix}perms\` — Affiche les paliers de permission (\`${prefix}perms sync\` pour resynchroniser avec la hiérarchie des rôles)`,
-    helpall: `\`${prefix}helpall\` — Liste toutes les commandes, sans filtrage par permission`,
+    perms: `\`${prefix}perms\` — Affiche les rôles de chaque palier de permission (\`${prefix}perms sync\` pour resynchroniser avec la hiérarchie des rôles)`,
+    helpall: `\`${prefix}helpall\` — Affiche les commandes débloquées à chaque palier de permission`,
+    say: `\`${prefix}say <texte>\` — Fait parler le bot à ta place (ton message est supprimé)`,
   };
   return lines[cmd] || `\`${prefix}${cmd}\``;
 }

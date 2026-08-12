@@ -406,7 +406,7 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 });
 
 // ---- Message de bienvenue pour les nouveaux membres ----
-// Voir les commandes de config `setbienvenue`/`addbienvenue`/etc. (préfixe
+// Voir les commandes de config `greet`/`addbienvenue`/etc. (préfixe
 // modération de ce bot).
 client.on("guildMemberAdd", (member) => {
   console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);

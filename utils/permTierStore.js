@@ -20,43 +20,31 @@ const STAFF_PERMISSIONS = [
   PermissionFlagsBits.MentionEveryone,
 ];
 
-// Système de paliers de permission (`&perms`) : chaque palier débloque un
-// jeu CUMULATIF de commandes (le palier 3 a aussi tout ce que le palier 1 et
-// 2 ont), et est associé automatiquement à des rôles du serveur en fonction
-// de leur position dans la hiérarchie (le rôle le plus haut placé récupère
-// le palier le plus élevé). Volontairement indépendant du système de
-// délégation par commande (voir utils/commandPermissionStore.js) — pas de
-// mélange entre les deux, utils/permissions.js vérifie simplement les deux.
+// Système de paliers de permission (`&perms`/`&helpall`, gérable aussi via
+// `&panel` > Paliers) : chaque palier débloque un jeu CUMULATIF de commandes
+// (le palier 3 a aussi tout ce que le palier 1 et 2 ont), et est associé à
+// des rôles du serveur (auto-assignés selon leur position dans la
+// hiérarchie, ou modifiables à la main). Volontairement indépendant du
+// système de délégation par commande (voir utils/commandPermissionStore.js)
+// — pas de mélange entre les deux, utils/permissions.js vérifie les deux.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "permTiers.json");
 
-// Définition fixe des paliers — 5 niveaux, adaptés au jeu de commandes de
-// modération du bot Musique (nettement plus petit que la référence à 12
-// paliers) : chaque niveau ajoute quelques commandes de plus.
+// Définition par défaut des paliers — 5 niveaux, adaptés au jeu de
+// commandes de modération du bot Musique. Ce sont des valeurs par défaut :
+// `&panel` > Paliers permet de réassigner une commande à un autre palier
+// par serveur (voir getCommandTierOverrides/setCommandTier ci-dessous).
 const TIER_DEFINITIONS = [
   { level: 1, label: "Palier 1 — Junior", commands: ["clear", "listbienvenue", "helpall"] },
   { level: 2, label: "Palier 2 — Modérateur", commands: ["hide", "unhide", "lock", "unlock", "renew"] },
-  { level: 3, label: "Palier 3 — Modérateur senior", commands: ["massrole", "setbienvenue", "addbienvenue", "delbienvenue"] },
+  { level: 3, label: "Palier 3 — Modérateur senior", commands: ["massrole", "greet", "addbienvenue", "delbienvenue"] },
   { level: 4, label: "Palier 4 — Administrateur", commands: ["ban", "unban", "unbanall"] },
   { level: 5, label: "Palier 5 — Direction", commands: ["banall", "panel", "perms"] },
 ];
 const TIER_COUNT = TIER_DEFINITIONS.length;
-
-/**
- * @param {number} level
- * @returns {string[]} toutes les commandes débloquées à ce palier ET en dessous
- */
-function getCumulativeCommands(level) {
-  const commands = new Set();
-  for (const tier of TIER_DEFINITIONS) {
-    if (tier.level <= level) tier.commands.forEach((c) => commands.add(c));
-  }
-  return [...commands];
-}
-
-function tierHasCommand(level, command) {
-  return getCumulativeCommands(level).includes(command);
-}
+// Toutes les commandes qui participent au système de paliers (union des
+// valeurs par défaut) — sert de liste d'options pour `&panel` > Paliers.
+const ALL_TIER_COMMANDS = TIER_DEFINITIONS.flatMap((t) => t.commands);
 
 let cache = null;
 
@@ -79,12 +67,20 @@ function save() {
   }
 }
 
+function ensureGuild(guildId) {
+  const data = load();
+  if (!data[guildId]) data[guildId] = { roles: {}, commands: {} };
+  if (!data[guildId].roles) data[guildId].roles = {};
+  if (!data[guildId].commands) data[guildId].commands = {};
+  return data[guildId];
+}
+
 /**
  * @param {string} guildId
  * @returns {{ [roleId: string]: number }} rôle -> numéro de palier
  */
 function getRoleTiers(guildId) {
-  return { ...(load()[guildId] || {}) };
+  return { ...ensureGuild(guildId).roles };
 }
 
 /**
@@ -95,8 +91,91 @@ function getRoleTiers(guildId) {
  */
 function setRoleTiers(guildId, mapping) {
   const data = load();
-  data[guildId] = mapping;
+  ensureGuild(guildId).roles = mapping;
   save();
+}
+
+/**
+ * Assigne un seul rôle à un palier (retire des autres implicitement, un
+ * rôle n'a qu'un seul palier à la fois) — utilisé par `&panel` > Paliers.
+ * @param {string} guildId
+ * @param {string} roleId
+ * @param {number} level
+ */
+function setRoleTier(guildId, roleId, level) {
+  const g = ensureGuild(guildId);
+  g.roles[roleId] = level;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @param {string} roleId
+ */
+function removeRoleTier(guildId, roleId) {
+  const g = ensureGuild(guildId);
+  delete g.roles[roleId];
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {{ [command: string]: number }} commande -> palier, uniquement
+ *   les commandes réassignées à la main (voir getCommandTierMap pour la
+ *   vue complète fusionnée avec les valeurs par défaut)
+ */
+function getCommandTierOverrides(guildId) {
+  return { ...ensureGuild(guildId).commands };
+}
+
+/**
+ * Réassigne une commande à un palier différent des valeurs par défaut
+ * (voir TIER_DEFINITIONS) — utilisé par `&panel` > Paliers.
+ * @param {string} guildId
+ * @param {string} command
+ * @param {number} level
+ */
+function setCommandTier(guildId, command, level) {
+  const g = ensureGuild(guildId);
+  g.commands[command] = level;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {{ [command: string]: number }} commande -> palier, valeurs par
+ *   défaut (TIER_DEFINITIONS) fusionnées avec les réassignations du serveur
+ */
+function getCommandTierMap(guildId) {
+  const map = {};
+  for (const tier of TIER_DEFINITIONS) {
+    for (const cmd of tier.commands) map[cmd] = tier.level;
+  }
+  Object.assign(map, getCommandTierOverrides(guildId));
+  return map;
+}
+
+/**
+ * @param {string} guildId
+ * @param {number} level
+ * @returns {string[]} toutes les commandes débloquées à ce palier ET en dessous
+ */
+function getCumulativeCommands(guildId, level) {
+  const map = getCommandTierMap(guildId);
+  return Object.entries(map)
+    .filter(([, cmdLevel]) => cmdLevel <= level)
+    .map(([cmd]) => cmd);
+}
+
+/**
+ * @param {string} guildId
+ * @param {number} level
+ * @param {string} command
+ * @returns {boolean}
+ */
+function tierHasCommand(guildId, level, command) {
+  const cmdLevel = getCommandTierMap(guildId)[command];
+  return cmdLevel !== undefined && cmdLevel <= level;
 }
 
 /**
@@ -148,7 +227,7 @@ function autoSyncFromHierarchy(guild) {
 }
 
 function getRawGuildData(guildId) {
-  return load()[guildId] || {};
+  return load()[guildId] || { roles: {}, commands: {} };
 }
 
 function hydrateFromRemote(guildId, remoteData) {
@@ -160,10 +239,16 @@ function hydrateFromRemote(guildId, remoteData) {
 
 module.exports = {
   TIER_DEFINITIONS,
+  ALL_TIER_COMMANDS,
   getCumulativeCommands,
   tierHasCommand,
   getRoleTiers,
   setRoleTiers,
+  setRoleTier,
+  removeRoleTier,
+  getCommandTierOverrides,
+  setCommandTier,
+  getCommandTierMap,
   getMemberTier,
   autoSyncFromHierarchy,
   getRawGuildData,

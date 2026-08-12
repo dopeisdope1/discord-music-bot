@@ -11,15 +11,34 @@ const {
   TextInputStyle,
   StringSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { saveGuildConfig, waitForHydration } = require("./configChannel");
 const { DELEGABLE_COMMANDS, getAllGrants, setRolesForCommand } = require("./commandPermissionStore");
+const {
+  TIER_DEFINITIONS,
+  ALL_TIER_COMMANDS,
+  getRoleTiers,
+  setRoleTier,
+  removeRoleTier,
+  getCommandTierMap,
+  setCommandTier,
+} = require("./permTierStore");
+const {
+  setWelcomeChannel,
+  getWelcomeChannel,
+  getWelcomeMessages,
+  addWelcomeMessage,
+  removeWelcomeMessage,
+} = require("./welcomeStore");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
 const MAX_ROLES_PER_COMMAND = 10;
+const MAX_WELCOME_MESSAGE_LENGTH = 300;
 
 // Un bot, deux préfixes indépendants — voir utils/prefixStore.js.
 const TYPE_LABELS = {
@@ -27,7 +46,7 @@ const TYPE_LABELS = {
   musicMod: "modération",
 };
 
-const PAGES = { prefixes: "Préfixes", permissions: "Permissions" };
+const PAGES = { prefixes: "Préfixes", permissions: "Permissions", tiers: "Paliers", welcome: "Bienvenue" };
 
 function buildNavRow(currentPage) {
   return new ActionRowBuilder().addComponents(
@@ -130,6 +149,172 @@ function buildPermissionsPage(guildId, selectedCommand, statusText) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
+/**
+ * Page "Paliers" : gère le système de paliers de permission (voir
+ * utils/permTierStore.js — `&perms`/`&helpall`) directement depuis le
+ * panel. Deux sélections indépendantes sur la même page : un palier (pour
+ * éditer ses rôles) et une commande (pour la réassigner à un autre palier).
+ * @param {string} guildId
+ * @param {number|null} selectedTier
+ * @param {string|null} selectedCommand
+ * @param {string} [statusText]
+ */
+function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
+  const roleMapping = getRoleTiers(guildId);
+  const commandMap = getCommandTierMap(guildId);
+
+  const byTier = {};
+  for (const [roleId, tier] of Object.entries(roleMapping)) (byTier[tier] ||= []).push(roleId);
+  const commandsByTier = {};
+  for (const [cmd, tier] of Object.entries(commandMap)) (commandsByTier[tier] ||= []).push(cmd);
+
+  const container = new ContainerBuilder();
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  const summary = TIER_DEFINITIONS.map((t) => {
+    const roleIds = byTier[t.level] || [];
+    const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+    const cmds = (commandsByTier[t.level] || []).join(", ") || "*aucune*";
+    return `**${t.label}**\n> Commandes : ${cmds}\n> Rôles : ${rolesText}`;
+  }).join("\n\n");
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Paliers\n> Choisis un palier pour éditer ses rôles, ou une commande pour la déplacer vers un autre palier.\n\n" +
+        summary
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("palier_select")
+        .setPlaceholder("Choisir un palier (rôles)")
+        .addOptions(
+          TIER_DEFINITIONS.map((t) => ({ label: t.label, value: String(t.level), default: t.level === selectedTier }))
+        )
+    )
+  );
+  if (selectedTier) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`palier_role_select:${selectedTier}`)
+          .setPlaceholder(`Rôles pour le palier ${selectedTier}`)
+          .setMinValues(0)
+          .setMaxValues(MAX_ROLES_PER_COMMAND)
+          .setDefaultRoles(byTier[selectedTier] || [])
+      )
+    );
+  }
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("palier_cmd_select")
+        .setPlaceholder("Choisir une commande (palier)")
+        .addOptions(
+          ALL_TIER_COMMANDS.map((cmd) => ({ label: cmd, value: cmd, default: cmd === selectedCommand }))
+        )
+    )
+  );
+  if (selectedCommand) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`palier_cmd_tier_select:${selectedCommand}`)
+          .setPlaceholder(`Palier pour "${selectedCommand}"`)
+          .addOptions(
+            TIER_DEFINITIONS.map((t) => ({
+              label: t.label,
+              value: String(t.level),
+              default: commandMap[selectedCommand] === t.level,
+            }))
+          )
+      )
+    );
+  }
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/**
+ * Page "Bienvenue" : configure le salon et les messages de bienvenue
+ * directement depuis le panel (équivalent de `greet`/`addbienvenue`/
+ * `delbienvenue`/`listbienvenue`).
+ * @param {string} guildId
+ * @param {string} [statusText]
+ */
+function buildWelcomePage(guildId, statusText) {
+  const channelId = getWelcomeChannel(guildId);
+  const messages = getWelcomeMessages(guildId);
+
+  const container = new ContainerBuilder();
+
+  if (statusText) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(statusText));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  const lines = messages.length
+    ? messages.map((m, i) => `${i + 1}. ${m}`).join("\n")
+    : "*Aucun message personnalisé — les messages par défaut sont utilisés.*";
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "## Bienvenue\n" +
+        `> Salon : ${channelId ? `<#${channelId}>` : "*non configuré*"}\n\n` +
+        "**Messages** (un est tiré au hasard à chaque arrivée)\n" +
+        lines
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("greet_channel_select")
+        .setPlaceholder("Envoyer le message de bienvenue à ce salon")
+        .setChannelTypes(ChannelType.GuildText)
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("welcome_add_button")
+        .setLabel("Ajouter un message")
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  if (messages.length) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("welcome_remove_select")
+          .setPlaceholder("Retirer un message")
+          .addOptions(
+            messages.slice(0, 25).map((m, i) => ({
+              label: `${i + 1}. ${m}`.slice(0, 100),
+              value: String(i + 1),
+            }))
+          )
+      )
+    );
+  }
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(buildNavRow("welcome"));
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
 function buildPrefixModal(type, current) {
   return new ModalBuilder()
     .setCustomId(`prefix_modal:${type}`)
@@ -143,6 +328,23 @@ function buildPrefixModal(type, current) {
           .setMinLength(1)
           .setMaxLength(MAX_PREFIX_LENGTH)
           .setValue(current || "")
+          .setRequired(true)
+      )
+    );
+}
+
+function buildWelcomeMessageModal() {
+  return new ModalBuilder()
+    .setCustomId("welcome_message_modal")
+    .setTitle("Nouveau message de bienvenue")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel("Message (ex : Bienvenue {membre} !)")
+          .setStyle(TextInputStyle.Paragraph)
+          .setMinLength(1)
+          .setMaxLength(MAX_WELCOME_MESSAGE_LENGTH)
           .setRequired(true)
       )
     );
@@ -164,8 +366,9 @@ async function replyWithError(interaction, message = "Une erreur est survenue, r
 /**
  * Ouvre le panel d'administration (accessible via `&panel`, réservé aux
  * administrateurs — la vérification se fait avant l'appel de cette
- * fonction) : préfixes et délégation de commandes à des rôles. Les valeurs
- * sont synchronisées via le salon Discord partagé "zinki-config" (voir
+ * fonction) : préfixes, délégation de commandes à des rôles, paliers de
+ * permission, et configuration des messages de bienvenue. Les valeurs sont
+ * synchronisées via le salon Discord partagé "zinki-config" (voir
  * utils/configChannel.js), pour survivre aux redéploiements Railway.
  * @param {import('discord.js').Message} message
  */
@@ -178,9 +381,11 @@ async function handlePrefixPanel(message) {
   // que la restauration se termine (voir configChannel.js).
   await waitForHydration(guildId);
   let currentPage = "prefixes";
-  // Commande actuellement sélectionnée sur la page Permissions (état local
-  // au panel, pas persisté — un nouveau `.panel` repart sans sélection).
+  // État local aux différentes pages (pas persisté — un nouveau `&panel`
+  // repart sans sélection).
   let selectedCommand = null;
+  let selectedTier = null;
+  let selectedTierCommand = null;
   const panelMessage = await message.reply(buildPrefixesPage(guildId));
 
   const collector = panelMessage.createMessageComponentCollector({ time: PANEL_TIMEOUT_MS });
@@ -195,7 +400,14 @@ async function handlePrefixPanel(message) {
       if (i.isButton() && i.customId.startsWith("panel_page:")) {
         currentPage = i.customId.split(":")[1];
         selectedCommand = null;
-        await i.update(currentPage === "permissions" ? buildPermissionsPage(guildId, null) : buildPrefixesPage(guildId));
+        selectedTier = null;
+        selectedTierCommand = null;
+        const builders = {
+          permissions: () => buildPermissionsPage(guildId, null),
+          tiers: () => buildTiersPage(guildId, null, null),
+          welcome: () => buildWelcomePage(guildId),
+        };
+        await i.update((builders[currentPage] || (() => buildPrefixesPage(guildId)))());
         return;
       }
 
@@ -212,6 +424,88 @@ async function handlePrefixPanel(message) {
         selectedCommand = command;
         const roleList = i.values.length ? i.values.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
         await i.update(buildPermissionsPage(guildId, command, `Rôles pour **${command}** mis à jour : ${roleList}`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "palier_select") {
+        selectedTier = parseInt(i.values[0], 10);
+        await i.update(buildTiersPage(guildId, selectedTier, selectedTierCommand));
+        return;
+      }
+
+      if (i.isRoleSelectMenu() && i.customId.startsWith("palier_role_select:")) {
+        const level = parseInt(i.customId.split(":")[1], 10);
+        const previousRoles = Object.entries(getRoleTiers(guildId))
+          .filter(([, t]) => t === level)
+          .map(([roleId]) => roleId);
+        for (const roleId of previousRoles) {
+          if (!i.values.includes(roleId)) removeRoleTier(guildId, roleId);
+        }
+        for (const roleId of i.values) setRoleTier(guildId, roleId, level);
+        await saveGuildConfig(i.guild, ["permTiers"]);
+        selectedTier = level;
+        const roleList = i.values.length ? i.values.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+        await i.update(buildTiersPage(guildId, level, selectedTierCommand, `Rôles du palier ${level} mis à jour : ${roleList}`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "palier_cmd_select") {
+        selectedTierCommand = i.values[0];
+        await i.update(buildTiersPage(guildId, selectedTier, selectedTierCommand));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId.startsWith("palier_cmd_tier_select:")) {
+        const command = i.customId.split(":")[1];
+        const level = parseInt(i.values[0], 10);
+        setCommandTier(guildId, command, level);
+        await saveGuildConfig(i.guild, ["permTiers"]);
+        selectedTierCommand = command;
+        await i.update(
+          buildTiersPage(guildId, selectedTier, command, `Commande **${command}** déplacée vers le palier ${level}.`)
+        );
+        return;
+      }
+
+      if (i.isChannelSelectMenu() && i.customId === "greet_channel_select") {
+        setWelcomeChannel(guildId, i.values[0]);
+        await saveGuildConfig(i.guild, ["welcome"]);
+        await i.update(buildWelcomePage(guildId, `Salon de bienvenue mis à jour : <#${i.values[0]}>`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "welcome_remove_select") {
+        const index = parseInt(i.values[0], 10);
+        const removed = removeWelcomeMessage(guildId, index);
+        await saveGuildConfig(i.guild, ["welcome"]);
+        await i.update(buildWelcomePage(guildId, removed ? `Message retiré : "${removed}"` : "Numéro invalide."));
+        return;
+      }
+
+      if (i.isButton() && i.customId === "welcome_add_button") {
+        await i.showModal(buildWelcomeMessageModal());
+        let submitted;
+        try {
+          submitted = await i.awaitModalSubmit({
+            time: PANEL_TIMEOUT_MS,
+            filter: (m) => m.customId === "welcome_message_modal" && m.user.id === message.author.id,
+          });
+        } catch {
+          return;
+        }
+        try {
+          const text = submitted.fields.getTextInputValue("value").trim();
+          if (!text) {
+            await submitted.reply({ content: "Message vide, réessaie.", ephemeral: true });
+            return;
+          }
+          const count = addWelcomeMessage(guildId, text);
+          await saveGuildConfig(submitted.guild, ["welcome"]);
+          await submitted.update(buildWelcomePage(guildId, `Message #${count} ajouté : "${text}"`));
+        } catch (err) {
+          console.error("[panel] Erreur lors de l'ajout d'un message de bienvenue :", err);
+          await replyWithError(submitted);
+        }
         return;
       }
 
