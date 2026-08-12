@@ -88,6 +88,26 @@ function removeWelcomeMessage(guildId, index) {
 }
 
 /**
+ * @param {string} guildId
+ * @param {number} ms 0 = ne jamais supprimer (par défaut)
+ */
+function setWelcomeDeleteDelay(guildId, ms) {
+  const data = load();
+  if (!data[guildId]) data[guildId] = {};
+  data[guildId].deleteAfterMs = ms;
+  save();
+}
+
+/**
+ * @param {string} guildId
+ * @returns {number} délai (ms) avant suppression auto du message de
+ *   bienvenue — 0 = ne jamais supprimer
+ */
+function getWelcomeDeleteDelay(guildId) {
+  return load()[guildId]?.deleteAfterMs || 0;
+}
+
+/**
  * Message de bienvenue à afficher : pioche dans la liste personnalisée du
  * serveur si elle n'est pas vide, sinon dans la liste par défaut (voir
  * utils/welcomeMessages.js).
@@ -130,6 +150,8 @@ module.exports = {
   addWelcomeMessage,
   removeWelcomeMessage,
   getRandomWelcomeMessage,
+  setWelcomeDeleteDelay,
+  getWelcomeDeleteDelay,
   getRawGuildData,
   hydrateFromRemote,
 };

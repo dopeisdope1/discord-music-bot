@@ -7,7 +7,7 @@ const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingP
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { handleMusicModerationTextCommand } = require("./utils/musicModerationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-const { getWelcomeChannel, getRandomWelcomeMessage } = require("./utils/welcomeStore");
+const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -426,6 +426,12 @@ client.on("guildMemberAdd", (member) => {
   console.log(`[bienvenue] Envoi dans #${channel.name}`);
   channel
     .send(`${member} ${getRandomWelcomeMessage(member.guild.id)}`)
+    .then((sent) => {
+      const deleteAfterMs = getWelcomeDeleteDelay(member.guild.id);
+      if (deleteAfterMs > 0) {
+        setTimeout(() => sent.delete().catch(() => {}), deleteAfterMs);
+      }
+    })
     .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
 });
 

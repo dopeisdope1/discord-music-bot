@@ -33,11 +33,24 @@ const {
   getWelcomeMessages,
   addWelcomeMessage,
   removeWelcomeMessage,
+  setWelcomeDeleteDelay,
+  getWelcomeDeleteDelay,
 } = require("./welcomeStore");
 
 const PANEL_TIMEOUT_MS = 10 * 60_000;
 const MAX_PREFIX_LENGTH = 5;
 const MAX_ROLES_PER_COMMAND = 10;
+
+// Options du menu "suppression auto" de la page Bienvenue — voir
+// utils/welcomeStore.js (0 = ne jamais supprimer).
+const WELCOME_DELETE_DELAYS = [
+  { label: "Jamais (par défaut)", value: 0 },
+  { label: "5 secondes", value: 5_000 },
+  { label: "10 secondes", value: 10_000 },
+  { label: "30 secondes", value: 30_000 },
+  { label: "1 minute", value: 60_000 },
+  { label: "5 minutes", value: 300_000 },
+];
 const MAX_WELCOME_MESSAGE_LENGTH = 300;
 
 // Un bot, deux préfixes indépendants — voir utils/prefixStore.js.
@@ -252,6 +265,7 @@ function buildTiersPage(guildId, selectedTier, selectedCommand, statusText) {
 function buildWelcomePage(guildId, statusText) {
   const channelId = getWelcomeChannel(guildId);
   const messages = getWelcomeMessages(guildId);
+  const deleteAfterMs = getWelcomeDeleteDelay(guildId);
 
   const container = new ContainerBuilder();
 
@@ -263,11 +277,13 @@ function buildWelcomePage(guildId, statusText) {
   const lines = messages.length
     ? messages.map((m, i) => `${i + 1}. ${m}`).join("\n")
     : "*Aucun message personnalisé — les messages par défaut sont utilisés.*";
+  const delayLabel = WELCOME_DELETE_DELAYS.find((d) => d.value === deleteAfterMs)?.label || `${deleteAfterMs} ms`;
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       "## Bienvenue\n" +
-        `> Salon : ${channelId ? `<#${channelId}>` : "*non configuré*"}\n\n` +
+        `> Salon : ${channelId ? `<#${channelId}>` : "*non configuré*"}\n` +
+        `> Suppression auto : ${delayLabel}\n\n` +
         "**Messages** (un est tiré au hasard à chaque arrivée)\n" +
         lines
     )
@@ -281,6 +297,17 @@ function buildWelcomePage(guildId, statusText) {
         .setChannelTypes(ChannelType.GuildText)
         .setMinValues(1)
         .setMaxValues(1)
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("welcome_delete_delay_select")
+        .setPlaceholder("Supprimer le message après un certain temps")
+        .addOptions(
+          WELCOME_DELETE_DELAYS.map((d) => ({ label: d.label, value: String(d.value), default: d.value === deleteAfterMs }))
+        )
     )
   );
 
@@ -471,6 +498,15 @@ async function handlePrefixPanel(message) {
         setWelcomeChannel(guildId, i.values[0]);
         await saveGuildConfig(i.guild, ["welcome"]);
         await i.update(buildWelcomePage(guildId, `Salon de bienvenue mis à jour : <#${i.values[0]}>`));
+        return;
+      }
+
+      if (i.isStringSelectMenu() && i.customId === "welcome_delete_delay_select") {
+        const ms = parseInt(i.values[0], 10);
+        setWelcomeDeleteDelay(guildId, ms);
+        await saveGuildConfig(i.guild, ["welcome"]);
+        const label = WELCOME_DELETE_DELAYS.find((d) => d.value === ms)?.label || `${ms} ms`;
+        await i.update(buildWelcomePage(guildId, `Suppression auto réglée sur : ${label}.`));
         return;
       }
 
