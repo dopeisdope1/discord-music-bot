@@ -145,7 +145,7 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
  * Owner : Public est toujours visible, Sanction regroupe les commandes
  * délégables à un rôle (voir DELEGABLE_COMMANDS, utils/commandPermissionStore.js),
  * Owner les commandes réservées aux administrateurs natifs (jamais
- * délégables : panel/perms/helpall/say/banall). Chaque commande de
+ * délégables : panel/perms/helpall/banall). Chaque commande de
  * modération n'apparaît que si l'auteur y a réellement accès (canUseCommand)
  * — deux personnes avec des permissions différentes voient donc des listes
  * différentes.
