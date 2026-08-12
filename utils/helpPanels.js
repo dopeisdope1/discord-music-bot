@@ -152,7 +152,7 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
  *   voir utils/musicModerationCommands.js) ; moderationCommands: liste des
  *   commandes de modération réellement disponibles.
  */
-function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS, showAll = false } = {}) {
+function buildDashCategories(prefix, message, { includePublic = true, moderationCommands = MODERATION_COMMANDS } = {}) {
   const categories = [];
 
   if (includePublic) {
@@ -169,11 +169,11 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => showAll || canUseCommand(message, cmd));
+  const allowed = [...moderationCommands, ...BAN_COMMAND_NAMES].filter((cmd) => canUseCommand(message, cmd));
   if (allowed.length) {
     categories.push({
       key: "allowed",
-      label: showAll ? "Toutes les commandes" : "Commandes autorisées",
+      label: "Commandes autorisées",
       names: allowed,
       lines: allowed.map((cmd) => assignableCommandLine(prefix, cmd)),
       footer: allowed.includes("clear")
@@ -182,7 +182,7 @@ function buildDashCategories(prefix, message, { includePublic = true, moderation
     });
   }
 
-  if (showAll || message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
     categories.push({
       key: "danger",
       label: "⚠️ Danger",

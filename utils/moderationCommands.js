@@ -1,5 +1,4 @@
 const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { sendDashHelpPanel } = require("./helpPanels");
 const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
@@ -807,6 +806,14 @@ const handlers = {
   // cumulatif par palier, rôles assignés automatiquement selon leur position
   // dans la hiérarchie du serveur — indépendant du système de délégation par
   // commande (`.panel`/`&panel` > Permissions), pas de mélange entre les deux.
+  // `helpall` affiche les commandes par palier, `perms` affiche les rôles.
+  async helpall(client, message) {
+    const lines = TIER_DEFINITIONS.map((t) => `**${t.label}**\n> ${getCumulativeCommands(t.level).join(", ")}`);
+    await message.reply({
+      embeds: [buildStatusEmbed("info", lines.join("\n\n"), { title: "Permissions liées aux commandes" })],
+    });
+  },
+
   async perms(client, message, args) {
     if ((args[0] || "").toLowerCase() === "sync") {
       autoSyncFromHierarchy(message.guild);
@@ -831,18 +838,17 @@ const handlers = {
     const lines = TIER_DEFINITIONS.map((t) => {
       const roleIds = byTier[t.level] || [];
       const rolesText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
-      return `**${t.label}**\n> Commandes : ${getCumulativeCommands(t.level).join(", ")}\n> Rôles : ${rolesText}`;
+      return `**${t.label}**\n> ${rolesText}`;
     });
 
     await message.reply({
-      embeds: [buildStatusEmbed("info", lines.join("\n\n") + "\n\n*Tape `perms sync` pour recalculer après un changement de rôles.*", { title: "Paliers de permission" })],
+      embeds: [
+        buildStatusEmbed("info", lines.join("\n\n") + "\n\n*Tape `perms sync` pour recalculer après un changement de rôles.*", {
+          title: "Permissions",
+        }),
+      ],
       allowedMentions: { parse: [] },
     });
-  },
-
-  async helpall(client, message, args, prefix) {
-    const dash = prefix || getPrefixes(message.guild.id).musicMod;
-    return sendDashHelpPanel(message, dash, { showAll: true });
   },
 };
 
