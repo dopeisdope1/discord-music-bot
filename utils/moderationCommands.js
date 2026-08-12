@@ -936,13 +936,14 @@ const handlers = {
     // (même effet visuel qu'une vraie réponse) plutôt que d'envoyer un
     // message "flottant" dans le salon — sinon le lien avec la conversation
     // se perdait dès que le message d'origine (le tien) était supprimé.
+    // La suppression part EN PARALLÈLE de cette recherche (pas après) :
+    // attendre le fetch avant de supprimer laissait ton message visible plus
+    // longtemps, assez pour que d'autres le voient avant qu'il disparaisse.
     const referencedId = message.reference?.messageId;
-    const target = referencedId ? await message.channel.messages.fetch(referencedId).catch(() => null) : null;
-
-    const deleted = await message
-      .delete()
-      .then(() => true)
-      .catch(() => false);
+    const [deleted, target] = await Promise.all([
+      message.delete().then(() => true).catch(() => false),
+      referencedId ? message.channel.messages.fetch(referencedId).catch(() => null) : Promise.resolve(null),
+    ]);
     if (!deleted) {
       await sendTempReply(
         message.channel,
