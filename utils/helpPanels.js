@@ -5,7 +5,6 @@ const {
   SeparatorSpacingSize,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
 const { canUseCommand } = require("./permissions");
@@ -183,7 +182,11 @@ function buildDashCategories(prefix, message, { moderationCommands = MODERATION_
   }
 
   const owner = allCommands.filter((cmd) => !DELEGABLE_COMMANDS.includes(cmd) && canUseCommand(message, cmd));
-  if (message.member?.permissions.has(PermissionFlagsBits.Administrator)) owner.push("banall");
+  // Même vérification que l'exécution réelle (handlers.banall utilise
+  // canUseCommand, pas uniquement Administrateur natif) : sinon un membre
+  // avec le palier 5 (voir &perms) mais sans Administrateur natif pouvait
+  // utiliser `&banall` sans jamais le voir listé dans `&help`.
+  if (canUseCommand(message, "banall")) owner.push("banall");
   if (owner.length) {
     categories.push({
       key: "owner",
