@@ -11,14 +11,38 @@ const { buildStatusEmbed } = require("./statusEmbed");
 // à cacher, rien à supprimer, zéro fenêtre d'exposition.
 const MESSAGE_LINK_REGEX = /^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/channels\/\d+\/(\d+)\/(\d+)$/;
 const SAY_PREFIX = "&say";
+const DISCORD_MESSAGE_LIMIT = 2000;
 
 function usageEmbed() {
   return buildStatusEmbed(
     "error",
     "Utilisation en DM : `&say <lien du message ou ID du salon> <texte>`\n" +
       "> Colle un lien de message (clic droit sur le message > **Copier le lien**) pour répondre à ce message précis.\n" +
-      "> Ou juste l'ID d'un salon pour y envoyer un message normal (clic droit sur le salon > **Copier l'ID**)."
+      "> Ou juste l'ID d'un salon pour y envoyer un message normal (clic droit sur le salon > **Copier l'ID**).\n" +
+      "> Le texte peut tenir sur plusieurs lignes."
   );
+}
+
+/**
+ * Découpe un texte trop long pour la limite Discord (2000 caractères) en
+ * plusieurs morceaux, en coupant sur un retour à la ligne ou un espace
+ * plutôt qu'en plein milieu d'un mot quand c'est possible.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function splitIntoChunks(text) {
+  if (text.length <= DISCORD_MESSAGE_LIMIT) return [text];
+  const chunks = [];
+  let remaining = text;
+  while (remaining.length > DISCORD_MESSAGE_LIMIT) {
+    let cut = remaining.lastIndexOf("\n", DISCORD_MESSAGE_LIMIT);
+    if (cut <= 0) cut = remaining.lastIndexOf(" ", DISCORD_MESSAGE_LIMIT);
+    if (cut <= 0) cut = DISCORD_MESSAGE_LIMIT;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).replace(/^\s+/, "");
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
 }
 
 /**
@@ -35,9 +59,14 @@ async function handleSayDirectMessage(client, message) {
   if (!message.content.trim().toLowerCase().startsWith(SAY_PREFIX)) return;
   if (!isBotOwner(message.author.id)) return;
 
-  const rest = message.content.trim().slice(SAY_PREFIX.length).trim();
-  const [firstArg, ...textParts] = rest.split(/\s+/);
-  const text = textParts.join(" ").trim();
+  // Ne sépare que le premier "mot" (lien/ID de salon) : le reste est gardé
+  // tel quel (retours à la ligne, espaces multiples...) au lieu d'être
+  // aplati par un split/join sur tous les espaces, qui détruisait le texte
+  // sur plusieurs lignes.
+  const rest = message.content.slice(SAY_PREFIX.length).trim();
+  const match = rest.match(/^(\S+)\s+([\s\S]+)$/);
+  const firstArg = match?.[1];
+  const text = match?.[2]?.trim();
 
   if (!firstArg || !text) {
     return message.reply({ embeds: [usageEmbed()] });
@@ -69,14 +98,17 @@ async function handleSayDirectMessage(client, message) {
     return message.reply({ embeds: [buildStatusEmbed("error", "Message introuvable (lien invalide, ou message supprimé).")] });
   }
 
-  const payload = { content: text, allowedMentions: { parse: [] } };
+  const chunks = splitIntoChunks(text);
   try {
-    if (target) {
-      await target.reply(payload);
-    } else {
-      await channel.send(payload);
+    for (let i = 0; i < chunks.length; i++) {
+      const payload = { content: chunks[i], allowedMentions: { parse: [] } };
+      if (i === 0 && target) {
+        await target.reply(payload);
+      } else {
+        await channel.send(payload);
+      }
     }
-    await message.reply({ embeds: [buildStatusEmbed("success", `Envoyé dans ${channel} sur **${channel.guild.name}**.`)] });
+    await message.reply({ embeds: [buildStatusEmbed("success", `Envoyé dans ${channel} sur **${channel.guild.name}**${chunks.length > 1 ? ` (${chunks.length} messages)` : ""}.`)] });
   } catch (err) {
     console.error("[sayDm] Échec de l'envoi :", err);
     await message.reply({ embeds: [buildStatusEmbed("error", "Échec de l'envoi.")] });
