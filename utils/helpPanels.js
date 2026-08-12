@@ -40,7 +40,7 @@ const BAN_COMMAND_NAMES = ["ban", "unban", "unbanall"];
 function assignableCommandLine(prefix, cmd) {
   const lines = {
     help: `\`${prefix}help\` (Affiche la liste des commandes en fonction de tes permissions)`,
-    panel: `\`${prefix}panel\` (Configuration du bot : préfixes, permissions, paliers, bienvenue)`,
+    panel: `\`${prefix}panel\` (Configuration du bot : préfixes, permissions, paliers, bienvenue — réservé au propriétaire du bot)`,
     renew: `\`${prefix}renew\` (Recrée le salon actuel, vide)`,
     hide: `\`${prefix}hide\` (Cache le salon à @everyone)`,
     unhide: `\`${prefix}unhide\` (Affiche le salon à @everyone)`,
