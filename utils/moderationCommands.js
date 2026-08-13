@@ -565,7 +565,7 @@ const handlers = {
           files: [new AttachmentBuilder(ZOUBINI_IMAGE_PATH)],
         })
         .catch(() => null);
-      if (sent) setTimeout(() => sent.delete().catch(() => {}), 2000);
+      if (sent) setTimeout(() => sent.delete().catch(() => {}), 20000);
       sendLog(client, message.guild.id, "salon", {
         title: "Zoubini",
         description: `Salon **#${channel.name}** renouvelé (zoubini).`,
