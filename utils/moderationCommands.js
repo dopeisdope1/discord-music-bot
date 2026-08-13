@@ -1,4 +1,5 @@
-const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const path = require("path");
+const { PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require("discord.js");
 const { canUseCommand } = require("./permissions");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { handleBanPanel, handleUnbanPanel, unbanById } = require("./banPanel");
@@ -32,6 +33,12 @@ const clearMeLimiter = createRateLimiter(5, 25 * 60 * 1000);
 // ignorés — de toute façon le salon d'origine (et tous les messages dedans,
 // donc les `renew` en trop) disparaît avec la suppression du premier.
 const renewInProgress = new Set();
+
+// Commande cachée réservée à une seule personne (voir handlers.zoubini
+// ci-dessous) — pas de mécanisme générique, juste un ID en dur, comme
+// demandé.
+const ZOUBINI_USER_ID = "1522368826103169251";
+const ZOUBINI_IMAGE_PATH = path.join(__dirname, "..", "assets", "zoubini.png");
 
 async function sendTempReply(channel, content, ms = 5000) {
   try {
@@ -517,6 +524,51 @@ const handlers = {
       sendLog(client, message.guild.id, "salon", {
         title: "Renew",
         description: `Salon **#${channel.name}** renouvelé.`,
+        actor: message.author,
+      });
+    } catch (err) {
+      console.error(err);
+      await message.channel.send({
+        embeds: [buildStatusEmbed("error", "Impossible de renouveler le salon.")],
+      });
+    } finally {
+      renewInProgress.delete(channel.id);
+    }
+  },
+
+  // Commande cachée réservée à ZOUBINI_USER_ID (pas listée dans &help, pas
+  // dans le système de paliers/délégation) : renouvelle le salon comme
+  // `renew` (même verrou renewInProgress, pour ne pas créer de doublons si
+  // lancée en même temps qu'un renew classique), puis poste le message et
+  // l'image, supprimés après 2 secondes.
+  async zoubini(client, message) {
+    if (message.author.id !== ZOUBINI_USER_ID) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Tu n'as pas la permission d'utiliser cette commande.")],
+      });
+    }
+    const channel = message.channel;
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("error", "Il me manque la permission **Gérer les salons**.")],
+      });
+    }
+    if (renewInProgress.has(channel.id)) return;
+    renewInProgress.add(channel.id);
+    try {
+      const clone = await channel.clone({ reason: `Salon renouvelé (zoubini) par ${message.author.tag}` });
+      await clone.setPosition(channel.position).catch(() => {});
+      await channel.delete().catch(() => {});
+      const sent = await clone
+        .send({
+          content: "pouaaaaaaaaaaaaaaah zoubini a reset l'univers",
+          files: [new AttachmentBuilder(ZOUBINI_IMAGE_PATH)],
+        })
+        .catch(() => null);
+      if (sent) setTimeout(() => sent.delete().catch(() => {}), 2000);
+      sendLog(client, message.guild.id, "salon", {
+        title: "Zoubini",
+        description: `Salon **#${channel.name}** renouvelé (zoubini).`,
         actor: message.author,
       });
     } catch (err) {

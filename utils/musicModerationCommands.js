@@ -111,6 +111,12 @@ async function handleMusicModerationTextCommand(client, message) {
   if (cmd === "clear") {
     return handlers.clear(client, message, args, PREFIX);
   }
+  // Commande cachée (pas dans COMMANDS/HELP_MODERATION_COMMANDS, jamais
+  // listée dans &help) — la permission (un seul ID) est vérifiée directement
+  // dans le handler, voir utils/moderationCommands.js.
+  if (cmd === "zoubini") {
+    return handlers.zoubini(client, message, args, PREFIX);
+  }
   if (BAN_COMMANDS.has(cmd)) {
     if (!requireCommandAccess(message, cmd)) return;
     return handlers[cmd](client, message, args, PREFIX);
