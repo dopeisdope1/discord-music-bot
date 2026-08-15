@@ -1,5 +1,5 @@
 const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require("discord.js");
-const { buildCard, buildSelect, actionRow, payload } = require("./panelComponents");
+const { buildCard, buildSelect, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const antiraidConfigStore = require("./antiraidConfigStore");
 
@@ -39,12 +39,10 @@ function render(guildId) {
 
   container.addActionRowComponents(
     actionRow(
-      buildSelect("modpanel:antiraid:actions", "Actions", [
-        { label: "Configurer les seuils", value: "thresholds" },
-        panelRouter.BACK_OPTION,
-      ])
+      buildSelect("modpanel:antiraid:actions", "Actions", [{ label: "Configurer les seuils", value: "thresholds" }])
     )
   );
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
 
   return payload(container);
 }
@@ -75,7 +73,6 @@ async function handle(interaction) {
 
   if (view === "actions") {
     const value = interaction.values[0];
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
     if (value === "thresholds") return interaction.showModal(thresholdsModal(guildId));
     return;
   }

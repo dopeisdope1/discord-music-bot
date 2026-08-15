@@ -6,7 +6,7 @@ const {
   TextInputStyle,
   ActionRowBuilder,
 } = require("discord.js");
-const { buildCard, buildSelect, appendText, actionRow, payload } = require("./panelComponents");
+const { buildCard, buildSelect, appendText, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const permissionsStore = require("./permissionsStore");
 const { loadAllCommands } = require("./modCommandLoader");
@@ -42,9 +42,9 @@ function renderList(guildId, page = 0) {
   if (page < totalPages - 1) options.push({ label: "Page suivante", value: "next" });
   if (page > 0) options.push({ label: "Page précédente", value: "prev" });
   options.push({ label: "Créer une permission", value: "create" });
-  options.push(panelRouter.BACK_OPTION);
 
   container.addActionRowComponents(actionRow(buildSelect(`modpanel:permissions:list:${page}`, "Choisir une permission", options)));
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
   return payload(container);
 }
 
@@ -184,7 +184,6 @@ async function handle(interaction) {
     const value = interaction.values[0];
     if (value === "next") return interaction.update(renderList(guildId, page + 1));
     if (value === "prev") return interaction.update(renderList(guildId, page - 1));
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
     if (value === "create") {
       const existing = permissionsStore.listByGuild(guildId);
       const slot = permissionsStore.create(guildId, `Permission ${existing.length + 1}`);

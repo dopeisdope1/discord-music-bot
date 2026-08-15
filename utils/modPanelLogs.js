@@ -1,5 +1,5 @@
 const { ChannelSelectMenuBuilder, ChannelType } = require("discord.js");
-const { buildCard, buildSelect, actionRow, payload } = require("./panelComponents");
+const { buildCard, buildSelect, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const { getLogChannelId, setLogChannel, LOG_CATEGORIES } = require("./logStore");
 
@@ -19,9 +19,9 @@ function render(guildId) {
   const container = buildCard({ title: "Configurer les logs", description: lines.join("\n") });
 
   const options = EXPOSED_CATEGORIES.map((key) => ({ label: LOG_CATEGORIES[key].label, value: key }));
-  options.push(panelRouter.BACK_OPTION);
 
   container.addActionRowComponents(actionRow(buildSelect("modpanel:logs:pick", "Choisir un type de log", options)));
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
   return payload(container);
 }
 
@@ -31,8 +31,6 @@ async function handle(interaction) {
 
   if (view === "pick") {
     const value = interaction.values[0];
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
-
     const label = LOG_CATEGORIES[value]?.label || value;
     const select = new ChannelSelectMenuBuilder()
       .setCustomId(`modpanel:logs:setchannel:${value}`)

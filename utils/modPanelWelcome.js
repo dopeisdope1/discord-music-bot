@@ -1,10 +1,30 @@
-const { ChannelSelectMenuBuilder, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require("discord.js");
-const { buildCard, buildSelect, appendText, actionRow, payload } = require("./panelComponents");
+const {
+  ChannelSelectMenuBuilder,
+  ChannelType,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require("discord.js");
+const { buildCard, buildSelect, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const welcomeStore = require("./welcomeStore");
 
 const KEY = "welcome";
 
+const DELETE_DELAYS = [
+  { label: "Jamais (par défaut)", value: 0 },
+  { label: "5 secondes", value: 5_000 },
+  { label: "10 secondes", value: 10_000 },
+  { label: "30 secondes", value: 30_000 },
+  { label: "1 minute", value: 60_000 },
+  { label: "5 minutes", value: 300_000 },
+];
+
+// Tout sur une seule page (sélecteur de salon, délai, ajout, retrait) — même
+// disposition que l'ancien &panel > Bienvenue de ce bot, pas de sous-menu "Actions".
 function render(guildId) {
   const channelId = welcomeStore.getWelcomeChannel(guildId);
   const messages = welcomeStore.getWelcomeMessages(guildId);
@@ -12,37 +32,53 @@ function render(guildId) {
 
   const container = buildCard({
     title: "Bienvenue",
+    description:
+      "**Messages** (un est tiré au hasard à chaque arrivée)\n" +
+      (messages.length ? messages.map((m, i) => `${i + 1}. ${m}`).join("\n") : "*Aucun message personnalisé — les messages par défaut sont utilisés.*"),
     fields: [
       { name: "Salon", value: channelId ? `<#${channelId}>` : "non configuré" },
-      { name: "Messages personnalisés", value: String(messages.length) },
-      { name: "Suppression auto", value: delayMs > 0 ? `${Math.round(delayMs / 1000)}s` : "jamais" },
+      { name: "Suppression auto", value: DELETE_DELAYS.find((d) => d.value === delayMs)?.label || `${delayMs} ms` },
     ],
   });
 
   container.addActionRowComponents(
     actionRow(
-      buildSelect("modpanel:welcome:actions", "Actions", [
-        { label: "Définir le salon", value: "setchannel" },
-        { label: "Ajouter un message", value: "addmessage" },
-        { label: "Retirer un message", value: "removemessage" },
-        { label: "Définir le délai de suppression", value: "setdelay" },
-        panelRouter.BACK_OPTION,
-      ])
+      new ChannelSelectMenuBuilder()
+        .setCustomId("modpanel:welcome:setchannel")
+        .setPlaceholder("Envoyer le message de bienvenue à ce salon")
+        .addChannelTypes(ChannelType.GuildText)
     )
   );
-  return payload(container);
-}
 
-function renderRemovePicker(guildId) {
-  const messages = welcomeStore.getWelcomeMessages(guildId);
-  const container = buildCard({ title: "Retirer un message de bienvenue" });
-  appendText(container, messages.length ? messages.map((m, i) => `${i + 1}. ${m}`).join("\n") : "Aucun message personnalisé.");
-
-  const options = messages.map((m, i) => ({ label: `#${i + 1} — ${m.slice(0, 80)}`, value: String(i + 1) }));
-  options.push({ label: "Retour", value: "back" });
   container.addActionRowComponents(
-    actionRow(buildSelect("modpanel:welcome:removepick", messages.length ? "Choisir un message" : "Aucun message", options))
+    actionRow(
+      buildSelect(
+        "modpanel:welcome:setdelay",
+        "Supprimer le message après un certain temps",
+        DELETE_DELAYS.map((d) => ({ label: d.label, value: String(d.value), default: d.value === delayMs }))
+      )
+    )
   );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("modpanel:welcome:addbutton").setLabel("Ajouter un message").setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  if (messages.length) {
+    container.addActionRowComponents(
+      actionRow(
+        buildSelect(
+          "modpanel:welcome:removepick",
+          "Retirer un message",
+          messages.slice(0, 25).map((m, i) => ({ label: `${i + 1}. ${m}`.slice(0, 100), value: String(i + 1) }))
+        )
+      )
+    );
+  }
+
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
   return payload(container);
 }
 
@@ -58,67 +94,33 @@ function addMessageModal() {
   return modal;
 }
 
-function delayModal(guildId) {
-  const current = welcomeStore.getWelcomeDeleteDelay(guildId);
-  const modal = new ModalBuilder().setCustomId("modpanel:welcome:delaymodal").setTitle("Délai de suppression");
-  const input = new TextInputBuilder()
-    .setCustomId("seconds")
-    .setLabel("Secondes avant suppression (0 = jamais)")
-    .setStyle(TextInputStyle.Short)
-    .setValue(String(Math.round(current / 1000)))
-    .setRequired(true)
-    .setMaxLength(6);
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
-  return modal;
-}
-
 async function handle(interaction) {
   const parts = interaction.customId.split(":");
   const view = parts[2];
   const guildId = interaction.guild.id;
 
-  if (view === "actions") {
-    const value = interaction.values[0];
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
-
-    if (value === "setchannel") {
-      const select = new ChannelSelectMenuBuilder()
-        .setCustomId("modpanel:welcome:setchannel")
-        .setPlaceholder("Choisis le salon de bienvenue")
-        .addChannelTypes(ChannelType.GuildText);
-      return interaction.reply({ components: [actionRow(select)], ephemeral: true });
-    }
-
-    if (value === "addmessage") return interaction.showModal(addMessageModal());
-    if (value === "removemessage") return interaction.update(renderRemovePicker(guildId));
-    if (value === "setdelay") return interaction.showModal(delayModal(guildId));
-    return;
-  }
-
   if (view === "setchannel") {
     const channelId = interaction.values[0];
     welcomeStore.setWelcomeChannel(guildId, channelId);
-    await interaction.update({ content: `✅ Salon de bienvenue défini sur <#${channelId}>.`, components: [] });
-    return;
+    return interaction.update(render(guildId));
   }
 
+  if (view === "setdelay") {
+    const ms = Number(interaction.values[0]);
+    welcomeStore.setWelcomeDeleteDelay(guildId, ms);
+    return interaction.update(render(guildId));
+  }
+
+  if (view === "addbutton") return interaction.showModal(addMessageModal());
+
   if (view === "removepick") {
-    const value = interaction.values[0];
-    if (value === "back") return interaction.update(render(guildId));
-    welcomeStore.removeWelcomeMessage(guildId, Number(value));
+    welcomeStore.removeWelcomeMessage(guildId, Number(interaction.values[0]));
     return interaction.update(render(guildId));
   }
 
   if (view === "addmodal") {
     const text = interaction.fields.getTextInputValue("text").trim();
     if (text) welcomeStore.addWelcomeMessage(guildId, text);
-    return interaction.update(render(guildId));
-  }
-
-  if (view === "delaymodal") {
-    const raw = interaction.fields.getTextInputValue("seconds").trim();
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds) && seconds >= 0) welcomeStore.setWelcomeDeleteDelay(guildId, seconds * 1000);
     return interaction.update(render(guildId));
   }
 }

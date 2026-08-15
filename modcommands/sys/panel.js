@@ -8,6 +8,6 @@ module.exports = {
   usage: "&panel",
   level: LEVEL.SYS,
   async execute(ctx) {
-    await ctx.send(modPanel.renderRoot());
+    await ctx.send(modPanel.renderRoot(ctx.guildId));
   },
 };

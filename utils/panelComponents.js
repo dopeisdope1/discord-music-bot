@@ -8,6 +8,8 @@ const {
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   MessageFlags,
@@ -35,7 +37,8 @@ function buildCard({ title, description, fields = [], thumbnail, image }) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   if (fields.length) {
-    const lines = fields.map((f) => `**${f.name} :** ${f.value}`);
+    // Style de l'ancien &panel de ce bot : citation ">" plutôt que label en gras.
+    const lines = fields.map((f) => `> ${f.name} : ${f.value}`);
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n")));
   }
 
@@ -80,8 +83,28 @@ function actionRow(component) {
   return new ActionRowBuilder().addComponents(component);
 }
 
+// Barre de navigation persistante par boutons — même principe que l'ancien
+// &panel de ce bot (buildNavRow) : un bouton par rubrique, celle affichée en
+// Primary + désactivée, les autres en Secondary. 8 rubriques ne tiennent pas
+// dans une seule ActionRow (max 5 boutons) donc on répartit sur 2 lignes.
+function buildNavButtons(rubriques, currentKey, { customIdPrefix = "modpanel:navto" } = {}) {
+  const buttons = rubriques.map((r) =>
+    new ButtonBuilder()
+      .setCustomId(`${customIdPrefix}:${r.key}`)
+      .setLabel(r.label)
+      .setStyle(r.key === currentKey ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      .setDisabled(r.key === currentKey)
+  );
+
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 4) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 4)));
+  }
+  return rows;
+}
+
 function payload(container) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-module.exports = { buildCard, buildTreeList, appendText, buildSelect, actionRow, payload };
+module.exports = { buildCard, buildTreeList, appendText, buildSelect, actionRow, buildNavButtons, payload };

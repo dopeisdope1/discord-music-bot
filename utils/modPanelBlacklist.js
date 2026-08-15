@@ -1,5 +1,5 @@
 const { ChannelSelectMenuBuilder, ChannelType } = require("discord.js");
-const { buildCard, buildSelect, appendText, actionRow, payload } = require("./panelComponents");
+const { buildCard, buildSelect, appendText, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const channelBlacklistStore = require("./channelBlacklistStore");
 const { loadAllCommands } = require("./modCommandLoader");
@@ -9,6 +9,7 @@ const { chunk } = require("./textHelpers");
 const KEY = "blacklist";
 const { GLOBAL_SCOPE } = channelBlacklistStore;
 const CMD_PAGE_SIZE = 20;
+const BACK_OPTION = { label: "Retour", value: "back" };
 
 function scopeLabel(scope) {
   return scope === GLOBAL_SCOPE ? "Toutes commandes (global)" : `Commande : ${scope}`;
@@ -49,10 +50,10 @@ function renderMain(guildId, scope = GLOBAL_SCOPE) {
       buildSelect(`modpanel:blacklist:actions:${scope}`, "Actions", [
         { label: "Ajouter un salon", value: "add" },
         { label: "Retirer un salon", value: "remove" },
-        panelRouter.BACK_OPTION,
       ])
     )
   );
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
 
   return payload(container);
 }
@@ -68,7 +69,7 @@ function renderCommandScopePicker(guildId, page = 0) {
   const options = current.map((c) => ({ label: c, value: `pick:${c}` }));
   if (page < totalPages - 1) options.push({ label: "Page suivante", value: "next" });
   if (page > 0) options.push({ label: "Page précédente", value: "prev" });
-  options.push(panelRouter.BACK_OPTION);
+  options.push(BACK_OPTION);
 
   container.addActionRowComponents(actionRow(buildSelect(`modpanel:blacklist:cmdpick:${page}`, "Choisir une commande", options)));
   return payload(container);
@@ -79,7 +80,7 @@ function renderRemovePicker(guildId, scope) {
   const container = buildCard({ title: "Retirer un salon blacklisté", description: scopeLabel(scope) });
 
   const options = channels.map((c) => ({ label: `#${c}`, value: c }));
-  options.push(panelRouter.BACK_OPTION);
+  options.push(BACK_OPTION);
 
   container.addActionRowComponents(
     actionRow(buildSelect(`modpanel:blacklist:removepick:${scope}`, channels.length ? "Choisir un salon" : "Aucun salon à retirer", options))
@@ -112,7 +113,6 @@ async function handle(interaction) {
   if (view === "actions") {
     const scope = parts[3];
     const value = interaction.values[0];
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
 
     if (value === "add") {
       const select = new ChannelSelectMenuBuilder()

@@ -1,5 +1,5 @@
 const { RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require("discord.js");
-const { buildCard, buildSelect, appendText, actionRow, payload } = require("./panelComponents");
+const { buildCard, buildSelect, appendText, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
 const muteStore = require("./muteStore");
 
@@ -27,10 +27,10 @@ function renderMain(guildId) {
         { label: "Changer de mode", value: "mode" },
         { label: "Gérer les raisons", value: "reasons" },
         { label: toggleLabel, value: "togglereasons" },
-        panelRouter.BACK_OPTION,
       ])
     )
   );
+  container.addActionRowComponents(...buildNavButtons(panelRouter.RUBRIQUES, KEY));
 
   return payload(container);
 }
@@ -100,7 +100,6 @@ async function handle(interaction) {
 
   if (view === "actions") {
     const value = interaction.values[0];
-    if (value === "back") return interaction.update(panelRouter.renderRoot());
     if (value === "mode") return interaction.update(renderModeView(guildId));
     if (value === "reasons") return interaction.update(renderReasonsView(guildId));
     if (value === "togglereasons") {

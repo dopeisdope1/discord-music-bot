@@ -1,10 +1,10 @@
-const { buildCard, buildSelect, actionRow, payload } = require("./panelComponents");
 const { registerHandler } = require("./modInteractionRegistry");
 const botAdminsStore = require("./botAdminsStore");
 const { saveGuildConfig } = require("./configChannel");
 
 // Ordre des rubriques : les 6 du projet zinki + 2 propres à ce bot
-// (Préfixes/Bienvenue, portées par l'ancien &panel).
+// (Préfixes/Bienvenue, portées par l'ancien &panel). Même ordre utilisé pour
+// la barre de boutons de navigation (voir utils/panelComponents.js#buildNavButtons).
 const RUBRIQUES = [
   { key: "permissions", label: "Gérer les permissions" },
   { key: "logs", label: "Configurer les logs" },
@@ -16,23 +16,21 @@ const RUBRIQUES = [
   { key: "welcome", label: "Bienvenue" },
 ];
 
+const DEFAULT_RUBRIQUE = RUBRIQUES[0].key;
+
 const panels = new Map();
 
 function registerPanel(mod) {
   panels.set(mod.key, mod);
 }
 
-const BACK_OPTION = { label: "Retour", value: "back" };
-
-function renderRoot() {
-  const container = buildCard({
-    title: "Panel de configuration",
-    description: "Choisissez une rubrique à configurer",
-  });
-  container.addActionRowComponents(
-    actionRow(buildSelect("modpanel:root", "Choisir une rubrique", RUBRIQUES.map((r) => ({ label: r.label, value: r.key }))))
-  );
-  return payload(container);
+// `&panel` ouvre directement la première rubrique (comme l'ancien panel qui
+// s'ouvrait sur "Préfixes") — pas d'écran "choisis une rubrique" séparé, la
+// barre de boutons en bas de chaque page permet de changer de rubrique
+// directement.
+function renderRoot(guildId) {
+  const panel = panels.get(DEFAULT_RUBRIQUE);
+  return panel.render(guildId);
 }
 
 async function dispatch(interaction) {
@@ -43,17 +41,16 @@ async function dispatch(interaction) {
 
   const [, segment] = interaction.customId.split(":");
 
-  if (segment === "root") {
-    const rubrique = interaction.values[0];
+  if (segment === "navto") {
+    const rubrique = interaction.customId.split(":")[2];
     const panel = panels.get(rubrique);
     if (!panel) return;
     await interaction.update(await panel.render(interaction.guild.id));
-    return;
+  } else {
+    const panel = panels.get(segment);
+    if (!panel) return;
+    await panel.handle(interaction);
   }
-
-  const panel = panels.get(segment);
-  if (!panel) return;
-  await panel.handle(interaction);
 
   // Toute interaction de panel peut avoir modifié une config par serveur —
   // on sauvegarde systématiquement plutôt que d'essayer de suivre precisément
@@ -67,4 +64,4 @@ async function dispatch(interaction) {
 
 registerHandler("modpanel", dispatch);
 
-module.exports = { RUBRIQUES, BACK_OPTION, renderRoot, registerPanel };
+module.exports = { RUBRIQUES, renderRoot, registerPanel };
