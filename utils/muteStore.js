@@ -25,11 +25,16 @@ function save() {
   }
 }
 
+// Toujours renormalisé (defaults en dessous, valeurs existantes par-dessus)
+// plutôt qu'un simple "si absent, initialise" — un aller-retour par le salon
+// "zinki-config" peut ramener un objet vide {} pour un serveur jamais
+// vraiment configuré (voir utils/configChannel.js#getRawGuildData), et un
+// simple `if (!data[guildId])` prendrait ce {} pour "déjà initialisé" sans
+// les champs requis (reasons, activeMutes...), plantant au premier accès.
 function ensureGuild(guildId) {
   const data = load();
-  if (!data[guildId]) {
-    data[guildId] = { mode: "timeout", muteRoleId: null, allowCustomReasons: true, reasons: [], activeMutes: {} };
-  }
+  const defaults = { mode: "timeout", muteRoleId: null, allowCustomReasons: true, reasons: [], activeMutes: {} };
+  data[guildId] = { ...defaults, ...data[guildId] };
   return data[guildId];
 }
 

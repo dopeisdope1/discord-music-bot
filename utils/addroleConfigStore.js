@@ -29,9 +29,12 @@ function save() {
   }
 }
 
+// Toujours renormalisé — voir le commentaire équivalent dans muteStore.js
+// (un {} vide venu du salon "zinki-config" ne doit pas être pris pour "déjà initialisé").
 function ensureGuild(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { blockedPermissions: [...DEFAULT_BLOCKED], rolesPerAction: 1 };
+  const defaults = { blockedPermissions: [...DEFAULT_BLOCKED], rolesPerAction: 1 };
+  data[guildId] = { ...defaults, ...data[guildId] };
   return data[guildId];
 }
 

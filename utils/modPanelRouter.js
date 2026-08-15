@@ -1,3 +1,4 @@
+const { buildCard, buildNavButtons, payload } = require("./panelComponents");
 const { registerHandler } = require("./modInteractionRegistry");
 const botAdminsStore = require("./botAdminsStore");
 const { saveGuildConfig } = require("./configChannel");
@@ -16,21 +17,21 @@ const RUBRIQUES = [
   { key: "welcome", label: "Bienvenue" },
 ];
 
-const DEFAULT_RUBRIQUE = RUBRIQUES[0].key;
-
 const panels = new Map();
 
 function registerPanel(mod) {
   panels.set(mod.key, mod);
 }
 
-// `&panel` ouvre directement la première rubrique (comme l'ancien panel qui
-// s'ouvrait sur "Préfixes") — pas d'écran "choisis une rubrique" séparé, la
-// barre de boutons en bas de chaque page permet de changer de rubrique
-// directement.
-function renderRoot(guildId) {
-  const panel = panels.get(DEFAULT_RUBRIQUE);
-  return panel.render(guildId);
+// Écran d'accueil "Panel de configuration" — aucune rubrique n'est mise en
+// avant (currentKey = null), la barre de boutons sert juste à en choisir une.
+function renderRoot() {
+  const container = buildCard({
+    title: "Panel de configuration",
+    description: "Choisissez une rubrique à configurer",
+  });
+  container.addActionRowComponents(...buildNavButtons(RUBRIQUES, null));
+  return payload(container);
 }
 
 async function dispatch(interaction) {
