@@ -59,7 +59,14 @@ async function queueAndPlay(kazagumo, { voiceChannel, textChannel, member, query
  * morceau (typiquement dans le handler "playerStart").
  */
 function startNowPlayingTracking(client, player, initialElapsedMs = 0) {
-  stopNowPlayingTracking(client, player.guildId);
+  // Ne nettoie que l'ancien intervalle (évite d'en empiler un second) : ne
+  // PAS appeler stopNowPlayingTracking ici, qui supprime aussi le message
+  // "en cours" tout juste envoyé pour CE morceau et le suivi Spotify actif
+  // (voir utils/joinSpotify.js) — les deux doivent survivre à un changement
+  // de morceau, c'était le bug qui coupait le suivi `?join` dès le premier
+  // morceau, avant même que la personne suivie ne change de musique.
+  const previousIntervalId = client.nowPlayingIntervals.get(player.guildId);
+  if (previousIntervalId) clearInterval(previousIntervalId);
   startTracking(player.guildId, initialElapsedMs);
 
   const intervalId = setInterval(() => {
