@@ -13,7 +13,7 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 // via &panel, est restaurée depuis Discord — voir utils/configChannel.js ;
 // ces valeurs ne servent que si cette restauration ne trouve rien du tout).
 // main = préfixe musique ; musicMod = préfixe des commandes de modération
-// dupliquées sur ce même bot (voir utils/musicModerationCommands.js).
+// de ce même bot (voir utils/modMessageRouter.js).
 const DEFAULT_PREFIXES = { main: "?", musicMod: "&" };
 
 let cache = null;

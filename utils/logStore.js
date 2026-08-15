@@ -20,6 +20,13 @@ const LOG_CATEGORIES = {
   roles: { key: "roles", label: "Logs rôles", description: "`.massrole` + changements manuels de rôle" },
   securite: { key: "securite", label: "Logs sécurité", description: "Alertes anti-nuke (\"antifast\")" },
   blacklist: { key: "blacklist", label: "Logs blacklist", description: "Ajouts/retraits et bannissements automatiques" },
+  // Catégories ajoutées pour le nouveau système de modération (panel/permissions
+  // hiérarchiques/anti-raid porté depuis le projet "zinki"). "raid" est aussi lu
+  // directement par utils/antiraidDetector.js pour ses alertes WARN/THROTTLE/LOCK.
+  raid: { key: "raid", label: "Logs anti-raid", description: "Alertes WARN/THROTTLE/LOCK de l'anti-raid" },
+  messages: { key: "messages", label: "Logs messages", description: "Suppressions de messages" },
+  joins: { key: "joins", label: "Logs arrivées", description: "Nouveaux membres" },
+  leaves: { key: "leaves", label: "Logs départs", description: "Membres qui quittent/sont expulsés" },
 };
 
 let cache = null;

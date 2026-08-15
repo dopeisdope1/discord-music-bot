@@ -5,8 +5,15 @@ const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
-const { handleMusicModerationTextCommand } = require("./utils/musicModerationCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
+// Nouveau système de modération/panel (porté depuis le projet "zinki") — voir
+// utils/modMessageRouter.js pour le détail du pipeline (permissions, cooldowns,
+// blacklist de salons, anti-raid).
+const { handleModerationTextCommand } = require("./utils/modMessageRouter");
+const modInteractionRegistry = require("./utils/modInteractionRegistry");
+const { loadAllCommands: loadModCommands } = require("./utils/modCommandLoader");
+const botAdminsStore = require("./utils/botAdminsStore");
+const { sendLog } = require("./utils/actionLogger");
 const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
@@ -45,6 +52,18 @@ for (const file of MUSIC_COMMAND_FILES) {
   const command = require(path.join(commandsPath, file));
   client.commands.set(command.data.name, command);
 }
+
+// ---- Chargement des commandes de modération (préfixe &, voir modcommands/) ----
+// Déclenche aussi, en effet de bord au require(), l'enregistrement des
+// handlers d'interaction (RoleSelect de &addrole/&delrole, panels...) — voir
+// utils/modInteractionRegistry.js.
+loadModCommands();
+require("./utils/modPanel");
+botAdminsStore.seedOwnersFromEnv();
+
+// Stocke le dernier message supprimé par salon (utilisé par &snipe, voir
+// modcommands/info/snipe.js, et par l'ancien &clear — voir plus bas).
+client.snipes = new Collection();
 
 // ---- Initialisation de Kazagumo/Lavalink (YouTube + recherche Spotify) ----
 // Le nœud Lavalink fait tout le travail audio (y compris la connexion UDP à
@@ -97,11 +116,6 @@ client.nowPlayingMessages = new Collection();
 
 // Stocke l'intervalle de rafraîchissement du panel (position en direct) par serveur
 client.nowPlayingIntervals = new Collection();
-
-// Stocke le dernier message supprimé par salon (utilisé en interne par
-// `?clear`, voir utils/moderationCommands.js — pas de commande `.snipe` sur
-// ce bot, uniquement le journal nécessaire au fonctionnement de clear).
-client.snipes = new Collection();
 
 // Stocke qui chaque serveur suit actuellement via !join/spotify_join (voir
 // utils/joinSpotify.js) : Map<guildId, { targetUserId, lastSyncId }>
@@ -227,7 +241,12 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    if (!MUSIC_BUTTON_IDS.has(interaction.customId)) return;
+    if (!MUSIC_BUTTON_IDS.has(interaction.customId)) {
+      // Pas un bouton musique connu : tente le nouveau système de modération/
+      // panel (voir utils/modInteractionRegistry.js).
+      await modInteractionRegistry.dispatch(interaction).catch((err) => console.error("[modpanel]", err));
+      return;
+    }
 
     const player = client.kazagumo.players.get(interaction.guildId);
     if (!player) {
@@ -303,6 +322,15 @@ client.on("interactionCreate", async (interaction) => {
     } else {
       await interaction.update(buildStoppedPanel());
     }
+    return;
+  }
+
+  // Menus déroulants (String/Role/User/Channel Select) et modales du nouveau
+  // système de modération (panel, permissions, anti-raid...) — aucun de ces
+  // types d'interaction n'existait côté musique avant, tout part vers
+  // utils/modInteractionRegistry.js.
+  if (interaction.isAnySelectMenu() || interaction.isModalSubmit()) {
+    await modInteractionRegistry.dispatch(interaction).catch((err) => console.error("[modpanel]", err));
   }
 });
 
@@ -315,12 +343,45 @@ client.on("messageCreate", (message) => {
       .catch(() => {});
   });
   // Jeu de commandes de modération de ce bot, sur son propre préfixe
-  // (distinct du `!` musique) — voir utils/musicModerationCommands.js.
-  handleMusicModerationTextCommand(client, message).catch((err) => {
-    console.error(err);
-    message
-      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
-      .catch(() => {});
+  // (distinct du préfixe musique) — voir utils/modMessageRouter.js. Gère
+  // lui-même ses erreurs (via ctx.card), donc pas besoin d'un .catch ici en
+  // plus de celui déjà interne au router.
+  handleModerationTextCommand(client, message).catch((err) => console.error(err));
+});
+
+// ---- Log + snipe : dernier message supprimé par salon ----
+client.on("messageDelete", (message) => {
+  if (!message.guild || message.author?.bot) return;
+
+  client.snipes.set(message.channel.id, {
+    content: message.content || "*(pas de contenu texte)*",
+    authorTag: message.author?.tag || "Inconnu",
+    authorAvatar: message.author?.displayAvatarURL?.() || null,
+    deletedAt: Date.now(),
+  });
+
+  sendLog(client, message.guild.id, "messages", {
+    title: "Message supprimé",
+    description: message.content ? message.content.slice(0, 1000) : "*(pas de contenu texte)*",
+    actor: message.author,
+    fields: [{ name: "Salon", value: `<#${message.channel.id}>` }],
+  });
+});
+
+// ---- Logs arrivées/départs (voir &panel > Configurer les logs) ----
+client.on("guildMemberAdd", (member) => {
+  sendLog(client, member.guild.id, "joins", {
+    title: "Arrivée",
+    description: `${member.user.tag} a rejoint le serveur.`,
+    actor: member.user,
+  });
+});
+
+client.on("guildMemberRemove", (member) => {
+  sendLog(client, member.guild.id, "leaves", {
+    title: "Départ",
+    description: `${member.user.tag} a quitté le serveur.`,
+    actor: member.user,
   });
 });
 
