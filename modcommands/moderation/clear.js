@@ -44,7 +44,7 @@ module.exports = {
       actor: ctx.author,
     });
 
-    const confirm = await ctx.send(ctx.card({ title: `🧹 ${deleted.size} message(s) supprimé(s).` }));
+    const confirm = await ctx.send(ctx.card({ title: `${deleted.size} message(s) supprimé(s).` }));
     setTimeout(() => confirm?.delete().catch(() => {}), 5000);
   },
 };

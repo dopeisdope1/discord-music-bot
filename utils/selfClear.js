@@ -1,6 +1,7 @@
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { sendLog } = require("./actionLogger");
+const { buildCard, payload } = require("./panelComponents");
 
 // Déclencheurs texte exacts (insensibles à la casse, pas de préfixe requis,
 // accessibles à tout le monde) — chacun supprime les messages de son propre
@@ -39,7 +40,10 @@ async function handleSelfClear(client, message) {
     actor: message.author,
   });
 
-  const confirm = await channel.send(`🧹 ${deleted.size || toDelete.length} message(s) supprimé(s) — ${randomClearJoke()}`).catch(() => null);
+  const count = deleted.size || toDelete.length;
+  const confirm = await channel
+    .send(payload(buildCard({ title: `${count} message(s) supprimé(s) — ${randomClearJoke()}` })))
+    .catch(() => null);
   setTimeout(() => confirm?.delete().catch(() => {}), 4000);
 
   return true;
