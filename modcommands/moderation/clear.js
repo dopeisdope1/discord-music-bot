@@ -2,6 +2,8 @@ const { LEVEL } = require("../../utils/permLevels");
 const { UsageError } = require("../../utils/modErrors");
 const { extractUserId } = require("../../utils/argParsing");
 const { sendLog } = require("../../utils/actionLogger");
+const { buildStatusEmbed } = require("../../utils/statusEmbed");
+const { randomClearJoke } = require("../../utils/jokes");
 
 module.exports = {
   name: "clear",
@@ -44,7 +46,9 @@ module.exports = {
       actor: ctx.author,
     });
 
-    const confirm = await ctx.send(ctx.card({ title: `${deleted.size} message(s) supprimé(s).` }));
-    setTimeout(() => confirm?.delete().catch(() => {}), 5000);
+    const confirm = await ctx.send({
+      embeds: [buildStatusEmbed("success", `**${deleted.size}** supprimé(s) — ${randomClearJoke()}`)],
+    });
+    setTimeout(() => confirm?.delete().catch(() => {}), 15_000);
   },
 };
