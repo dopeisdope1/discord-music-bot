@@ -14,6 +14,7 @@ const modInteractionRegistry = require("./utils/modInteractionRegistry");
 const { loadAllCommands: loadModCommands } = require("./utils/modCommandLoader");
 const botAdminsStore = require("./utils/botAdminsStore");
 const { sendLog } = require("./utils/actionLogger");
+const { handleSelfClear } = require("./utils/selfClear");
 const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
@@ -347,6 +348,9 @@ client.on("messageCreate", (message) => {
   // lui-même ses erreurs (via ctx.card), donc pas besoin d'un .catch ici en
   // plus de celui déjà interne au router.
   handleModerationTextCommand(client, message).catch((err) => console.error(err));
+  // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
+  // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
+  handleSelfClear(client, message).catch((err) => console.error(err));
 });
 
 // ---- Log + snipe : dernier message supprimé par salon ----
