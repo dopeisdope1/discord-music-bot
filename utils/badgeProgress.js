@@ -1,6 +1,8 @@
-// Paliers "Nitro" (basés sur l'arrivée sur le serveur — la vraie date
-// d'abonnement Nitro n'est pas accessible aux bots) et "Boost" (basés sur
-// `member.premiumSince`, donnée réelle).
+const { DateTime } = require("luxon");
+
+// Paliers "Nitro" (date saisie à la main uniquement — voir utils/nitroStore.js,
+// l'API ne l'expose pas) et "Boost" (`member.premiumSince`, donnée réelle et
+// exacte, jamais stockée : refetchée à chaque rendu).
 //
 // Les emoji sont des "application emojis" uploadés sur le bot lui-même
 // (Developer Portal > Emojis, ou l'endpoint /applications/{id}/emojis) :
@@ -34,10 +36,12 @@ const BOOST_TIERS = [
   { months: 24, label: "24 Mois", emoji: "<:boost_24m:1538359030676979792>" },
 ];
 
+// Arithmétique en MOIS CALENDAIRES via luxon, jamais en millisecondes : un
+// "mois" n'a pas de durée fixe. luxon ramène aussi les débordements au dernier
+// jour du mois (31/01 + 1 mois = 28/02), là où Date.setMonth natif partirait
+// sur le 3 mars — ce qui décalerait toute la timeline d'un boost commencé un 31.
 function addMonths(date, months) {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
+  return DateTime.fromJSDate(new Date(date), { zone: "utc" }).plus({ months }).toJSDate();
 }
 
 function progressBar(percent, size = 12) {

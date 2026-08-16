@@ -10,7 +10,9 @@ const { getRawGuildData: getRawMute, hydrateFromRemote: hydrateMute } = require(
 const { getRawGuildData: getRawAddroleConfig, hydrateFromRemote: hydrateAddroleConfig } = require("./addroleConfigStore");
 const { getRawGuildData: getRawAntiraidConfig, hydrateFromRemote: hydrateAntiraidConfig } = require("./antiraidConfigStore");
 const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
-const { getRawGuildData: getRawNitroDates, hydrateFromRemote: hydrateNitroDates } = require("./nitroStore");
+// (Les dates Nitro ne sont PAS ici : elles sont liées au compte et pas au
+// serveur, donc stockées globalement dans DATA_DIR — un volume persistant sur
+// Railway. Voir utils/nitroStore.js.)
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, logs, permissions, paliers...)
@@ -31,7 +33,6 @@ const CATEGORY_GETTERS = {
   addroleConfig: getRawAddroleConfig,
   antiraidConfig: getRawAntiraidConfig,
   roleBlacklist: getRawRoleBlacklist,
-  nitroDates: getRawNitroDates,
 };
 const CATEGORY_HYDRATORS = {
   prefixes: hydratePrefixes,
@@ -43,7 +44,6 @@ const CATEGORY_HYDRATORS = {
   addroleConfig: hydrateAddroleConfig,
   antiraidConfig: hydrateAntiraidConfig,
   roleBlacklist: hydrateRoleBlacklist,
-  nitroDates: hydrateNitroDates,
 };
 const ALL_CATEGORIES = Object.keys(CATEGORY_GETTERS);
 

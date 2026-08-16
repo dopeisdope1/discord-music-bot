@@ -2,30 +2,27 @@ const { LEVEL } = require("../../utils/permLevels");
 const { UsageError, BotError } = require("../../utils/modErrors");
 const { extractUserId } = require("../../utils/argParsing");
 const nitroStore = require("../../utils/nitroStore");
-const { saveGuildConfig } = require("../../utils/configChannel");
 
+// Équivalent en commande du bouton "Renseigner ma date Nitro" de &zinki
+// (pratique pour renseigner plusieurs membres d'affilée). Même store, mêmes
+// règles de validation.
 module.exports = {
   name: "setnitro",
   category: "misc",
   description: "Enregistre la date d'abonnement Nitro d'un membre (utilisée par &zinki)",
-  usage: "&setnitro <@mention | id> <15/04/2026 [13:24]>",
+  usage: "&setnitro <@mention | id> <JJ/MM/AAAA> [HH:mm]",
   level: LEVEL.CONFIGURABLE,
   async execute(ctx) {
     const userId = extractUserId(ctx.args[0]);
-    if (!userId) throw new UsageError(this.usage);
+    if (!userId || !ctx.args[1]) throw new UsageError(this.usage);
 
-    const raw = ctx.args.slice(1).join(" ");
-    if (!raw) throw new UsageError(this.usage);
+    const target = await ctx.guild.members.fetch(userId).catch(() => null);
+    if (!target) throw new BotError("Membre introuvable sur ce serveur.");
 
-    const date = nitroStore.parseDate(raw);
-    if (!date) {
-      throw new BotError(
-        "Date invalide. Formats acceptés : `15/04/26`, `15/04/2026`, `2026-04-15`, avec heure optionnelle `15/04/2026 13:24`. Elle ne peut pas être dans le futur."
-      );
-    }
+    const { date, error } = nitroStore.parseAndValidate(ctx.args[1], ctx.args[2], target.user.createdAt);
+    if (error) throw new BotError(error);
 
-    nitroStore.setNitroStart(ctx.guildId, userId, date);
-    saveGuildConfig(ctx.guild, ["nitroDates"]).catch(() => {});
+    nitroStore.setNitroSince(userId, date, ctx.author.id);
 
     await ctx.reply(
       ctx.card({

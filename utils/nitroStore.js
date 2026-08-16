@@ -1,16 +1,22 @@
 const fs = require("fs");
 const path = require("path");
+const { DateTime } = require("luxon");
 
-// Date d'abonnement Nitro renseignée À LA MAIN (voir modcommands/.../setnitro.js).
+// Date d'abonnement Nitro, saisie À LA MAIN uniquement.
 //
-// Pourquoi manuellement : l'API bot de Discord n'expose NI l'abonnement Nitro
-// NI sa date de début — vérifié sur un compte Nitro Argent réel, la charge
-// utile ne contient ni `premium_type`, ni flag Nitro dans `public_flags`
-// (`premium_since` du membre, lui, ne concerne QUE le boost de serveur).
-// Sans valeur enregistrée ici, la progression retombe sur `joined_at`
-// (arrivée sur le serveur), qui n'est qu'une approximation.
+// L'API bot de Discord n'expose RIEN sur le Nitro : ni statut, ni date.
+// `premium_type` a fuité un temps vers les bots (discord-api-docs#6623), mais
+// Discord a patché. Vérifié sur un compte Nitro Argent réel : ni
+// `premium_type`, ni flag dans `public_flags`, ni bannière. Aucune détection
+// automatique n'est possible, et AUCUNE heuristique (joined_at, création du
+// compte...) ne doit servir d'approximation — une date fausse est pire que
+// pas de date.
+//
+// Stockage GLOBAL par utilisateur (le Nitro est lié au compte, pas au
+// serveur), dans DATA_DIR — sur Railway c'est un volume persistant monté sur
+// /data, donc pas besoin de passer par le salon "zinki-config".
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const DATA_FILE = path.join(DATA_DIR, "nitroDates.json");
+const DATA_FILE = path.join(DATA_DIR, "nitro.json");
 
 let cache = null;
 
@@ -19,8 +25,9 @@ function load() {
   try {
     cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   } catch {
-    cache = {};
+    cache = { users: {} };
   }
+  if (!cache.users) cache.users = {};
   return cache;
 }
 
@@ -33,104 +40,91 @@ function save() {
   }
 }
 
-function ensureGuild(guildId) {
-  const data = load();
-  data[guildId] = { ...data[guildId] };
-  return data[guildId];
+/**
+ * @returns {{ nitro_since: number, set_by: string, set_at: number }|null}
+ *   `nitro_since` et `set_at` en millisecondes epoch.
+ */
+function getEntry(userId) {
+  return load().users[userId] || null;
 }
 
 /** @returns {Date|null} */
-function getNitroStart(guildId, userId) {
-  const iso = ensureGuild(guildId)[userId];
-  return iso ? new Date(iso) : null;
+function getNitroSince(userId) {
+  const entry = getEntry(userId);
+  return entry ? new Date(entry.nitro_since) : null;
 }
 
-function setNitroStart(guildId, userId, date) {
-  const g = ensureGuild(guildId);
-  g[userId] = new Date(date).toISOString();
+/**
+ * @param {string} userId
+ * @param {Date|number} nitroSince
+ * @param {string} setBy id de la personne qui a saisi la date
+ */
+function setNitroSince(userId, nitroSince, setBy) {
+  const data = load();
+  data.users[userId] = {
+    nitro_since: new Date(nitroSince).getTime(),
+    set_by: setBy,
+    set_at: Date.now(),
+  };
   save();
 }
 
-function removeNitroStart(guildId, userId) {
-  const g = ensureGuild(guildId);
-  const existed = Boolean(g[userId]);
-  delete g[userId];
+/** @returns {boolean} true si une date existait bien */
+function clearNitroSince(userId) {
+  const data = load();
+  const existed = Boolean(data.users[userId]);
+  delete data.users[userId];
   save();
   return existed;
 }
 
-function listAll(guildId) {
-  return Object.entries(ensureGuild(guildId)).map(([userId, iso]) => ({ userId, date: new Date(iso) }));
-}
-
 /**
- * Accepte "15/04/26", "15/04/2026" et "2026-04-15" (+ heure optionnelle
- * "HH:mm"). Interprété en UTC pour rester cohérent avec l'affichage.
- * @returns {Date|null} null si le format est invalide
+ * Construit et valide une date à partir des champs du modal.
+ * @param {string} dateInput "JJ/MM/AAAA"
+ * @param {string} timeInput "HH:mm" (vide = 00:00)
+ * @param {Date} accountCreatedAt borne basse : un abonnement ne peut pas
+ *   précéder la création du compte
+ * @returns {{ date: Date }|{ error: string }}
  */
-function parseDate(input) {
-  if (!input) return null;
-  const raw = input.trim();
+function parseAndValidate(dateInput, timeInput, accountCreatedAt) {
+  const rawDate = (dateInput || "").trim();
+  const rawTime = (timeInput || "").trim();
 
-  let year;
-  let month;
-  let day;
-  let rest = "";
+  const dmy = rawDate.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (!dmy) return { error: "Format de date invalide. Attendu : `JJ/MM/AAAA` (ex : `15/04/2026`)." };
 
-  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:\s+(.*))?$/);
-  const ymd = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(.*))?$/);
+  const day = Number(dmy[1]);
+  const month = Number(dmy[2]);
+  const year = Number(dmy[3]);
 
-  if (dmy) {
-    day = Number(dmy[1]);
-    month = Number(dmy[2]);
-    year = Number(dmy[3]);
-    if (year < 100) year += 2000;
-    rest = dmy[4] || "";
-  } else if (ymd) {
-    year = Number(ymd[1]);
-    month = Number(ymd[2]);
-    day = Number(ymd[3]);
-    rest = ymd[4] || "";
-  } else {
-    return null;
+  let hour = 0;
+  let minute = 0;
+  if (rawTime) {
+    const hm = rawTime.match(/^(\d{1,2})[:hH](\d{2})$/);
+    if (!hm) return { error: "Format d'heure invalide. Attendu : `HH:mm` (ex : `13:24`), ou laisse vide." };
+    hour = Number(hm[1]);
+    minute = Number(hm[2]);
+    if (hour > 23 || minute > 59) {
+      return { error: "Heure impossible. Attendu entre `00:00` et `23:59`." };
+    }
   }
 
-  let hours = 0;
-  let minutes = 0;
-  if (rest) {
-    const time = rest.match(/^(\d{1,2}):(\d{2})$/);
-    if (!time) return null;
-    hours = Number(time[1]);
-    minutes = Number(time[2]);
+  const dt = DateTime.fromObject({ year, month, day, hour, minute }, { zone: "utc" });
+  if (!dt.isValid) {
+    return { error: "Date impossible : ce jour n'existe pas dans ce mois (ex : `31/02`)." };
   }
 
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hours > 23 || minutes > 59) return null;
+  const date = dt.toJSDate();
 
-  const date = new Date(Date.UTC(year, month - 1, day, hours, minutes));
-  // Rejette les dates qui "débordent" (ex: 31/02 devient le 3 mars).
-  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  if (date.getTime() > Date.now()) return null; // pas d'abonnement dans le futur
+  if (date.getTime() > Date.now()) {
+    return { error: "Cette date est dans le futur." };
+  }
+  if (accountCreatedAt && date.getTime() < new Date(accountCreatedAt).getTime()) {
+    const created = Math.floor(new Date(accountCreatedAt).getTime() / 1000);
+    return { error: `Cette date précède la création du compte (<t:${created}:D>).` };
+  }
 
-  return date;
+  return { date };
 }
 
-function getRawGuildData(guildId) {
-  return load()[guildId] || {};
-}
-
-function hydrateFromRemote(guildId, remoteData) {
-  if (!remoteData) return;
-  const data = load();
-  data[guildId] = remoteData;
-  save();
-}
-
-module.exports = {
-  getNitroStart,
-  setNitroStart,
-  removeNitroStart,
-  listAll,
-  parseDate,
-  getRawGuildData,
-  hydrateFromRemote,
-};
+module.exports = { getEntry, getNitroSince, setNitroSince, clearNitroSince, parseAndValidate };
