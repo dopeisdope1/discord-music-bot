@@ -1,28 +1,15 @@
 const { DateTime } = require("luxon");
 
-// Paliers "Nitro" (date saisie à la main uniquement — voir utils/nitroStore.js,
-// l'API ne l'expose pas) et "Boost" (`member.premiumSince`, donnée réelle et
-// exacte, jamais stockée : refetchée à chaque rendu).
+// Paliers de boost, basés sur `member.premiumSince` : donnée Discord réelle
+// et exacte, jamais stockée, refetchée à chaque rendu.
 //
 // Les emoji sont des "application emojis" uploadés sur le bot lui-même
 // (Developer Portal > Emojis, ou l'endpoint /applications/{id}/emojis) :
 // contrairement aux emoji de serveur, ils s'affichent partout sans que le
 // bot ait besoin d'être membre du serveur qui les héberge. Pour en changer,
 // re-uploader et remplacer les IDs ci-dessous.
-const BADGE_TIERS = [
-  { months: 0, label: "Basic", emoji: "<:discordnitro:1538358941786964060>" },
-  { months: 1, label: "Bronze", emoji: "<:nitrobronze:1538358946581184552>" },
-  { months: 3, label: "Argent", emoji: "<:silvernitrotier:1538358952167870565>" },
-  { months: 6, label: "Or", emoji: "<:goldnitrotier:1538358957578653727>" },
-  { months: 12, label: "Platine", emoji: "<:platiniumnitrotier:1538358962884186264>" },
-  { months: 24, label: "Diamant", emoji: "<:diamondnitrotier:1538358968500359263>" },
-  { months: 36, label: "Emeraude", emoji: "<:emeraldnitrotier:1538358973743366236>" },
-  { months: 60, label: "Rubis", emoji: "<:rubynitrotier:1538358978805895239>" },
-  { months: 72, label: "Opale", emoji: "<:opalnitrotier:1538358983461707907>" },
-];
-
-// "0 Mois" réutilise le même emoji que "1 Mois" (pas d'icône dédiée côté
-// référence, voir la donnée brute fournie).
+//
+// "0 Mois" réutilise le même emoji que "1 Mois" (pas d'icône dédiée).
 const BOOST_TIERS = [
   { months: 0, label: "0 Mois", emoji: "<:boost_1m:1538358988196946080>" },
   { months: 1, label: "1 Mois", emoji: "<:boost_1m:1538358988196946080>" },
@@ -103,4 +90,4 @@ function computeTierState(startDate, tiers) {
   };
 }
 
-module.exports = { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, addMonths, formatDateTime };
+module.exports = { BOOST_TIERS, computeTierState, progressBar, addMonths, formatDateTime };

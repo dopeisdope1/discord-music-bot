@@ -10,25 +10,18 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
-const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
-const nitroStore = require("./nitroStore");
+const { BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./boostProgress");
 
 const VIEWS = [
-  { key: "badge", label: "Badge" },
   { key: "boost", label: "Boost" },
   { key: "profil", label: "Profil" },
 ];
 
 // Une couleur d'accent par carte pour bien les distinguer visuellement.
 const ACCENT_COLORS = {
-  badge: 0xe67e22, // orange/bronze, façon Nitro
   boost: 0xf47fff, // rose boost officiel Discord
   profil: 0x5865f2, // blurple Discord
 };
@@ -83,40 +76,6 @@ function header(container, member, title, infoLines) {
   );
 }
 
-// Qui a le droit de renseigner/réinitialiser la date Nitro d'un profil :
-// la personne elle-même, ou un admin du serveur qui consulte quelqu'un d'autre.
-function canEditNitro(interactionUserId, targetId, member) {
-  if (interactionUserId === targetId) return true;
-  return Boolean(member?.permissions?.has(PermissionFlagsBits.Administrator));
-}
-
-function nitroModal(targetId) {
-  return new ModalBuilder()
-    .setCustomId(`zinkinitro:submit:${targetId}`)
-    .setTitle("Date d'abonnement Nitro")
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("date")
-          .setLabel("Date (JJ/MM/AAAA)")
-          .setPlaceholder("15/04/2026")
-          .setStyle(TextInputStyle.Short)
-          .setMinLength(8)
-          .setMaxLength(10)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("time")
-          .setLabel("Heure (HH:mm) — optionnel")
-          .setPlaceholder("13:24")
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(5)
-          .setRequired(false)
-      )
-    );
-}
-
 function renderBoost(member, invokerId) {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.boost);
 
@@ -151,79 +110,6 @@ function renderBoost(member, invokerId) {
   return payload(container);
 }
 
-function renderBadge(member, invokerId, viewerMember) {
-  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.badge);
-  const start = nitroStore.getNitroSince(member.id);
-  const editable = canEditNitro(invokerId, member.id, viewerMember);
-
-  // Aucune date renseignée : on n'affiche RIEN d'autre. Pas de badge, pas de
-  // barre, pas de timeline — la date d'abonnement Nitro n'est pas exposée par
-  // l'API et aucune heuristique (arrivée sur le serveur, création du compte)
-  // ne doit en tenir lieu : une date fausse est pire que pas de date.
-  if (!start) {
-    header(container, member, `Progression Nitro de ${member.displayName}`, [
-      "**Date non renseignée**",
-      "L'API Discord n'expose pas la date d'abonnement Nitro aux bots : elle doit être saisie manuellement.",
-      editable
-        ? "Survole ton badge Nitro sur ton profil Discord (ordinateur), ou va dans Paramètres > badge sur mobile, puis clique ci-dessous."
-        : "Seule la personne concernée (ou un admin) peut la renseigner.",
-    ]);
-
-    if (editable) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`zinkinitro:open:${member.id}`)
-            .setLabel("Renseigner ma date Nitro")
-            .setStyle(ButtonStyle.Success)
-        )
-      );
-    }
-
-    container.addActionRowComponents(navRow("badge", member.id, invokerId));
-    return payload(container);
-  }
-
-  const state = computeTierState(start, BADGE_TIERS);
-  header(container, member, `Progression Nitro de ${member.displayName}`, [
-    `**Début du Nitro** : <t:${unix(start)}:F>`,
-    `**Current** : ${state.currentTier.months} mois`,
-  ]);
-
-  section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
-
-  if (state.maxed) {
-    section(container, "PROGRESSION", ["Palier maximum atteint 🎉"]);
-  } else {
-    section(container, "PROCHAIN BADGE", [`${state.nextTier.emoji} **${state.nextTier.label}** : <t:${unix(state.nextTierDate)}:R>`]);
-    section(container, "PROGRESSION", [`${progressBar(state.percent)} \`${state.percent}%\``]);
-  }
-
-  section(
-    container,
-    "PROCHAINS BADGES",
-    state.tierDates.map(({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:d> (<t:${unix(date)}:R>)`)
-  );
-
-  if (editable) {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`zinkinitro:open:${member.id}`)
-          .setLabel("Modifier la date")
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`zinkinitro:reset:${member.id}`)
-          .setLabel("Réinitialiser")
-          .setStyle(ButtonStyle.Danger)
-      )
-    );
-  }
-
-  container.addActionRowComponents(navRow("badge", member.id, invokerId));
-  return payload(container);
-}
-
 // Serveurs en commun : `guild.members.cache` n'est pas fiable (le cache d'un
 // serveur peut être partiel/vieilli selon ce que la gateway a poussé), donc
 // on interroge réellement chaque serveur. `fetch` sur un membre absent lève
@@ -241,10 +127,7 @@ async function fetchMutualGuilds(member, client) {
 }
 
 async function renderProfil(member, client, invokerId) {
-  // Nitro : uniquement si une date a été saisie (voir renderBadge). Boost :
-  // `premiumSince`, refetché avec le membre à chaque rendu, jamais stocké.
-  const nitroSince = nitroStore.getNitroSince(member.id);
-  const badgeState = nitroSince ? computeTierState(nitroSince, BADGE_TIERS) : null;
+  // Boost : `premiumSince`, refetché avec le membre à chaque rendu, jamais stocké.
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
@@ -254,20 +137,7 @@ async function renderProfil(member, client, invokerId) {
     `**Date de creation :** \`${formatDateTime(member.user.createdAt)}\``,
   ]);
 
-  const badgeEmojis = [badgeState?.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ");
-  section(container, "Badges", [badgeEmojis || "aucun"]);
-
-  if (badgeState) {
-    const nitroLines = [`${badgeState.currentTier.emoji} **Nitro** (${badgeState.currentTier.months} mois)`];
-    if (badgeState.maxed) nitroLines.push("Palier maximum atteint 🎉");
-    else {
-      nitroLines.push(`Next : ${badgeState.nextTier.emoji} <t:${unix(badgeState.nextTierDate)}:R>`);
-      nitroLines.push(`${progressBar(badgeState.percent)} \`${badgeState.percent}%\``);
-    }
-    section(container, "Nitro", nitroLines);
-  } else {
-    section(container, "Nitro", ["Date non renseignée — voir l'onglet **Badge**."]);
-  }
+  section(container, "Badges", [boostState ? boostState.currentTier.emoji : "aucun"]);
 
   if (boostState) {
     const boostLines = [`${boostState.currentTier.emoji} **Boost** (${boostState.currentTier.months} mois)`];
@@ -316,7 +186,6 @@ async function handle(interaction) {
     return;
   }
 
-  if (view === "badge") return interaction.update(renderBadge(member, invokerId, interaction.member));
   if (view === "boost") return interaction.update(renderBoost(member, invokerId));
   if (view === "profil") {
     // renderProfil interroge les serveurs en commun (I/O) : on accuse
@@ -326,52 +195,6 @@ async function handle(interaction) {
   }
 }
 
-// Saisie/réinitialisation de la date Nitro (boutons + modal de la vue Badge).
-async function handleNitro(interaction) {
-  const [, action, targetId] = interaction.customId.split(":");
-
-  if (!canEditNitro(interaction.user.id, targetId, interaction.member)) {
-    await interaction.reply({
-      content: "Seule la personne concernée (ou un admin du serveur) peut modifier cette date.",
-      ephemeral: true,
-    });
-    return;
-  }
-
-  if (action === "open") {
-    return interaction.showModal(nitroModal(targetId));
-  }
-
-  const member = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
-  if (!member) {
-    await interaction.reply({ content: "Membre introuvable.", ephemeral: true });
-    return;
-  }
-
-  if (action === "reset") {
-    nitroStore.clearNitroSince(targetId);
-    // Redessine le panel en place plutôt que d'envoyer un nouveau message.
-    return interaction.update(renderBadge(member, interaction.user.id, interaction.member));
-  }
-
-  if (action === "submit") {
-    const { date, error } = nitroStore.parseAndValidate(
-      interaction.fields.getTextInputValue("date"),
-      interaction.fields.getTextInputValue("time"),
-      member.user.createdAt
-    );
-
-    if (error) {
-      await interaction.reply({ content: `❌ ${error}`, ephemeral: true });
-      return;
-    }
-
-    nitroStore.setNitroSince(targetId, date, interaction.user.id);
-    return interaction.update(renderBadge(member, interaction.user.id, interaction.member));
-  }
-}
-
 registerHandler("zinkiprofile", handle);
-registerHandler("zinkinitro", handleNitro);
 
-module.exports = { renderBadge, renderBoost, renderProfil };
+module.exports = { renderBoost, renderProfil };

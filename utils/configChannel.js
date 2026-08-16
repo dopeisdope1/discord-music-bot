@@ -11,9 +11,6 @@ const { getRawGuildData: getRawAddroleConfig, hydrateFromRemote: hydrateAddroleC
 const { getRawGuildData: getRawAntiraidConfig, hydrateFromRemote: hydrateAntiraidConfig } = require("./antiraidConfigStore");
 const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
 const { getRawGuildData: getRawVoiceMaster, hydrateFromRemote: hydrateVoiceMaster } = require("./voiceMasterStore");
-// (Les dates Nitro ne sont PAS ici : elles sont liées au compte et pas au
-// serveur, donc stockées globalement dans DATA_DIR — un volume persistant sur
-// Railway. Voir utils/nitroStore.js.)
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, logs, permissions, paliers...)
