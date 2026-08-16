@@ -47,9 +47,10 @@ module.exports = {
       actor: ctx.author,
     });
 
-    const confirm = await ctx.send({
+    // L'effacement est géré par le routeur (AUTO_DELETE_MS, catégorie
+    // "moderation"), comme pour les autres commandes de modération.
+    await ctx.send({
       embeds: [buildStatusEmbed("success", `**${count}** supprimé(s) — ${randomClearJoke()}`)],
     });
-    setTimeout(() => confirm?.delete().catch(() => {}), 15_000);
   },
 };

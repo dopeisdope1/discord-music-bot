@@ -11,6 +11,28 @@ const { canRunCommand } = require("./voiceAccess");
 const antiraidDetector = require("./antiraidDetector");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 
+// Confirmations effacées d'elles-mêmes, par catégorie de commande. Elles
+// n'apprennent rien une fois lues : le résultat est visible dans le salon
+// (verrouillé, renommé, message supprimé...), donc les laisser reviendrait à
+// polluer l'historique à chaque action. Une commande peut imposer son propre
+// délai via `autoDelete` ; les catégories absentes d'ici ne sont jamais
+// effacées (`&help`, `&perms`, les panels... qu'on veut pouvoir relire).
+const AUTO_DELETE_MS = {
+  channel: 3_000,
+  moderation: 5_000,
+};
+
+function scheduleCleanup(ctx, command) {
+  const delay = command.autoDelete ?? AUTO_DELETE_MS[command.category];
+  if (!delay || !ctx.sent.length) return;
+
+  // Copie : `ctx` peut encore servir, et on veut figer la liste d'alors.
+  const messages = [...ctx.sent];
+  setTimeout(() => {
+    for (const message of messages) message.delete().catch(() => {});
+  }, delay);
+}
+
 async function replyError(ctx, message) {
   await ctx.reply(ctx.card({ title: "Erreur", description: message }));
 }
@@ -108,6 +130,10 @@ async function handleModerationTextCommand(client, message) {
       console.error(`[modMessageRouter] commande "${command.name}" en échec :`, error);
       await replyError(ctx, "Une erreur inattendue est survenue.");
     }
+  } finally {
+    // Aussi en cas d'erreur : un message d'erreur de `&lock` n'a pas plus de
+    // raison de rester dans le salon que sa confirmation.
+    scheduleCleanup(ctx, command);
   }
 }
 
