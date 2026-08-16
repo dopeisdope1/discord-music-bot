@@ -63,11 +63,11 @@ async function handleContextMenu(interaction) {
   if (!target) return interaction.reply(ephemeral("Membre introuvable."));
 
   if (!canDoVoiceAction(interaction.member, menu.action)) {
-    return interaction.reply(ephemeral("❌ Tu n'as pas la permission de faire ça."));
+    return interaction.reply(ephemeral("Tu n'as pas la permission de faire ça."));
   }
 
   const hierarchy = hierarchyReason(interaction, target);
-  if (hierarchy) return interaction.reply(ephemeral(`❌ ${hierarchy}`));
+  if (hierarchy) return interaction.reply(ephemeral(hierarchy));
 
   if (!target.voice.channel) {
     return interaction.reply(ephemeral(`**${target.user.tag}** n'est dans aucun salon vocal.`));
@@ -89,7 +89,7 @@ async function handleContextMenu(interaction) {
   if (menu.action === "mute") {
     const next = !target.voice.serverMute;
     if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.MuteMembers)) {
-      return interaction.reply(ephemeral("❌ Il me manque la permission **Rendre muet les membres**."));
+      return interaction.reply(ephemeral("Il me manque la permission **Rendre muet les membres**."));
     }
     await target.voice.setMute(next, `Clic droit — par ${interaction.user.tag}`);
     sendLog(interaction.client, interaction.guild.id, "voice", {
@@ -97,13 +97,13 @@ async function handleContextMenu(interaction) {
       description: `${target.user.tag} ${next ? "rendu muet" : "a retrouvé la parole"} (clic droit).`,
       actor: interaction.user,
     });
-    return interaction.reply(ephemeral(next ? `🔇 **${target.user.tag}** est muet.` : `🔊 **${target.user.tag}** a retrouvé la parole.`));
+    return interaction.reply(ephemeral(next ? `**${target.user.tag}** est muet.` : `**${target.user.tag}** a retrouvé la parole.`));
   }
 
   if (menu.action === "deaf") {
     const next = !target.voice.serverDeaf;
     if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.DeafenMembers)) {
-      return interaction.reply(ephemeral("❌ Il me manque la permission **Rendre sourd les membres**."));
+      return interaction.reply(ephemeral("Il me manque la permission **Rendre sourd les membres**."));
     }
     await target.voice.setDeaf(next, `Clic droit — par ${interaction.user.tag}`);
     sendLog(interaction.client, interaction.guild.id, "voice", {
@@ -111,12 +111,12 @@ async function handleContextMenu(interaction) {
       description: `${target.user.tag} ${next ? "rendu sourd" : "a retrouvé l'écoute"} (clic droit).`,
       actor: interaction.user,
     });
-    return interaction.reply(ephemeral(next ? `🔇 **${target.user.tag}** est sourd.` : `🔊 **${target.user.tag}** a retrouvé l'écoute.`));
+    return interaction.reply(ephemeral(next ? `**${target.user.tag}** est sourd.` : `**${target.user.tag}** a retrouvé l'écoute.`));
   }
 
   if (menu.action === "disconnect") {
     if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.MoveMembers)) {
-      return interaction.reply(ephemeral("❌ Il me manque la permission **Déplacer les membres**."));
+      return interaction.reply(ephemeral("Il me manque la permission **Déplacer les membres**."));
     }
     const from = target.voice.channel;
     await target.voice.setChannel(null, `Clic droit — par ${interaction.user.tag}`);
@@ -125,7 +125,7 @@ async function handleContextMenu(interaction) {
       description: `${target.user.tag} déconnecté de ${from} (clic droit).`,
       actor: interaction.user,
     });
-    return interaction.reply(ephemeral(`⛔ **${target.user.tag}** a été déconnecté du vocal.`));
+    return interaction.reply(ephemeral(`**${target.user.tag}** a été déconnecté du vocal.`));
   }
 }
 
@@ -139,13 +139,13 @@ async function handleMoveSelect(interaction) {
   const deny =
     (canDoVoiceAction(interaction.member, "move") ? null : "Tu n'as pas la permission de déplacer un membre.") ||
     hierarchyReason(interaction, target);
-  if (deny) return interaction.update({ content: `❌ ${deny}`, components: [] });
+  if (deny) return interaction.update({ content: deny, components: [] });
 
   if (!target.voice.channel) {
     return interaction.update({ content: `**${target.user.tag}** a quitté le vocal entre-temps.`, components: [] });
   }
   if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.MoveMembers)) {
-    return interaction.update({ content: "❌ Il me manque la permission **Déplacer les membres**.", components: [] });
+    return interaction.update({ content: "Il me manque la permission **Déplacer les membres**.", components: [] });
   }
 
   const channel = interaction.guild.channels.cache.get(interaction.values[0]);
@@ -158,7 +158,7 @@ async function handleMoveSelect(interaction) {
     actor: interaction.user,
   });
 
-  return interaction.update({ content: `✅ **${target.user.tag}** déplacé vers ${channel}.`, components: [] });
+  return interaction.update({ content: `**${target.user.tag}** déplacé vers ${channel}.`, components: [] });
 }
 
 registerHandler("ctxvoice", handleMoveSelect);

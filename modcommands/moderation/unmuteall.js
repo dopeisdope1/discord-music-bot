@@ -27,6 +27,6 @@ module.exports = {
     }
 
     sendLog(ctx.client, ctx.guildId, "moderation", { title: "Unmute de masse", description: `${count} membre(s) unmute.`, actor: ctx.author });
-    await ctx.reply(ctx.card({ title: `🔊 ${count} membre(s) unmute.` }));
+    await ctx.reply(ctx.card({ title: `${count} membre(s) unmute.` }));
   },
 };

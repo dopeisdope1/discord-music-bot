@@ -12,7 +12,7 @@ const antiraidDetector = require("./antiraidDetector");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 
 async function replyError(ctx, message) {
-  await ctx.reply(ctx.card({ title: "❌ Erreur", description: message }));
+  await ctx.reply(ctx.card({ title: "Erreur", description: message }));
 }
 
 // `add <rôle>`/`del <rôle>` en réponse à un membre — raccourci direct hérité

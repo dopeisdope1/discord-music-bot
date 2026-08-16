@@ -37,7 +37,7 @@ async function handle(interaction) {
       .setPlaceholder(`Choisis le salon pour "${label}"`)
       .addChannelTypes(ChannelType.GuildText);
     return interaction.reply({
-      content: `📋 Sélectionne le salon pour les logs **${label}** :`,
+      content: `Sélectionne le salon pour les logs **${label}** :`,
       components: [actionRow(select)],
       ephemeral: true,
     });
@@ -47,7 +47,7 @@ async function handle(interaction) {
     const category = parts[3];
     const channelId = interaction.values[0];
     setLogChannel(interaction.guild.id, category, channelId);
-    await interaction.update({ content: `✅ Salon de logs mis à jour : <#${channelId}>.`, components: [] });
+    await interaction.update({ content: `Salon de logs mis à jour : <#${channelId}>.`, components: [] });
   }
 }
 

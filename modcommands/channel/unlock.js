@@ -10,6 +10,6 @@ module.exports = {
   async execute(ctx) {
     await ctx.message.channel.permissionOverwrites.edit(ctx.guild.id, { SendMessages: null }, { reason: `Déverrouillage par ${ctx.author.tag}` });
     sendLog(ctx.client, ctx.guildId, "salon", { title: "Unlock", description: `<#${ctx.message.channel.id}> déverrouillé.`, actor: ctx.author });
-    await ctx.reply(ctx.card({ title: "🔓 Salon déverrouillé pour @everyone." }));
+    await ctx.reply(ctx.card({ title: "Salon déverrouillé pour @everyone." }));
   },
 };

@@ -36,7 +36,7 @@ function renderRoot() {
 
 async function dispatch(interaction) {
   if (!botAdminsStore.isSysOrAbove(interaction.user.id)) {
-    await interaction.reply({ content: "❌ Réservé à la hiérarchie sys.", ephemeral: true });
+    await interaction.reply({ content: "Réservé à la hiérarchie sys.", ephemeral: true });
     return;
   }
 

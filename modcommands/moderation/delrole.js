@@ -12,7 +12,7 @@ async function handle(interaction) {
   const cfg = addroleConfigStore.getConfig(guildId);
 
   const member = await interaction.guild.members.fetch(targetId).catch(() => null);
-  if (!member) return interaction.update({ content: "❌ Membre introuvable.", components: [] });
+  if (!member) return interaction.update({ content: "Membre introuvable.", components: [] });
 
   const removed = [];
   const skipped = [];
@@ -39,8 +39,8 @@ async function handle(interaction) {
   }
 
   const lines = [];
-  if (removed.length) lines.push(`✅ Retiré : ${removed.map((r) => r.name).join(", ")}`);
-  if (skipped.length) lines.push(`⛔ Bloqué (permission sensible) : ${skipped.join(", ")}`);
+  if (removed.length) lines.push(`Retiré : ${removed.map((r) => r.name).join(", ")}`);
+  if (skipped.length) lines.push(`Bloqué (permission sensible) : ${skipped.join(", ")}`);
   await interaction.update({ content: lines.join("\n") || "Aucun rôle retiré.", components: [] });
 }
 

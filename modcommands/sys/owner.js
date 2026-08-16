@@ -17,7 +17,7 @@ module.exports = {
       const admins = botAdminsStore.list();
       await ctx.reply(
         ctx.card({
-          title: "🛠️ Owners du bot",
+          title: "Owners du bot",
           description: listField(admins.map((a) => `<@${a.userId}> — \`${a.tier}\``), { empty: "Aucun owner configuré." }),
         })
       );
@@ -33,10 +33,10 @@ module.exports = {
         throw new BotError("Seul un owner super_sys peut promouvoir quelqu'un en super_sys.");
       }
       botAdminsStore.add(targetId, tier);
-      await ctx.reply(ctx.card({ title: `✅ <@${targetId}> est désormais \`${tier}\`.` }));
+      await ctx.reply(ctx.card({ title: `<@${targetId}> est désormais \`${tier}\`.` }));
     } else {
       botAdminsStore.remove(targetId);
-      await ctx.reply(ctx.card({ title: `✅ <@${targetId}> n'est plus owner.` }));
+      await ctx.reply(ctx.card({ title: `<@${targetId}> n'est plus owner.` }));
     }
   },
 };

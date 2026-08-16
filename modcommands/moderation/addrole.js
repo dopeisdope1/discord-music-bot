@@ -18,7 +18,7 @@ async function handle(interaction) {
   const cfg = addroleConfigStore.getConfig(guildId);
 
   const member = await interaction.guild.members.fetch(targetId).catch(() => null);
-  if (!member) return interaction.update({ content: "❌ Membre introuvable.", components: [] });
+  if (!member) return interaction.update({ content: "Membre introuvable.", components: [] });
 
   const applied = [];
   const skipped = [];
@@ -43,8 +43,8 @@ async function handle(interaction) {
   }
 
   const lines = [];
-  if (applied.length) lines.push(`✅ Ajouté : ${applied.map((r) => r.name).join(", ")}`);
-  if (skipped.length) lines.push(`⛔ Bloqué (permission sensible ou rôle blacklisté) : ${skipped.join(", ")}`);
+  if (applied.length) lines.push(`Ajouté : ${applied.map((r) => r.name).join(", ")}`);
+  if (skipped.length) lines.push(`Bloqué (permission sensible ou rôle blacklisté) : ${skipped.join(", ")}`);
   await interaction.update({ content: lines.join("\n") || "Aucun rôle appliqué.", components: [] });
 }
 

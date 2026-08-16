@@ -17,6 +17,6 @@ module.exports = {
     if (!ALL_LEVELS.includes(level)) throw new BotError(`Niveau invalide. Valeurs possibles : ${ALL_LEVELS.join(", ")}`);
 
     commandStateStore.setLevel(name, level);
-    await ctx.reply(ctx.card({ title: `✅ Niveau de \`${name}\` réglé sur \`${level}\`.` }));
+    await ctx.reply(ctx.card({ title: `Niveau de \`${name}\` réglé sur \`${level}\`.` }));
   },
 };

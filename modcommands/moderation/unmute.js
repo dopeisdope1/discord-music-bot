@@ -30,6 +30,6 @@ module.exports = {
       actor: ctx.author,
     });
 
-    await ctx.reply(ctx.card({ title: `🔊 ${target.user.tag} a été unmute.` }));
+    await ctx.reply(ctx.card({ title: `${target.user.tag} a été unmute.` }));
   },
 };

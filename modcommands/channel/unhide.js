@@ -20,6 +20,6 @@ module.exports = {
 
     await channel.permissionOverwrites.edit(ctx.guild.id, { ViewChannel: null }, { reason: `Affiché par ${ctx.author.tag}` });
     sendLog(ctx.client, ctx.guildId, "salon", { title: "Unhide", description: `<#${channel.id}> visible.`, actor: ctx.author });
-    await ctx.reply(ctx.card({ title: `👁️ ${channel} visible pour @everyone.` }));
+    await ctx.reply(ctx.card({ title: `${channel} visible pour @everyone.` }));
   },
 };

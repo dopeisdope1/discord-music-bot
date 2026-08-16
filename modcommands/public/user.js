@@ -15,7 +15,7 @@ module.exports = {
       : ctx.guild.members.cache.find((m) => m.user.username === raw);
 
     if (!member) {
-      await ctx.reply(ctx.card({ title: "❌ Utilisateur introuvable" }));
+      await ctx.reply(ctx.card({ title: "Utilisateur introuvable" }));
       return;
     }
 

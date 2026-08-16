@@ -25,6 +25,6 @@ module.exports = {
       actor: ctx.author,
     });
 
-    await ctx.reply(ctx.card({ title: `🗑️ Tous les rôles de ${target.user.tag} ont été retirés.` }));
+    await ctx.reply(ctx.card({ title: `Tous les rôles de ${target.user.tag} ont été retirés.` }));
   },
 };

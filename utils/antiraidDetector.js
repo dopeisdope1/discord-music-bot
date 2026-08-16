@@ -81,7 +81,7 @@ async function logIncident(guild, member, command, tier, z) {
 
   for (const admin of botAdminsStore.list()) {
     const user = await guild.client.users.fetch(admin.userId).catch(() => null);
-    if (user) await user.send(`⚠️ [${guild.name}] ${description}`).catch(() => {});
+    if (user) await user.send(`[${guild.name}] ${description}`).catch(() => {});
   }
 }
 
@@ -92,7 +92,7 @@ async function requestConfirmation(message, command) {
   );
 
   const prompt = await message.reply({
-    content: `⏸️ Activité inhabituelle détectée sur \`${command.name}\`. Confirme pour continuer (30s).`,
+    content: `Activité inhabituelle détectée sur \`${command.name}\`. Confirme pour continuer (30s).`,
     components: [row],
   });
 
@@ -101,10 +101,10 @@ async function requestConfirmation(message, command) {
       filter: (i) => i.user.id === message.author.id,
       time: 30_000,
     });
-    await interaction.update({ content: "✅ Confirmé.", components: [] });
+    await interaction.update({ content: "Confirmé.", components: [] });
     return interaction.customId === "antiraid:confirm";
   } catch {
-    await prompt.edit({ content: "⌛ Délai dépassé, action annulée.", components: [] }).catch(() => {});
+    await prompt.edit({ content: "Délai dépassé, action annulée.", components: [] }).catch(() => {});
     return false;
   }
 }
@@ -152,7 +152,7 @@ async function applyTier(message, command, tier, ctx, z) {
     await triggerLockdown(guild, message.author.id);
     await ctx.reply(
       ctx.card({
-        title: "🔒 Activité anormale détectée",
+        title: "Activité anormale détectée",
         description:
           "Le serveur a été verrouillé par mesure de précaution (@everyone ne peut plus envoyer de messages). Cette commande n'a pas été exécutée.",
       })

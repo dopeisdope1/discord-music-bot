@@ -127,7 +127,7 @@ async function handle(interaction) {
   if (view === "rolepick") {
     const roleId = interaction.values[0];
     muteStore.setMode(guildId, "role", roleId);
-    await interaction.update({ content: `✅ Mode "rôle" activé avec <@&${roleId}>.`, components: [] });
+    await interaction.update({ content: `Mode "rôle" activé avec <@&${roleId}>.`, components: [] });
     return;
   }
 

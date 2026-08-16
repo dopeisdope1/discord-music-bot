@@ -28,10 +28,10 @@ module.exports = {
 
     if (roleBlacklistStore.isMemberBlacklisted(ctx.guildId, userId)) {
       roleBlacklistStore.removeMember(ctx.guildId, userId);
-      await ctx.reply(ctx.card({ title: `✅ <@${userId}> retiré de la blacklist des membres.` }));
+      await ctx.reply(ctx.card({ title: `<@${userId}> retiré de la blacklist des membres.` }));
     } else {
       roleBlacklistStore.addMember(ctx.guildId, userId);
-      await ctx.reply(ctx.card({ title: `🚫 <@${userId}> ajouté à la blacklist des membres.` }));
+      await ctx.reply(ctx.card({ title: `<@${userId}> ajouté à la blacklist des membres.` }));
     }
 
     saveGuildConfig(ctx.guild, ["roleBlacklist"]).catch(() => {});

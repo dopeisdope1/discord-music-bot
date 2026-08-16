@@ -16,6 +16,6 @@ module.exports = {
     if (name === "enable" || name === "disable") throw new BotError("Impossible de désactiver cette commande.");
 
     commandStateStore.setDisabled(name, true);
-    await ctx.reply(ctx.card({ title: `⛔ Commande \`${name}\` désactivée sur tout le bot.` }));
+    await ctx.reply(ctx.card({ title: `Commande \`${name}\` désactivée sur tout le bot.` }));
   },
 };

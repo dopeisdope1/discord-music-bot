@@ -56,7 +56,7 @@ function buildSearchPanel(headerText, searchButtonId) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headerText));
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(searchButtonId).setLabel("🔍 Chercher un membre").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(searchButtonId).setLabel("Chercher un membre").setStyle(ButtonStyle.Secondary)
     )
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container] };

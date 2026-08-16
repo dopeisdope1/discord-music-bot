@@ -20,6 +20,6 @@ module.exports = {
       actor: ctx.author,
     });
 
-    await ctx.reply(ctx.card({ title: `✅ ${count} membre(s) débanni(s).` }));
+    await ctx.reply(ctx.card({ title: `${count} membre(s) débanni(s).` }));
   },
 };

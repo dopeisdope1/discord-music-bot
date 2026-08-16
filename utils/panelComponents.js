@@ -21,6 +21,16 @@ const {
 // une image pleine largeur en bas (via une MediaGallery).
 function buildCard({ title, description, fields = [], thumbnail, image }) {
   const container = new ContainerBuilder();
+
+  // Confirmation d'une seule ligne (lock, ban, blacklist...) : ni titre en
+  // "##" ni séparateur, sinon le bloc occupe trois fois la place de son
+  // contenu. Donne le même rendu compact que l'embed de `&clear`. Dès qu'il y
+  // a autre chose qu'un titre, on retombe sur la mise en page complète.
+  if (!description && !fields.length && !thumbnail && !image) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(title));
+    return container;
+  }
+
   const titleText = new TextDisplayBuilder().setContent(`## ${title}`);
 
   if (thumbnail) {

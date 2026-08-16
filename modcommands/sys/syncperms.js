@@ -153,7 +153,7 @@ module.exports = {
           title: "Plan de synchronisation des permissions",
           description: [
             `**${plan.slots.length}** slots seraient créés, du rang le plus bas au plus haut.`,
-            existing ? `⚠️ Les **${existing}** slots existants seraient **supprimés et remplacés**.` : "Aucun slot existant à remplacer.",
+            existing ? `Les **${existing}** slots existants seraient **supprimés et remplacés**.` : "Aucun slot existant à remplacer.",
             plan.ignored.length ? `${plan.ignored.length} rôles d'intégration ignorés (rôles internes des autres bots).` : "",
             "Les commandes qui bannissent, expulsent ou touchent aux rôles ne sont données qu'aux **Administrateurs**.",
             "",
@@ -187,7 +187,7 @@ module.exports = {
 
     await ctx.reply(
       ctx.card({
-        title: "✅ Permissions synchronisées",
+        title: "Permissions synchronisées",
         description: `**${plan.slots.length}** slots créés depuis la hiérarchie des rôles. Vérifie avec \`&perms\` ou \`&panel\` > Permissions.`,
         fields: plan.slots.map(describe),
       })

@@ -50,7 +50,7 @@ function render(target, invokerId, note) {
     description: note || undefined,
     thumbnail: target.displayAvatarURL({ size: 256 }),
     fields: [
-      { name: "Salon", value: inVoice ? `${voice.channel}` : "aucun (hors vocal)" },
+      { name: "Salon", value: inVoice ? voice.channel : "aucun (hors vocal)" },
       { name: "Micro", value: voice.serverMute ? "coupé par le serveur" : "actif" },
       { name: "Casque", value: voice.serverDeaf ? "coupé par le serveur" : "actif" },
     ],
@@ -101,14 +101,14 @@ async function handle(interaction) {
     return interaction.reply({ content: "Seule la personne qui a lancé la commande peut utiliser ce panneau.", flags: MessageFlags.Ephemeral });
   }
   if (!canUse(interaction.member)) {
-    return interaction.reply({ content: "❌ Tu n'as pas la permission de gérer le vocal.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "Tu n'as pas la permission de gérer le vocal.", flags: MessageFlags.Ephemeral });
   }
 
   // Un rôle Voice Master peut n'avoir qu'une partie des actions : on vérifie
   // aussi l'action précise, pas seulement l'accès général au panneau.
   const actionPermission = { moveto: "move", move: "move", mute: "mute", deaf: "deaf", disconnect: "disconnect" }[action];
   if (actionPermission && !canDoVoiceAction(interaction.member, actionPermission)) {
-    return interaction.reply({ content: "❌ Cette action ne t'est pas autorisée.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "Cette action ne t'est pas autorisée.", flags: MessageFlags.Ephemeral });
   }
 
   const target = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
@@ -131,7 +131,7 @@ async function handle(interaction) {
   }
 
   const hierarchy = hierarchyReason(interaction.guild, interaction.member, target);
-  if (hierarchy) return interaction.reply({ content: `❌ ${hierarchy}`, flags: MessageFlags.Ephemeral });
+  if (hierarchy) return interaction.reply({ content: hierarchy, flags: MessageFlags.Ephemeral });
 
   if (!target.voice.channel) {
     return interaction.update(render(target, invokerId, `**${target.user.tag}** a quitté le vocal.`));
@@ -139,7 +139,7 @@ async function handle(interaction) {
 
   if (action === "moveto") {
     const missing = botMissing(interaction.guild, PermissionFlagsBits.MoveMembers, "Déplacer les membres");
-    if (missing) return interaction.update({ content: `❌ ${missing}`, components: [] });
+    if (missing) return interaction.update({ content: missing, components: [] });
 
     const channel = interaction.guild.channels.cache.get(interaction.values[0]);
     const from = target.voice.channel;
@@ -150,12 +150,12 @@ async function handle(interaction) {
       description: `${target.user.tag} déplacé de ${from} vers ${channel}.`,
       actor: interaction.user,
     });
-    return interaction.update({ content: `✅ **${target.user.tag}** déplacé vers ${channel}.`, components: [] });
+    return interaction.update({ content: `**${target.user.tag}** déplacé vers ${channel}.`, components: [] });
   }
 
   if (action === "mute") {
     const missing = botMissing(interaction.guild, PermissionFlagsBits.MuteMembers, "Rendre muet les membres");
-    if (missing) return interaction.reply({ content: `❌ ${missing}`, flags: MessageFlags.Ephemeral });
+    if (missing) return interaction.reply({ content: missing, flags: MessageFlags.Ephemeral });
 
     const next = !target.voice.serverMute;
     await target.voice.setMute(next, `Panneau vocal — par ${interaction.user.tag}`);
@@ -169,7 +169,7 @@ async function handle(interaction) {
 
   if (action === "deaf") {
     const missing = botMissing(interaction.guild, PermissionFlagsBits.DeafenMembers, "Rendre sourd les membres");
-    if (missing) return interaction.reply({ content: `❌ ${missing}`, flags: MessageFlags.Ephemeral });
+    if (missing) return interaction.reply({ content: missing, flags: MessageFlags.Ephemeral });
 
     const next = !target.voice.serverDeaf;
     await target.voice.setDeaf(next, `Panneau vocal — par ${interaction.user.tag}`);
@@ -183,7 +183,7 @@ async function handle(interaction) {
 
   if (action === "disconnect") {
     const missing = botMissing(interaction.guild, PermissionFlagsBits.MoveMembers, "Déplacer les membres");
-    if (missing) return interaction.reply({ content: `❌ ${missing}`, flags: MessageFlags.Ephemeral });
+    if (missing) return interaction.reply({ content: missing, flags: MessageFlags.Ephemeral });
 
     const from = target.voice.channel;
     await target.voice.setChannel(null, `Panneau vocal — par ${interaction.user.tag}`);

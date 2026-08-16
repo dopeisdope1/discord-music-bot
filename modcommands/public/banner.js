@@ -14,7 +14,7 @@ module.exports = {
     const user = await ctx.client.users.fetch(targetId, { force: true }).catch(() => null);
 
     if (!user) {
-      await ctx.reply(ctx.card({ title: "❌ Utilisateur introuvable" }));
+      await ctx.reply(ctx.card({ title: "Utilisateur introuvable" }));
       return;
     }
     if (!user.bannerURL()) {

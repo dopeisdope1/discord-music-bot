@@ -29,6 +29,6 @@ module.exports = {
       fields: [{ name: "Cible", value: `${target.user.tag} (${target.id})` }],
     });
 
-    await ctx.reply(ctx.card({ title: `🔨 ${target.user.tag} a été banni.`, fields: [{ name: "Raison", value: reason }] }));
+    await ctx.reply(ctx.card({ title: `${target.user.tag} a été banni.`, fields: [{ name: "Raison", value: reason }] }));
   },
 };

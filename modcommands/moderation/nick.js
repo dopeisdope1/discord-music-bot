@@ -18,7 +18,7 @@ module.exports = {
 
     await ctx.reply(
       ctx.card({
-        title: newNick ? `✏️ Pseudo de ${target.user.tag} changé en "${newNick}".` : `♻️ Pseudo de ${target.user.tag} réinitialisé.`,
+        title: newNick ? `Pseudo de ${target.user.tag} changé en "${newNick}".` : `Pseudo de ${target.user.tag} réinitialisé.`,
       })
     );
   },

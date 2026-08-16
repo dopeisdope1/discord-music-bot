@@ -15,7 +15,7 @@ module.exports = {
 
     await ctx.reply(
       ctx.card({
-        title: "🗑️ Message supprimé",
+        title: "Message supprimé",
         description: `${entry.content}\n\n— ${entry.authorTag}`,
         thumbnail: entry.authorAvatar || undefined,
       })

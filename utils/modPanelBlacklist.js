@@ -130,7 +130,7 @@ async function handle(interaction) {
     const scope = parts[3];
     const channelId = interaction.values[0];
     channelBlacklistStore.add(guildId, scope, channelId);
-    await interaction.update({ content: `✅ <#${channelId}> ajouté à la blacklist (${scopeLabel(scope)}).`, components: [] });
+    await interaction.update({ content: `<#${channelId}> ajouté à la blacklist (${scopeLabel(scope)}).`, components: [] });
     return;
   }
 

@@ -14,6 +14,6 @@ module.exports = {
     await channel.delete(`Renouvelé par ${ctx.author.tag}`).catch(() => {});
 
     sendLog(ctx.client, ctx.guildId, "salon", { title: "Renew", description: `#${clone.name} renouvelé.`, actor: ctx.author });
-    await clone.send(ctx.card({ title: "♻️ Salon renouvelé." }));
+    await clone.send(ctx.card({ title: "Salon renouvelé." }));
   },
 };

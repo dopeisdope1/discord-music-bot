@@ -17,7 +17,7 @@ module.exports = {
 
     const reason = ctx.args.slice(1).join(" ");
     sanctionsStore.add(ctx.guildId, target.id, "warn", reason, ctx.author.id);
-    await target.send(`⚠️ Tu as reçu un avertissement sur **${ctx.guild.name}** : ${reason}`).catch(() => {});
+    await target.send(`Tu as reçu un avertissement sur **${ctx.guild.name}** : ${reason}`).catch(() => {});
     sendLog(ctx.client, ctx.guildId, "moderation", {
       title: "Warn",
       description: `${target.user.tag} a été averti.`,
@@ -25,6 +25,6 @@ module.exports = {
       fields: [{ name: "Raison", value: reason }],
     });
 
-    await ctx.reply(ctx.card({ title: `⚠️ ${target.user.tag} a été averti.`, fields: [{ name: "Raison", value: reason }] }));
+    await ctx.reply(ctx.card({ title: `${target.user.tag} a été averti.`, fields: [{ name: "Raison", value: reason }] }));
   },
 };

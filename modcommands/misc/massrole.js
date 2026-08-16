@@ -24,7 +24,7 @@ module.exports = {
 
     await ctx.reply(
       ctx.card({
-        title: `✅ Rôle ${role.name} ${action === "add" ? "ajouté à" : "retiré de"} ${success} membre(s).`,
+        title: `Rôle ${role.name} ${action === "add" ? "ajouté à" : "retiré de"} ${success} membre(s).`,
         description: failed ? `${failed} échec(s).` : undefined,
       })
     );

@@ -15,6 +15,6 @@ module.exports = {
     const oldName = ctx.message.channel.name;
     await ctx.message.channel.setName(name, `Renommé par ${ctx.author.tag}`);
     sendLog(ctx.client, ctx.guildId, "salon", { title: "Rename", description: `#${oldName} renommé en #${name}.`, actor: ctx.author });
-    await ctx.reply(ctx.card({ title: `✏️ Salon renommé en "${name}".` }));
+    await ctx.reply(ctx.card({ title: `Salon renommé en "${name}".` }));
   },
 };

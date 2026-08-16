@@ -170,7 +170,7 @@ function renderCommandPicker(guildId, slotId, mode, page = 0, note) {
     navButtons.push(
       new ButtonBuilder()
         .setCustomId(`modpanel:permissions:cmdpage:${slotId}:${mode}:${page - 1}`)
-        .setLabel("◀ Page précédente")
+        .setLabel("Page précédente")
         .setStyle(ButtonStyle.Secondary)
     );
   }
@@ -346,7 +346,7 @@ async function handle(interaction) {
     }
 
     const verb = mode === "add" ? "ajoutée" : "retirée";
-    let note = `✅ ${picked.length} commande${picked.length > 1 ? "s" : ""} ${verb}${picked.length > 1 ? "s" : ""} : ${picked.join(", ")}`;
+    let note = `${picked.length} commande${picked.length > 1 ? "s" : ""} ${verb}${picked.length > 1 ? "s" : ""} : ${picked.join(", ")}`;
     if (promoted.length) {
       note +=
         `\n⚠️ ${promoted.join(", ")} ${promoted.length > 1 ? "étaient publiques" : "était publique"} : ` +
@@ -381,7 +381,7 @@ async function handle(interaction) {
       else permissionsStore.removeRole(guildId, slotId, roleId);
     }
     const list = interaction.values.map((r) => `<@&${r}>`).join(", ");
-    await interaction.update({ content: `✅ ${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
+    await interaction.update({ content: `${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
     return;
   }
 
@@ -393,7 +393,7 @@ async function handle(interaction) {
       else permissionsStore.removeMember(guildId, slotId, userId);
     }
     const list = interaction.values.map((u) => `<@${u}>`).join(", ");
-    await interaction.update({ content: `✅ ${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
+    await interaction.update({ content: `${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
     return;
   }
 

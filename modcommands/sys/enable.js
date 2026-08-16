@@ -15,6 +15,6 @@ module.exports = {
     if (!loadAllCommands().has(name)) throw new BotError("Commande inconnue.");
 
     commandStateStore.setDisabled(name, false);
-    await ctx.reply(ctx.card({ title: `✅ Commande \`${name}\` réactivée.` }));
+    await ctx.reply(ctx.card({ title: `Commande \`${name}\` réactivée.` }));
   },
 };

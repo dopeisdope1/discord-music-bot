@@ -46,6 +46,6 @@ module.exports = {
       fields: [{ name: "Raison", value: reason }],
     });
 
-    await ctx.reply(ctx.card({ title: `🔇 ${target.user.tag} a été muté.`, fields: [{ name: "Raison", value: reason }] }));
+    await ctx.reply(ctx.card({ title: `${target.user.tag} a été muté.`, fields: [{ name: "Raison", value: reason }] }));
   },
 };

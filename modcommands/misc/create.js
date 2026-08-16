@@ -33,6 +33,6 @@ module.exports = {
     });
 
     sendLog(ctx.client, ctx.guildId, "moderation", { title: "Create", description: `Emoji ${emoji} créé.`, actor: ctx.author });
-    await ctx.reply(ctx.card({ title: `✅ Emoji créé : ${emoji}` }));
+    await ctx.reply(ctx.card({ title: `Emoji créé : ${emoji}` }));
   },
 };
