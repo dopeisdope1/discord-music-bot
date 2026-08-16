@@ -1,7 +1,6 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-const { buildCard, appendText, payload } = require("./panelComponents");
+const { ContainerBuilder, TextDisplayBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
-const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar } = require("./badgeProgress");
+const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
 
 const VIEWS = [
   { key: "badge", label: "Badge" },
@@ -22,124 +21,137 @@ function navRow(currentView, targetId, invokerId) {
 }
 
 function unix(date) {
-  return Math.floor(date.getTime() / 1000);
+  return Math.floor(new Date(date).getTime() / 1000);
 }
 
-// Carte "Badge"/"Boost" — même structure pour les deux, seule la source de
-// la date de départ et les paliers changent.
-function renderTierCard({ title, member, invokerId, viewKey, startDate, tiers, emptyDescription }) {
-  const container = buildCard({
-    title,
-    thumbnail: member.displayAvatarURL({ size: 256 }),
-    description: startDate ? undefined : emptyDescription,
-    fields: startDate
-      ? [
-          { name: "Début", value: `<t:${unix(startDate)}:F>` },
-          { name: "Actuel", value: `${computeTierState(startDate, tiers).currentTier.months} mois` },
-        ]
-      : [],
-  });
+function text(container, content) {
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+}
 
-  if (startDate) {
-    const state = computeTierState(startDate, tiers);
+// "## heading" suivi d'un bloc de citation ">" (une ligne par entrée) — même
+// forme que la référence pour chaque sous-section (Current Badge, Progression...).
+function section(container, heading, lines) {
+  text(container, `## ${heading}`);
+  text(container, lines.map((l) => `> ${l}`).join("\n"));
+}
 
-    appendText(
-      container,
-      `**Badge actuel**\n${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`
-    );
+function payload(container) {
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
 
-    if (!state.maxed) {
-      appendText(
-        container,
-        `**Prochain badge**\n${state.nextTier.emoji} **${state.nextTier.label}** : <t:${unix(state.nextTierDate)}:R>`
-      );
-      appendText(container, `**Progression**\n${progressBar(state.percent)} \`${state.percent}%\``);
-    } else {
-      appendText(container, "**Progression**\nPalier maximum atteint 🎉");
-    }
+// Date de départ du suivi "Badge" (façon Nitro) : arrivée sur CE serveur
+// (donnée réelle Discord, `member.joinedAt`) plutôt que la création du
+// compte — un compte flambant neuf qui rejoint peu après sa création est ce
+// qui explique l'écart de ~2h entre "Début du Nitro" et "Date de création"
+// observé sur la référence. Repli sur la création du compte si `joinedAt`
+// est indisponible (cas rare de l'API Discord).
+function badgeStartDate(member) {
+  return member.joinedAt || member.user.createdAt;
+}
 
-    const lines = state.tierDates.map(
-      ({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:D> (<t:${unix(date)}:R>)`
-    );
-    appendText(container, `**Tous les paliers**\n${lines.join("\n")}`);
+function renderBoost(member, invokerId) {
+  const container = new ContainerBuilder();
+  text(container, `# Progression Boost de ${member.displayName}`);
+
+  if (!member.premiumSince) {
+    text(container, "> Ce membre ne boost pas actuellement ce serveur.");
+    container.addActionRowComponents(navRow("boost", member.id, invokerId));
+    return payload(container);
   }
 
-  container.addActionRowComponents(navRow(viewKey, member.id, invokerId));
+  const state = computeTierState(member.premiumSince, BOOST_TIERS);
+  text(container, `> **Début du boost** : <t:${unix(member.premiumSince)}:F>\n> **Current** : ${state.currentTier.months} mois`);
+
+  section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
+
+  if (state.maxed) {
+    section(container, "PROGRESSION", ["Palier maximum atteint 🎉"]);
+  } else {
+    section(container, "PROCHAINE EVOLUTION", [`${state.nextTier.emoji} **${state.nextTier.label}** : <t:${unix(state.nextTierDate)}:R>`]);
+    section(container, "PROGRESSION", [`${progressBar(state.percent)} \`${state.percent}%\``]);
+  }
+
+  section(
+    container,
+    "HISTORIQUE",
+    state.tierDates.map(({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:d> (<t:${unix(date)}:R>)`)
+  );
+
+  container.addActionRowComponents(navRow("boost", member.id, invokerId));
   return payload(container);
 }
 
 function renderBadge(member, invokerId) {
-  return renderTierCard({
-    title: `Progression Badge de ${member.displayName}`,
-    member,
-    invokerId,
-    viewKey: "badge",
-    startDate: member.user.createdAt,
-    tiers: BADGE_TIERS,
-  });
-}
+  const container = new ContainerBuilder();
+  text(container, `# Progression Nitro de ${member.displayName}`);
 
-function renderBoost(member, invokerId) {
-  return renderTierCard({
-    title: `Progression Boost de ${member.displayName}`,
-    member,
-    invokerId,
-    viewKey: "boost",
-    startDate: member.premiumSince,
-    tiers: BOOST_TIERS,
-    emptyDescription: "Ce membre ne boost pas actuellement ce serveur.",
-  });
+  const start = badgeStartDate(member);
+  const state = computeTierState(start, BADGE_TIERS);
+  text(container, `> **Début du Nitro** : <t:${unix(start)}:F>\n> **Current** : ${state.currentTier.months} mois`);
+
+  section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
+
+  if (state.maxed) {
+    section(container, "PROGRESSION", ["Palier maximum atteint 🎉"]);
+  } else {
+    section(container, "PROCHAIN BADGE", [`${state.nextTier.emoji} **${state.nextTier.label}** : <t:${unix(state.nextTierDate)}:R>`]);
+    section(container, "PROGRESSION", [`${progressBar(state.percent)} \`${state.percent}%\``]);
+  }
+
+  section(
+    container,
+    "PROCHAINS BADGES",
+    state.tierDates.map(({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:d> (<t:${unix(date)}:R>)`)
+  );
+
+  container.addActionRowComponents(navRow("badge", member.id, invokerId));
+  return payload(container);
 }
 
 function renderProfil(member, client, invokerId) {
-  const badgeState = computeTierState(member.user.createdAt, BADGE_TIERS);
+  const badgeState = computeTierState(badgeStartDate(member), BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
-  const badgesLine = [badgeState.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ") || "aucun";
-
-  const container = buildCard({
-    title: `Profil de ${member.displayName}`,
-    thumbnail: member.displayAvatarURL({ size: 256 }),
-    image: member.displayAvatarURL({ size: 1024 }),
-    fields: [
-      { name: "User", value: `<@${member.id}>` },
-      { name: "ID", value: member.id },
-      { name: "Date de création", value: `<t:${unix(member.user.createdAt)}:F>` },
-      { name: "Badges", value: badgesLine },
-    ],
-  });
-
-  const badgeNext = badgeState.maxed
-    ? "Palier maximum atteint 🎉"
-    : `Next : ${badgeState.nextTier.emoji} <t:${unix(badgeState.nextTierDate)}:R> — ${badgeState.percent}%`;
-  appendText(
+  const container = new ContainerBuilder();
+  text(container, `# Profile de ${member.displayName}`);
+  text(
     container,
-    `**Badge**\n${badgeState.currentTier.emoji} ${badgeState.currentTier.label} (${badgeState.currentTier.months} mois)\n${badgeNext}`
+    `> **User :** <@${member.id}>\n> **ID :** \`${member.id}\`\n> **Date de creation :** \`${formatDateTime(member.user.createdAt)}\``
   );
+
+  const badgeEmojis = [badgeState.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ");
+  section(container, "Badges", [badgeEmojis]);
+
+  const nitroLines = [`${badgeState.currentTier.emoji} **Nitro** (${badgeState.currentTier.months} mois)`];
+  if (badgeState.maxed) nitroLines.push("Palier maximum atteint 🎉");
+  else {
+    nitroLines.push(`Next : ${badgeState.nextTier.emoji} <t:${unix(badgeState.nextTierDate)}:R>`);
+    nitroLines.push(`${progressBar(badgeState.percent)} \`${badgeState.percent}%\``);
+  }
+  section(container, "Nitro", nitroLines);
 
   if (boostState) {
-    const boostNext = boostState.maxed
-      ? "Palier maximum atteint 🎉"
-      : `Next : ${boostState.nextTier.emoji} <t:${unix(boostState.nextTierDate)}:R> — ${boostState.percent}%`;
-    appendText(container, `**Boost**\n${boostState.currentTier.emoji} ${boostState.currentTier.label}\n${boostNext}`);
+    const boostLines = [`${boostState.currentTier.emoji} **Boost** (${boostState.currentTier.months} mois)`];
+    if (boostState.maxed) boostLines.push("Palier maximum atteint 🎉");
+    else {
+      boostLines.push(`Next : ${boostState.nextTier.emoji} <t:${unix(boostState.nextTierDate)}:R>`);
+      boostLines.push(`${progressBar(boostState.percent)} \`${boostState.percent}%\``);
+    }
+    section(container, "Boost", boostLines);
   } else {
-    appendText(container, "**Boost**\nAucun boost actif sur ce serveur.");
+    section(container, "Boost", ["Aucun boost actif sur ce serveur."]);
   }
 
+  const pfpUrl = member.displayAvatarURL({ size: 1024, extension: "png" });
+  section(container, "`🦋` Utils", [`Pfp : **[Download](${pfpUrl})**`]);
+
   const mutualGuilds = [...client.guilds.cache.values()].filter((g) => g.members.cache.has(member.id));
-  appendText(
+  section(
     container,
-    `**Serveur en commun**\n${mutualGuilds.length ? mutualGuilds.map((g) => `• ${g.name}`).join("\n") : "Aucun autre serveur en commun connu."}`
+    "`🍂` Serveur en commun",
+    mutualGuilds.length ? mutualGuilds.map((g) => `- ***${g.name}***`) : ["Aucun autre serveur en commun connu."]
   );
 
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel("Télécharger le pfp")
-        .setStyle(ButtonStyle.Link)
-        .setURL(member.displayAvatarURL({ size: 1024, extension: "png" }))
-    )
-  );
   container.addActionRowComponents(navRow("profil", member.id, invokerId));
   return payload(container);
 }
