@@ -13,15 +13,17 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
-const { BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./boostProgress");
+const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
 
 const VIEWS = [
+  { key: "nitro", label: "Nitro" },
   { key: "boost", label: "Boost" },
   { key: "profil", label: "Profil" },
 ];
 
 // Une couleur d'accent par carte pour bien les distinguer visuellement.
 const ACCENT_COLORS = {
+  nitro: 0xe67e22, // orange/bronze, façon Nitro
   boost: 0xf47fff, // rose boost officiel Discord
   profil: 0x5865f2, // blurple Discord
 };
@@ -76,6 +78,39 @@ function header(container, member, title, infoLines) {
   );
 }
 
+// Paliers "Nitro" calculés sur l'ancienneté du compte (`user.createdAt`) :
+// automatique pour tout le monde, y compris un membre qui vient d'arriver.
+// Voir BADGE_TIERS dans badgeProgress.js : c'est cosmétique, pas un vrai
+// suivi d'abonnement Nitro (l'API ne l'expose pas).
+function renderNitro(member, invokerId) {
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.nitro);
+  const start = member.user.createdAt;
+  const state = computeTierState(start, BADGE_TIERS);
+
+  header(container, member, `Progression Nitro de ${member.displayName}`, [
+    `**Création du compte** : <t:${unix(start)}:F>`,
+    `**Current** : ${state.currentTier.months} mois`,
+  ]);
+
+  section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
+
+  if (state.maxed) {
+    section(container, "PROGRESSION", ["Palier maximum atteint 🎉"]);
+  } else {
+    section(container, "PROCHAIN BADGE", [`${state.nextTier.emoji} **${state.nextTier.label}** : <t:${unix(state.nextTierDate)}:R>`]);
+    section(container, "PROGRESSION", [`${progressBar(state.percent)} \`${state.percent}%\``]);
+  }
+
+  section(
+    container,
+    "PROCHAINS BADGES",
+    state.tierDates.map(({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:d> (<t:${unix(date)}:R>)`)
+  );
+
+  container.addActionRowComponents(navRow("nitro", member.id, invokerId));
+  return payload(container);
+}
+
 function renderBoost(member, invokerId) {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.boost);
 
@@ -127,7 +162,9 @@ async function fetchMutualGuilds(member, client) {
 }
 
 async function renderProfil(member, client, invokerId) {
-  // Boost : `premiumSince`, refetché avec le membre à chaque rendu, jamais stocké.
+  // Nitro : ancienneté du compte (cosmétique, voir renderNitro). Boost :
+  // `premiumSince`, refetché avec le membre à chaque rendu, jamais stocké.
+  const badgeState = computeTierState(member.user.createdAt, BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
@@ -137,7 +174,16 @@ async function renderProfil(member, client, invokerId) {
     `**Date de creation :** \`${formatDateTime(member.user.createdAt)}\``,
   ]);
 
-  section(container, "Badges", [boostState ? boostState.currentTier.emoji : "aucun"]);
+  const badgeEmojis = [badgeState.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ");
+  section(container, "Badges", [badgeEmojis]);
+
+  const nitroLines = [`${badgeState.currentTier.emoji} **Nitro** (${badgeState.currentTier.months} mois)`];
+  if (badgeState.maxed) nitroLines.push("Palier maximum atteint 🎉");
+  else {
+    nitroLines.push(`Next : ${badgeState.nextTier.emoji} <t:${unix(badgeState.nextTierDate)}:R>`);
+    nitroLines.push(`${progressBar(badgeState.percent)} \`${badgeState.percent}%\``);
+  }
+  section(container, "Nitro", nitroLines);
 
   if (boostState) {
     const boostLines = [`${boostState.currentTier.emoji} **Boost** (${boostState.currentTier.months} mois)`];
@@ -186,6 +232,7 @@ async function handle(interaction) {
     return;
   }
 
+  if (view === "nitro") return interaction.update(renderNitro(member, invokerId));
   if (view === "boost") return interaction.update(renderBoost(member, invokerId));
   if (view === "profil") {
     // renderProfil interroge les serveurs en commun (I/O) : on accuse
@@ -197,4 +244,4 @@ async function handle(interaction) {
 
 registerHandler("zinkiprofile", handle);
 
-module.exports = { renderBoost, renderProfil };
+module.exports = { renderNitro, renderBoost, renderProfil };

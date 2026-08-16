@@ -1,5 +1,30 @@
 const { DateTime } = require("luxon");
 
+// Paliers "Nitro", basés sur l'ancienneté du compte Discord (`user.createdAt`).
+//
+// ATTENTION : ce n'est PAS un vrai suivi d'abonnement Nitro. L'API bot de
+// Discord n'expose rien sur le Nitro (ni statut, ni date) — `premium_type` a
+// fuité un temps vers les bots (discord-api-docs#6623) puis a été patché. Ces
+// paliers sont donc purement cosmétiques : ils mesurent l'âge du compte, seule
+// donnée à la fois publique, automatique et exacte pour n'importe quel membre.
+// Un compte de 3 ans qui n'a jamais eu Nitro affichera quand même "Emeraude".
+//
+// Emoji unicode faute de mieux : les 9 "application emojis" d'origine ont été
+// supprimés du bot avec l'ancien système. Pour repasser à des emoji custom,
+// les uploader (Developer Portal > Emojis) et remplacer les valeurs ci-dessous
+// par `<:nom:id>`.
+const BADGE_TIERS = [
+  { months: 0, label: "Basic", emoji: "⚪" },
+  { months: 1, label: "Bronze", emoji: "🟠" },
+  { months: 3, label: "Argent", emoji: "⚪" },
+  { months: 6, label: "Or", emoji: "🟡" },
+  { months: 12, label: "Platine", emoji: "🔵" },
+  { months: 24, label: "Diamant", emoji: "💎" },
+  { months: 36, label: "Emeraude", emoji: "🟢" },
+  { months: 60, label: "Rubis", emoji: "🔴" },
+  { months: 72, label: "Opale", emoji: "🟣" },
+];
+
 // Paliers de boost, basés sur `member.premiumSince` : donnée Discord réelle
 // et exacte, jamais stockée, refetchée à chaque rendu.
 //
@@ -90,4 +115,4 @@ function computeTierState(startDate, tiers) {
   };
 }
 
-module.exports = { BOOST_TIERS, computeTierState, progressBar, addMonths, formatDateTime };
+module.exports = { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, addMonths, formatDateTime };

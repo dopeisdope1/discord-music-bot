@@ -1,6 +1,6 @@
 const { LEVEL } = require("../../utils/permLevels");
 const { extractUserId } = require("../../utils/argParsing");
-const { BADGE_TIERS, computeTierState, progressBar } = require("../../utils/nitroProgress");
+const { BADGE_TIERS, computeTierState, progressBar } = require("../../utils/badgeProgress");
 
 // Cosmétique : l'API bot n'expose aucune vraie donnée d'abonnement Nitro
 // (pas de statut, pas de date). Ceci calcule des paliers "Nitro" sur
