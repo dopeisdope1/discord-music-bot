@@ -2,6 +2,7 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { sendLog } = require("./actionLogger");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { deleteMessages } = require("./deleteMessages");
 
 // Déclencheurs texte exacts (insensibles à la casse, pas de préfixe requis,
 // accessibles à tout le monde) — chacun supprime les messages de son propre
@@ -42,8 +43,7 @@ async function handleSelfClear(client, message) {
 
   const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
   const toDelete = messages ? [...messages.values()].filter((m) => m.author.id === message.author.id) : [];
-  const deleted = toDelete.length ? await channel.bulkDelete(toDelete, true).catch(() => []) : [];
-  const count = deleted.size ?? toDelete.length;
+  const count = toDelete.length ? await deleteMessages(channel, toDelete) : 0;
 
   tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** supprimé(s) — ${joke}`)] }).catch(() => {});
 

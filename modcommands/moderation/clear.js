@@ -4,6 +4,7 @@ const { extractUserId } = require("../../utils/argParsing");
 const { sendLog } = require("../../utils/actionLogger");
 const { buildStatusEmbed } = require("../../utils/statusEmbed");
 const { randomClearJoke } = require("../../utils/jokes");
+const { deleteMessages } = require("../../utils/deleteMessages");
 
 module.exports = {
   name: "clear",
@@ -37,17 +38,17 @@ module.exports = {
     if (targetId) toDelete = toDelete.filter((m) => m.author.id === targetId);
     toDelete = toDelete.slice(0, amount);
 
-    const deleted = await ctx.message.channel.bulkDelete(toDelete, true).catch(() => []);
+    const count = toDelete.length ? await deleteMessages(ctx.message.channel, toDelete) : 0;
     await ctx.message.delete().catch(() => {});
 
     sendLog(ctx.client, ctx.guildId, "moderation", {
       title: "Clear",
-      description: `${deleted.size} message(s) supprimé(s) dans <#${ctx.message.channel.id}>.`,
+      description: `${count} message(s) supprimé(s) dans <#${ctx.message.channel.id}>.`,
       actor: ctx.author,
     });
 
     const confirm = await ctx.send({
-      embeds: [buildStatusEmbed("success", `**${deleted.size}** supprimé(s) — ${randomClearJoke()}`)],
+      embeds: [buildStatusEmbed("success", `**${count}** supprimé(s) — ${randomClearJoke()}`)],
     });
     setTimeout(() => confirm?.delete().catch(() => {}), 15_000);
   },
