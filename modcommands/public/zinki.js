@@ -14,9 +14,11 @@ module.exports = {
     const targetId = raw ? extractUserId(raw) : ctx.author.id;
     if (!targetId) throw new UsageError(this.usage);
 
-    const member = await ctx.guild.members.fetch(targetId).catch(() => null);
+    // `force: true` : état réel au moment de la commande (boost récent...)
+    // plutôt que ce qui traîne dans le cache de la gateway.
+    const member = await ctx.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
     if (!member) throw new BotError("Membre introuvable sur ce serveur.");
 
-    await ctx.reply(renderProfil(member, ctx.client, ctx.author.id));
+    await ctx.reply(await renderProfil(member, ctx.client, ctx.author.id));
   },
 };

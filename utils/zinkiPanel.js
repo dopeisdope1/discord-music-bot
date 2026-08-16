@@ -24,14 +24,18 @@ const ACCENT_COLORS = {
   profil: 0x5865f2, // blurple Discord
 };
 
+// La vue active reste CLIQUABLE (contrairement à la barre du &panel) : les
+// pourcentages/barres de progression sont calculés au moment du rendu et
+// figés dans le message, donc recliquer la vue courante sert de bouton
+// "actualiser". Les dates en <t:...:R> ("dans 12 jours"), elles, sont déjà
+// live côté client Discord et n'ont jamais besoin d'être rafraîchies.
 function navRow(currentView, targetId, invokerId) {
   return new ActionRowBuilder().addComponents(
     VIEWS.map((v) =>
       new ButtonBuilder()
         .setCustomId(`zinkiprofile:${v.key}:${targetId}:${invokerId}`)
-        .setLabel(v.label)
+        .setLabel(v.key === currentView ? `${v.label} ⟳` : v.label)
         .setStyle(v.key === currentView ? ButtonStyle.Primary : ButtonStyle.Secondary)
-        .setDisabled(v.key === currentView)
     )
   );
 }
@@ -126,7 +130,23 @@ function renderBadge(member, invokerId) {
   return payload(container);
 }
 
-function renderProfil(member, client, invokerId) {
+// Serveurs en commun : `guild.members.cache` n'est pas fiable (le cache d'un
+// serveur peut être partiel/vieilli selon ce que la gateway a poussé), donc
+// on interroge réellement chaque serveur. `fetch` sur un membre absent lève
+// une erreur — c'est justement le signal "pas en commun".
+async function fetchMutualGuilds(member, client) {
+  const guilds = [...client.guilds.cache.values()];
+  const results = await Promise.all(
+    guilds.map(async (guild) => {
+      if (guild.members.cache.has(member.id)) return guild;
+      const found = await guild.members.fetch(member.id).catch(() => null);
+      return found ? guild : null;
+    })
+  );
+  return results.filter(Boolean);
+}
+
+async function renderProfil(member, client, invokerId) {
   const badgeState = computeTierState(badgeStartDate(member), BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
@@ -163,7 +183,7 @@ function renderProfil(member, client, invokerId) {
   const pfpUrl = member.displayAvatarURL({ size: 1024, extension: "png" });
   section(container, "`🦋` Utils", [`Pfp : **[Download](${pfpUrl})**`]);
 
-  const mutualGuilds = [...client.guilds.cache.values()].filter((g) => g.members.cache.has(member.id));
+  const mutualGuilds = await fetchMutualGuilds(member, client);
   section(
     container,
     "`🍂` Serveur en commun",
@@ -182,7 +202,10 @@ async function handle(interaction) {
     return;
   }
 
-  const member = await interaction.guild.members.fetch(targetId).catch(() => null);
+  // `force: true` : on veut l'état réel au moment du clic (boost qui vient
+  // d'être activé/expiré...), pas ce que la gateway avait poussé au départ —
+  // c'est tout l'intérêt de recliquer pour actualiser.
+  const member = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
   if (!member) {
     await interaction.reply({ content: "Membre introuvable.", ephemeral: true });
     return;
@@ -190,7 +213,12 @@ async function handle(interaction) {
 
   if (view === "badge") return interaction.update(renderBadge(member, invokerId));
   if (view === "boost") return interaction.update(renderBoost(member, invokerId));
-  if (view === "profil") return interaction.update(renderProfil(member, interaction.client, invokerId));
+  if (view === "profil") {
+    // renderProfil interroge les serveurs en commun (I/O) : on accuse
+    // réception d'abord pour ne pas dépasser les 3s imposées par Discord.
+    await interaction.deferUpdate();
+    return interaction.editReply(await renderProfil(member, interaction.client, invokerId));
+  }
 }
 
 registerHandler("zinkiprofile", handle);
