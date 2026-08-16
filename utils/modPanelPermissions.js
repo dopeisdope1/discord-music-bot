@@ -13,6 +13,8 @@ const panelRouter = require("./modPanelRouter");
 const permissionsStore = require("./permissionsStore");
 const { loadAllCommands } = require("./modCommandLoader");
 const { LEVEL } = require("./permLevels");
+const { effectiveLevel } = require("./accessControl");
+const commandStateStore = require("./commandStateStore");
 const { VOICE_ACTIONS, actionLabel } = require("./voiceAccess");
 const { chunk, listField } = require("./textHelpers");
 
@@ -20,12 +22,26 @@ const KEY = "permissions";
 const LIST_PAGE_SIZE = 8;
 const CMD_PAGE_SIZE = 20;
 
-function configurableCommandNames() {
-  return [...loadAllCommands().values()]
-    .filter((c) => c.level === LEVEL.CONFIGURABLE || c.level === LEVEL.CONFIGURABLE_NO_COOLDOWN)
-    .map((c) => c.name)
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .sort();
+// Niveaux attribuables à une permission. `owner`/`sys`/`super_sys` en sont
+// absents : ils ne passent pas par les slots (voir utils/accessControl.js) et
+// les proposer ici ne ferait qu'afficher un réglage sans effet.
+//
+// On lit `effectiveLevel` et non `command.level` : un niveau posé via
+// `&change` doit être pris en compte, sinon une commande passée en
+// `configurable` resterait introuvable dans ce sélecteur.
+const PICKABLE_LEVELS = [LEVEL.CONFIGURABLE, LEVEL.CONFIGURABLE_NO_COOLDOWN, LEVEL.PUBLIC];
+
+function pickableCommands() {
+  const seen = new Set();
+  const out = [];
+  for (const command of loadAllCommands().values()) {
+    if (seen.has(command.name)) continue; // le registre indexe aussi les alias
+    seen.add(command.name);
+    const level = effectiveLevel(command);
+    if (!PICKABLE_LEVELS.includes(level)) continue;
+    out.push({ name: command.name, isPublic: level === LEVEL.PUBLIC });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function renderList(guildId, page = 0) {
@@ -111,9 +127,14 @@ function renderDetail(guildId, slotId) {
 // retrouverait cochable comme une commande.
 function renderCommandPicker(guildId, slotId, mode, page = 0, note) {
   const slot = permissionsStore.get(guildId, slotId);
-  const all = configurableCommandNames();
+  const all = pickableCommands();
   const attached = new Set(slot.commands);
-  const candidates = mode === "add" ? all.filter((c) => !attached.has(c)) : [...attached];
+  // En retrait, on part de ce que le slot contient RÉELLEMENT : une commande
+  // supprimée du bot depuis resterait sinon impossible à décrocher.
+  const candidates =
+    mode === "add"
+      ? all.filter((c) => !attached.has(c.name))
+      : [...attached].map((name) => all.find((c) => c.name === name) || { name, isPublic: false });
 
   const pages = chunk(candidates, CMD_PAGE_SIZE);
   const totalPages = Math.max(1, pages.length);
@@ -137,7 +158,7 @@ function renderCommandPicker(guildId, slotId, mode, page = 0, note) {
         buildSelect(
           `modpanel:permissions:cmdpicker:${slotId}:${mode}:${page}`,
           `Choisir une ou plusieurs commandes (${current.length} sur cette page)`,
-          current.map((c) => ({ label: c, value: c })),
+          current.map((c) => ({ label: c.isPublic ? `${c.name} (publique)` : c.name, value: c.name })),
           { min: 0, max: current.length }
         )
       )
@@ -306,13 +327,32 @@ async function handle(interaction) {
 
     if (!picked.length) return interaction.update(renderCommandPicker(guildId, slotId, mode, page));
 
+    // Une commande publique est autorisée AVANT même de consulter les slots
+    // (voir utils/accessControl.js) : l'attacher à une permission n'aurait
+    // donc aucun effet tant qu'elle reste publique. On la bascule en
+    // `configurable` pour que le réglage veuille dire quelque chose.
+    const promoted = [];
     for (const commandName of picked) {
-      if (mode === "add") permissionsStore.addCommand(guildId, slotId, commandName);
-      else permissionsStore.removeCommand(guildId, slotId, commandName);
+      if (mode === "add") {
+        permissionsStore.addCommand(guildId, slotId, commandName);
+        const command = loadAllCommands().get(commandName);
+        if (command && effectiveLevel(command) === LEVEL.PUBLIC) {
+          commandStateStore.setLevel(commandName, LEVEL.CONFIGURABLE);
+          promoted.push(commandName);
+        }
+      } else {
+        permissionsStore.removeCommand(guildId, slotId, commandName);
+      }
     }
 
     const verb = mode === "add" ? "ajoutée" : "retirée";
-    const note = `✅ ${picked.length} commande${picked.length > 1 ? "s" : ""} ${verb}${picked.length > 1 ? "s" : ""} : ${picked.join(", ")}`;
+    let note = `✅ ${picked.length} commande${picked.length > 1 ? "s" : ""} ${verb}${picked.length > 1 ? "s" : ""} : ${picked.join(", ")}`;
+    if (promoted.length) {
+      note +=
+        `\n⚠️ ${promoted.join(", ")} ${promoted.length > 1 ? "étaient publiques" : "était publique"} : ` +
+        "désormais réservée(s) aux permissions qui la/les contiennent. " +
+        "Le niveau d'une commande vaut pour **tous les serveurs** du bot ; `&change` permet de revenir en arrière.";
+    }
     // La liste des candidats a changé : on repart page 0 pour ne pas tomber
     // sur une page devenue vide.
     return interaction.update(renderCommandPicker(guildId, slotId, mode, 0, note));
