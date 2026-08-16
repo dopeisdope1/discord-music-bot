@@ -26,6 +26,7 @@ const {
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { loadGuildConfig } = require("./utils/configChannel");
+const { restorePublicRestrictions } = require("./utils/publicCommandSync");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 
 const client = new Client({
@@ -543,9 +544,18 @@ client.once("ready", () => {
     // reviendraient à leur valeur par défaut à chaque push (voir
     // utils/configChannel.js, qui sauvegarde tout ça dans un salon Discord
     // caché).
-    loadGuildConfig(guild).catch((err) => {
-      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
-    });
+    loadGuildConfig(guild)
+      .then(() => {
+        // Doit venir APRÈS l'hydratation : les permissions restaurées sont ce
+        // qui permet de retrouver les commandes publiques restreintes.
+        const restored = restorePublicRestrictions(guild.id);
+        if (restored.length) {
+          console.log(`[permissions] "${guild.name}" — commandes publiques à nouveau restreintes : ${restored.join(", ")}`);
+        }
+      })
+      .catch((err) => {
+        console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
+      });
   }
 });
 
@@ -554,9 +564,11 @@ client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
   });
-  loadGuildConfig(guild).catch((err) => {
-    console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
-  });
+  loadGuildConfig(guild)
+    .then(() => restorePublicRestrictions(guild.id))
+    .catch((err) => {
+      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
+    });
 });
 
 // Sans handler, Node.js termine le process instantanément sur SIGTERM (le
