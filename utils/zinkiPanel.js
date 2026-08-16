@@ -14,6 +14,7 @@ const {
 } = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
 const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
+const nitroStore = require("./nitroStore");
 
 const VIEWS = [
   { key: "badge", label: "Badge" },
@@ -78,14 +79,17 @@ function header(container, member, title, infoLines) {
   );
 }
 
-// Date de départ du suivi "Badge" (façon Nitro) : arrivée sur CE serveur
-// (donnée réelle Discord, `member.joinedAt`) plutôt que la création du
-// compte — un compte flambant neuf qui rejoint peu après sa création est ce
-// qui explique l'écart de ~2h entre "Début du Nitro" et "Date de création"
-// observé sur la référence. Repli sur la création du compte si `joinedAt`
-// est indisponible (cas rare de l'API Discord).
+// Date de départ de la progression "Nitro".
+//
+// L'API bot de Discord n'expose NI l'abonnement Nitro NI sa date (vérifié sur
+// un compte Nitro réel : ni `premium_type`, ni flag dans `public_flags`), donc
+// la vraie date ne peut venir que d'une saisie manuelle (&setnitro). Sans
+// valeur enregistrée, on retombe sur l'arrivée sur le serveur (`joinedAt`),
+// qui n'est qu'une approximation — d'où le libellé "estimée" côté affichage.
 function badgeStartDate(member) {
-  return member.joinedAt || member.user.createdAt;
+  const manual = nitroStore.getNitroStart(member.guild.id, member.id);
+  if (manual) return { date: manual, exact: true };
+  return { date: member.joinedAt || member.user.createdAt, exact: false };
 }
 
 function renderBoost(member, invokerId) {
@@ -125,10 +129,10 @@ function renderBoost(member, invokerId) {
 function renderBadge(member, invokerId) {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.badge);
 
-  const start = badgeStartDate(member);
+  const { date: start, exact } = badgeStartDate(member);
   const state = computeTierState(start, BADGE_TIERS);
   header(container, member, `Progression Nitro de ${member.displayName}`, [
-    `**Début du Nitro** : <t:${unix(start)}:F>`,
+    `**Début du Nitro** : <t:${unix(start)}:F>${exact ? "" : " *(estimée — `&setnitro` pour la vraie date)*"}`,
     `**Current** : ${state.currentTier.months} mois`,
   ]);
 
@@ -168,7 +172,7 @@ async function fetchMutualGuilds(member, client) {
 }
 
 async function renderProfil(member, client, invokerId) {
-  const badgeState = computeTierState(badgeStartDate(member), BADGE_TIERS);
+  const badgeState = computeTierState(badgeStartDate(member).date, BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
