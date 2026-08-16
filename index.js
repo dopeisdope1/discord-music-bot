@@ -6,7 +6,7 @@ const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-// Nouveau système de modération/panel (porté depuis le projet "zinki") — voir
+// Système de modération/panel — voir
 // utils/modMessageRouter.js pour le détail du pipeline (permissions, cooldowns,
 // blacklist de salons, anti-raid).
 const { handleModerationTextCommand } = require("./utils/modMessageRouter");

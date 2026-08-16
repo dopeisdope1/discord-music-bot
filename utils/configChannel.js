@@ -2,7 +2,7 @@ const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { getRawGuildData: getRawPrefixes, hydrateFromRemote: hydratePrefixes } = require("./prefixStore");
 const { getRawGuildData: getRawLogChannels, hydrateFromRemote: hydrateLogChannels } = require("./logStore");
 const { getRawGuildData: getRawWelcome, hydrateFromRemote: hydrateWelcome } = require("./welcomeStore");
-// Nouveau système de modération/panel (porté depuis le projet "zinki") —
+// Système de modération/panel —
 // remplace l'ancien commandPermissionStore/permTierStore.
 const { getRawGuildData: getRawPermissions, hydrateFromRemote: hydratePermissions } = require("./permissionsStore");
 const { getRawGuildData: getRawChannelBlacklist, hydrateFromRemote: hydrateChannelBlacklist } = require("./channelBlacklistStore");

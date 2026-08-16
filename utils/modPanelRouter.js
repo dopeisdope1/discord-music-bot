@@ -3,7 +3,7 @@ const { registerHandler } = require("./modInteractionRegistry");
 const botAdminsStore = require("./botAdminsStore");
 const { saveGuildConfig } = require("./configChannel");
 
-// Ordre des rubriques : les 6 du projet zinki + 2 propres à ce bot
+// Ordre des rubriques (voir buildNavButtons pour la barre de navigation).
 // (Préfixes/Bienvenue, portées par l'ancien &panel). Même ordre utilisé pour
 // la barre de boutons de navigation (voir utils/panelComponents.js#buildNavButtons).
 const RUBRIQUES = [

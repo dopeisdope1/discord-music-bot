@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Slots hiérarchiques "Permission N" par serveur — équivalent JSON du moteur
-// de permissions du projet "zinki" (position, exclusive, cooldown, rôles/
+// de permissions (position, exclusive, cooldown, rôles/
 // membres/commandes), stocké ici en JSON plutôt qu'en base pour pouvoir
 // être sauvegardé/restauré via le salon "zinki-config" comme tout le reste
 // de la config de ce bot (voir utils/configChannel.js) — survit ainsi aux

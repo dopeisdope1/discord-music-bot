@@ -4,7 +4,7 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "addroleConfig.json");
 
-// Mêmes valeurs par défaut que le projet zinki : bloque l'ajout/retrait en
+// Valeurs par défaut : bloque l'ajout/retrait en
 // masse de rôles porteurs de permissions sensibles.
 const DEFAULT_BLOCKED = ["KickMembers", "BanMembers", "Administrator", "ManageChannels", "ManageGuild", "ManageRoles"];
 

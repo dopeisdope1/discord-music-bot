@@ -5,7 +5,7 @@ const addroleConfigStore = require("./addroleConfigStore");
 
 const KEY = "addrole";
 
-// Mêmes 20 permissions curées que le projet zinki (plafonné à 25, limite des
+// 20 permissions curées (plafonné à 25, limite des
 // menus déroulants Discord). Valeurs = noms de clés PermissionFlagsBits.
 const PERMISSION_OPTIONS = [
   ["CreateInstantInvite", "Créer une invitation"],
