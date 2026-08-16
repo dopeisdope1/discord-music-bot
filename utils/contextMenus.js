@@ -7,9 +7,12 @@ const {
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
+const { loadAllCommands } = require("./modCommandLoader");
+const { checkAccess, isDisabled } = require("./accessControl");
 const { registerHandler } = require("./modInteractionRegistry");
 const { canDoVoiceAction } = require("./voiceAccess");
 const { sendLog } = require("./actionLogger");
+const { renderProfil } = require("./zinkiPanel");
 
 // Entrées ajoutées au menu "clic droit sur un membre > Applications".
 // Le clic droit NATIF de Discord ("Rendre muet sur le serveur", "Déplacer
@@ -18,13 +21,16 @@ const { sendLog } = require("./actionLogger");
 // seul point d'entrée. Discord y limite à 5 entrées de type "utilisateur",
 // d'où les bascules muet/parole et sourd/écoute sur une seule entrée chacune.
 //
-// Chaque entrée exige l'action vocale correspondante, accordée par slot dans
-// &panel > Permissions (voir utils/voiceAccess.js).
+// Les 4 entrées vocales exigent l'action vocale correspondante, accordée par
+// slot dans &panel > Permissions (voir utils/voiceAccess.js) — inchangé.
+// "Voir le profil" est gérée à part : elle exige la permission de la
+// commande `zinki` (même moteur que les commandes texte, voir denyReason).
 const MENUS = {
   "Déplacer en vocal": { action: "move" },
   "Muet vocal": { action: "mute" },
   "Sourd vocal": { action: "deaf" },
   "Déconnecter du vocal": { action: "disconnect" },
+  "Voir le profil": { action: "profile", command: "zinki" },
 };
 
 function buildDefinitions() {
@@ -34,6 +40,20 @@ function buildDefinitions() {
 }
 
 const ephemeral = (content) => ({ content, flags: MessageFlags.Ephemeral });
+
+/**
+ * Vérifie l'accès via le MÊME moteur que les commandes texte (slots de
+ * &panel > Permissions). Retourne un message d'erreur, ou null si c'est bon.
+ * Utilisé uniquement par les entrées liées à une commande (ex: "Voir le
+ * profil" -> `zinki`), pas par les actions vocales (voir canDoVoiceAction).
+ */
+function denyReason(commandName, member) {
+  const command = loadAllCommands().get(commandName);
+  if (!command) return "Commande introuvable.";
+  if (isDisabled(command)) return "Cette commande est désactivée.";
+  if (!checkAccess(command, member).allowed) return "Tu n'as pas la permission d'utiliser ça.";
+  return null;
+}
 
 // Hiérarchie : on bloque seulement si la cible est STRICTEMENT au-dessus.
 // Un rôle égal passe, pour que des membres d'un même rôle (ex: "adhérent")
@@ -62,8 +82,16 @@ async function handleContextMenu(interaction) {
   const target = await interaction.guild.members.fetch({ user: interaction.targetId, force: true }).catch(() => null);
   if (!target) return interaction.reply(ephemeral("Membre introuvable."));
 
-  if (!canDoVoiceAction(interaction.member, menu.action)) {
-    return interaction.reply(ephemeral("❌ Tu n'as pas la permission de faire ça."));
+  const deny = menu.command
+    ? denyReason(menu.command, interaction.member)
+    : canDoVoiceAction(interaction.member, menu.action)
+      ? null
+      : "Tu n'as pas la permission de faire ça.";
+  if (deny) return interaction.reply(ephemeral(`❌ ${deny}`));
+
+  if (menu.action === "profile") {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    return interaction.editReply(await renderProfil(target, interaction.client, interaction.user.id));
   }
 
   const hierarchy = hierarchyReason(interaction, target);
