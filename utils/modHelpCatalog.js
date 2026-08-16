@@ -2,7 +2,8 @@ const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacing
 const { buildSelect, appendText, actionRow, payload } = require("./panelComponents");
 const { registerHandler } = require("./modInteractionRegistry");
 const { loadAllCommands } = require("./modCommandLoader");
-const { effectiveLevel, checkAccess, isDisabled } = require("./accessControl");
+const { effectiveLevel, isDisabled } = require("./accessControl");
+const { canRunCommand } = require("./voiceAccess");
 const { LEVEL } = require("./permLevels");
 
 const CATEGORIES = [
@@ -30,7 +31,7 @@ function commandsInCategory(categoryKey, member) {
   return allVisibleCommands()
     .filter((c) => category.levels.includes(effectiveLevel(c)))
     .filter((c) => !isDisabled(c))
-    .filter((c) => !member || checkAccess(c, member).allowed)
+    .filter((c) => !member || canRunCommand(c, member))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

@@ -7,6 +7,7 @@ const { LEVEL } = require("./permLevels");
 const cooldowns = require("./modCooldowns");
 const { BotError, UsageError, PermissionError } = require("./modErrors");
 const channelBlacklistStore = require("./channelBlacklistStore");
+const { canRunCommand } = require("./voiceAccess");
 const antiraidDetector = require("./antiraidDetector");
 const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 
@@ -72,8 +73,11 @@ async function handleModerationTextCommand(client, message) {
   if (isDisabled(command)) return;
   if (!ctx.isSuperSys && channelBlacklistStore.isBlacklisted(ctx.guildId, command.name, message.channel.id)) return;
 
+  // canRunCommand couvre aussi l'accès Voice Master pour `voc` (voir
+  // utils/voiceAccess.js) ; checkAccess reste utilisé juste après pour le
+  // cooldown, qui lui vient toujours du slot de permission.
+  if (!canRunCommand(command, message.member)) return;
   const access = checkAccess(command, message.member);
-  if (!access.allowed) return;
 
   if (access.cooldownSeconds) {
     const key = `${ctx.guildId}:${message.author.id}:${command.name}`;

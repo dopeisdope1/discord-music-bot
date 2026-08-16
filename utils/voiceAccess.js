@@ -27,4 +27,19 @@ function canDoVoiceAction(member, action) {
   return voiceMasterStore.allowsAction(guildId, action);
 }
 
-module.exports = { canDoVoiceAction, VOC_COMMAND };
+/**
+ * Accès à une commande en tenant compte des DEUX voies : les slots de
+ * permissions, et Voice Master pour `voc`. À utiliser partout où l'on décide
+ * si quelqu'un peut lancer/voir une commande (routeur, &help), sinon un rôle
+ * Voice Master pourrait cliquer dans le menu contextuel sans pouvoir taper
+ * `&voc`, et sans jamais la voir listée.
+ * @param {{name: string}} command
+ * @param {import('discord.js').GuildMember} member
+ */
+function canRunCommand(command, member) {
+  if (isDisabled(command)) return false;
+  if (checkAccess(command, member).allowed) return true;
+  return command.name === VOC_COMMAND && canDoVoiceAction(member);
+}
+
+module.exports = { canDoVoiceAction, canRunCommand, VOC_COMMAND };
