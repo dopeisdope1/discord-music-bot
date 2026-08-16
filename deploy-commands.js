@@ -1,7 +1,6 @@
 require("dotenv").config();
 const path = require("path");
 const { REST, Routes } = require("discord.js");
-const { buildDefinitions: buildContextMenus } = require("./utils/contextMenus");
 
 // Voir index.js pour la même liste de fichiers.
 const BOT_COMMAND_FILES = {
@@ -16,12 +15,7 @@ if (!BOT_COMMAND_FILES[target]) {
 }
 
 const commandsPath = path.join(__dirname, "commands");
-const slashCommands = BOT_COMMAND_FILES[target].map((file) => require(path.join(commandsPath, file)).data.toJSON());
-
-// Les menus contextuels (clic droit sur un membre) sont déployés EN MÊME
-// TEMPS que les commandes slash : l'API remplace l'intégralité des commandes
-// à chaque envoi, donc les déployer séparément effacerait les autres.
-const commands = [...slashCommands, ...buildContextMenus()];
+const commands = BOT_COMMAND_FILES[target].map((file) => require(path.join(commandsPath, file)).data.toJSON());
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
@@ -31,9 +25,7 @@ const applicationId =
   process.env.CLIENT_ID || Buffer.from(process.env.DISCORD_TOKEN.split(".")[0], "base64").toString();
 
 (async () => {
-  console.log(
-    `⏳ Déploiement de ${slashCommands.length} commande(s) slash + ${commands.length - slashCommands.length} menu(s) contextuel(s)...`
-  );
+  console.log(`⏳ Déploiement de ${commands.length} commande(s) slash pour le bot "${target}"...`);
 
   const route = process.env.GUILD_ID
     ? Routes.applicationGuildCommands(applicationId, process.env.GUILD_ID)
