@@ -46,11 +46,14 @@ function progressBar(percent, size = 12) {
 }
 
 // Format exact de la référence pour "Date de creation" en Profile :
-// "2026-06-21 11:17" (pas un timestamp Discord <t:...> ici, une chaîne fixe).
+// "2026-06-21 11:17". C'est une chaîne fixe (pas un <t:...> Discord, qui
+// s'adapterait au fuseau de chaque lecteur) : on la calcule donc en UTC de
+// façon explicite, sinon la valeur dépendrait du fuseau de la machine qui
+// héberge le bot et changerait au moindre déménagement d'hébergeur.
 function formatDateTime(date) {
   const d = new Date(date);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
 /**
