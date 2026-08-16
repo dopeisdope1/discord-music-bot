@@ -1,11 +1,17 @@
 const { LEVEL } = require("../../utils/permLevels");
 const permissionsStore = require("../../utils/permissionsStore");
-const voiceMasterStore = require("../../utils/voiceMasterStore");
+const { actionLabel } = require("../../utils/voiceAccess");
 const { buildCard, buildTreeList, appendText, payload } = require("../../utils/panelComponents");
 
 function entryFor(slot) {
-  const combined = [...slot.roles.map((r) => `<@&${r}>`), ...slot.members.map((m) => `<@${m}>`)];
-  return [slot.name, combined.length ? combined.join(", ") : "aucun"];
+  const holders = [...slot.roles.map((r) => `<@&${r}>`), ...slot.members.map((m) => `<@${m}>`)];
+  const lines = [holders.length ? holders.join(", ") : "aucun"];
+  // Les actions vocales font partie de ce que le slot accorde : les afficher
+  // ici évite d'avoir à ouvrir le panel pour savoir qui peut gérer le vocal.
+  if (slot.voiceActions.length) {
+    lines.push(`*Vocal :* ${slot.voiceActions.map(actionLabel).join(", ")}`);
+  }
+  return [slot.name, lines.join("\n└ ")];
 }
 
 module.exports = {
@@ -26,16 +32,6 @@ module.exports = {
 
     let body = buildTreeList(hierarchical.map(entryFor), { empty: "Aucune permission configurée." });
     if (exclusive.length) body += `\n\n— Exclusives —\n\n${buildTreeList(exclusive.map(entryFor))}`;
-
-    // Voie d'accès parallèle aux slots (&panel > Voice Master) : affichée à
-    // part, sinon les rôles concernés n'apparaîtraient nulle part.
-    const vm = voiceMasterStore.getConfig(ctx.guildId);
-    if (vm.roles.length) {
-      const labels = voiceMasterStore.ACTIONS.filter((a) => vm.actions.includes(a.key)).map((a) => a.label);
-      body += `\n\n— Voice Master —\n\n${buildTreeList([
-        [vm.roles.map((r) => `<@&${r}>`).join(", "), labels.length ? labels.join(", ") : "aucune action autorisée"],
-      ])}`;
-    }
 
     appendText(container, body);
     await ctx.reply(payload(container));

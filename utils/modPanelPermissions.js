@@ -13,6 +13,7 @@ const panelRouter = require("./modPanelRouter");
 const permissionsStore = require("./permissionsStore");
 const { loadAllCommands } = require("./modCommandLoader");
 const { LEVEL } = require("./permLevels");
+const { VOICE_ACTIONS, actionLabel } = require("./voiceAccess");
 const { chunk, listField } = require("./textHelpers");
 
 const KEY = "permissions";
@@ -63,9 +64,26 @@ function renderDetail(guildId, slotId) {
       { name: "Rôles", value: listField(slot.roles.map((r) => `<@&${r}>`), { empty: "aucun" }) },
       { name: "Membres", value: listField(slot.members.map((m) => `<@${m}>`), { empty: "aucun" }) },
       { name: "Commandes", value: listField(slot.commands.map((c) => `\`${c}\``), { empty: "aucune" }) },
+      {
+        name: "Actions vocales",
+        value: slot.voiceActions.length ? slot.voiceActions.map(actionLabel).join(", ") : "aucune",
+      },
       { name: "Cooldown", value: slot.cooldownSeconds != null ? `${slot.cooldownSeconds}s` : "aucun" },
     ],
   });
+
+  // Les actions vocales se cochent directement ici (multi-sélection), pour
+  // pouvoir les régler par slot — y compris sur un slot exclusif.
+  container.addActionRowComponents(
+    actionRow(
+      buildSelect(
+        `modpanel:permissions:voiceactions:${slot.id}`,
+        "Actions vocales accordées par cette permission",
+        VOICE_ACTIONS.map((a) => ({ label: a.label, value: a.key, default: slot.voiceActions.includes(a.key) })),
+        { min: 0, max: VOICE_ACTIONS.length }
+      )
+    )
+  );
 
   const options = [
     { label: "Ajouter un rôle", value: "addrole" },
@@ -78,7 +96,7 @@ function renderDetail(guildId, slotId) {
     { label: "Retirer un cooldown", value: "removecooldown" },
     { label: "Renommer", value: "rename" },
     { label: "Déplacer", value: "move" },
-    { label: "Convertir en exclusive", value: "exclusive" },
+    { label: slot.exclusive ? "Convertir en hiérarchique" : "Convertir en exclusive", value: "exclusive" },
     { label: "Supprimer", value: "delete" },
     { label: "Retour", value: "back" },
   ];
@@ -298,6 +316,12 @@ async function handle(interaction) {
     // La liste des candidats a changé : on repart page 0 pour ne pas tomber
     // sur une page devenue vide.
     return interaction.update(renderCommandPicker(guildId, slotId, mode, 0, note));
+  }
+
+  if (view === "voiceactions") {
+    const slotId = Number(parts[3]);
+    permissionsStore.setVoiceActions(guildId, slotId, interaction.values);
+    return interaction.update(renderDetail(guildId, slotId));
   }
 
   if (view === "cmdpage") {

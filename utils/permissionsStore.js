@@ -41,11 +41,17 @@ function ensureGuild(guildId) {
 }
 
 function listByGuild(guildId) {
-  return [...ensureGuild(guildId).slots].sort((a, b) => a.position - b.position || a.id - b.id);
+  return [...ensureGuild(guildId).slots]
+    .map((s) => (s.voiceActions ? s : { ...s, voiceActions: [] })) // slots d'avant l'ajout du champ
+    .sort((a, b) => a.position - b.position || a.id - b.id);
 }
 
 function get(guildId, slotId) {
-  return ensureGuild(guildId).slots.find((s) => s.id === slotId) || null;
+  const slot = ensureGuild(guildId).slots.find((s) => s.id === slotId) || null;
+  // `voiceActions` est arrivé après coup : les slots créés avant ne l'ont pas,
+  // et les lire sans ce garde-fou casserait tout ce qui itère dessus.
+  if (slot && !slot.voiceActions) slot.voiceActions = [];
+  return slot;
 }
 
 // Cherche un slot par ID seul (sans connaître son guildId à l'avance) — les
@@ -71,10 +77,20 @@ function create(guildId, name) {
     roles: [],
     members: [],
     commands: [],
+    // Actions vocales accordées par ce slot (voir utils/voiceAccess.js) :
+    // "move" | "mute" | "deaf" | "disconnect".
+    voiceActions: [],
   };
   g.slots.push(slot);
   save();
   return slot;
+}
+
+function setVoiceActions(guildId, slotId, actions) {
+  const slot = get(guildId, slotId);
+  if (!slot) return;
+  slot.voiceActions = [...new Set(actions)];
+  save();
 }
 
 function remove(guildId, slotId) {
@@ -196,6 +212,7 @@ module.exports = {
   removeMember,
   addCommand,
   removeCommand,
+  setVoiceActions,
   listForMember,
   getRawGuildData,
   hydrateFromRemote,

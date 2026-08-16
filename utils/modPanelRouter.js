@@ -13,7 +13,6 @@ const RUBRIQUES = [
   { key: "mute", label: "Configuration du mute" },
   { key: "addrole", label: "Config addrole / delrole" },
   { key: "antiraid", label: "Anti-raid" },
-  { key: "voicemaster", label: "Voice Master" },
   { key: "prefixes", label: "Préfixes" },
   { key: "welcome", label: "Bienvenue" },
 ];
