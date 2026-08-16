@@ -1,4 +1,13 @@
-const { ContainerBuilder, TextDisplayBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require("discord.js");
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+} = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
 const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
 
@@ -7,6 +16,13 @@ const VIEWS = [
   { key: "boost", label: "Boost" },
   { key: "profil", label: "Profil" },
 ];
+
+// Une couleur d'accent par carte pour bien les distinguer visuellement.
+const ACCENT_COLORS = {
+  badge: 0xe67e22, // orange/bronze, façon Nitro
+  boost: 0xf47fff, // rose boost officiel Discord
+  profil: 0x5865f2, // blurple Discord
+};
 
 function navRow(currentView, targetId, invokerId) {
   return new ActionRowBuilder().addComponents(
@@ -30,7 +46,9 @@ function text(container, content) {
 
 // "## heading" suivi d'un bloc de citation ">" (une ligne par entrée) — même
 // forme que la référence pour chaque sous-section (Current Badge, Progression...).
+// Séparateur fin avant chaque section, comme sur la référence.
 function section(container, heading, lines) {
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   text(container, `## ${heading}`);
   text(container, lines.map((l) => `> ${l}`).join("\n"));
 }
@@ -50,7 +68,7 @@ function badgeStartDate(member) {
 }
 
 function renderBoost(member, invokerId) {
-  const container = new ContainerBuilder();
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.boost);
   text(container, `# Progression Boost de ${member.displayName}`);
 
   if (!member.premiumSince) {
@@ -82,7 +100,7 @@ function renderBoost(member, invokerId) {
 }
 
 function renderBadge(member, invokerId) {
-  const container = new ContainerBuilder();
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.badge);
   text(container, `# Progression Nitro de ${member.displayName}`);
 
   const start = badgeStartDate(member);
@@ -112,7 +130,7 @@ function renderProfil(member, client, invokerId) {
   const badgeState = computeTierState(badgeStartDate(member), BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
-  const container = new ContainerBuilder();
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
   text(container, `# Profile de ${member.displayName}`);
   text(
     container,
