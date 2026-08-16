@@ -10,10 +10,15 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
 const { registerHandler } = require("./modInteractionRegistry");
 const { BADGE_TIERS, BOOST_TIERS, computeTierState, progressBar, formatDateTime } = require("./badgeProgress");
+const nitroStore = require("./nitroStore");
 
 const VIEWS = [
   { key: "nitro", label: "Nitro" },
@@ -78,19 +83,68 @@ function header(container, member, title, infoLines) {
   );
 }
 
-// Paliers "Nitro" calculés sur l'ancienneté du compte (`user.createdAt`) :
-// automatique pour tout le monde, y compris un membre qui vient d'arriver.
-// Voir BADGE_TIERS dans badgeProgress.js : c'est cosmétique, pas un vrai
-// suivi d'abonnement Nitro (l'API ne l'expose pas).
-function renderNitro(member, invokerId) {
-  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.nitro);
-  const start = member.user.createdAt;
-  const state = computeTierState(start, BADGE_TIERS);
+// Qui a le droit de renseigner/réinitialiser la date Nitro d'un profil :
+// la personne elle-même, ou un admin du serveur qui consulte quelqu'un d'autre.
+function canEditNitro(interactionUserId, targetId, member) {
+  if (interactionUserId === targetId) return true;
+  return Boolean(member?.permissions?.has(PermissionFlagsBits.Administrator));
+}
 
-  header(container, member, `Progression Nitro de ${member.displayName}`, [
-    `**Création du compte** : <t:${unix(start)}:F>`,
-    `**Current** : ${state.currentTier.months} mois`,
-  ]);
+function nitroModal(targetId) {
+  return new ModalBuilder()
+    .setCustomId(`zinkinitro:submit:${targetId}`)
+    .setTitle("Date d'abonnement Nitro")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("date")
+          .setLabel("Date (JJ/MM/AAAA)")
+          .setPlaceholder("15/04/2026")
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(8)
+          .setMaxLength(10)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("time")
+          .setLabel("Heure (HH:mm) — optionnel")
+          .setPlaceholder("13:24")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(5)
+          .setRequired(false)
+      )
+    );
+}
+
+// Deux sources possibles, dans cet ordre :
+//   1. la vraie date d'abonnement, si elle a été saisie (nitroStore) ;
+//   2. à défaut, la création du compte — automatique pour tout le monde, mais
+//      ce n'est PAS du Nitro, donc c'est affiché comme tel.
+//
+// L'API bot de Discord n'expose rien sur le Nitro (ni statut, ni date) : la
+// seule source exacte reste la saisie manuelle. Le repli n'est là que pour
+// que la carte ne soit jamais vide, et il est explicitement étiqueté
+// "estimation" — une date fausse présentée comme vraie serait pire que rien.
+function renderNitro(member, invokerId, viewerMember) {
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.nitro);
+  const realStart = nitroStore.getNitroSince(member.id);
+  const start = realStart || member.user.createdAt;
+  const state = computeTierState(start, BADGE_TIERS);
+  const editable = canEditNitro(invokerId, member.id, viewerMember);
+
+  header(
+    container,
+    member,
+    `Progression Nitro de ${member.displayName}`,
+    realStart
+      ? [`**Début du Nitro** : <t:${unix(start)}:F>`, `**Current** : ${state.currentTier.months} mois`]
+      : [
+          `**Création du compte** : <t:${unix(start)}:F>`,
+          `**Current** : ${state.currentTier.months} mois`,
+          "-# Estimation basée sur l'âge du compte — l'API Discord ne donne pas la date d'abonnement Nitro aux bots.",
+        ]
+  );
 
   section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
 
@@ -106,6 +160,22 @@ function renderNitro(member, invokerId) {
     "PROCHAINS BADGES",
     state.tierDates.map(({ tier, date }) => `${tier.emoji} **${tier.label}** : <t:${unix(date)}:d> (<t:${unix(date)}:R>)`)
   );
+
+  if (editable) {
+    container.addActionRowComponents(
+      realStart
+        ? new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`zinkinitro:open:${member.id}`).setLabel("Modifier la date").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`zinkinitro:reset:${member.id}`).setLabel("Réinitialiser").setStyle(ButtonStyle.Danger)
+          )
+        : new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`zinkinitro:open:${member.id}`)
+              .setLabel("Renseigner ma vraie date Nitro")
+              .setStyle(ButtonStyle.Success)
+          )
+    );
+  }
 
   container.addActionRowComponents(navRow("nitro", member.id, invokerId));
   return payload(container);
@@ -162,9 +232,11 @@ async function fetchMutualGuilds(member, client) {
 }
 
 async function renderProfil(member, client, invokerId) {
-  // Nitro : ancienneté du compte (cosmétique, voir renderNitro). Boost :
-  // `premiumSince`, refetché avec le membre à chaque rendu, jamais stocké.
-  const badgeState = computeTierState(member.user.createdAt, BADGE_TIERS);
+  // Nitro : vraie date saisie si disponible, sinon repli sur l'âge du compte
+  // (voir renderNitro). Boost : `premiumSince`, refetché avec le membre à
+  // chaque rendu, jamais stocké.
+  const realNitro = nitroStore.getNitroSince(member.id);
+  const badgeState = computeTierState(realNitro || member.user.createdAt, BADGE_TIERS);
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
@@ -189,6 +261,7 @@ async function renderProfil(member, client, invokerId) {
     nitroLines.push(`Next : ${badgeState.nextTier.emoji} <t:${unix(badgeState.nextTierDate)}:R>`);
     nitroLines.push(`${progressBar(badgeState.percent)} \`${badgeState.percent}%\``);
   }
+  if (!realNitro) nitroLines.push("-# Estimation sur l'âge du compte — voir l'onglet **Nitro** pour saisir la vraie date.");
   section(container, "Nitro", nitroLines);
 
   if (boostState) {
@@ -238,7 +311,7 @@ async function handle(interaction) {
     return;
   }
 
-  if (view === "nitro") return interaction.update(renderNitro(member, invokerId));
+  if (view === "nitro") return interaction.update(renderNitro(member, invokerId, interaction.member));
   if (view === "boost") return interaction.update(renderBoost(member, invokerId));
   if (view === "profil") {
     // renderProfil interroge les serveurs en commun (I/O) : on accuse
@@ -248,6 +321,52 @@ async function handle(interaction) {
   }
 }
 
+// Saisie/réinitialisation de la vraie date Nitro (boutons + modal de la vue Nitro).
+async function handleNitro(interaction) {
+  const [, action, targetId] = interaction.customId.split(":");
+
+  if (!canEditNitro(interaction.user.id, targetId, interaction.member)) {
+    await interaction.reply({
+      content: "Seule la personne concernée (ou un admin du serveur) peut modifier cette date.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (action === "open") {
+    return interaction.showModal(nitroModal(targetId));
+  }
+
+  const member = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
+  if (!member) {
+    await interaction.reply({ content: "Membre introuvable.", ephemeral: true });
+    return;
+  }
+
+  if (action === "reset") {
+    nitroStore.clearNitroSince(targetId);
+    // Redessine le panel en place plutôt que d'envoyer un nouveau message.
+    return interaction.update(renderNitro(member, interaction.user.id, interaction.member));
+  }
+
+  if (action === "submit") {
+    const { date, error } = nitroStore.parseAndValidate(
+      interaction.fields.getTextInputValue("date"),
+      interaction.fields.getTextInputValue("time"),
+      member.user.createdAt
+    );
+
+    if (error) {
+      await interaction.reply({ content: `❌ ${error}`, ephemeral: true });
+      return;
+    }
+
+    nitroStore.setNitroSince(targetId, date, interaction.user.id);
+    return interaction.update(renderNitro(member, interaction.user.id, interaction.member));
+  }
+}
+
 registerHandler("zinkiprofile", handle);
+registerHandler("zinkinitro", handleNitro);
 
 module.exports = { renderNitro, renderBoost, renderProfil };

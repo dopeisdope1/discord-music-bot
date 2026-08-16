@@ -1,11 +1,12 @@
 const { LEVEL } = require("../../utils/permLevels");
 const { extractUserId } = require("../../utils/argParsing");
 const { BADGE_TIERS, computeTierState, progressBar } = require("../../utils/badgeProgress");
+const nitroStore = require("../../utils/nitroStore");
 
-// Cosmétique : l'API bot n'expose aucune vraie donnée d'abonnement Nitro
-// (pas de statut, pas de date). Ceci calcule des paliers "Nitro" sur
-// l'ancienneté du compte Discord (`user.createdAt`), seule donnée à la fois
-// publique, automatique et exacte à la minute pour n'importe quel membre.
+// Version courte de la vue "Nitro" de &zinki, mêmes règles : vraie date
+// d'abonnement si elle a été saisie (&setnitro ou le bouton de &zinki),
+// sinon repli sur l'ancienneté du compte, étiqueté comme estimation.
+// L'API bot n'expose aucune donnée Nitro (ni statut, ni date).
 module.exports = {
   name: "nitro",
   category: "public",
@@ -24,12 +25,15 @@ module.exports = {
       return;
     }
 
-    const start = member.user.createdAt;
+    const realStart = nitroStore.getNitroSince(member.id);
+    const start = realStart || member.user.createdAt;
     const state = computeTierState(start, BADGE_TIERS);
     const unix = (d) => Math.floor(new Date(d).getTime() / 1000);
 
     const fields = [
-      { name: "Compte créé", value: `<t:${unix(start)}:F>` },
+      realStart
+        ? { name: "Abonné depuis", value: `<t:${unix(start)}:F>` }
+        : { name: "Compte créé", value: `<t:${unix(start)}:F> — *estimation, date Nitro non renseignée*` },
       { name: "Badge actuel", value: `${state.currentTier.emoji} **${state.currentTier.label}** — <t:${unix(state.currentTierDate)}:R>` },
     ];
 
