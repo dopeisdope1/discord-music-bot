@@ -15,6 +15,7 @@ const { loadAllCommands: loadModCommands } = require("./utils/modCommandLoader")
 const botAdminsStore = require("./utils/botAdminsStore");
 const { sendLog } = require("./utils/actionLogger");
 const { handleSelfClear } = require("./utils/selfClear");
+const { handleContextMenu } = require("./utils/contextMenus");
 const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
@@ -189,6 +190,20 @@ client.on("interactionCreate", async (interaction) => {
       await command.autocomplete(interaction);
     } catch (err) {
       console.error(err);
+    }
+    return;
+  }
+
+  // Clic droit sur un membre > Applications — voir utils/contextMenus.js.
+  // Même moteur de permissions que les commandes texte (&panel > Permissions).
+  if (interaction.isUserContextMenuCommand()) {
+    try {
+      await handleContextMenu(interaction);
+    } catch (err) {
+      console.error("[contextmenu]", err);
+      const payload = { content: "Une erreur est survenue.", ephemeral: true };
+      if (interaction.replied || interaction.deferred) await interaction.followUp(payload).catch(() => {});
+      else await interaction.reply(payload).catch(() => {});
     }
     return;
   }

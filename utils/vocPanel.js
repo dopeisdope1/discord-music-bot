@@ -26,16 +26,20 @@ function canUse(member) {
   return checkAccess(command, member).allowed;
 }
 
-// Garde-fous de hiérarchie, identiques à la modération texte.
+// Hiérarchie : on bloque seulement si la cible est STRICTEMENT au-dessus.
+// Un rôle égal passe, pour que des membres d'un même rôle (ex: "adhérent")
+// puissent se gérer entre eux — sinon la permission `voc` ne servirait à rien
+// entre pairs. Seul le propriétaire du serveur reste intouchable.
 function hierarchyReason(guild, actor, target) {
   const me = guild.members.me;
   if (target.id === guild.ownerId) return "Impossible d'agir sur le propriétaire du serveur.";
   if (target.id === me.id) return "Je ne peux pas faire ça sur moi-même.";
-  if (actor.id !== guild.ownerId && actor.roles.highest.position <= target.roles.highest.position) {
-    return "Ce membre a un rôle égal ou supérieur au tien.";
+  if (actor.id !== guild.ownerId && actor.roles.highest.position < target.roles.highest.position) {
+    return "Ce membre a un rôle supérieur au tien.";
   }
+  // Discord, lui, refuse toujours d'agir sur un rôle >= à celui du bot.
   if (me.roles.highest.position <= target.roles.highest.position) {
-    return "Mon rôle est trop bas pour agir sur ce membre.";
+    return "Mon rôle est trop bas pour agir sur ce membre (place mon rôle plus haut dans la liste).";
   }
   return null;
 }
