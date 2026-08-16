@@ -3,6 +3,10 @@ const {
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
+  SectionBuilder,
+  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -61,6 +65,19 @@ function payload(container) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
+// En-tête des 3 cartes : titre + bloc d'infos à gauche, avatar en vignette à
+// droite (Section + accessoire Thumbnail) — comme sur la référence.
+function header(container, member, title, infoLines) {
+  container.addSectionComponents(
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`# ${title}`),
+        new TextDisplayBuilder().setContent(infoLines.map((l) => `> ${l}`).join("\n"))
+      )
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(member.displayAvatarURL({ size: 256 })))
+  );
+}
+
 // Date de départ du suivi "Badge" (façon Nitro) : arrivée sur CE serveur
 // (donnée réelle Discord, `member.joinedAt`) plutôt que la création du
 // compte — un compte flambant neuf qui rejoint peu après sa création est ce
@@ -73,16 +90,18 @@ function badgeStartDate(member) {
 
 function renderBoost(member, invokerId) {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.boost);
-  text(container, `# Progression Boost de ${member.displayName}`);
 
   if (!member.premiumSince) {
-    text(container, "> Ce membre ne boost pas actuellement ce serveur.");
+    header(container, member, `Progression Boost de ${member.displayName}`, ["Ce membre ne boost pas actuellement ce serveur."]);
     container.addActionRowComponents(navRow("boost", member.id, invokerId));
     return payload(container);
   }
 
   const state = computeTierState(member.premiumSince, BOOST_TIERS);
-  text(container, `> **Début du boost** : <t:${unix(member.premiumSince)}:F>\n> **Current** : ${state.currentTier.months} mois`);
+  header(container, member, `Progression Boost de ${member.displayName}`, [
+    `**Début du boost** : <t:${unix(member.premiumSince)}:F>`,
+    `**Current** : ${state.currentTier.months} mois`,
+  ]);
 
   section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
 
@@ -105,11 +124,13 @@ function renderBoost(member, invokerId) {
 
 function renderBadge(member, invokerId) {
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.badge);
-  text(container, `# Progression Nitro de ${member.displayName}`);
 
   const start = badgeStartDate(member);
   const state = computeTierState(start, BADGE_TIERS);
-  text(container, `> **Début du Nitro** : <t:${unix(start)}:F>\n> **Current** : ${state.currentTier.months} mois`);
+  header(container, member, `Progression Nitro de ${member.displayName}`, [
+    `**Début du Nitro** : <t:${unix(start)}:F>`,
+    `**Current** : ${state.currentTier.months} mois`,
+  ]);
 
   section(container, "Current Badge :", [`${state.currentTier.emoji} **${state.currentTier.label}** : <t:${unix(state.currentTierDate)}:R>`]);
 
@@ -151,11 +172,11 @@ async function renderProfil(member, client, invokerId) {
   const boostState = member.premiumSince ? computeTierState(member.premiumSince, BOOST_TIERS) : null;
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLORS.profil);
-  text(container, `# Profile de ${member.displayName}`);
-  text(
-    container,
-    `> **User :** <@${member.id}>\n> **ID :** \`${member.id}\`\n> **Date de creation :** \`${formatDateTime(member.user.createdAt)}\``
-  );
+  header(container, member, `Profile de ${member.displayName}`, [
+    `**User :** <@${member.id}>`,
+    `**ID :** \`${member.id}\``,
+    `**Date de creation :** \`${formatDateTime(member.user.createdAt)}\``,
+  ]);
 
   const badgeEmojis = [badgeState.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ");
   section(container, "Badges", [badgeEmojis]);
@@ -180,7 +201,11 @@ async function renderProfil(member, client, invokerId) {
     section(container, "Boost", ["Aucun boost actif sur ce serveur."]);
   }
 
+  // Grand aperçu de l'avatar entre les stats et "Utils", comme sur la référence.
   const pfpUrl = member.displayAvatarURL({ size: 1024, extension: "png" });
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(pfpUrl)));
+
   section(container, "`🦋` Utils", [`Pfp : **[Download](${pfpUrl})**`]);
 
   const mutualGuilds = await fetchMutualGuilds(member, client);
