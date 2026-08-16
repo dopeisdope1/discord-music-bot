@@ -10,6 +10,7 @@ const { getRawGuildData: getRawMute, hydrateFromRemote: hydrateMute } = require(
 const { getRawGuildData: getRawAddroleConfig, hydrateFromRemote: hydrateAddroleConfig } = require("./addroleConfigStore");
 const { getRawGuildData: getRawAntiraidConfig, hydrateFromRemote: hydrateAntiraidConfig } = require("./antiraidConfigStore");
 const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
+const { getRawGuildData: getRawVoiceMaster, hydrateFromRemote: hydrateVoiceMaster } = require("./voiceMasterStore");
 // (Les dates Nitro ne sont PAS ici : elles sont liées au compte et pas au
 // serveur, donc stockées globalement dans DATA_DIR — un volume persistant sur
 // Railway. Voir utils/nitroStore.js.)
@@ -33,6 +34,7 @@ const CATEGORY_GETTERS = {
   addroleConfig: getRawAddroleConfig,
   antiraidConfig: getRawAntiraidConfig,
   roleBlacklist: getRawRoleBlacklist,
+  voiceMaster: getRawVoiceMaster,
 };
 const CATEGORY_HYDRATORS = {
   prefixes: hydratePrefixes,
@@ -44,6 +46,7 @@ const CATEGORY_HYDRATORS = {
   addroleConfig: hydrateAddroleConfig,
   antiraidConfig: hydrateAntiraidConfig,
   roleBlacklist: hydrateRoleBlacklist,
+  voiceMaster: hydrateVoiceMaster,
 };
 const ALL_CATEGORIES = Object.keys(CATEGORY_GETTERS);
 

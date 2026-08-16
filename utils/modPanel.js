@@ -6,6 +6,7 @@ require("./modPanelBlacklist");
 require("./modPanelMute");
 require("./modPanelAddrole");
 require("./modPanelAntiraid");
+require("./modPanelVoiceMaster");
 require("./modPanelPrefixes");
 require("./modPanelWelcome");
 

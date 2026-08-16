@@ -9,22 +9,15 @@ const {
 } = require("discord.js");
 const { buildCard, payload } = require("./panelComponents");
 const { registerHandler } = require("./modInteractionRegistry");
-const { loadAllCommands } = require("./modCommandLoader");
-const { checkAccess, isDisabled } = require("./accessControl");
+const { canDoVoiceAction } = require("./voiceAccess");
 const { sendLog } = require("./actionLogger");
 
-// Toutes les actions du panneau sont couvertes par UNE seule permission, la
-// commande `voc` : il suffit de l'ajouter à un slot dans &panel > Permissions
-// pour qu'un rôle puisse gérer le vocal, sans lui donner les vraies
-// permissions Discord (Rendre muet / Déplacer les membres...) qui, elles,
-// s'appliqueraient partout et sans garde-fou.
+// Deux façons de donner l'accès, au choix (voir utils/voiceAccess.js) :
+//  - la commande `voc` dans un slot de &panel > Permissions (accès complet) ;
+//  - un rôle dans &panel > Voice Master (limité aux actions cochées).
 const PERMISSION = "voc";
 
-function canUse(member) {
-  const command = loadAllCommands().get(PERMISSION);
-  if (!command || isDisabled(command)) return false;
-  return checkAccess(command, member).allowed;
-}
+const canUse = (member) => canDoVoiceAction(member);
 
 // Hiérarchie : on bloque seulement si la cible est STRICTEMENT au-dessus.
 // Un rôle égal passe, pour que des membres d'un même rôle (ex: "adhérent")
@@ -109,6 +102,13 @@ async function handle(interaction) {
   }
   if (!canUse(interaction.member)) {
     return interaction.reply({ content: "❌ Tu n'as pas la permission de gérer le vocal.", flags: MessageFlags.Ephemeral });
+  }
+
+  // Un rôle Voice Master peut n'avoir qu'une partie des actions : on vérifie
+  // aussi l'action précise, pas seulement l'accès général au panneau.
+  const actionPermission = { moveto: "move", move: "move", mute: "mute", deaf: "deaf", disconnect: "disconnect" }[action];
+  if (actionPermission && !canDoVoiceAction(interaction.member, actionPermission)) {
+    return interaction.reply({ content: "❌ Cette action ne t'est pas autorisée.", flags: MessageFlags.Ephemeral });
   }
 
   const target = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);

@@ -10,6 +10,7 @@ const {
 const { loadAllCommands } = require("./modCommandLoader");
 const { checkAccess, isDisabled } = require("./accessControl");
 const { registerHandler } = require("./modInteractionRegistry");
+const { canDoVoiceAction } = require("./voiceAccess");
 const { sendLog } = require("./actionLogger");
 const { renderProfil } = require("./zinkiPanel");
 
@@ -23,12 +24,15 @@ const { renderProfil } = require("./zinkiPanel");
 // Toutes les actions vocales utilisent la MÊME permission `voc` que la
 // commande `&voc` : un seul ajout dans &panel > Permissions débloque à la
 // fois le panneau et le clic droit.
+// `voice: true` = accès via la commande `voc` OU un rôle Voice Master
+// (voir utils/voiceAccess.js). Sinon, `command` désigne la commande dont la
+// permission est requise.
 const MENUS = {
-  "Déplacer en vocal": { action: "move", permission: "voc" },
-  "Muet vocal": { action: "mute", permission: "voc" },
-  "Sourd vocal": { action: "deaf", permission: "voc" },
-  "Déconnecter du vocal": { action: "disconnect", permission: "voc" },
-  "Voir le profil": { action: "profile", permission: "zinki" },
+  "Déplacer en vocal": { action: "move", voice: true },
+  "Muet vocal": { action: "mute", voice: true },
+  "Sourd vocal": { action: "deaf", voice: true },
+  "Déconnecter du vocal": { action: "disconnect", voice: true },
+  "Voir le profil": { action: "profile", command: "zinki" },
 };
 
 function buildDefinitions() {
@@ -78,7 +82,11 @@ async function handleContextMenu(interaction) {
   const target = await interaction.guild.members.fetch({ user: interaction.targetId, force: true }).catch(() => null);
   if (!target) return interaction.reply(ephemeral("Membre introuvable."));
 
-  const deny = denyReason(menu.permission, interaction.member);
+  const deny = menu.voice
+    ? canDoVoiceAction(interaction.member, menu.action)
+      ? null
+      : "Tu n'as pas la permission de gérer le vocal."
+    : denyReason(menu.command, interaction.member);
   if (deny) return interaction.reply(ephemeral(`❌ ${deny}`));
 
   if (menu.action === "profile") {
@@ -156,7 +164,9 @@ async function handleMoveSelect(interaction) {
   const target = await interaction.guild.members.fetch({ user: targetId, force: true }).catch(() => null);
   if (!target) return interaction.update({ content: "Membre introuvable.", components: [] });
 
-  const deny = denyReason("vmove", interaction.member) || hierarchyReason(interaction, target);
+  const deny =
+    (canDoVoiceAction(interaction.member, "move") ? null : "Tu n'as pas la permission de déplacer un membre.") ||
+    hierarchyReason(interaction, target);
   if (deny) return interaction.update({ content: `❌ ${deny}`, components: [] });
 
   if (!target.voice.channel) {

@@ -5,6 +5,8 @@ const {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } = require("discord.js");
 const { buildCard, buildSelect, appendText, actionRow, buildNavButtons, payload } = require("./panelComponents");
 const panelRouter = require("./modPanelRouter");
@@ -85,7 +87,11 @@ function renderDetail(guildId, slotId) {
   return payload(container);
 }
 
-function renderCommandPicker(guildId, slotId, mode, page = 0) {
+// Sélection MULTIPLE : on coche autant de commandes que voulu d'un coup, au
+// lieu de revenir au détail après chacune. La navigation (pages / retour) est
+// sortie du menu déroulant vers des boutons, sinon "Page suivante" se
+// retrouverait cochable comme une commande.
+function renderCommandPicker(guildId, slotId, mode, page = 0, note) {
   const slot = permissionsStore.get(guildId, slotId);
   const all = configurableCommandNames();
   const attached = new Set(slot.commands);
@@ -96,24 +102,55 @@ function renderCommandPicker(guildId, slotId, mode, page = 0) {
   const current = pages[page] || [];
 
   const container = buildCard({
-    title: `${mode === "add" ? "Ajouter" : "Retirer"} une commande — ${slot.name}`,
-    description: `Page ${page + 1}/${totalPages}`,
+    title: `${mode === "add" ? "Ajouter" : "Retirer"} des commandes — ${slot.name}`,
+    description:
+      (note ? `${note}\n` : "") +
+      (candidates.length
+        ? `Coche autant de commandes que tu veux, elles seront ${mode === "add" ? "ajoutées" : "retirées"} d'un coup.` +
+          (totalPages > 1 ? `\nPage ${page + 1}/${totalPages}` : "")
+        : mode === "add"
+          ? "Toutes les commandes sont déjà dans cette permission."
+          : "Cette permission ne contient aucune commande."),
   });
 
-  const options = current.map((c) => ({ label: c, value: `pick:${c}` }));
-  if (page < totalPages - 1) options.push({ label: "Page suivante", value: "next" });
-  if (page > 0) options.push({ label: "Page précédente", value: "prev" });
-  options.push({ label: "Retour", value: "back" });
-
-  container.addActionRowComponents(
-    actionRow(
-      buildSelect(
-        `modpanel:permissions:cmdpicker:${slotId}:${mode}:${page}`,
-        candidates.length ? "Choisir une commande" : "Aucune commande disponible",
-        options.length ? options : [{ label: "Retour", value: "back" }]
+  if (current.length) {
+    container.addActionRowComponents(
+      actionRow(
+        buildSelect(
+          `modpanel:permissions:cmdpicker:${slotId}:${mode}:${page}`,
+          `Choisir une ou plusieurs commandes (${current.length} sur cette page)`,
+          current.map((c) => ({ label: c, value: c })),
+          { min: 0, max: current.length }
+        )
       )
-    )
+    );
+  }
+
+  const navButtons = [];
+  if (page > 0) {
+    navButtons.push(
+      new ButtonBuilder()
+        .setCustomId(`modpanel:permissions:cmdpage:${slotId}:${mode}:${page - 1}`)
+        .setLabel("◀ Page précédente")
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+  if (page < totalPages - 1) {
+    navButtons.push(
+      new ButtonBuilder()
+        .setCustomId(`modpanel:permissions:cmdpage:${slotId}:${mode}:${page + 1}`)
+        .setLabel("Page suivante ▶")
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+  navButtons.push(
+    new ButtonBuilder()
+      .setCustomId(`modpanel:permissions:cmdback:${slotId}`)
+      .setLabel("Retour")
+      .setStyle(ButtonStyle.Primary)
   );
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(navButtons));
+
   return payload(container);
 }
 
@@ -199,21 +236,22 @@ async function handle(interaction) {
 
     if (value === "back") return interaction.update(renderList(guildId, 0));
 
+    // Multi-sélection ici aussi : plusieurs rôles/membres d'un coup.
     if (value === "addrole" || value === "removerole") {
       const select = new RoleSelectMenuBuilder()
         .setCustomId(`modpanel:permissions:roleselect:${slotId}:${value === "addrole" ? "add" : "remove"}`)
-        .setPlaceholder("Choisis un rôle")
+        .setPlaceholder("Choisis un ou plusieurs rôles")
         .setMinValues(1)
-        .setMaxValues(1);
+        .setMaxValues(25);
       return interaction.reply({ components: [actionRow(select)], ephemeral: true });
     }
 
     if (value === "addmember" || value === "removemember") {
       const select = new UserSelectMenuBuilder()
         .setCustomId(`modpanel:permissions:memberselect:${slotId}:${value === "addmember" ? "add" : "remove"}`)
-        .setPlaceholder("Choisis un membre")
+        .setPlaceholder("Choisis un ou plusieurs membres")
         .setMinValues(1)
-        .setMaxValues(1);
+        .setMaxValues(25);
       return interaction.reply({ components: [actionRow(select)], ephemeral: true });
     }
 
@@ -239,41 +277,59 @@ async function handle(interaction) {
     return;
   }
 
+  // Sélection multiple : on applique tout d'un coup et on RESTE sur le
+  // sélecteur, pour pouvoir enchaîner sur une autre page sans repasser par le
+  // détail à chaque fois.
   if (view === "cmdpicker") {
     const slotId = Number(parts[3]);
     const mode = parts[4];
     const page = Number(parts[5]);
-    const value = interaction.values[0];
+    const picked = interaction.values;
 
-    if (value === "back") return interaction.update(renderDetail(guildId, slotId));
-    if (value === "next") return interaction.update(renderCommandPicker(guildId, slotId, mode, page + 1));
-    if (value === "prev") return interaction.update(renderCommandPicker(guildId, slotId, mode, page - 1));
-    if (value.startsWith("pick:")) {
-      const commandName = value.slice(5);
+    if (!picked.length) return interaction.update(renderCommandPicker(guildId, slotId, mode, page));
+
+    for (const commandName of picked) {
       if (mode === "add") permissionsStore.addCommand(guildId, slotId, commandName);
       else permissionsStore.removeCommand(guildId, slotId, commandName);
-      return interaction.update(renderDetail(guildId, slotId));
     }
-    return;
+
+    const verb = mode === "add" ? "ajoutée" : "retirée";
+    const note = `✅ ${picked.length} commande${picked.length > 1 ? "s" : ""} ${verb}${picked.length > 1 ? "s" : ""} : ${picked.join(", ")}`;
+    // La liste des candidats a changé : on repart page 0 pour ne pas tomber
+    // sur une page devenue vide.
+    return interaction.update(renderCommandPicker(guildId, slotId, mode, 0, note));
+  }
+
+  if (view === "cmdpage") {
+    const slotId = Number(parts[3]);
+    return interaction.update(renderCommandPicker(guildId, slotId, parts[4], Number(parts[5])));
+  }
+
+  if (view === "cmdback") {
+    return interaction.update(renderDetail(guildId, Number(parts[3])));
   }
 
   if (view === "roleselect") {
     const slotId = Number(parts[3]);
     const mode = parts[4];
-    const roleId = interaction.values[0];
-    if (mode === "add") permissionsStore.addRole(guildId, slotId, roleId);
-    else permissionsStore.removeRole(guildId, slotId, roleId);
-    await interaction.update({ content: "✅ Fait.", components: [] });
+    for (const roleId of interaction.values) {
+      if (mode === "add") permissionsStore.addRole(guildId, slotId, roleId);
+      else permissionsStore.removeRole(guildId, slotId, roleId);
+    }
+    const list = interaction.values.map((r) => `<@&${r}>`).join(", ");
+    await interaction.update({ content: `✅ ${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
     return;
   }
 
   if (view === "memberselect") {
     const slotId = Number(parts[3]);
     const mode = parts[4];
-    const userId = interaction.values[0];
-    if (mode === "add") permissionsStore.addMember(guildId, slotId, userId);
-    else permissionsStore.removeMember(guildId, slotId, userId);
-    await interaction.update({ content: "✅ Fait.", components: [] });
+    for (const userId of interaction.values) {
+      if (mode === "add") permissionsStore.addMember(guildId, slotId, userId);
+      else permissionsStore.removeMember(guildId, slotId, userId);
+    }
+    const list = interaction.values.map((u) => `<@${u}>`).join(", ");
+    await interaction.update({ content: `✅ ${mode === "add" ? "Ajouté" : "Retiré"} : ${list}`, components: [] });
     return;
   }
 
