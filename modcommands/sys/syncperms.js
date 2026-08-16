@@ -3,6 +3,7 @@ const { LEVEL } = require("../../utils/permLevels");
 const { loadAllCommands } = require("../../utils/modCommandLoader");
 const { effectiveLevel } = require("../../utils/accessControl");
 const permissionsStore = require("../../utils/permissionsStore");
+const { saveGuildConfig } = require("../../utils/configChannel");
 
 // Groupes distribués sur les rôles ordinaires, du moins au plus sensible. La
 // cascade du moteur (voir utils/permissionEngine.js) fait qu'un slot hérite de
@@ -35,16 +36,15 @@ function configurableCommandNames() {
     .map((c) => c.name);
 }
 
-// Répartit les groupes sur les slots disponibles, du plus bas au plus haut.
-// Avec moins de slots que de groupes, plusieurs groupes tombent dans le même
-// slot plutôt que d'être perdus.
+// Un groupe par slot, du plus bas au plus haut. Les groupes en trop ne sont
+// PAS entassés dans le dernier slot : ils restent réservés aux administrateurs.
+// Sinon un serveur n'ayant qu'un seul rôle ordinaire lui donnerait d'un coup
+// tout l'éventail (mute, lock, rename...) — beaucoup trop pour un rôle de
+// membre lambda, qui compte souvent la majorité du serveur.
+// À l'inverse, s'il y a plus de slots que de groupes, les slots du haut
+// n'ajoutent rien : ils héritent déjà de tout ce qui est en dessous.
 function distribute(groups, slotCount) {
-  const buckets = Array.from({ length: slotCount }, () => []);
-  groups.forEach((group, i) => {
-    const index = Math.min(slotCount - 1, Math.floor((i * slotCount) / groups.length));
-    buckets[index].push(...group.commands);
-  });
-  return buckets;
+  return Array.from({ length: slotCount }, (_, i) => [...(groups[i]?.commands || [])]);
 }
 
 /**
@@ -177,6 +177,13 @@ module.exports = {
       for (const role of entry.roles) permissionsStore.addRole(ctx.guildId, slot.id, role.id);
       for (const command of entry.commands) permissionsStore.addCommand(ctx.guildId, slot.id, command);
     }
+
+    // Indispensable : sans ça la config ne vivrait que sur le disque du
+    // container, réinitialisé à chaque redéploiement Railway. Le panel fait
+    // pareil après chaque interaction (voir utils/modPanelRouter.js).
+    await saveGuildConfig(ctx.guild, ["permissions"]).catch((err) =>
+      console.warn("[syncperms] échec de la sauvegarde de config :", err.message)
+    );
 
     await ctx.reply(
       ctx.card({
