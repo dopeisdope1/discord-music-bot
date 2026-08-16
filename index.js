@@ -40,10 +40,15 @@ const client = new Client({
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
   ],
-  // Empêche tout ping accidentel de @everyone/@here/rôles (ex: titre de
-  // musique contenant littéralement "@everyone"). Les mentions
-  // d'utilisateurs restent autorisées.
-  allowedMentions: { parse: ["users"], repliedUser: true },
+  // AUCUN ping par défaut, nulle part : ni @everyone/@here, ni rôles, ni
+  // utilisateurs, ni ping de réponse. Les mentions restent affichées et
+  // cliquables (<@id> s'affiche toujours "@pseudo"), elles ne déclenchent
+  // simplement plus de notification — indispensable pour les logs et les
+  // réponses de commandes, qui citent constamment des membres.
+  // Les rares endroits où le ping est VOULU le demandent explicitement :
+  // message de bienvenue (voir guildMemberAdd) et demande d'autorisation
+  // vocale (voir utils/playerControl.js).
+  allowedMentions: { parse: [], repliedUser: false },
 });
 
 // ---- Chargement des commandes slash musique uniquement ----
@@ -505,7 +510,12 @@ client.on("guildMemberAdd", (member) => {
   }
   console.log(`[bienvenue] Envoi dans #${channel.name}`);
   channel
-    .send(`${member} ${getRandomWelcomeMessage(member.guild.id)}`)
+    // Seul endroit avec les demandes d'accès vocal où le ping est voulu : le
+    // but d'un message de bienvenue est justement de notifier l'arrivant.
+    .send({
+      content: `${member} ${getRandomWelcomeMessage(member.guild.id)}`,
+      allowedMentions: { users: [member.id] },
+    })
     .then((sent) => {
       const deleteAfterMs = getWelcomeDeleteDelay(member.guild.id);
       if (deleteAfterMs > 0) {
