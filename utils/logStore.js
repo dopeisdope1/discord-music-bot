@@ -27,6 +27,7 @@ const LOG_CATEGORIES = {
   messages: { key: "messages", label: "Logs messages", description: "Suppressions de messages" },
   joins: { key: "joins", label: "Logs arrivées", description: "Nouveaux membres" },
   leaves: { key: "leaves", label: "Logs départs", description: "Membres qui quittent/sont expulsés" },
+  voice: { key: "voice", label: "Logs vocaux", description: "`&vmove`, `&vmute`, `&vkick`..." },
 };
 
 let cache = null;

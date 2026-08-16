@@ -3,7 +3,7 @@ const CLEAR_JOKES = [
   "zoubini t'as sucé",
   "machini t'as gobé",
   "zambouli t'as aspiré",
-  "moro t'as mangé tout tes morts",
+  "moro à mangé tout tes morrohs",
   "lior t'as dis je t'aime papa",
   "avant tt ca j'étais bien",
 ];

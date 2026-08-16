@@ -65,21 +65,15 @@ async function handleModerationTextCommand(client, message) {
 
   const ctx = buildContext({ message, args, client });
 
-  if (isDisabled(command)) {
-    await replyError(ctx, "Cette commande est désactivée.");
-    return;
-  }
+  // "Pas le droit" / "désactivée ici" : on ne répond RIEN. Sans ça le bot
+  // spamme le salon dès qu'un membre tape une commande qu'il ne peut pas
+  // utiliser. Ce qui est accessible se découvre via `&help`, qui ne liste
+  // que les commandes réellement utilisables par la personne.
+  if (isDisabled(command)) return;
+  if (!ctx.isSuperSys && channelBlacklistStore.isBlacklisted(ctx.guildId, command.name, message.channel.id)) return;
 
   const access = checkAccess(command, message.member);
-  if (!access.allowed) {
-    await replyError(ctx, "Permissions insuffisantes pour cette commande.");
-    return;
-  }
-
-  if (!ctx.isSuperSys && channelBlacklistStore.isBlacklisted(ctx.guildId, command.name, message.channel.id)) {
-    await replyError(ctx, "Cette commande est désactivée dans ce salon.");
-    return;
-  }
+  if (!access.allowed) return;
 
   if (access.cooldownSeconds) {
     const key = `${ctx.guildId}:${message.author.id}:${command.name}`;

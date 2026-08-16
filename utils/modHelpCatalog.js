@@ -2,7 +2,7 @@ const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacing
 const { buildSelect, appendText, actionRow, payload } = require("./panelComponents");
 const { registerHandler } = require("./modInteractionRegistry");
 const { loadAllCommands } = require("./modCommandLoader");
-const { effectiveLevel } = require("./accessControl");
+const { effectiveLevel, checkAccess, isDisabled } = require("./accessControl");
 const { LEVEL } = require("./permLevels");
 
 const CATEGORIES = [
@@ -18,35 +18,65 @@ function allVisibleCommands() {
   return [...new Set(loadAllCommands().values())].filter((c) => !c.hidden);
 }
 
-function commandsInCategory(categoryKey) {
+// Filtré sur ce que la personne peut RÉELLEMENT lancer : `&help` sert à
+// découvrir ses propres commandes, pas à lister celles qui répondraient
+// "permissions insuffisantes" (le routeur reste d'ailleurs silencieux dans
+// ce cas, voir utils/modMessageRouter.js). Les commandes publiques
+// apparaissent donc toujours, les autres seulement si l'accès est accordé.
+function commandsInCategory(categoryKey, member) {
   const category = CATEGORIES.find((c) => c.key === categoryKey);
   if (!category) return [];
+
   return allVisibleCommands()
     .filter((c) => category.levels.includes(effectiveLevel(c)))
+    .filter((c) => !isDisabled(c))
+    .filter((c) => !member || checkAccess(c, member).allowed)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function renderOverview(prefix) {
+// Les catégories vides sont masquées : inutile de proposer "Commandes Sys"
+// à quelqu'un qui n'en a aucune.
+function visibleCategories(member) {
+  return CATEGORIES.map((category) => ({ category, commands: commandsInCategory(category.key, member) })).filter(
+    ({ commands }) => commands.length > 0
+  );
+}
+
+function renderOverview(prefix, member) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Aide — Modération"));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "Bienvenue sur le panel d'aide du bot\n" +
-        "Sélectionnez une catégorie via le menu ci-dessous pour découvrir vos commandes disponibles\n" +
+      "Voici les commandes que **tu** peux utiliser\n" +
+        "Sélectionne une catégorie via le menu ci-dessous pour voir le détail\n" +
         "Les arguments entre [] sont facultatifs, les arguments entre <> sont obligatoires"
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
-  const summaryLines = CATEGORIES.map((category) => {
-    const commands = commandsInCategory(category.key);
-    return `**${category.label} (${commands.length}) :** ${commands.map((c) => c.name).join(", ") || "aucune"}`;
-  });
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(summaryLines.join("\n")));
+  const groups = visibleCategories(member);
 
-  container.addActionRowComponents(
-    actionRow(buildSelect("modhelp:nav", "Naviguer vers une catégorie", CATEGORIES.map((c) => ({ label: c.label, value: c.key }))))
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      groups.length
+        ? groups
+            .map(({ category, commands }) => `**${category.label} (${commands.length}) :** ${commands.map((c) => c.name).join(", ")}`)
+            .join("\n")
+        : "Aucune commande ne t'est accessible pour l'instant."
+    )
   );
+
+  if (groups.length) {
+    container.addActionRowComponents(
+      actionRow(
+        buildSelect(
+          "modhelp:nav",
+          "Naviguer vers une catégorie",
+          groups.map(({ category }) => ({ label: category.label, value: category.key }))
+        )
+      )
+    );
+  }
 
   return payload(container);
 }
@@ -72,11 +102,11 @@ function paginateCommands(commands) {
   return pages;
 }
 
-function renderCategory(prefix, categoryKey, page = 0) {
+function renderCategory(prefix, categoryKey, page = 0, member) {
   const category = CATEGORIES.find((c) => c.key === categoryKey);
-  if (!category) return renderOverview(prefix);
+  if (!category) return renderOverview(prefix, member);
 
-  const commands = commandsInCategory(categoryKey);
+  const commands = commandsInCategory(categoryKey, member);
   const pages = paginateCommands(commands);
   const totalPages = Math.max(1, pages.length);
   const current = pages[page] || [];
@@ -100,7 +130,7 @@ function renderCategory(prefix, categoryKey, page = 0) {
     .join("\n\n");
   appendText(container, body || "Aucune commande dans cette catégorie.");
 
-  const options = CATEGORIES.map((c) => ({ label: c.label, value: c.key }));
+  const options = visibleCategories(member).map(({ category: c }) => ({ label: c.label, value: c.key }));
   if (page < totalPages - 1) options.push({ label: "Page suivante", value: `next:${categoryKey}:${page}` });
   if (page > 0) options.push({ label: "Page précédente", value: `prev:${categoryKey}:${page}` });
 
@@ -115,17 +145,19 @@ async function handle(interaction) {
   const value = interaction.values[0];
   const { getPrefixes } = require("./prefixStore");
   const prefix = getPrefixes(interaction.guild.id).musicMod;
+  // Filtre selon la personne qui clique, pas celle qui a tapé `&help`.
+  const member = interaction.member;
 
   if (value.startsWith("next:")) {
     const [, categoryKey, page] = value.split(":");
-    return interaction.update(renderCategory(prefix, categoryKey, Number(page) + 1));
+    return interaction.update(renderCategory(prefix, categoryKey, Number(page) + 1, member));
   }
   if (value.startsWith("prev:")) {
     const [, categoryKey, page] = value.split(":");
-    return interaction.update(renderCategory(prefix, categoryKey, Number(page) - 1));
+    return interaction.update(renderCategory(prefix, categoryKey, Number(page) - 1, member));
   }
 
-  return interaction.update(renderCategory(prefix, value, 0));
+  return interaction.update(renderCategory(prefix, value, 0, member));
 }
 
 registerHandler("modhelp", handle);

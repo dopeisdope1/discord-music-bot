@@ -11,6 +11,6 @@ module.exports = {
   hidden: true, // commande méta, ne figure pas dans son propre catalogue
   async execute(ctx) {
     const prefix = getPrefixes(ctx.guildId).musicMod;
-    await ctx.send(modHelpCatalog.renderOverview(prefix));
+    await ctx.send(modHelpCatalog.renderOverview(prefix, ctx.member));
   },
 };

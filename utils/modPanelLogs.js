@@ -7,7 +7,7 @@ const KEY = "logs";
 
 // Seules les catégories que CE bot écrit réellement — "securite"/"blacklist"
 // appartiennent au bot Sécurité (voir utils/logStore.js), pas exposées ici.
-const EXPOSED_CATEGORIES = ["moderation", "salon", "roles", "raid", "messages", "joins", "leaves"];
+const EXPOSED_CATEGORIES = ["moderation", "salon", "roles", "voice", "raid", "messages", "joins", "leaves"];
 
 function render(guildId) {
   const lines = EXPOSED_CATEGORIES.map((key) => {
