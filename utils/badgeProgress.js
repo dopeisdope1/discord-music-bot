@@ -14,7 +14,7 @@ const { DateTime } = require("luxon");
 // les uploader (Developer Portal > Emojis) et remplacer les valeurs ci-dessous
 // par `<:nom:id>`.
 const BADGE_TIERS = [
-  { months: 0, label: "Basic", emoji: "⚪" },
+  { months: 0, label: "Basic", emoji: "⚫" },
   { months: 1, label: "Bronze", emoji: "🟠" },
   { months: 3, label: "Argent", emoji: "⚪" },
   { months: 6, label: "Or", emoji: "🟡" },

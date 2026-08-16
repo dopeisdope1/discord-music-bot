@@ -174,8 +174,14 @@ async function renderProfil(member, client, invokerId) {
     `**Date de creation :** \`${formatDateTime(member.user.createdAt)}\``,
   ]);
 
-  const badgeEmojis = [badgeState.currentTier.emoji, boostState?.currentTier.emoji].filter(Boolean).join(" ");
-  section(container, "Badges", [badgeEmojis]);
+  // Collection : TOUS les paliers déjà débloqués, pas seulement le palier
+  // courant (qui est de toute façon détaillé dans la section "Nitro" juste
+  // en dessous). `tierDates` est trié par ancienneté croissante, donc les
+  // paliers atteints sont ceux dont la date est déjà passée.
+  const now = Date.now();
+  const unlocked = badgeState.tierDates.filter(({ date }) => date.getTime() <= now).map(({ tier }) => tier.emoji);
+  if (boostState) unlocked.push(boostState.currentTier.emoji);
+  section(container, "Badges", [unlocked.join(" ")]);
 
   const nitroLines = [`${badgeState.currentTier.emoji} **Nitro** (${badgeState.currentTier.months} mois)`];
   if (badgeState.maxed) nitroLines.push("Palier maximum atteint 🎉");
