@@ -18,13 +18,22 @@ const { addRoleDirect, delRoleDirect } = require("./rolePanels");
 // délai via `autoDelete` ; les catégories absentes d'ici ne sont jamais
 // effacées (`&help`, `&perms`, les panels... qu'on veut pouvoir relire).
 const AUTO_DELETE_MS = {
-  channel: 3_000,
+  channel: 0,
   moderation: 5_000,
 };
 
-function scheduleCleanup(ctx, command) {
-  const delay = command.autoDelete ?? AUTO_DELETE_MS[command.category];
-  if (!delay || !ctx.sent.length) return;
+// Un échec, lui, doit rester lisible : sans ce plancher, l'erreur d'un `&lock`
+// disparaîtrait en même temps que sa confirmation (0 ms) et on ne saurait
+// jamais pourquoi la commande n'a rien fait.
+const ERROR_MIN_MS = 5_000;
+
+function scheduleCleanup(ctx, command, failed) {
+  const configured = command.autoDelete ?? AUTO_DELETE_MS[command.category];
+  // `== null` et pas `!configured` : 0 est un délai valide (effacement
+  // immédiat), alors qu'absent veut dire "ne jamais effacer".
+  if (configured == null || !ctx.sent.length) return;
+
+  const delay = failed ? Math.max(configured, ERROR_MIN_MS) : configured;
 
   // Copie : `ctx` peut encore servir, et on veut figer la liste d'alors.
   const messages = [...ctx.sent];
@@ -121,9 +130,11 @@ async function handleModerationTextCommand(client, message) {
     }
   }
 
+  let failed = false;
   try {
     await command.execute(ctx);
   } catch (error) {
+    failed = true;
     if (error instanceof UsageError || error instanceof PermissionError || error instanceof BotError) {
       await replyError(ctx, error.message);
     } else {
@@ -132,8 +143,9 @@ async function handleModerationTextCommand(client, message) {
     }
   } finally {
     // Aussi en cas d'erreur : un message d'erreur de `&lock` n'a pas plus de
-    // raison de rester dans le salon que sa confirmation.
-    scheduleCleanup(ctx, command);
+    // raison de rester dans le salon que sa confirmation — seulement plus
+    // longtemps, le temps d'être lu (voir ERROR_MIN_MS).
+    scheduleCleanup(ctx, command, failed);
   }
 }
 
