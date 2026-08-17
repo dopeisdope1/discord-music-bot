@@ -20,6 +20,15 @@ const { getRawGuildData: getRawOwnerTrust, hydrateFromRemote: hydrateOwnerTrust 
 // caché : Discord, contrairement au disque du bot, n'est jamais réinitialisé.
 const CONFIG_CHANNEL_NAME = "zinki-config";
 
+// Marge sous la limite Discord de 2000 caractères par message : la config
+// complète (voir ALL_CATEGORIES) peut désormais dépasser 2000 caractères une
+// fois sérialisée, saveGuildConfig la répartit donc sur plusieurs messages
+// (voir splitIntoChunks) plutôt que d'échouer entièrement ("Invalid Form
+// Body : content[BASE_TYPE_MAX_LENGTH]"). loadGuildConfig fusionne déjà tous
+// les messages de config valides d'un salon, donc la lecture n'a rien à
+// changer.
+const MESSAGE_BUDGET = 1900;
+
 // getRawGuildData/hydrateFromRemote par catégorie.
 const CATEGORY_GETTERS = {
   prefixes: getRawPrefixes,
@@ -178,6 +187,34 @@ function loadGuildConfig(guild) {
 }
 
 /**
+ * Répartit `data` (une catégorie entière par clé, voir ALL_CATEGORIES) en
+ * plusieurs objets dont le JSON pretty-printé tient chacun sous
+ * MESSAGE_BUDGET caractères, sans jamais couper une catégorie en deux entre
+ * deux morceaux.
+ * @param {Record<string, unknown>} data
+ * @returns {Record<string, unknown>[]}
+ */
+function splitIntoChunks(data) {
+  const chunks = [];
+  let current = {};
+
+  for (const key of ALL_CATEGORIES) {
+    const candidate = { ...current, [key]: data[key] };
+    const size = JSON.stringify(candidate, null, 2).length;
+
+    if (Object.keys(current).length > 0 && size > MESSAGE_BUDGET) {
+      chunks.push(current);
+      current = { [key]: data[key] };
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (Object.keys(current).length > 0) chunks.push(current);
+  return chunks;
+}
+
+/**
  * À appeler après chaque changement de config pour sauvegarder l'état actuel
  * dans le salon de config Discord, en plus du fichier local. `categories`
  * documente quelles catégories viennent de changer (utile pour lire le code
@@ -203,7 +240,7 @@ async function saveGuildConfig(guild, categories) {
 
   const data = {};
   for (const key of ALL_CATEGORIES) data[key] = CATEGORY_GETTERS[key](guild.id);
-  const content = "```json\n" + JSON.stringify(data, null, 2) + "\n```";
+  const chunks = splitIntoChunks(data).map((chunk) => "```json\n" + JSON.stringify(chunk, null, 2) + "\n```");
 
   let channels = findAllConfigChannels(guild);
   if (channels.length === 0) {
@@ -218,13 +255,26 @@ async function saveGuildConfig(guild, categories) {
   const [canonical, ...duplicates] = channels;
 
   const configMessages = await fetchConfigMessages(canonical);
-  const own = configMessages.find((m) => m.author.id === guild.client.user.id);
+  // Plusieurs messages du bot possibles maintenant que la config est
+  // répartie sur plusieurs morceaux (voir splitIntoChunks) — triés du plus
+  // ancien au plus récent pour réutiliser/éditer chaque morceau à sa place.
+  const own = configMessages
+    .filter((m) => m.author.id === guild.client.user.id)
+    .sort((a, b) => (a.editedTimestamp || a.createdTimestamp) - (b.editedTimestamp || b.createdTimestamp));
   const stale = configMessages.filter((m) => m.author.id !== guild.client.user.id);
 
-  if (own) {
-    await own.edit(content).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
-  } else {
-    await canonical.send(content).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
+  for (let i = 0; i < chunks.length; i++) {
+    if (own[i]) {
+      await own[i].edit(chunks[i]).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
+    } else {
+      await canonical.send(chunks[i]).catch((err) => console.warn("[config] Échec de la sauvegarde :", err.message));
+    }
+  }
+
+  // Messages du bot en trop si la config a rétréci et tient désormais sur
+  // moins de morceaux qu'avant.
+  for (let i = chunks.length; i < own.length; i++) {
+    await own[i].delete().catch((err) => console.warn("[config] Échec du nettoyage d'un ancien message de config :", err.message));
   }
 
   for (const msg of stale) {
