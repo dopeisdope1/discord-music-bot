@@ -5,8 +5,42 @@ const sanctionsStore = require("../../utils/sanctionsStore");
 const botAdminsStore = require("../../utils/botAdminsStore");
 const { fetchAllMembers, memberFetchErrorMessage } = require("../../utils/guildMembers");
 const { BotError } = require("../../utils/modErrors");
+const { buildCard, payload } = require("../../utils/panelComponents");
 
 const OWNER_APPROVAL_TIMEOUT_MS = 2 * 60 * 1000;
+const CONFIRM_TIMEOUT_MS = 30 * 1000;
+
+function buildConfirmCard(title, description) {
+  const container = buildCard({ title, description });
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("banall:confirm").setLabel("Confirmer").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("banall:cancel").setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+    )
+  );
+  return payload(container);
+}
+
+// Demande une confirmation dans le salon même (auteur uniquement) avant de
+// lancer le ban de masse — même pour toi/le propriétaire du serveur, `&banall`
+// ne doit jamais partir directement.
+async function requestChannelConfirmation(ctx, prompt) {
+  if (!prompt) return false;
+  try {
+    const interaction = await prompt.awaitMessageComponent({
+      filter: (i) => i.user.id === ctx.author.id,
+      time: CONFIRM_TIMEOUT_MS,
+    });
+    const confirmed = interaction.customId === "banall:confirm";
+    await interaction
+      .update(ctx.card({ title: confirmed ? "Confirmé, bannissement en cours..." : "Ban de masse annulé." }))
+      .catch(() => {});
+    return confirmed;
+  } catch {
+    await prompt.edit(ctx.card({ title: "Délai dépassé, ban de masse annulé." })).catch(() => {});
+    return false;
+  }
+}
 
 async function performBanAll(ctx, reason) {
   const members = await fetchAllMembers(ctx.guild).catch((err) => {
@@ -113,13 +147,29 @@ module.exports = {
     const isTopLevel = ctx.isSuperSys || ctx.author.id === ctx.guild.ownerId;
 
     if (isTopLevel) {
-      const { success, failed } = await performBanAll(ctx, reason);
-      await ctx.reply(
-        ctx.card({
-          title: `${success} membre(s) banni(s).`,
-          fields: failed ? [{ name: "Échecs", value: `${failed}` }] : [],
-        })
+      const prompt = await ctx.reply(
+        buildConfirmCard(
+          "Confirmer le ban de masse ?",
+          `Tous les membres de **${ctx.guild.name}** seront bannis (hors bots, toi-même et le propriétaire).\nRaison : ${reason}\n${Math.round(
+            CONFIRM_TIMEOUT_MS / 1000
+          )}s pour confirmer.`
+        )
       );
+
+      const confirmed = await requestChannelConfirmation(ctx, prompt);
+      if (!confirmed) return;
+
+      const { success, failed } = await performBanAll(ctx, reason);
+      if (prompt) {
+        await prompt
+          .edit(
+            ctx.card({
+              title: `${success} membre(s) banni(s).`,
+              fields: failed ? [{ name: "Échecs", value: `${failed}` }] : [],
+            })
+          )
+          .catch(() => {});
+      }
       return;
     }
 
