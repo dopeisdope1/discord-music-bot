@@ -72,9 +72,12 @@ async function performBanAll(ctx, reason) {
 }
 
 // `&banall` n'est déclenchable sans validation que par le propriétaire du bot
-// (super_sys) ou le propriétaire du serveur — n'importe quel autre
-// Administrateur autorisé par le niveau `owner` (voir utils/accessControl.js)
-// doit d'abord obtenir l'accord d'un owner super_sys, demandé en MP.
+// (super_sys) ou le propriétaire du serveur — un membre de confiance ajouté
+// via `&banalladmins add` (voir utils/ownerTrustStore.js, seul autre cas
+// autorisé par le niveau `owner`, utils/accessControl.js) doit d'abord
+// obtenir l'accord d'un owner super_sys, demandé en MP. Avoir la permission
+// Administrateur seule ne suffit plus (trop large : n'importe quel rôle admin
+// aurait pu déclencher la demande).
 async function requestOwnerApproval(ctx, reason) {
   const owners = botAdminsStore.list().filter((a) => a.tier === "super_sys");
   const row = new ActionRowBuilder().addComponents(

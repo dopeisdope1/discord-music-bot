@@ -1,8 +1,8 @@
-const { PermissionFlagsBits } = require("discord.js");
 const { LEVEL } = require("./permLevels");
 const botAdminsStore = require("./botAdminsStore");
 const commandStateStore = require("./commandStateStore");
 const permissionEngine = require("./permissionEngine");
+const ownerTrustStore = require("./ownerTrustStore");
 
 function effectiveLevel(commandModule) {
   const override = commandStateStore.getOverride(commandModule.name);
@@ -26,7 +26,7 @@ function checkAccess(commandModule, member) {
 
   if (level === LEVEL.OWNER) {
     const isGuildTop =
-      member.id === member.guild.ownerId || member.permissions.has(PermissionFlagsBits.Administrator);
+      member.id === member.guild.ownerId || ownerTrustStore.isTrusted(member.guild.id, member.id);
     return { allowed: isGuildTop };
   }
 
