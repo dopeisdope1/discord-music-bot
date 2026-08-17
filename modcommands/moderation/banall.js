@@ -21,14 +21,22 @@ function buildConfirmCard(title, description) {
   return payload(container);
 }
 
-// Demande une confirmation dans le salon même (auteur uniquement) avant de
-// lancer le ban de masse — même pour toi/le propriétaire du serveur, `&banall`
-// ne doit jamais partir directement.
+// Propriétaire du bot (super_sys) ou propriétaire réel du serveur — les deux
+// seuls autorisés à valider un `&banall`, que ce soit leur propre confirmation
+// (requestChannelConfirmation) ou la demande d'un tiers (requestOwnerApproval).
+function canApprove(ctx, userId) {
+  return botAdminsStore.isSuperSys(userId) || userId === ctx.guild.ownerId;
+}
+
+// Demande une confirmation dans le salon même avant de lancer le ban de
+// masse — même pour toi/le propriétaire du serveur, `&banall` ne doit jamais
+// partir directement. Seuls le propriétaire du bot et le propriétaire réel du
+// serveur peuvent cliquer (pas forcément l'auteur de la commande).
 async function requestChannelConfirmation(ctx, prompt) {
   if (!prompt) return false;
   try {
     const interaction = await prompt.awaitMessageComponent({
-      filter: (i) => i.user.id === ctx.author.id,
+      filter: (i) => canApprove(ctx, i.user.id),
       time: CONFIRM_TIMEOUT_MS,
     });
     const confirmed = interaction.customId === "banall:confirm";
@@ -71,39 +79,46 @@ async function performBanAll(ctx, reason) {
   return { success, failed };
 }
 
-// `&banall` n'est déclenchable sans validation que par le propriétaire du bot
-// (super_sys) ou le propriétaire du serveur — un membre de confiance ajouté
-// via `&banalladmins add` (voir utils/ownerTrustStore.js, seul autre cas
-// autorisé par le niveau `owner`, utils/accessControl.js) doit d'abord
-// obtenir l'accord d'un owner super_sys, demandé en MP. Avoir la permission
-// Administrateur seule ne suffit plus (trop large : n'importe quel rôle admin
-// aurait pu déclencher la demande).
+// `&banall` n'est déclenchable directement que par le propriétaire du bot
+// (super_sys) ou le propriétaire réel du serveur. N'importe quel autre
+// Administrateur qui tente la commande se fait simplement répondre qu'il n'y
+// a pas accès — en coulisses, le bot ping en MP le propriétaire réel ET tous
+// les propriétaires du bot pour leur demander de lui donner la permission.
+// Seul le propriétaire réel ou un propriétaire du bot peut Autoriser/Refuser
+// (voir canApprove) ; le demandeur, lui, ne voit jamais le résultat.
 async function requestOwnerApproval(ctx, reason) {
-  const owners = botAdminsStore.list().filter((a) => a.tier === "super_sys");
+  const superSysIds = botAdminsStore
+    .list()
+    .filter((a) => a.tier === "super_sys")
+    .map((a) => a.userId);
+  const recipientIds = [...new Set([...superSysIds, ctx.guild.ownerId])];
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("banall:confirm").setLabel("Autoriser").setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId("banall:cancel").setLabel("Refuser").setStyle(ButtonStyle.Secondary)
   );
 
   const dmMessages = [];
-  for (const { userId } of owners) {
+  for (const userId of recipientIds) {
     const user = await ctx.client.users.fetch(userId).catch(() => null);
     if (!user) continue;
     const dm = await user
       .send({
         content:
-          `**${ctx.author.tag}** (${ctx.author.id}) veut lancer \`&banall\` sur **${ctx.guild.name}**.\n` +
+          `**${ctx.author.tag}** (${ctx.author.id}) n'a pas accès à \`&banall\` sur **${ctx.guild.name}** et voudrait l'utiliser.\n` +
           `Raison : ${reason}\n` +
-          `Autorises-tu ce ban de masse ? (${Math.round(OWNER_APPROVAL_TIMEOUT_MS / 1000)}s avant expiration)`,
+          `Donne-lui la permission d'exécuter ce ban de masse ? (${Math.round(
+            OWNER_APPROVAL_TIMEOUT_MS / 1000
+          )}s avant expiration)`,
         components: [row],
       })
       .catch(() => null);
     if (dm) dmMessages.push(dm);
   }
 
-  if (!dmMessages.length) return { approved: false, unreachable: true };
+  if (!dmMessages.length) return false;
 
-  const approved = await new Promise((resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     const collectors = dmMessages.map((dm) =>
       dm.createMessageComponentCollector({ time: OWNER_APPROVAL_TIMEOUT_MS, max: 1 })
@@ -130,8 +145,6 @@ async function requestOwnerApproval(ctx, reason) {
       });
     }
   });
-
-  return { approved, unreachable: false };
 }
 
 module.exports = {
@@ -176,41 +189,11 @@ module.exports = {
       return;
     }
 
-    const waiting = await ctx.reply(
-      ctx.card({
-        title: "Autorisation requise",
-        description: "Demande envoyée en MP au propriétaire du bot — en attente de sa réponse.",
-      })
-    );
+    await ctx.reply(ctx.card({ title: "Tu n'as pas accès à cette commande." }));
 
-    const { approved, unreachable } = await requestOwnerApproval(ctx, reason);
+    const approved = await requestOwnerApproval(ctx, reason);
+    if (!approved) return;
 
-    if (unreachable) {
-      if (waiting) {
-        await waiting
-          .edit(ctx.card({ title: "Aucun propriétaire du bot joignable en MP, ban de masse annulé." }))
-          .catch(() => {});
-      }
-      return;
-    }
-
-    if (!approved) {
-      if (waiting) {
-        await waiting.edit(ctx.card({ title: "Ban de masse refusé ou expiré." })).catch(() => {});
-      }
-      return;
-    }
-
-    const { success, failed } = await performBanAll(ctx, reason);
-    if (waiting) {
-      await waiting
-        .edit(
-          ctx.card({
-            title: `${success} membre(s) banni(s).`,
-            fields: failed ? [{ name: "Échecs", value: `${failed}` }] : [],
-          })
-        )
-        .catch(() => {});
-    }
+    await performBanAll(ctx, reason);
   },
 };
