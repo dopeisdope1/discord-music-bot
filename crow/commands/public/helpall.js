@@ -1,73 +1,67 @@
 "use strict";
 
-const { loadCommandsForIdentity } = require("../../core/commandLoader");
-const messageRouter = require("../../core/messageRouter");
-const { paginate } = require("../../utils/pagination");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, MessageFlags } = require("discord.js");
+const permissionRepo = require("../../db/repositories/permissionRepo");
+const { LEVEL } = require("../../core/permissions/permissionLevels");
+const { LEVELS, levelLabel } = require("../../utils/permView");
 
-const CATEGORY_LABELS = {
-    admin: "Administration",
-    antiraid: "Anti-Raid",
-    giveaway: "Giveaways",
-    logs: "Logs",
-    moderation: "Modération",
-    owner: "Owner",
-    gestion: "Gestion",
-    public: "Public",
-    protect: "Protect",
-    limit: "Limit",
-    blr: "BLR",
-    bl: "Blacklist",
-    laisse: "Laisse",
-    voice: "Vocal",
-};
+const MAX_BLOCK = 900;
 
-const PAGE_SIZE = 20;
+function truncateMentions(mentions) {
+    const joined = mentions.join(", ");
+    if (joined.length <= MAX_BLOCK) return joined;
+
+    let kept = 0;
+    let len = 0;
+    for (const m of mentions) {
+        if (len + m.length + 2 > MAX_BLOCK) break;
+        len += m.length + 2;
+        kept += 1;
+    }
+    return `${mentions.slice(0, kept).join(", ")} … (+${mentions.length - kept})`;
+}
 
 module.exports = {
     name: "helpall",
     category: "public",
-    description: "Affiche toutes les commandes sans restriction.",
-    permLevel: 0,
+    description: "Affiche les paliers de permission et les rôles/membres associés.",
+    permLevel: LEVEL.NONE,
     aliases: [],
     async execute(ctx) {
-        const prefix = messageRouter.resolvePrefix(ctx.identity, ctx.guildId);
-        const registry = loadCommandsForIdentity(ctx.identity);
-        const commands = [...new Set(registry.values())].sort((a, b) => {
-            if (a.category !== b.category) return a.category.localeCompare(b.category);
-            return a.name.localeCompare(b.name);
-        });
+        const roles = permissionRepo.listRoles(ctx.guildId);
+        const users = permissionRepo.listUsers(ctx.guildId);
 
-        const lines = [];
-        let currentCategory = null;
-        for (const cmd of commands) {
-            if (cmd.category !== currentCategory) {
-                currentCategory = cmd.category;
-                lines.push(`\n**${CATEGORY_LABELS[currentCategory] || currentCategory}**`);
-            }
-            lines.push(`\`${prefix}${cmd.name}\` : ${cmd.description || "Pas de description."}`);
+        const container = new ContainerBuilder();
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                "## Permissions\n> Voici les différents paliers ainsi que les rôles et membres associés"
+            )
+        );
+        container.addSeparatorComponents(new SeparatorBuilder());
+
+        // Le palier 0 n'a pas de titulaires : il est ouvert à tout le monde.
+        for (const level of LEVELS.filter((l) => l !== LEVEL.NONE)) {
+            const mentions = [
+                ...roles.filter((r) => r.level === level).map((r) => `<@&${r.role_id}>`),
+                ...users.filter((u) => u.level === level).map((u) => `<@${u.user_id}>`),
+            ];
+
+            container.addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `**${levelLabel(level)}**\n> ${mentions.length ? truncateMentions(mentions) : "*Aucun rôle ni membre*"}`
+                )
+            );
         }
 
-        const chunks = [];
-        let current = [];
-        let currentLen = 0;
-        for (const line of lines) {
-            if (current.length >= PAGE_SIZE || currentLen + line.length > 3500) {
-                chunks.push(current);
-                current = [];
-                currentLen = 0;
-            }
-            current.push(line);
-            currentLen += line.length;
-        }
-        if (current.length) chunks.push(current);
-
-        const pages = chunks.map((chunk) =>
-            ctx.embed({
-                title: `📖 Page d'aide — ${ctx.identity.displayName}`,
-                description: `Liste des commandes disponibles (${commands.length}).\n${chunk.join("\n")}`,
-            })
+        container.addSeparatorComponents(new SeparatorBuilder());
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                "Le propriétaire du serveur et tout membre ayant la permission Discord **Administrateur** " +
+                    "sont automatiquement au palier 3, sans configuration.\n" +
+                    "Voir les commandes de chaque palier : `perms`."
+            )
         );
 
-        await paginate(ctx.message, pages);
+        await ctx.send({ flags: MessageFlags.IsComponentsV2, components: [container] });
     },
 };

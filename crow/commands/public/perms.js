@@ -1,43 +1,60 @@
 "use strict";
 
-const permissionRepo = require("../../db/repositories/permissionRepo");
-const { LEVEL, LEVEL_NAMES } = require("../../core/permissions/permissionLevels");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, MessageFlags } = require("discord.js");
+const { LEVEL } = require("../../core/permissions/permissionLevels");
+const { LEVELS, levelLabel, usableBy } = require("../../utils/permView");
+
+const MAX_BLOCK = 900;
 
 module.exports = {
     name: "perms",
     category: "public",
-    description: "Affiche les rôles/membres associés à chaque niveau de permission.",
-    permLevel: LEVEL.ADMIN,
+    description: "Affiche les paliers de permission et les commandes accessibles à chacun.",
+    permLevel: LEVEL.NONE,
+    aliases: [],
     async execute(ctx) {
-        const roles = permissionRepo.listRoles(ctx.guildId);
-        const users = permissionRepo.listUsers(ctx.guildId);
+        const container = new ContainerBuilder();
 
-        const fields = [];
-        for (const level of [LEVEL.STAFF, LEVEL.MOD, LEVEL.ADMIN]) {
-            const roleMentions = roles.filter((r) => r.level === level).map((r) => `<@&${r.role_id}>`);
-            const userMentions = users.filter((u) => u.level === level).map((u) => `<@${u.user_id}>`);
-            const mentions = [...roleMentions, ...userMentions];
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                "## Permissions liées aux commandes\n" +
+                    "> Voici les différents paliers ainsi que les commandes accessibles"
+            )
+        );
+        container.addSeparatorComponents(new SeparatorBuilder());
 
-            fields.push({
-                name: `Permission ${level} (${LEVEL_NAMES[level]})`,
-                value: mentions.length ? mentions.join(", ") : "*Aucun rôle ni membre*",
-            });
+        // Cumulatif : un palier donne accès au sien et à tous ceux du dessous,
+        // exactement comme le contrôle d'accès de core/messageRouter.js.
+        for (const level of LEVELS) {
+            const names = usableBy(ctx.identity, level).map((c) => c.name);
+
+            let list = names.join(", ");
+            if (list.length > MAX_BLOCK) {
+                let kept = 0;
+                let len = 0;
+                for (const n of names) {
+                    if (len + n.length + 2 > MAX_BLOCK) break;
+                    len += n.length + 2;
+                    kept += 1;
+                }
+                list = `${names.slice(0, kept).join(", ")} … (+${names.length - kept})`;
+            }
+
+            container.addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                    `**${levelLabel(level)}** — ${names.length} commande(s)\n> ${list || "*Aucune*"}`
+                )
+            );
         }
 
-        fields.push({
-            name: "Toujours Admin (natif)",
-            value: "Le propriétaire du serveur et tout membre avec la permission Discord **Administrateur** ont automatiquement le niveau 3, sans configuration.",
-        });
+        container.addSeparatorComponents(new SeparatorBuilder());
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+                "Attribuer un palier : `setperm <1-3> @rôle` — le retirer : `delperm <1-3> @rôle`.\n" +
+                    "Voir qui possède quel palier : `helpall`."
+            )
+        );
 
-        await ctx.reply({
-            embeds: [
-                ctx.embed({
-                    title: `🔐 Permissions — ${ctx.identity.displayName}`,
-                    description: "Niveaux de permission configurés sur ce serveur (partagés entre les 5 bots Crow).",
-                    fields,
-                    footer: `Configurer : setperm/delperm <1-3> @role, ou owner/sys add @user`,
-                }),
-            ],
-        });
+        await ctx.send({ flags: MessageFlags.IsComponentsV2, components: [container] });
     },
 };

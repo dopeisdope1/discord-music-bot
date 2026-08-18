@@ -4,7 +4,8 @@ const { LEVEL } = require("../../core/permissions/permissionLevels");
 const { buildPanel } = require("../../services/panelService");
 
 module.exports = {
-    name: "config",
+    name: "panel",
+    aliases: ["config"],
     category: "admin",
     description: "Panneau de configuration interactif (protections, sanctions, logs).",
     permLevel: LEVEL.ADMIN,
