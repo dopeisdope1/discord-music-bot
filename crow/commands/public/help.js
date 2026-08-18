@@ -5,23 +5,7 @@ const { loadCommandsForIdentity } = require("../../core/commandLoader");
 const messageRouter = require("../../core/messageRouter");
 const identities = require("../../identities");
 const { registerButtonHandler } = require("../../core/interactionRegistry");
-
-const CATEGORY_LABELS = {
-    admin: "Administration",
-    antiraid: "Anti-Raid",
-    giveaway: "Giveaways",
-    logs: "Logs",
-    moderation: "Modération",
-    owner: "Owner",
-    gestion: "Gestion",
-    public: "Public",
-    protect: "Protect",
-    limit: "Limit",
-    blr: "BLR",
-    bl: "Blacklist",
-    laisse: "Laisse",
-    voice: "Vocal",
-};
+const { CATEGORY_LABELS } = require("../../utils/categoryLabels");
 
 function buildCategorySelect(identityKey, counts) {
     return new StringSelectMenuBuilder()
