@@ -1,22 +1,15 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, PermissionFlagsBits } = require("discord.js");
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-// Système de modération/panel — voir
-// utils/modMessageRouter.js pour le détail du pipeline (permissions, cooldowns,
-// blacklist de salons, anti-raid).
-const { handleModerationTextCommand } = require("./utils/modMessageRouter");
-const modInteractionRegistry = require("./utils/modInteractionRegistry");
-const { loadAllCommands: loadModCommands } = require("./utils/modCommandLoader");
-const botAdminsStore = require("./utils/botAdminsStore");
-const { sendLog } = require("./utils/actionLogger");
+// Seule commande de modération conservée après le retrait du moteur "zinki"
+// (voir utils/clearCommand.js) — plus de panel/permissions/anti-raid.
+const { handleClearCommand } = require("./utils/clearCommand");
 const { handleSelfClear } = require("./utils/selfClear");
-const { handleContextMenu } = require("./utils/contextMenus");
-const { getWelcomeChannel, getRandomWelcomeMessage, getWelcomeDeleteDelay } = require("./utils/welcomeStore");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -26,7 +19,6 @@ const {
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { loadGuildConfig } = require("./utils/configChannel");
-const { restorePublicRestrictions } = require("./utils/publicCommandSync");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 
 const client = new Client({
@@ -46,9 +38,8 @@ const client = new Client({
   // cliquables (<@id> s'affiche toujours "@pseudo"), elles ne déclenchent
   // simplement plus de notification — indispensable pour les logs et les
   // réponses de commandes, qui citent constamment des membres.
-  // Les rares endroits où le ping est VOULU le demandent explicitement :
-  // message de bienvenue (voir guildMemberAdd) et demande d'autorisation
-  // vocale (voir utils/playerControl.js).
+  // Le seul endroit où le ping est VOULU le demande explicitement : la
+  // demande d'autorisation vocale (voir utils/playerControl.js).
   allowedMentions: { parse: [], repliedUser: false },
 });
 
@@ -60,18 +51,6 @@ for (const file of MUSIC_COMMAND_FILES) {
   const command = require(path.join(commandsPath, file));
   client.commands.set(command.data.name, command);
 }
-
-// ---- Chargement des commandes de modération (préfixe &, voir modcommands/) ----
-// Déclenche aussi, en effet de bord au require(), l'enregistrement des
-// handlers d'interaction (RoleSelect de &addrole/&delrole, panels...) — voir
-// utils/modInteractionRegistry.js.
-loadModCommands();
-require("./utils/modPanel");
-botAdminsStore.seedOwnersFromEnv();
-
-// Stocke le dernier message supprimé par salon (utilisé par &snipe, voir
-// modcommands/info/snipe.js, et par l'ancien &clear — voir plus bas).
-client.snipes = new Collection();
 
 // ---- Initialisation de Kazagumo/Lavalink (YouTube + recherche Spotify) ----
 // Le nœud Lavalink fait tout le travail audio (y compris la connexion UDP à
@@ -200,20 +179,6 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Clic droit sur un membre > Applications — voir utils/contextMenus.js.
-  // Même moteur de permissions que les commandes texte (&panel > Permissions).
-  if (interaction.isUserContextMenuCommand()) {
-    try {
-      await handleContextMenu(interaction);
-    } catch (err) {
-      console.error("[contextmenu]", err);
-      const payload = { content: "Une erreur est survenue.", ephemeral: true };
-      if (interaction.replied || interaction.deferred) await interaction.followUp(payload).catch(() => {});
-      else await interaction.reply(payload).catch(() => {});
-    }
-    return;
-  }
-
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -263,12 +228,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    if (!MUSIC_BUTTON_IDS.has(interaction.customId)) {
-      // Pas un bouton musique connu : tente le nouveau système de modération/
-      // panel (voir utils/modInteractionRegistry.js).
-      await modInteractionRegistry.dispatch(interaction).catch((err) => console.error("[modpanel]", err));
-      return;
-    }
+    if (!MUSIC_BUTTON_IDS.has(interaction.customId)) return;
 
     const player = client.kazagumo.players.get(interaction.guildId);
     if (!player) {
@@ -346,17 +306,9 @@ client.on("interactionCreate", async (interaction) => {
     }
     return;
   }
-
-  // Menus déroulants (String/Role/User/Channel Select) et modales du nouveau
-  // système de modération (panel, permissions, anti-raid...) — aucun de ces
-  // types d'interaction n'existait côté musique avant, tout part vers
-  // utils/modInteractionRegistry.js.
-  if (interaction.isAnySelectMenu() || interaction.isModalSubmit()) {
-    await modInteractionRegistry.dispatch(interaction).catch((err) => console.error("[modpanel]", err));
-  }
 });
 
-// ---- Commandes textuelles préfixées (! par défaut, configurable via .panel/?panel) ----
+// ---- Commandes textuelles préfixées ----
 client.on("messageCreate", (message) => {
   handleMusicTextCommand(client, message).catch((err) => {
     console.error(err);
@@ -364,50 +316,11 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
-  // Jeu de commandes de modération de ce bot, sur son propre préfixe
-  // (distinct du préfixe musique) — voir utils/modMessageRouter.js. Gère
-  // lui-même ses erreurs (via ctx.card), donc pas besoin d'un .catch ici en
-  // plus de celui déjà interne au router.
-  handleModerationTextCommand(client, message).catch((err) => console.error(err));
+  // Seule commande de modération conservée — voir utils/clearCommand.js.
+  handleClearCommand(client, message).catch((err) => console.error(err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
-});
-
-// ---- Log + snipe : dernier message supprimé par salon ----
-client.on("messageDelete", (message) => {
-  if (!message.guild || message.author?.bot) return;
-
-  client.snipes.set(message.channel.id, {
-    content: message.content || "*(pas de contenu texte)*",
-    authorTag: message.author?.tag || "Inconnu",
-    authorAvatar: message.author?.displayAvatarURL?.() || null,
-    deletedAt: Date.now(),
-  });
-
-  sendLog(client, message.guild.id, "messages", {
-    title: "Message supprimé",
-    description: message.content ? message.content.slice(0, 1000) : "*(pas de contenu texte)*",
-    actor: message.author,
-    fields: [{ name: "Salon", value: `<#${message.channel.id}>` }],
-  });
-});
-
-// ---- Logs arrivées/départs (voir &panel > Configurer les logs) ----
-client.on("guildMemberAdd", (member) => {
-  sendLog(client, member.guild.id, "joins", {
-    title: "Arrivée",
-    description: `${member.user.tag} a rejoint le serveur.`,
-    actor: member.user,
-  });
-});
-
-client.on("guildMemberRemove", (member) => {
-  sendLog(client, member.guild.id, "leaves", {
-    title: "Départ",
-    description: `${member.user.tag} a quitté le serveur.`,
-    actor: member.user,
-  });
 });
 
 // ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie
@@ -491,41 +404,6 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
   }
 });
 
-// ---- Message de bienvenue pour les nouveaux membres ----
-// Voir les commandes de config `greet`/`addbienvenue`/etc. (préfixe
-// modération de ce bot).
-client.on("guildMemberAdd", (member) => {
-  console.log(`[bienvenue] Nouveau membre : ${member.user.tag} sur "${member.guild.name}"`);
-  const botMember = member.guild.members.me;
-  const configuredChannelId = getWelcomeChannel(member.guild.id);
-  const channel =
-    (configuredChannelId && member.guild.channels.cache.get(configuredChannelId)) ||
-    member.guild.channels.cache.find((c) => c.isTextBased() && c.name.toLowerCase() === "vé") ||
-    member.guild.systemChannel ||
-    member.guild.channels.cache.find(
-      (c) => c.isTextBased() && !c.isThread() && c.permissionsFor(botMember)?.has(PermissionFlagsBits.SendMessages)
-    );
-  if (!channel) {
-    console.warn("[bienvenue] Aucun salon disponible pour envoyer le message.");
-    return;
-  }
-  console.log(`[bienvenue] Envoi dans #${channel.name}`);
-  channel
-    // Seul endroit avec les demandes d'accès vocal où le ping est voulu : le
-    // but d'un message de bienvenue est justement de notifier l'arrivant.
-    .send({
-      content: `${member} ${getRandomWelcomeMessage(member.guild.id)}`,
-      allowedMentions: { users: [member.id] },
-    })
-    .then((sent) => {
-      const deleteAfterMs = getWelcomeDeleteDelay(member.guild.id);
-      if (deleteAfterMs > 0) {
-        setTimeout(() => sent.delete().catch(() => {}), deleteAfterMs);
-      }
-    })
-    .catch((err) => console.error("[bienvenue] Échec de l'envoi :", err));
-});
-
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
 
@@ -539,23 +417,13 @@ client.once("ready", () => {
       console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
     });
 
-    // Restaure les préfixes configurés via &panel : le disque du container
-    // Railway est réinitialisé à chaque redéploiement, donc sans ça ils
-    // reviendraient à leur valeur par défaut à chaque push (voir
-    // utils/configChannel.js, qui sauvegarde tout ça dans un salon Discord
-    // caché).
-    loadGuildConfig(guild)
-      .then(() => {
-        // Doit venir APRÈS l'hydratation : les permissions restaurées sont ce
-        // qui permet de retrouver les commandes publiques restreintes.
-        const restored = restorePublicRestrictions(guild.id);
-        if (restored.length) {
-          console.log(`[permissions] "${guild.name}" — commandes publiques à nouveau restreintes : ${restored.join(", ")}`);
-        }
-      })
-      .catch((err) => {
-        console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
-      });
+    // Restaure les préfixes configurés : le disque du container Railway est
+    // réinitialisé à chaque redéploiement, donc sans ça ils reviendraient à
+    // leur valeur par défaut à chaque push (voir utils/configChannel.js, qui
+    // sauvegarde tout ça dans un salon Discord caché).
+    loadGuildConfig(guild).catch((err) => {
+      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
+    });
   }
 });
 
@@ -564,11 +432,9 @@ client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
   });
-  loadGuildConfig(guild)
-    .then(() => restorePublicRestrictions(guild.id))
-    .catch((err) => {
-      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
-    });
+  loadGuildConfig(guild).catch((err) => {
+    console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
+  });
 });
 
 // Sans handler, Node.js termine le process instantanément sur SIGTERM (le

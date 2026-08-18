@@ -1,6 +1,5 @@
 const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
-const { sendLog } = require("./actionLogger");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
 
@@ -46,12 +45,6 @@ async function handleSelfClear(client, message) {
   const count = toDelete.length ? await deleteMessages(channel, toDelete) : 0;
 
   tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** supprimé(s) — ${joke}`)] }).catch(() => {});
-
-  sendLog(client, message.guild.id, "moderation", {
-    title: "Self-clear",
-    description: `${message.author.tag} a supprimé ${count} de ses propres messages via "${content}".`,
-    actor: message.author,
-  });
 
   return true;
 }

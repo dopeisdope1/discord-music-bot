@@ -1,7 +1,6 @@
 require("dotenv").config();
 const path = require("path");
 const { REST, Routes } = require("discord.js");
-const { buildDefinitions: buildContextMenus } = require("./utils/contextMenus");
 
 // Voir index.js pour la même liste de fichiers.
 const BOT_COMMAND_FILES = {
@@ -21,11 +20,7 @@ const globalMode = process.argv.includes("--global");
 
 const commandsPath = path.join(__dirname, "commands");
 const slashCommands = BOT_COMMAND_FILES[target].map((file) => require(path.join(commandsPath, file)).data.toJSON());
-
-// Slash ET menus contextuels sont envoyés ENSEMBLE : l'API remplace
-// l'intégralité des commandes à chaque envoi, donc les déployer séparément
-// effacerait les autres.
-const commands = [...slashCommands, ...buildContextMenus()];
+const commands = slashCommands;
 
 const token = process.env.DISCORD_TOKEN;
 const rest = new REST().setToken(token);
@@ -35,9 +30,7 @@ const rest = new REST().setToken(token);
 const applicationId = process.env.CLIENT_ID || Buffer.from(token.split(".")[0], "base64").toString();
 
 (async () => {
-  console.log(
-    `⏳ ${slashCommands.length} commande(s) slash + ${commands.length - slashCommands.length} menu(s) contextuel(s)...`
-  );
+  console.log(`⏳ ${slashCommands.length} commande(s) slash...`);
 
   if (globalMode) {
     const result = await rest.put(Routes.applicationCommands(applicationId), { body: commands });

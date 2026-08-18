@@ -1,15 +1,5 @@
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const { getRawGuildData: getRawPrefixes, hydrateFromRemote: hydratePrefixes } = require("./prefixStore");
-const { getRawGuildData: getRawLogChannels, hydrateFromRemote: hydrateLogChannels } = require("./logStore");
-const { getRawGuildData: getRawWelcome, hydrateFromRemote: hydrateWelcome } = require("./welcomeStore");
-// Système de modération/panel —
-// remplace l'ancien commandPermissionStore/permTierStore.
-const { getRawGuildData: getRawPermissions, hydrateFromRemote: hydratePermissions } = require("./permissionsStore");
-const { getRawGuildData: getRawChannelBlacklist, hydrateFromRemote: hydrateChannelBlacklist } = require("./channelBlacklistStore");
-const { getRawGuildData: getRawMute, hydrateFromRemote: hydrateMute } = require("./muteStore");
-const { getRawGuildData: getRawAddroleConfig, hydrateFromRemote: hydrateAddroleConfig } = require("./addroleConfigStore");
-const { getRawGuildData: getRawAntiraidConfig, hydrateFromRemote: hydrateAntiraidConfig } = require("./antiraidConfigStore");
-const { getRawGuildData: getRawRoleBlacklist, hydrateFromRemote: hydrateRoleBlacklist } = require("./roleBlacklistStore");
 
 // Le disque du container Railway est réinitialisé à chaque redéploiement, donc
 // tout ce qui est écrit dans data/ (préfixes, logs, permissions, paliers...)
@@ -28,28 +18,14 @@ const CONFIG_CHANNEL_NAME = "zinki-config";
 // changer.
 const MESSAGE_BUDGET = 1900;
 
-// getRawGuildData/hydrateFromRemote par catégorie.
+// getRawGuildData/hydrateFromRemote par catégorie — réduit aux préfixes
+// depuis le retrait du moteur de modération "zinki" (seul &clear subsiste,
+// utils/clearCommand.js, sans config propre).
 const CATEGORY_GETTERS = {
   prefixes: getRawPrefixes,
-  logChannels: getRawLogChannels,
-  welcome: getRawWelcome,
-  permissions: getRawPermissions,
-  channelBlacklist: getRawChannelBlacklist,
-  mute: getRawMute,
-  addroleConfig: getRawAddroleConfig,
-  antiraidConfig: getRawAntiraidConfig,
-  roleBlacklist: getRawRoleBlacklist,
 };
 const CATEGORY_HYDRATORS = {
   prefixes: hydratePrefixes,
-  logChannels: hydrateLogChannels,
-  welcome: hydrateWelcome,
-  permissions: hydratePermissions,
-  channelBlacklist: hydrateChannelBlacklist,
-  mute: hydrateMute,
-  addroleConfig: hydrateAddroleConfig,
-  antiraidConfig: hydrateAntiraidConfig,
-  roleBlacklist: hydrateRoleBlacklist,
 };
 const ALL_CATEGORIES = Object.keys(CATEGORY_GETTERS);
 
@@ -88,7 +64,7 @@ async function createConfigChannel(guild) {
     .create({
       name: CONFIG_CHANNEL_NAME,
       type: ChannelType.GuildText,
-      topic: "Config interne du bot (préfixes, logs, permissions, paliers...) — généré automatiquement, ne pas supprimer.",
+      topic: "Config interne du bot (préfixes) — généré automatiquement, ne pas supprimer.",
       permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }],
       reason: "Salon de configuration interne du bot (persistance entre redéploiements).",
     })

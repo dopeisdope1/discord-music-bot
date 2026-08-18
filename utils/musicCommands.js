@@ -229,13 +229,13 @@ async function handleMusicTextCommand(client, message) {
   await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
-  const { main: MAIN_PREFIX, musicMod: MUSIC_MOD_PREFIX } = getPrefixes(message.guild.id);
+  const { main: MAIN_PREFIX } = getPrefixes(message.guild.id);
   if (!content.startsWith(MAIN_PREFIX)) return;
 
   const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
   if (cmd === "help") {
-    return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX, MUSIC_MOD_PREFIX));
+    return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX));
   }
   if (handlers[cmd]) {
     return handlers[cmd](client, message, args);
