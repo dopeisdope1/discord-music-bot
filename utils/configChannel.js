@@ -18,9 +18,9 @@ const CONFIG_CHANNEL_NAME = "zinki-config";
 // changer.
 const MESSAGE_BUDGET = 1900;
 
-// getRawGuildData/hydrateFromRemote par catégorie — réduit aux préfixes
-// depuis le retrait du moteur de modération "zinki" (seul &clear subsiste,
-// utils/clearCommand.js, sans config propre).
+// getRawGuildData/hydrateFromRemote par catégorie — réduit au préfixe musique
+// depuis le retrait du moteur "zinki". La suite Crow (préfixe &) a sa propre
+// persistance en SQLite, elle ne passe pas par ce salon de config.
 const CATEGORY_GETTERS = {
   prefixes: getRawPrefixes,
 };
