@@ -62,20 +62,41 @@ for (const file of MUSIC_COMMAND_FILES) {
 // Le nœud Lavalink fait tout le travail audio (y compris la connexion UDP à
 // Discord), ce qui contourne le blocage de l'UDP sortant sur certains hébergeurs
 // (Railway inclus) : le bot ne parle au nœud qu'en WebSocket/HTTP classique.
-// Configurable via LAVALINK_HOST/PORT/PASSWORD/SECURE ; valeur par défaut =
-// un nœud public gratuit (peut tomber, voir README pour en changer).
-const LavalinkNodes = [
-  {
-    name: "main",
-    url: `${process.env.LAVALINK_HOST || "lava-v4.ajieblogs.eu.org"}:${
-      process.env.LAVALINK_PORT || "443"
-    }`,
-    auth: process.env.LAVALINK_PASSWORD || "https://dsc.gg/ajidevserver",
-    secure: process.env.LAVALINK_SECURE
-      ? process.env.LAVALINK_SECURE === "true"
-      : true,
-  },
+// Les nœuds publics gratuits tombent régulièrement et sans préavis — c'est
+// arrivé en pleine lecture (WebSocket fermé en boucle, puis 504). On en
+// déclare donc PLUSIEURS : Shoukaku bascule tout seul sur le suivant quand
+// l'un devient injoignable, au lieu de laisser la musique morte jusqu'à un
+// changement manuel de LAVALINK_HOST.
+// LAVALINK_HOST/PORT/PASSWORD/SECURE, s'ils sont définis, ajoutent un nœud
+// prioritaire en tête de liste (utile pour un nœud privé).
+const FALLBACK_NODES = [
+  { host: "lava-v4.ajieblogs.eu.org", auth: "https://dsc.gg/ajidevserver" },
+  { host: "lavalinkv4.serenetia.com", auth: "https://dsc.gg/ajidevserver" },
+  { host: "lavalink.serenetia.com", auth: "https://dsc.gg/ajidevserver" },
 ];
+
+const LavalinkNodes = [
+  ...(process.env.LAVALINK_HOST
+    ? [
+        {
+          name: "principal",
+          url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT || "443"}`,
+          auth: process.env.LAVALINK_PASSWORD || "youshallnotpass",
+          secure: process.env.LAVALINK_SECURE ? process.env.LAVALINK_SECURE === "true" : true,
+        },
+      ]
+    : []),
+  // Le nœud de LAVALINK_HOST peut déjà figurer dans la liste de secours : on
+  // l'y retire pour ne pas déclarer deux fois la même URL.
+  ...FALLBACK_NODES.filter((node) => node.host !== process.env.LAVALINK_HOST).map((node, i) => ({
+    name: `secours-${i + 1}`,
+    url: `${node.host}:443`,
+    auth: node.auth,
+    secure: true,
+  })),
+];
+
+console.log(`[lavalink] ${LavalinkNodes.length} nœud(s) déclaré(s) : ${LavalinkNodes.map((n) => n.url).join(", ")}`);
 
 client.kazagumo = new Kazagumo(
   {
