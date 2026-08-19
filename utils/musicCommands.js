@@ -113,70 +113,6 @@ const handlers = {
     });
   },
 
-  // Gestion des dispenses de quota sur "uo clear" & consorts. Sur le préfixe
-  // musique et non sur "&" : ce dernier est celui du CrowBot du serveur, on
-  // évite d'y remettre une commande qui entrerait en collision avec le sien.
-  async clearbypass(client, message, args) {
-    if (!clearBypassStore.isOwner(message.author.id)) return;
-
-    const { main } = getPrefixes(message.guild.id);
-    const usage = `\`${main}clearbypass add @membre\` · \`remove @membre\` · \`list\``;
-    const action = (args[0] || "").toLowerCase();
-
-    if (action === "list") {
-      const ids = clearBypassStore.list();
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            "info",
-            ids.length
-              ? `Dispensés du quota :\n${ids.map((id) => `<@${id}>`).join(", ")}`
-              : "Personne n'est dispensé pour l'instant. Toi, tu l'es toujours."
-          ),
-        ],
-      });
-    }
-
-    if (action !== "add" && action !== "remove") {
-      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
-    }
-
-    const target = message.mentions.users?.first();
-    const rawId = args[1]?.replace(/\D/g, "");
-    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
-    if (!userId) {
-      return message.reply({ embeds: [buildStatusEmbed("error", `Mentionne un membre ou donne son ID.\n${usage}`)] });
-    }
-
-    if (clearBypassStore.isOwner(userId)) {
-      return message.reply({
-        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il est déjà dispensé en permanence.`)],
-      });
-    }
-
-    if (action === "add") {
-      const added = clearBypassStore.add(userId);
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            added ? "success" : "info",
-            added ? `<@${userId}> peut désormais utiliser les clear sans limite.` : `<@${userId}> était déjà dispensé.`
-          ),
-        ],
-      });
-    }
-
-    const removed = clearBypassStore.remove(userId);
-    return message.reply({
-      embeds: [
-        buildStatusEmbed(
-          removed ? "success" : "info",
-          removed ? `<@${userId}> repasse sous le quota normal.` : `<@${userId}> n'était pas dispensé.`
-        ),
-      ],
-    });
-  },
-
   async join(client, message) {
     const vc = message.member.voice.channel;
     if (!vc)
@@ -295,6 +231,74 @@ const handlers = {
   },
 };
 
+// Commandes sur le préfixe "&" (musicMod). Ce préfixe est aussi celui du
+// CrowBot présent sur le serveur : le bot reste donc MUET sur tout ce qui
+// n'est pas listé ici, pour ne jamais répondre à la place de l'autre.
+const modHandlers = {
+  async clearbypass(client, message, args) {
+    // Silence total pour les non-propriétaires : pas même un refus, afin de
+    // ne rien afficher si quelqu'un d'autre tape cette commande.
+    if (!clearBypassStore.isOwner(message.author.id)) return;
+
+    const { musicMod } = getPrefixes(message.guild.id);
+    const usage = `\`${musicMod}clearbypass add @membre\` · \`remove @membre\` · \`list\``;
+    const action = (args[0] || "").toLowerCase();
+
+    if (action === "list") {
+      const ids = clearBypassStore.list();
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "info",
+            ids.length
+              ? `Dispensés du quota :\n${ids.map((id) => `<@${id}>`).join(", ")}`
+              : "Personne n'est dispensé pour l'instant. Toi, tu l'es toujours."
+          ),
+        ],
+      });
+    }
+
+    if (action !== "add" && action !== "remove") {
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
+    }
+
+    const target = message.mentions.users?.first();
+    const rawId = args[1]?.replace(/\D/g, "");
+    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
+    if (!userId) {
+      return message.reply({ embeds: [buildStatusEmbed("error", `Mentionne un membre ou donne son ID.\n${usage}`)] });
+    }
+
+    if (clearBypassStore.isOwner(userId)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il est déjà dispensé en permanence.`)],
+      });
+    }
+
+    if (action === "add") {
+      const added = clearBypassStore.add(userId);
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            added ? "success" : "info",
+            added ? `<@${userId}> peut désormais utiliser les clear sans limite.` : `<@${userId}> était déjà dispensé.`
+          ),
+        ],
+      });
+    }
+
+    const removed = clearBypassStore.remove(userId);
+    return message.reply({
+      embeds: [
+        buildStatusEmbed(
+          removed ? "success" : "info",
+          removed ? `<@${userId}> repasse sous le quota normal.` : `<@${userId}> n'était pas dispensé.`
+        ),
+      ],
+    });
+  },
+};
+
 /**
  * À appeler dans l'écouteur "messageCreate" du bot Musique.
  */
@@ -306,7 +310,18 @@ async function handleMusicTextCommand(client, message) {
   await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
-  const { main: MAIN_PREFIX } = getPrefixes(message.guild.id);
+  const { main: MAIN_PREFIX, musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
+
+  // Préfixe "&" : partagé avec le CrowBot du serveur. On ne traite que les
+  // commandes explicitement déclarées dans modHandlers et on sort en silence
+  // pour tout le reste, qui appartient à l'autre bot.
+  if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
+    const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
+    const handler = modHandlers[(modCmd || "").toLowerCase()];
+    if (handler) return handler(client, message, modArgs);
+    return;
+  }
+
   if (!content.startsWith(MAIN_PREFIX)) return;
 
   const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
