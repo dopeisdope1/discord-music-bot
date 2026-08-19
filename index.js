@@ -108,10 +108,13 @@ client.kazagumo = new Kazagumo(
   },
   new Connectors.DiscordJS(client),
   LavalinkNodes,
-  // Les nœuds Lavalink publics gratuits ont des coupures passagères ; la
-  // valeur par défaut de Shoukaku (3 tentatives, ~15s) abandonne trop vite.
-  // On retente beaucoup plus longtemps pour s'auto-réparer sans redémarrage.
-  { reconnectTries: 1000, reconnectInterval: 5 }
+  // Les nœuds publics ont des coupures passagères, donc on retente longtemps
+  // (la valeur par défaut de Shoukaku, 3 tentatives, abandonne trop vite).
+  // Mais PAS toutes les 5 secondes : multiplié par le nombre de nœuds, ça
+  // nous a fait bannir temporairement en HTTP 429 par les trois à la fois.
+  // 20s d'intervalle reste réactif tout en restant supportable pour des
+  // serveurs gratuits, et 200 tentatives couvrent plus d'une heure de panne.
+  { reconnectTries: 200, reconnectInterval: 20 }
 );
 
 client.kazagumo.shoukaku.on("ready", (name) => console.log(`✅ Nœud Lavalink "${name}" connecté.`));
