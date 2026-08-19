@@ -6,8 +6,9 @@ const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./mus
 const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
 const { waitForHydration } = require("./configChannel");
-const { playbackErrorMessage } = require("./musicErrors");
+const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
+const clearBypassStore = require("./clearBypassStore");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -85,7 +86,7 @@ const handlers = {
           client,
         });
         if (!outcome) {
-          return message.reply({ embeds: [buildStatusEmbed("error", "Impossible de jouer ce titre. Vérifie le lien.")] });
+          return message.reply({ embeds: [buildStatusEmbed("error", unresolvedQueryMessage(query))] });
         }
         const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
         await message.reply({
@@ -94,7 +95,7 @@ const handlers = {
       } catch (err) {
         console.error(err);
         await message.reply({
-          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, "Impossible de jouer ce titre. Vérifie le lien."))],
+          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, unresolvedQueryMessage(query)))],
         });
       }
       return;
@@ -109,6 +110,70 @@ const handlers = {
       query,
       requesterId: message.author.id,
       send: (payload) => message.reply(payload),
+    });
+  },
+
+  // Gestion des dispenses de quota sur "uo clear" & consorts. Sur le préfixe
+  // musique et non sur "&" : ce dernier est celui du CrowBot du serveur, on
+  // évite d'y remettre une commande qui entrerait en collision avec le sien.
+  async clearbypass(client, message, args) {
+    if (!clearBypassStore.isOwner(message.author.id)) return;
+
+    const { main } = getPrefixes(message.guild.id);
+    const usage = `\`${main}clearbypass add @membre\` · \`remove @membre\` · \`list\``;
+    const action = (args[0] || "").toLowerCase();
+
+    if (action === "list") {
+      const ids = clearBypassStore.list();
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "info",
+            ids.length
+              ? `Dispensés du quota :\n${ids.map((id) => `<@${id}>`).join(", ")}`
+              : "Personne n'est dispensé pour l'instant. Toi, tu l'es toujours."
+          ),
+        ],
+      });
+    }
+
+    if (action !== "add" && action !== "remove") {
+      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
+    }
+
+    const target = message.mentions.users?.first();
+    const rawId = args[1]?.replace(/\D/g, "");
+    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
+    if (!userId) {
+      return message.reply({ embeds: [buildStatusEmbed("error", `Mentionne un membre ou donne son ID.\n${usage}`)] });
+    }
+
+    if (clearBypassStore.isOwner(userId)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il est déjà dispensé en permanence.`)],
+      });
+    }
+
+    if (action === "add") {
+      const added = clearBypassStore.add(userId);
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            added ? "success" : "info",
+            added ? `<@${userId}> peut désormais utiliser les clear sans limite.` : `<@${userId}> était déjà dispensé.`
+          ),
+        ],
+      });
+    }
+
+    const removed = clearBypassStore.remove(userId);
+    return message.reply({
+      embeds: [
+        buildStatusEmbed(
+          removed ? "success" : "info",
+          removed ? `<@${userId}> repasse sous le quota normal.` : `<@${userId}> n'était pas dispensé.`
+        ),
+      ],
     });
   },
 

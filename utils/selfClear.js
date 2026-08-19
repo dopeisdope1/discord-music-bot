@@ -2,13 +2,20 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
+const clearBypassStore = require("./clearBypassStore");
 
 // Déclencheurs texte exacts (insensibles à la casse, pas de préfixe requis,
 // accessibles à tout le monde) — chacun supprime les messages de son propre
-// auteur dans le salon. Repris de l'ancien système (5 usages / 25 min / membre),
-// même format de confirmation (embed classique minimal, pas de carte Components V2).
+// auteur dans le salon. Format de confirmation minimal (embed classique, pas
+// de carte Components V2).
 const TRIGGERS = new Set(["uo clear", "anas clear", "yanis clear"]);
-const limiter = createRateLimiter(5, 25 * 60_000);
+
+// Le quota est PAR MEMBRE et couvre les trois déclencheurs ensemble (le
+// limiteur est indexé sur l'auteur, pas sur le mot tapé) : on ne peut donc
+// pas contourner la limite en alternant "uo clear" et "anas clear".
+const MAX_USES = 2;
+const WINDOW_MS = 25 * 60_000;
+const limiter = createRateLimiter(MAX_USES, WINDOW_MS);
 
 /**
  * À appeler dans messageCreate, avant/indépendamment des dispatchers
@@ -23,11 +30,23 @@ async function handleSelfClear(client, message) {
 
   const channel = message.channel;
 
-  const { allowed, retryAfterMs } = limiter.check(message.author.id);
+  // Le propriétaire du bot et les membres qu'il a exemptés (voir
+  // ?clearbypass) ne consomment pas de quota : on ne passe même pas par le
+  // limiteur, sinon leurs usages compteraient dans la fenêtre des autres.
+  const { allowed, retryAfterMs } = clearBypassStore.isExempt(message.author.id)
+    ? { allowed: true }
+    : limiter.check(message.author.id);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     const warning = await channel
-      .send({ embeds: [buildStatusEmbed("error", `Tu as atteint la limite (5 utilisations / 25 min). Réessaie dans ${minutes} min.`)] })
+      .send({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            `Tu as atteint la limite (${MAX_USES} utilisation(s) / ${WINDOW_MS / 60_000} min). Réessaie dans ${minutes} min.`
+          ),
+        ],
+      })
       .catch(() => null);
     setTimeout(() => warning?.delete().catch(() => {}), 15_000);
     return true;
