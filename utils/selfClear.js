@@ -2,7 +2,7 @@ const { createRateLimiter } = require("./rateLimiter");
 const { randomClearJoke } = require("./jokes");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
-const clearBypassStore = require("./clearBypassStore");
+const accessStore = require("./accessStore");
 
 // Déclencheurs texte exacts (insensibles à la casse, pas de préfixe requis,
 // accessibles à tout le monde) — chacun supprime les messages de son propre
@@ -33,7 +33,7 @@ async function handleSelfClear(client, message) {
   // Le propriétaire du bot et les membres qu'il a exemptés (voir
   // ?clearbypass) ne consomment pas de quota : on ne passe même pas par le
   // limiteur, sinon leurs usages compteraient dans la fenêtre des autres.
-  const { allowed, retryAfterMs } = clearBypassStore.isExempt(message.author.id)
+  const { allowed, retryAfterMs } = accessStore.isAllowed("clear", message.author.id)
     ? { allowed: true }
     : limiter.check(message.author.id);
   if (!allowed) {

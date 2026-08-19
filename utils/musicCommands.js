@@ -8,7 +8,8 @@ const { getPrefixes } = require("./prefixStore");
 const { waitForHydration } = require("./configChannel");
 const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
-const clearBypassStore = require("./clearBypassStore");
+const accessStore = require("./accessStore");
+const { channelHandlers } = require("./channelCommands");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -230,29 +231,34 @@ const handlers = {
     });
   },
 };
-
 // Commandes sur le préfixe "&" (musicMod). Ce préfixe est aussi celui du
 // CrowBot présent sur le serveur : le bot reste donc MUET sur tout ce qui
 // n'est pas listé ici, pour ne jamais répondre à la place de l'autre.
-const modHandlers = {
-  async clearbypass(client, message, args) {
+
+/**
+ * Fabrique la commande qui gère une portée d'autorisations (voir
+ * utils/accessStore.js). La logique est la même pour les clear et pour les
+ * salons, seuls les libellés changent.
+ */
+function accessCommand(scope, labels) {
+  return async function (client, message, args) {
     // Silence total pour les non-propriétaires : pas même un refus, afin de
     // ne rien afficher si quelqu'un d'autre tape cette commande.
-    if (!clearBypassStore.isOwner(message.author.id)) return;
+    if (!accessStore.isOwner(message.author.id)) return;
 
     const { musicMod } = getPrefixes(message.guild.id);
-    const usage = `\`${musicMod}clearbypass add @membre\` · \`remove @membre\` · \`list\``;
+    const usage = `\`${musicMod}${labels.command} add @membre\` · \`remove @membre\` · \`list\``;
     const action = (args[0] || "").toLowerCase();
 
     if (action === "list") {
-      const ids = clearBypassStore.list();
+      const ids = accessStore.list(scope);
       return message.reply({
         embeds: [
           buildStatusEmbed(
             "info",
             ids.length
-              ? `Dispensés du quota :\n${ids.map((id) => `<@${id}>`).join(", ")}`
-              : "Personne n'est dispensé pour l'instant. Toi, tu l'es toujours."
+              ? `${labels.title} :\n${ids.map((id) => `<@${id}>`).join(", ")}`
+              : "Personne pour l'instant. Toi, tu l'es toujours."
           ),
         ],
       });
@@ -269,34 +275,52 @@ const modHandlers = {
       return message.reply({ embeds: [buildStatusEmbed("error", `Mentionne un membre ou donne son ID.\n${usage}`)] });
     }
 
-    if (clearBypassStore.isOwner(userId)) {
+    if (accessStore.isOwner(userId)) {
       return message.reply({
-        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il est déjà dispensé en permanence.`)],
+        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il a déjà tous les accès.`)],
       });
     }
 
     if (action === "add") {
-      const added = clearBypassStore.add(userId);
+      const added = accessStore.add(scope, userId);
       return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            added ? "success" : "info",
-            added ? `<@${userId}> peut désormais utiliser les clear sans limite.` : `<@${userId}> était déjà dispensé.`
-          ),
-        ],
+        embeds: [buildStatusEmbed(added ? "success" : "info", added ? labels.granted(userId) : `<@${userId}> l'était déjà.`)],
       });
     }
 
-    const removed = clearBypassStore.remove(userId);
+    const removed = accessStore.remove(scope, userId);
     return message.reply({
-      embeds: [
-        buildStatusEmbed(
-          removed ? "success" : "info",
-          removed ? `<@${userId}> repasse sous le quota normal.` : `<@${userId}> n'était pas dispensé.`
-        ),
-      ],
+      embeds: [buildStatusEmbed(removed ? "success" : "info", removed ? labels.revoked(userId) : `<@${userId}> ne l'était pas.`)],
     });
-  },
+  };
+}
+
+/** N'exécute `handler` que si la personne a la portée demandée, sinon rien. */
+function requireScope(scope, handler) {
+  return async (client, message, args) => {
+    if (!accessStore.isAllowed(scope, message.author.id)) return;
+    return handler(client, message, args);
+  };
+}
+
+const modHandlers = {
+  clearbypass: accessCommand("clear", {
+    command: "clearbypass",
+    title: "Dispensés du quota des clear",
+    granted: (id) => `<@${id}> peut désormais utiliser les clear sans limite.`,
+    revoked: (id) => `<@${id}> repasse sous le quota normal.`,
+  }),
+  salonperm: accessCommand("salon", {
+    command: "salonperm",
+    title: "Autorisés sur les commandes de salon",
+    granted: (id) => `<@${id}> peut désormais utiliser renew, hide, unhide, lock et unlock.`,
+    revoked: (id) => `<@${id}> n'a plus accès aux commandes de salon.`,
+  }),
+  renew: requireScope("salon", channelHandlers.renew),
+  hide: requireScope("salon", channelHandlers.hide),
+  unhide: requireScope("salon", channelHandlers.unhide),
+  lock: requireScope("salon", channelHandlers.lock),
+  unlock: requireScope("salon", channelHandlers.unlock),
 };
 
 /**
