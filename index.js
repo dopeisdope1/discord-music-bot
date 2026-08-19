@@ -21,6 +21,8 @@ const {
 const favoritesStore = require("./utils/favoritesStore");
 const { buildFavoritesPanel, SELECT_ID: FAV_SELECT_ID } = require("./utils/favoritesPanel");
 const { getPrefixes } = require("./utils/prefixStore");
+const { handleConfigInteraction } = require("./utils/configPanel");
+const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
@@ -227,6 +229,25 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
     return;
+  }
+
+  // Panneau de configuration : boutons, menus ET modales passent tous par là
+  // (voir utils/configPanel.js). Placé avant le reste car il couvre plusieurs
+  // types d'interaction d'un coup ; les commandes slash n'ont pas de customId
+  // et ne sont donc pas concernées.
+  if (interaction.customId?.startsWith("cfg:")) {
+    await handleConfigInteraction(interaction).catch((err) => console.error("[configPanel]", err));
+    return;
+  }
+
+  // Navigation dans l'aide : la réponse est recalculée pour QUI CLIQUE et
+  // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
+  // même liste de commandes.
+  if (interaction.isStringSelectMenu?.() && interaction.customId === HELP_SELECT_ID) {
+    const panel = buildHelpPanel(interaction.guild.id, interaction.user.id, interaction.values[0]);
+    return interaction
+      .reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral })
+      .catch(() => {});
   }
 
   if (interaction.isButton()) {

@@ -10,6 +10,8 @@ const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors"
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
 const { channelHandlers } = require("./channelCommands");
+const { buildHelpPanel } = require("./helpPanel");
+const { buildConfigPanel } = require("./configPanel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -304,6 +306,17 @@ function requireScope(scope, handler) {
 }
 
 const modHandlers = {
+  // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
+  // de la personne (voir utils/helpPanel.js).
+  async help(client, message) {
+    await message.reply(buildHelpPanel(message.guild.id, message.author.id));
+  },
+
+  async panel(client, message) {
+    if (!accessStore.isOwner(message.author.id)) return;
+    await message.reply(buildConfigPanel(message.guild.id));
+  },
+
   clearbypass: accessCommand("clear", {
     command: "clearbypass",
     title: "Dispensés du quota des clear",

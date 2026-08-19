@@ -1,0 +1,209 @@
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  UserSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  MessageFlags,
+} = require("discord.js");
+const { getPrefixes, setPrefix } = require("./prefixStore");
+const { saveGuildConfig } = require("./configChannel");
+const accessStore = require("./accessStore");
+
+// Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
+// qui permet à index.js de les router sans les énumérer un par un.
+const ID = "cfg";
+
+const SECTIONS = [
+  { key: "home", label: "Accueil", emoji: "🏠", description: "Vue d'ensemble de la configuration" },
+  { key: "prefixes", label: "Préfixes", emoji: "⌨️", description: "Préfixe musique et préfixe des commandes" },
+  { key: "clear", label: "Accès nettoyage", emoji: "🧹", description: "Qui échappe au quota des clear" },
+  { key: "salon", label: "Accès salon", emoji: "🔧", description: "Qui peut utiliser lock/hide/renew" },
+];
+
+const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
+
+function buildNav(current) {
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${ID}:nav`)
+    .setPlaceholder("Choisis une rubrique à configurer")
+    .addOptions(
+      SECTIONS.map((s) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(s.label)
+          .setDescription(s.description)
+          .setEmoji(s.emoji)
+          .setValue(s.key)
+          .setDefault(s.key === current)
+      )
+    );
+}
+
+function sectionBody(section, guildId) {
+  const prefixes = getPrefixes(guildId);
+  const owners = accessStore.ownerIds();
+
+  if (section === "prefixes") {
+    return [
+      `> **Préfixe musique** : \`${prefixes.main}\``,
+      `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
+      "",
+      "Le préfixe des commandes est partagé avec les autres bots du serveur : " +
+        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste.",
+    ].join("\n");
+  }
+
+  if (section === "clear") {
+    return [
+      `> **Dispensés du quota** : ${mentions(accessStore.list("clear"))}`,
+      "",
+      "Ces membres utilisent `uo clear` sans limite. Les autres sont plafonnés à 2 usages par 25 minutes.",
+    ].join("\n");
+  }
+
+  if (section === "salon") {
+    return [
+      `> **Autorisés** : ${mentions(accessStore.list("salon"))}`,
+      "",
+      "Ces membres peuvent utiliser `lock`, `unlock`, `hide`, `unhide` et `renew`.",
+    ].join("\n");
+  }
+
+  return [
+    `> **Préfixe musique** : \`${prefixes.main}\``,
+    `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
+    `> **Propriétaire(s)** : ${mentions(owners)}`,
+    `> **Dispensés du quota de nettoyage** : ${accessStore.list("clear").length}`,
+    `> **Autorisés sur les commandes de salon** : ${accessStore.list("salon").length}`,
+    "",
+    "Sélectionne une rubrique ci-dessous pour la modifier.",
+  ].join("\n");
+}
+
+/** Menus d'ajout/retrait pour une portée d'autorisations. */
+function accessRows(scope) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId(`${ID}:add:${scope}`).setPlaceholder("Ajouter un membre")
+    ),
+    new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder().setCustomId(`${ID}:del:${scope}`).setPlaceholder("Retirer un membre")
+    ),
+  ];
+}
+
+/**
+ * Panneau de configuration. Components V2 sans setAccentColor : pas de barre
+ * de couleur sur le côté.
+ */
+function buildConfigPanel(guildId, current = "home") {
+  const meta = SECTIONS.find((s) => s.key === current) || SECTIONS[0];
+  const container = new ContainerBuilder();
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## Configuration\n### ${meta.emoji} ${meta.label}`)
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guildId)));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key)));
+
+  if (meta.key === "prefixes") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:prefix:main`).setLabel("Préfixe musique").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
+      )
+    );
+  } else if (meta.key === "clear" || meta.key === "salon") {
+    for (const row of accessRows(meta.key)) container.addActionRowComponents(row);
+  }
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+const PREFIX_FIELDS = {
+  main: { label: "Préfixe musique", max: 5 },
+  musicMod: { label: "Préfixe des commandes", max: 5 },
+};
+
+/**
+ * Traite toutes les interactions du panneau (identifiants en "cfg:").
+ * Réservé au propriétaire, re-vérifié à CHAQUE clic : le message du panneau
+ * reste visible dans le salon après l'envoi, n'importe qui pourrait cliquer.
+ */
+async function handleConfigInteraction(interaction) {
+  const [, action, extra] = interaction.customId.split(":");
+
+  if (!accessStore.isOwner(interaction.user.id)) {
+    return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+  }
+
+  const guildId = interaction.guild.id;
+
+  if (action === "nav") {
+    return interaction.update(buildConfigPanel(guildId, interaction.values[0]));
+  }
+
+  if (action === "add" || action === "del") {
+    const userId = interaction.values[0];
+    if (accessStore.isOwner(userId)) {
+      return interaction.reply({
+        content: `<@${userId}> est propriétaire du bot, il a déjà tous les accès.`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    const changed = action === "add" ? accessStore.add(extra, userId) : accessStore.remove(extra, userId);
+    if (!changed) {
+      return interaction.reply({
+        content: action === "add" ? `<@${userId}> y était déjà.` : `<@${userId}> n'y était pas.`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    // Le panneau est réaffiché avec la liste à jour.
+    return interaction.update(buildConfigPanel(guildId, extra));
+  }
+
+  if (action === "prefix") {
+    if (interaction.isModalSubmit()) {
+      const value = interaction.fields.getTextInputValue("value").trim();
+      if (!value) {
+        return interaction.reply({ content: "Préfixe vide, rien n'a été changé.", flags: MessageFlags.Ephemeral });
+      }
+      setPrefix(guildId, extra, value);
+      // Sauvegarde aussi dans le salon de config Discord, seule copie qui
+      // survit si le volume venait à être perdu.
+      saveGuildConfig(interaction.guild, ["prefixes"]).catch(() => {});
+      await interaction.reply({
+        content: `**${PREFIX_FIELDS[extra].label}** réglé sur \`${value}\`.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      // interaction.message existe quand la modale vient d'un bouton du panneau.
+      return interaction.message?.edit(buildConfigPanel(guildId, "prefixes")).catch(() => {});
+    }
+
+    const field = PREFIX_FIELDS[extra];
+    const modal = new ModalBuilder().setCustomId(interaction.customId).setTitle(field.label);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel(field.label)
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(field.max)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+}
+
+module.exports = { buildConfigPanel, handleConfigInteraction, ID, SECTIONS };
