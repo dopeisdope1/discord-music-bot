@@ -1,19 +1,15 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js");
+const { Client, GatewayIntentBits, Collection } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
+// Seule commande de modération conservée après le retrait du moteur "zinki"
+// (voir utils/clearCommand.js) — plus de panel/permissions/anti-raid.
+const { handleClearCommand } = require("./utils/clearCommand");
 const { handleSelfClear } = require("./utils/selfClear");
-// Suite Crow (préfixe &) : ~203 commandes + anti-nuke, greffée sur le même
-// client que la musique. Voir crow/identities/crow.identity.js.
-const { run: runCrowMigrations } = require("./crow/db/migrate");
-const { loadAndRegister: loadCrowGuards } = require("./crow/guard/loadDefinitions");
-const { attachEvents: attachCrowEvents } = require("./crow/core/eventLoader");
-const crowGuardEngine = require("./crow/guard/guardEngine");
-const crowIdentity = require("./crow/identities/crow.identity");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -36,17 +32,7 @@ const client = new Client({
     // intents privilégiés).
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
-    // Requis par la suite Crow (modération, anti-nuke, logs) — aucun n'est
-    // privilégié, rien à activer sur le portail développeur.
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildWebhooks,
-    GatewayIntentBits.GuildInvites,
-    GatewayIntentBits.GuildExpressions,
   ],
-  // Sans ces partials, les events Crow sur des objets non mis en cache
-  // (messageDelete/messageUpdate pour le snipe, départs de membres...) ne
-  // se déclenchent pas du tout.
-  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.GuildMember],
   // AUCUN ping par défaut, nulle part : ni @everyone/@here, ni rôles, ni
   // utilisateurs, ni ping de réponse. Les mentions restent affichées et
   // cliquables (<@id> s'affiche toujours "@pseudo"), elles ne déclenchent
@@ -330,7 +316,8 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
-  // Les commandes "&..." sont gérées par les events Crow (voir plus bas), pas ici.
+  // Seule commande de modération conservée — voir utils/clearCommand.js.
+  handleClearCommand(client, message).catch((err) => console.error(err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
@@ -465,16 +452,5 @@ async function gracefulShutdown(signal) {
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-// ---- Suite Crow (préfixe &) ----
-// Remplace ce que faisaient crow/bootstrap.js et crow/core/createClient.js :
-// on greffe le moteur sur le client de la musique au lieu d'en créer un second.
-// Tout doit être en place AVANT le login (ready.event.js s'enregistre en `once`,
-// il ne se déclencherait jamais s'il était attaché après la connexion).
-runCrowMigrations();
-loadCrowGuards();
-client.identity = crowIdentity;
-attachCrowEvents(client, crowIdentity);
-crowGuardEngine.attach(client, crowIdentity);
 
 client.login(process.env.DISCORD_TOKEN);
