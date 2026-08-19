@@ -6,9 +6,10 @@ const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-// Seule commande de modération conservée après le retrait du moteur "zinki"
-// (voir utils/clearCommand.js) — plus de panel/permissions/anti-raid.
-const { handleClearCommand } = require("./utils/clearCommand");
+// Seul reliquat de modération : les déclencheurs sans préfixe "uo clear" &
+// consorts (voir utils/selfClear.js). La modération à proprement parler est
+// assurée par le CrowBot du serveur, d'où le retrait de &clear qui faisait
+// doublon avec lui.
 const { handleSelfClear } = require("./utils/selfClear");
 const {
   startNowPlayingTracking,
@@ -316,8 +317,6 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
-  // Seule commande de modération conservée — voir utils/clearCommand.js.
-  handleClearCommand(client, message).catch((err) => console.error(err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
