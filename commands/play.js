@@ -1,8 +1,9 @@
-const { SlashCommandBuilder } = require("discord.js");
+const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
 const { handleSpotifyPlay } = require("../utils/spotifyPlay");
 const { queueAndPlay } = require("../utils/musicPlayer");
 const { playbackErrorMessage } = require("../utils/musicErrors");
+const { buildFavoritesPanel } = require("../utils/favoritesPanel");
 
 const URL_REGEX = /^https?:\/\//i;
 
@@ -13,13 +14,30 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName("recherche")
-        .setDescription("Nom de musique/artiste, ou lien YouTube/Spotify (titre/playlist/album)")
-        .setRequired(true)
+        .setDescription("Nom de musique/artiste, ou lien YouTube/Spotify (laisse vide pour tes favoris)")
+        .setRequired(false)
     ),
 
   async execute(interaction) {
     const query = interaction.options.getString("recherche");
     const voiceChannel = interaction.member.voice.channel;
+
+    // Sans recherche : la playlist des favoris, comme pour `play` en préfixe.
+    if (!query) {
+      const panel = buildFavoritesPanel(interaction.user.id, "/");
+      // flags et ephemeral ne peuvent pas coexister : le panel porte déjà
+      // IsComponentsV2, on y ajoute donc Ephemeral plutôt que l'option.
+      if (panel) return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral });
+      return interaction.reply({
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            "Tu n'as encore aucun favori — ajoute-en avec le bouton **Favori** du panel de lecture."
+          ),
+        ],
+        ephemeral: true,
+      });
+    }
 
     if (!voiceChannel) {
       return interaction.reply({

@@ -146,7 +146,22 @@ function buildNowPlayingPanel(player, elapsedMs = 0) {
       .setStyle(ButtonStyle.Secondary)
   );
 
+  // Le panel est un message PARTAGÉ : son libellé ne peut pas refléter l'état
+  // des favoris de chaque personne. Le bouton bascule donc au clic, et la
+  // confirmation part en éphémère à celui qui a cliqué (voir index.js).
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("music_fav")
+      .setLabel("Favori")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("music_favlist")
+      .setLabel("Mes favoris")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
   container.addActionRowComponents(row1);
+  container.addActionRowComponents(row2);
 
   return {
     flags: MessageFlags.IsComponentsV2,

@@ -1,6 +1,6 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, MessageFlags } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors } = require("shoukaku");
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
@@ -16,7 +16,12 @@ const {
   stopNowPlayingTracking,
   setPlayerPaused,
   getElapsedMs,
+  queueAndPlay,
 } = require("./utils/musicPlayer");
+const favoritesStore = require("./utils/favoritesStore");
+const { buildFavoritesPanel, SELECT_ID: FAV_SELECT_ID } = require("./utils/favoritesPanel");
+const { getPrefixes } = require("./utils/prefixStore");
+const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { loadGuildConfig } = require("./utils/configChannel");
@@ -229,6 +234,41 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
+    // Favoris : actions PERSONNELLES, traitées avant les contrôles de salon
+    // vocal et de propriétaire du player — mettre un titre de côté ou relire
+    // sa propre liste ne dépend pas de qui pilote la lecture.
+    if (interaction.customId === "music_fav") {
+      const current = client.kazagumo.players.get(interaction.guildId)?.queue.current;
+      if (!current) {
+        return interaction.reply({
+          embeds: [buildStatusEmbed("error", "Aucune musique en cours.")],
+          ephemeral: true,
+        });
+      }
+      const outcome = favoritesStore.toggle(interaction.user.id, current);
+      const text = outcome.full
+        ? `Ta liste est pleine (${favoritesStore.MAX_FAVORITES} titres). Retire-en un avant d'en ajouter.`
+        : outcome.added
+        ? `**${current.title}** ajouté à tes favoris.`
+        : `**${current.title}** retiré de tes favoris.`;
+      return interaction.reply({
+        embeds: [buildStatusEmbed(outcome.full ? "error" : "success", text)],
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.customId === "music_favlist") {
+      const { main } = getPrefixes(interaction.guildId);
+      const panel = buildFavoritesPanel(interaction.user.id, main);
+      if (!panel) {
+        return interaction.reply({
+          embeds: [buildStatusEmbed("error", "Tu n'as encore aucun favori.")],
+          ephemeral: true,
+        });
+      }
+      return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral });
+    }
+
     if (!MUSIC_BUTTON_IDS.has(interaction.customId)) return;
 
     const player = client.kazagumo.players.get(interaction.guildId);
@@ -306,6 +346,51 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.update(buildStoppedPanel());
     }
     return;
+  }
+
+  // Choix d'un favori dans la playlist (voir utils/favoritesPanel.js).
+  if (interaction.isStringSelectMenu?.() && interaction.customId === FAV_SELECT_ID) {
+    const voiceChannel = interaction.member.voice.channel;
+    if (!voiceChannel) {
+      return interaction.reply({
+        embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")],
+        ephemeral: true,
+      });
+    }
+
+    // La liste est relue au clic : le favori a pu être retiré entre-temps.
+    const favorite = favoritesStore.list(interaction.user.id)[Number(interaction.values[0])];
+    if (!favorite) {
+      return interaction.reply({
+        embeds: [buildStatusEmbed("error", "Ce favori n'existe plus.")],
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    try {
+      const outcome = await queueAndPlay(client.kazagumo, {
+        voiceChannel,
+        textChannel: interaction.channel,
+        member: interaction.member,
+        query: favorite.uri,
+        client,
+      });
+      if (!outcome) {
+        return interaction.editReply({
+          embeds: [buildStatusEmbed("error", `Impossible de jouer **${favorite.title}**.`)],
+        });
+      }
+      const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
+      await interaction.editReply({
+        embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
+      });
+    } catch (err) {
+      console.error(err);
+      await interaction.editReply({
+        embeds: [buildStatusEmbed("error", playbackErrorMessage(err, `Impossible de jouer **${favorite.title}**.`))],
+      });
+    }
   }
 });
 

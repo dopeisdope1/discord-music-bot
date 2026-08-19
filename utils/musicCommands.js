@@ -7,6 +7,7 @@ const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
 const { waitForHydration } = require("./configChannel");
 const { playbackErrorMessage } = require("./musicErrors");
+const { buildFavoritesPanel } = require("./favoritesPanel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -55,10 +56,21 @@ async function requirePlayerControl(client, message) {
 const handlers = {
   async play(client, message, args) {
     const query = args.join(" ");
-    if (!query)
+    // Sans titre : on propose la playlist des favoris plutôt que de renvoyer
+    // une erreur (voir utils/favoritesPanel.js).
+    if (!query) {
+      const { main } = getPrefixes(message.guild.id);
+      const panel = buildFavoritesPanel(message.author.id, main);
+      if (panel) return message.reply(panel);
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Indique un nom de musique/artiste, ou un lien YouTube/Spotify.")],
+        embeds: [
+          buildStatusEmbed(
+            "error",
+            `Indique un nom de musique/artiste, ou un lien YouTube/Spotify.\nTu n'as encore aucun favori — ajoute-en avec le bouton **Favori** du panel de lecture.`
+          ),
+        ],
       });
+    }
     const vc = message.member.voice.channel;
     if (!vc)
       return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
