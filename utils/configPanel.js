@@ -23,10 +23,10 @@ const accessStore = require("./accessStore");
 const ID = "cfg";
 
 const SECTIONS = [
-  { key: "home", label: "Accueil", emoji: "🏠", description: "Vue d'ensemble de la configuration" },
-  { key: "prefixes", label: "Préfixes", emoji: "⌨️", description: "Préfixe musique et préfixe des commandes" },
-  { key: "clear", label: "Accès nettoyage", emoji: "🧹", description: "Qui échappe au quota des clear" },
-  { key: "salon", label: "Accès salon", emoji: "🔧", description: "Qui peut utiliser lock/hide/renew" },
+  { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
+  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
+  { key: "clear", label: "Accès nettoyage", description: "Qui échappe au quota des clear" },
+  { key: "salon", label: "Accès salon", description: "Qui peut utiliser lock/hide/renew" },
 ];
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
@@ -40,7 +40,6 @@ function buildNav(current) {
         new StringSelectMenuOptionBuilder()
           .setLabel(s.label)
           .setDescription(s.description)
-          .setEmoji(s.emoji)
           .setValue(s.key)
           .setDefault(s.key === current)
       )
@@ -81,10 +80,12 @@ function sectionBody(section, guildId) {
     `> **Préfixe musique** : \`${prefixes.main}\``,
     `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
+    `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Dispensés du quota de nettoyage** : ${accessStore.list("clear").length}`,
     `> **Autorisés sur les commandes de salon** : ${accessStore.list("salon").length}`,
     "",
     "Sélectionne une rubrique ci-dessous pour la modifier.",
+    "Le rang sys s'accorde uniquement avec `zinki`, hors de ce panneau.",
   ].join("\n");
 }
 
@@ -109,7 +110,7 @@ function buildConfigPanel(guildId, current = "home") {
   const container = new ContainerBuilder();
 
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## Configuration\n### ${meta.emoji} ${meta.label}`)
+    new TextDisplayBuilder().setContent(`## Configuration\n### ${meta.label}`)
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guildId)));
@@ -137,14 +138,16 @@ const PREFIX_FIELDS = {
 
 /**
  * Traite toutes les interactions du panneau (identifiants en "cfg:").
- * Réservé au propriétaire, re-vérifié à CHAQUE clic : le message du panneau
- * reste visible dans le salon après l'envoi, n'importe qui pourrait cliquer.
+ * Le rang est re-vérifié à CHAQUE clic : le message du panneau reste visible
+ * dans le salon après l'envoi, n'importe qui pourrait cliquer dessus.
+ * Le panneau ne distribue volontairement pas le rang sys — cela ferait de
+ * &zinki une commande contournable par ceux à qui elle donne accès.
  */
 async function handleConfigInteraction(interaction) {
   const [, action, extra] = interaction.customId.split(":");
 
-  if (!accessStore.isOwner(interaction.user.id)) {
-    return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+  if (!accessStore.isAllowed("sys", interaction.user.id)) {
+    return interaction.reply({ content: "Tu n'as pas accès à ce panneau.", flags: MessageFlags.Ephemeral });
   }
 
   const guildId = interaction.guild.id;

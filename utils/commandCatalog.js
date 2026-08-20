@@ -2,14 +2,14 @@
 // qu'ils ne puissent pas se contredire. `scope` indique ce qu'il faut pour
 // utiliser la commande :
 //   null    -> tout le monde
-//   "salon" -> autorisé via &salonperm (ou propriétaire)
+//   "salon" -> autorisé via &salonperm (ou sys, ou propriétaire)
+//   "sys"   -> rang sys accordé par &zinki (ou propriétaire)
 //   "owner" -> propriétaire du bot uniquement
 // `prefix` vaut "main" (préfixe musique) ou "mod" (préfixe &).
 const CATEGORIES = [
   {
     key: "musique",
     label: "Musique",
-    emoji: "🎵",
     commands: [
       { name: "play <titre | lien>", prefix: "main", scope: null, description: "Joue un titre, un lien YouTube/Spotify ou une playlist publique" },
       { name: "play", prefix: "main", scope: null, description: "Sans titre : ouvre ta playlist de favoris" },
@@ -27,7 +27,6 @@ const CATEGORIES = [
   {
     key: "favoris",
     label: "Favoris",
-    emoji: "⭐",
     commands: [
       { name: "play", prefix: "main", scope: null, description: "Sans titre : ta playlist, avec un menu pour lancer un titre" },
       { name: "Bouton « Favori »", prefix: null, scope: null, description: "Sur le panel de lecture : met le titre en cours dans tes favoris" },
@@ -37,7 +36,6 @@ const CATEGORIES = [
   {
     key: "clear",
     label: "Nettoyage",
-    emoji: "🧹",
     commands: [
       { name: "uo clear", prefix: null, scope: null, description: "Sans préfixe : efface tes propres messages du salon" },
       { name: "anas clear", prefix: null, scope: null, description: "Identique à uo clear" },
@@ -47,7 +45,6 @@ const CATEGORIES = [
   {
     key: "salon",
     label: "Salon",
-    emoji: "🔧",
     commands: [
       { name: "lock", prefix: "mod", scope: "salon", description: "Empêche @everyone d'écrire dans le salon" },
       { name: "unlock", prefix: "mod", scope: "salon", description: "Rétablit l'écriture" },
@@ -59,11 +56,11 @@ const CATEGORIES = [
   {
     key: "admin",
     label: "Administration",
-    emoji: "👑",
     commands: [
-      { name: "panel", prefix: "mod", scope: "owner", description: "Panneau de configuration" },
-      { name: "clearbypass add|remove|list", prefix: "mod", scope: "owner", description: "Dispense du quota de nettoyage" },
-      { name: "salonperm add|remove|list", prefix: "mod", scope: "owner", description: "Donne accès aux commandes de salon" },
+      { name: "panel", prefix: "mod", scope: "sys", description: "Panneau de configuration" },
+      { name: "clearbypass add|remove|list", prefix: "mod", scope: "sys", description: "Dispense du quota de nettoyage" },
+      { name: "salonperm add|remove|list", prefix: "mod", scope: "sys", description: "Donne accès aux commandes de salon" },
+      { name: "zinki @membre", prefix: "mod", scope: "owner", description: "Donne le rang sys : accès à tout le bot" },
     ],
   },
 ];

@@ -35,7 +35,7 @@ function formatCommand(cmd, prefixes) {
 
 function homeBody(categories, prefixes) {
   const total = categories.reduce((n, c) => n + c.commands.length, 0);
-  const lines = categories.map((c) => `${c.emoji} **${c.label}** — ${c.commands.length} commande(s)`);
+  const lines = categories.map((c) => `**${c.label}** — ${c.commands.length} commande(s)`);
 
   return [
     "Sélectionne une **catégorie** dans le menu ci-dessous pour voir le détail.",
@@ -71,14 +71,12 @@ function buildSelect(categories, current) {
       new StringSelectMenuOptionBuilder()
         .setLabel("Accueil")
         .setDescription("Vue d'ensemble")
-        .setEmoji("🏠")
         .setValue(HOME)
         .setDefault(current === HOME),
       ...categories.map((c) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(c.label)
           .setDescription(`${c.commands.length} commande(s)`)
-          .setEmoji(c.emoji)
           .setValue(c.key)
           .setDefault(current === c.key)
       ),
@@ -97,7 +95,7 @@ function buildHelpPanel(guildId, userId, current = HOME) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      category ? `## ${category.emoji} Aide — ${category.label}` : "## Aide"
+      category ? `## Aide — ${category.label}` : "## Aide"
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));

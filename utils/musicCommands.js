@@ -244,9 +244,9 @@ const handlers = {
  */
 function accessCommand(scope, labels) {
   return async function (client, message, args) {
-    // Silence total pour les non-propriétaires : pas même un refus, afin de
-    // ne rien afficher si quelqu'un d'autre tape cette commande.
-    if (!accessStore.isOwner(message.author.id)) return;
+    // Silence total pour ceux qui n'y ont pas droit : pas même un refus, afin
+    // de ne rien afficher si quelqu'un d'autre tape cette commande.
+    if (!accessStore.isAllowed("sys", message.author.id)) return;
 
     const { musicMod } = getPrefixes(message.guild.id);
     const usage = `\`${musicMod}${labels.command} add @membre\` · \`remove @membre\` · \`list\``;
@@ -313,8 +313,68 @@ const modHandlers = {
   },
 
   async panel(client, message) {
-    if (!accessStore.isOwner(message.author.id)) return;
+    if (!accessStore.isAllowed("sys", message.author.id)) return;
     await message.reply(buildConfigPanel(message.guild.id));
+  },
+
+  // Rang "sys" : accès à tout le bot. Réservé au propriétaire — un sys ne
+  // peut pas en créer d'autres, sinon l'accès deviendrait irrévocable depuis
+  // l'intérieur (voir utils/accessStore.js).
+  async zinki(client, message, args) {
+    if (!accessStore.isOwner(message.author.id)) return;
+
+    const { musicMod } = getPrefixes(message.guild.id);
+    const usage = `\`${musicMod}zinki @membre\` · \`${musicMod}zinki remove @membre\` · \`${musicMod}zinki list\``;
+    const first = (args[0] || "").toLowerCase();
+
+    if (first === "list") {
+      const ids = accessStore.list("sys");
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            "info",
+            ids.length ? `Rang sys :\n${ids.map((id) => `<@${id}>`).join(", ")}` : "Personne n'a le rang sys."
+          ),
+        ],
+      });
+    }
+
+    // `remove` en premier mot, sinon la cible est directement en premier
+    // argument : `&zinki @membre` doit suffire à accorder le rang.
+    const removing = first === "remove";
+    const target = message.mentions.users?.first();
+    const rawId = (removing ? args[1] : args[0])?.replace(/\D/g, "");
+    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
+
+    if (!userId) return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
+
+    if (accessStore.isOwner(userId)) {
+      return message.reply({
+        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il a déjà tous les accès.`)],
+      });
+    }
+
+    if (removing) {
+      const removed = accessStore.remove("sys", userId);
+      return message.reply({
+        embeds: [
+          buildStatusEmbed(
+            removed ? "success" : "info",
+            removed ? `<@${userId}> n'a plus le rang sys.` : `<@${userId}> n'avait pas le rang sys.`
+          ),
+        ],
+      });
+    }
+
+    const added = accessStore.add("sys", userId);
+    return message.reply({
+      embeds: [
+        buildStatusEmbed(
+          added ? "success" : "info",
+          added ? `<@${userId}> a désormais le rang **sys** : accès à tout le bot.` : `<@${userId}> avait déjà le rang sys.`
+        ),
+      ],
+    });
   },
 
   clearbypass: accessCommand("clear", {

@@ -4,7 +4,8 @@ const path = require("path");
 // Autorisations accordées à la main par le propriétaire, par "portée" :
 //   clear  -> dispense du quota des déclencheurs "uo clear" & consorts
 //   salon  -> accès à &renew/&hide/&unhide/&lock/&unlock
-// Deux portées distinctes volontairement : laisser quelqu'un vider ses
+//   sys    -> accès à TOUT (voir &zinki), sauf à la distribution du rang sys
+// clear et salon sont distinctes volontairement : laisser quelqu'un vider ses
 // propres messages n'implique pas de le laisser supprimer un salon.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "access.json");
@@ -14,7 +15,7 @@ const DATA_FILE = path.join(DATA_DIR, "access.json");
 // accordées en production.
 const LEGACY_FILE = path.join(DATA_DIR, "clearBypass.json");
 
-const SCOPES = ["clear", "salon"];
+const SCOPES = ["clear", "salon", "sys"];
 
 let cache = null;
 
@@ -69,9 +70,24 @@ function ownerIds() {
 
 const isOwner = (userId) => ownerIds().includes(userId);
 
-/** Autorisé sur cette portée : propriétaire du bot, ou ajouté à la main. */
+const isSys = (userId) => (load().sys || []).includes(userId);
+
+/**
+ * Hiérarchie :
+ *   propriétaire (BOT_OWNER_IDS) -> tout, sans exception
+ *   sys (&zinki)                 -> tout, SAUF les portées "owner"
+ *   portée précise               -> uniquement ce qui lui a été accordé
+ *
+ * Le rang sys ne couvre volontairement pas "owner" : sans ça, un sys pourrait
+ * distribuer le rang sys à son tour et l'accès deviendrait irrévocable depuis
+ * l'intérieur. Seul le propriétaire, identifié par variable d'environnement,
+ * peut en créer.
+ */
 function isAllowed(scope, userId) {
-  return isOwner(userId) || (load()[scope] || []).includes(userId);
+  if (isOwner(userId)) return true;
+  if (scope === "owner") return false;
+  if (isSys(userId)) return true;
+  return (load()[scope] || []).includes(userId);
 }
 
 /** @returns {boolean} false si la personne y était déjà. */
@@ -95,4 +111,4 @@ function remove(scope, userId) {
 
 const list = (scope) => [...(load()[scope] || [])];
 
-module.exports = { isAllowed, isOwner, add, remove, list, ownerIds, SCOPES };
+module.exports = { isAllowed, isOwner, isSys, add, remove, list, ownerIds, SCOPES };
