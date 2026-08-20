@@ -20,8 +20,8 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "clear",
-    label: "Nettoyage",
+    key: "moderation",
+    label: "Modération",
     commands: [
       // Les trois déclencheurs font strictement la même chose : une seule
       // entrée plutôt que trois lignes identiques.
@@ -31,12 +31,6 @@ const CATEGORIES = [
         scope: null,
         description: "Sans préfixe, efface tes propres messages du salon. Variantes : `anas clear`, `yanis clear`",
       },
-    ],
-  },
-  {
-    key: "salon",
-    label: "Salon",
-    commands: [
       { name: "lock", prefix: "mod", scope: "salon", description: "Empêche @everyone d'écrire dans le salon" },
       { name: "unlock", prefix: "mod", scope: "salon", description: "Rétablit l'écriture" },
       { name: "hide", prefix: "mod", scope: "salon", description: "Masque le salon à @everyone" },

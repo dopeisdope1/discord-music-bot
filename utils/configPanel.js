@@ -28,12 +28,15 @@ const ID = "cfg";
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
-  { key: "clear", label: "Accès nettoyage", description: "Qui échappe au quota des clear" },
-  { key: "salon", label: "Accès salon", description: "Qui peut utiliser lock/hide/renew" },
+  { key: "moderation", label: "Modération", description: "Qui échappe au quota et qui gère les salons" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
 ];
 
 const sectionsFor = (isOwner) => SECTIONS.filter((s) => isOwner || !s.ownerOnly);
+
+// Rubrique à rouvrir après avoir modifié une portée : les portées "clear" et
+// "salon" sont toutes deux gérées depuis Modération.
+const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys" };
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
@@ -66,18 +69,12 @@ function sectionBody(section, guildId) {
     ].join("\n");
   }
 
-  if (section === "clear") {
+  if (section === "moderation") {
     return [
-      `> **Dispensés du quota** : ${mentions(accessStore.list("clear"))}`,
+      `> **Dispensés du quota de nettoyage** : ${mentions(accessStore.list("clear"))}`,
+      "Ces membres utilisent `uo clear` sans limite ; les autres sont plafonnés à 2 usages par 25 minutes.",
       "",
-      "Ces membres utilisent `uo clear` sans limite. Les autres sont plafonnés à 2 usages par 25 minutes.",
-    ].join("\n");
-  }
-
-  if (section === "salon") {
-    return [
-      `> **Autorisés** : ${mentions(accessStore.list("salon"))}`,
-      "",
+      `> **Accès aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
       "Ces membres peuvent utiliser `lock`, `unlock`, `hide`, `unhide` et `renew`.",
     ].join("\n");
   }
@@ -103,14 +100,18 @@ function sectionBody(section, guildId) {
   ].join("\n");
 }
 
-/** Menus d'ajout/retrait pour une portée d'autorisations. */
-function accessRows(scope) {
+/**
+ * Menus d'ajout/retrait pour une portée. Le libellé précise à quoi sert la
+ * portée : la rubrique Modération en affiche deux paires à la suite, sans
+ * quoi on ne saurait plus quel menu agit sur quoi.
+ */
+function accessRows(scope, label) {
   return [
     new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder().setCustomId(`${ID}:add:${scope}`).setPlaceholder("Ajouter un membre")
+      new UserSelectMenuBuilder().setCustomId(`${ID}:add:${scope}`).setPlaceholder(`Ajouter — ${label}`)
     ),
     new ActionRowBuilder().addComponents(
-      new UserSelectMenuBuilder().setCustomId(`${ID}:del:${scope}`).setPlaceholder("Retirer un membre")
+      new UserSelectMenuBuilder().setCustomId(`${ID}:del:${scope}`).setPlaceholder(`Retirer — ${label}`)
     ),
   ];
 }
@@ -139,8 +140,13 @@ function buildConfigPanel(guildId, current = "home", isOwner = false) {
         new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
       )
     );
-  } else if (meta.key === "clear" || meta.key === "salon" || meta.key === "sys") {
-    for (const row of accessRows(meta.key)) container.addActionRowComponents(row);
+  } else if (meta.key === "moderation") {
+    // Deux paires de menus (4 lignes) + la navigation = 5, soit le maximum
+    // autorisé par Discord dans un message.
+    for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
+    for (const row of accessRows("salon", "accès aux salons")) container.addActionRowComponents(row);
+  } else if (meta.key === "sys") {
+    for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -196,8 +202,10 @@ async function handleConfigInteraction(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     }
-    // Le panneau est réaffiché avec la liste à jour.
-    return interaction.update(buildConfigPanel(guildId, extra, isOwner));
+    // Le panneau est réaffiché avec la liste à jour, sur la rubrique qui
+    // contient cette portée — "clear" et "salon" vivent tous deux sous
+    // Modération, leur nom n'est donc pas celui d'une rubrique.
+    return interaction.update(buildConfigPanel(guildId, SECTION_OF_SCOPE[extra] || "home", isOwner));
   }
 
   if (action === "prefix") {

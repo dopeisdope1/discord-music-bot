@@ -45,7 +45,7 @@ function homeBody(categories, prefixes) {
   // « qu'est-ce que j'ai le droit de faire », la question posée par l'aide.
   const groups = [
     ["Commandes publiques", all.filter((c) => !c.scope)],
-    ["Commandes salon", all.filter((c) => c.scope === "salon")],
+    ["Commandes modération", all.filter((c) => c.scope === "salon")],
     ["Commandes Sys", all.filter((c) => c.scope === "sys" || c.scope === "owner")],
   ];
 
