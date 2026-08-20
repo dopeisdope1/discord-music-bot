@@ -237,67 +237,6 @@ const handlers = {
 // Commandes sur le préfixe "&" (musicMod). Ce préfixe est aussi celui du
 // CrowBot présent sur le serveur : le bot reste donc MUET sur tout ce qui
 // n'est pas listé ici, pour ne jamais répondre à la place de l'autre.
-
-/**
- * Fabrique la commande qui gère une portée d'autorisations (voir
- * utils/accessStore.js). La logique est la même pour les clear et pour les
- * salons, seuls les libellés changent.
- */
-function accessCommand(scope, labels) {
-  return async function (client, message, args) {
-    // Silence total pour ceux qui n'y ont pas droit : pas même un refus, afin
-    // de ne rien afficher si quelqu'un d'autre tape cette commande.
-    if (!accessStore.isAllowed("sys", message.author.id)) return;
-
-    const { musicMod } = getPrefixes(message.guild.id);
-    const usage = `\`${musicMod}${labels.command} add @membre\` · \`remove @membre\` · \`list\``;
-    const action = (args[0] || "").toLowerCase();
-
-    if (action === "list") {
-      const ids = accessStore.list(scope);
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            "info",
-            ids.length
-              ? `${labels.title} :\n${ids.map((id) => `<@${id}>`).join(", ")}`
-              : "Personne pour l'instant. Toi, tu l'es toujours."
-          ),
-        ],
-      });
-    }
-
-    if (action !== "add" && action !== "remove") {
-      return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
-    }
-
-    const target = message.mentions.users?.first();
-    const rawId = args[1]?.replace(/\D/g, "");
-    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
-    if (!userId) {
-      return message.reply({ embeds: [buildStatusEmbed("error", `Mentionne un membre ou donne son ID.\n${usage}`)] });
-    }
-
-    if (accessStore.isOwner(userId)) {
-      return message.reply({
-        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il a déjà tous les accès.`)],
-      });
-    }
-
-    if (action === "add") {
-      const added = accessStore.add(scope, userId);
-      return message.reply({
-        embeds: [buildStatusEmbed(added ? "success" : "info", added ? labels.granted(userId) : `<@${userId}> l'était déjà.`)],
-      });
-    }
-
-    const removed = accessStore.remove(scope, userId);
-    return message.reply({
-      embeds: [buildStatusEmbed(removed ? "success" : "info", removed ? labels.revoked(userId) : `<@${userId}> ne l'était pas.`)],
-    });
-  };
-}
-
 /** N'exécute `handler` que si la personne a la portée demandée, sinon rien. */
 function requireScope(scope, handler) {
   return async (client, message, args) => {
@@ -322,81 +261,9 @@ const modHandlers = {
 
   async panel(client, message) {
     if (!accessStore.isAllowed("sys", message.author.id)) return;
-    await message.reply(buildConfigPanel(message.guild.id));
+    await message.reply(buildConfigPanel(message.guild.id, "home", accessStore.isOwner(message.author.id)));
   },
 
-  // Rang "sys" : accès à tout le bot. Réservé au propriétaire — un sys ne
-  // peut pas en créer d'autres, sinon l'accès deviendrait irrévocable depuis
-  // l'intérieur (voir utils/accessStore.js).
-  async zinki(client, message, args) {
-    if (!accessStore.isOwner(message.author.id)) return;
-
-    const { musicMod } = getPrefixes(message.guild.id);
-    const usage = `\`${musicMod}zinki @membre\` · \`${musicMod}zinki remove @membre\` · \`${musicMod}zinki list\``;
-    const first = (args[0] || "").toLowerCase();
-
-    if (first === "list") {
-      const ids = accessStore.list("sys");
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            "info",
-            ids.length ? `Rang sys :\n${ids.map((id) => `<@${id}>`).join(", ")}` : "Personne n'a le rang sys."
-          ),
-        ],
-      });
-    }
-
-    // `remove` en premier mot, sinon la cible est directement en premier
-    // argument : `&zinki @membre` doit suffire à accorder le rang.
-    const removing = first === "remove";
-    const target = message.mentions.users?.first();
-    const rawId = (removing ? args[1] : args[0])?.replace(/\D/g, "");
-    const userId = target?.id || (rawId?.length >= 15 ? rawId : null);
-
-    if (!userId) return message.reply({ embeds: [buildStatusEmbed("error", `Utilisation : ${usage}`)] });
-
-    if (accessStore.isOwner(userId)) {
-      return message.reply({
-        embeds: [buildStatusEmbed("info", `<@${userId}> est propriétaire du bot, il a déjà tous les accès.`)],
-      });
-    }
-
-    if (removing) {
-      const removed = accessStore.remove("sys", userId);
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            removed ? "success" : "info",
-            removed ? `<@${userId}> n'a plus le rang sys.` : `<@${userId}> n'avait pas le rang sys.`
-          ),
-        ],
-      });
-    }
-
-    const added = accessStore.add("sys", userId);
-    return message.reply({
-      embeds: [
-        buildStatusEmbed(
-          added ? "success" : "info",
-          added ? `<@${userId}> a désormais le rang **sys** : accès à tout le bot.` : `<@${userId}> avait déjà le rang sys.`
-        ),
-      ],
-    });
-  },
-
-  clearbypass: accessCommand("clear", {
-    command: "clearbypass",
-    title: "Dispensés du quota des clear",
-    granted: (id) => `<@${id}> peut désormais utiliser les clear sans limite.`,
-    revoked: (id) => `<@${id}> repasse sous le quota normal.`,
-  }),
-  salonperm: accessCommand("salon", {
-    command: "salonperm",
-    title: "Autorisés sur les commandes de salon",
-    granted: (id) => `<@${id}> peut désormais utiliser renew, hide, unhide, lock et unlock.`,
-    revoked: (id) => `<@${id}> n'a plus accès aux commandes de salon.`,
-  }),
   renew: requireScope("salon", channelHandlers.renew),
   hide: requireScope("salon", channelHandlers.hide),
   unhide: requireScope("salon", channelHandlers.unhide),

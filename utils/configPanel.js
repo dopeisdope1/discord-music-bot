@@ -22,21 +22,27 @@ const accessStore = require("./accessStore");
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
 
+// `ownerOnly` : rubrique réservée au propriétaire, invisible pour un sys.
+// Le rang sys en fait partie — un sys qui pourrait en nommer d'autres rendrait
+// l'accès irrévocable depuis l'intérieur.
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
   { key: "clear", label: "Accès nettoyage", description: "Qui échappe au quota des clear" },
   { key: "salon", label: "Accès salon", description: "Qui peut utiliser lock/hide/renew" },
+  { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
 ];
+
+const sectionsFor = (isOwner) => SECTIONS.filter((s) => isOwner || !s.ownerOnly);
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
-function buildNav(current) {
+function buildNav(current, isOwner) {
   return new StringSelectMenuBuilder()
     .setCustomId(`${ID}:nav`)
     .setPlaceholder("Choisis une rubrique à configurer")
     .addOptions(
-      SECTIONS.map((s) =>
+      sectionsFor(isOwner).map((s) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(s.label)
           .setDescription(s.description)
@@ -76,6 +82,15 @@ function sectionBody(section, guildId) {
     ].join("\n");
   }
 
+  if (section === "sys") {
+    return [
+      `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
+      "",
+      "Le rang sys donne accès à **tout le bot** : commandes de salon, dispenses, et ce panneau.",
+      "Un sys ne peut pas en nommer d'autres — cette rubrique n'est visible que par toi.",
+    ].join("\n");
+  }
+
   return [
     `> **Préfixe musique** : \`${prefixes.main}\``,
     `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
@@ -85,7 +100,6 @@ function sectionBody(section, guildId) {
     `> **Autorisés sur les commandes de salon** : ${accessStore.list("salon").length}`,
     "",
     "Sélectionne une rubrique ci-dessous pour la modifier.",
-    "Le rang sys s'accorde uniquement avec `zinki`, hors de ce panneau.",
   ].join("\n");
 }
 
@@ -105,8 +119,9 @@ function accessRows(scope) {
  * Panneau de configuration. Components V2 sans setAccentColor : pas de barre
  * de couleur sur le côté.
  */
-function buildConfigPanel(guildId, current = "home") {
-  const meta = SECTIONS.find((s) => s.key === current) || SECTIONS[0];
+function buildConfigPanel(guildId, current = "home", isOwner = false) {
+  const available = sectionsFor(isOwner);
+  const meta = available.find((s) => s.key === current) || available[0];
   const container = new ContainerBuilder();
 
   container.addTextDisplayComponents(
@@ -115,7 +130,7 @@ function buildConfigPanel(guildId, current = "home") {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guildId)));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key)));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, isOwner)));
 
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
@@ -124,7 +139,7 @@ function buildConfigPanel(guildId, current = "home") {
         new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
       )
     );
-  } else if (meta.key === "clear" || meta.key === "salon") {
+  } else if (meta.key === "clear" || meta.key === "salon" || meta.key === "sys") {
     for (const row of accessRows(meta.key)) container.addActionRowComponents(row);
   }
 
@@ -140,8 +155,8 @@ const PREFIX_FIELDS = {
  * Traite toutes les interactions du panneau (identifiants en "cfg:").
  * Le rang est re-vérifié à CHAQUE clic : le message du panneau reste visible
  * dans le salon après l'envoi, n'importe qui pourrait cliquer dessus.
- * Le panneau ne distribue volontairement pas le rang sys — cela ferait de
- * &zinki une commande contournable par ceux à qui elle donne accès.
+ * La rubrique du rang sys n'est accessible qu'au propriétaire : un sys qui
+ * pourrait en nommer d'autres rendrait l'accès irrévocable depuis l'intérieur.
  */
 async function handleConfigInteraction(interaction) {
   const [, action, extra] = interaction.customId.split(":");
@@ -151,12 +166,22 @@ async function handleConfigInteraction(interaction) {
   }
 
   const guildId = interaction.guild.id;
+  const isOwner = accessStore.isOwner(interaction.user.id);
 
   if (action === "nav") {
-    return interaction.update(buildConfigPanel(guildId, interaction.values[0]));
+    return interaction.update(buildConfigPanel(guildId, interaction.values[0], isOwner));
   }
 
   if (action === "add" || action === "del") {
+    // Garde-fou : le rang sys ne se distribue que par le propriétaire, même
+    // si quelqu'un forgeait l'interaction sans passer par le menu.
+    if (extra === "sys" && !isOwner) {
+      return interaction.reply({
+        content: "Seul le propriétaire du bot peut accorder le rang sys.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
     const userId = interaction.values[0];
     if (accessStore.isOwner(userId)) {
       return interaction.reply({
@@ -172,7 +197,7 @@ async function handleConfigInteraction(interaction) {
       });
     }
     // Le panneau est réaffiché avec la liste à jour.
-    return interaction.update(buildConfigPanel(guildId, extra));
+    return interaction.update(buildConfigPanel(guildId, extra, isOwner));
   }
 
   if (action === "prefix") {
@@ -190,7 +215,7 @@ async function handleConfigInteraction(interaction) {
         flags: MessageFlags.Ephemeral,
       });
       // interaction.message existe quand la modale vient d'un bouton du panneau.
-      return interaction.message?.edit(buildConfigPanel(guildId, "prefixes")).catch(() => {});
+      return interaction.message?.edit(buildConfigPanel(guildId, "prefixes", isOwner)).catch(() => {});
     }
 
     const field = PREFIX_FIELDS[extra];

@@ -48,10 +48,9 @@ const CATEGORIES = [
     key: "admin",
     label: "Administration",
     commands: [
+      // Tout se règle depuis le panneau : dispenses, accès aux salons,
+      // préfixes, et le rang sys pour le propriétaire seul.
       { name: "panel", prefix: "mod", scope: "sys", description: "Panneau de configuration" },
-      { name: "clearbypass add|remove|list", prefix: "mod", scope: "sys", description: "Dispense du quota de nettoyage" },
-      { name: "salonperm add|remove|list", prefix: "mod", scope: "sys", description: "Donne accès aux commandes de salon" },
-      { name: "zinki @membre", prefix: "mod", scope: "owner", description: "Donne le rang sys : accès à tout le bot" },
     ],
   },
 ];
