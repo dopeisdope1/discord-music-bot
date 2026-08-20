@@ -26,7 +26,6 @@ const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
-const { loadGuildConfig } = require("./utils/configChannel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 
 const client = new Client({
@@ -564,13 +563,6 @@ client.once("ready", () => {
       console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
     });
 
-    // Restaure les préfixes configurés : le disque du container Railway est
-    // réinitialisé à chaque redéploiement, donc sans ça ils reviendraient à
-    // leur valeur par défaut à chaque push (voir utils/configChannel.js, qui
-    // sauvegarde tout ça dans un salon Discord caché).
-    loadGuildConfig(guild).catch((err) => {
-      console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
-    });
   }
 });
 
@@ -578,9 +570,6 @@ client.once("ready", () => {
 client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
-  });
-  loadGuildConfig(guild).catch((err) => {
-    console.warn(`⚠️ Impossible de restaurer la config du serveur "${guild.name}":`, err.message);
   });
 });
 

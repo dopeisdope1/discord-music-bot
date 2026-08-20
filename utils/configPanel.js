@@ -15,7 +15,6 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
-const { saveGuildConfig } = require("./configChannel");
 const accessStore = require("./accessStore");
 
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
@@ -214,10 +213,9 @@ async function handleConfigInteraction(interaction) {
       if (!value) {
         return interaction.reply({ content: "Préfixe vide, rien n'a été changé.", flags: MessageFlags.Ephemeral });
       }
+      // Écrit dans DATA_DIR, monté sur un Volume Railway : la valeur survit
+      // aux redéploiements sans qu'aucun salon Discord ne soit nécessaire.
       setPrefix(guildId, extra, value);
-      // Sauvegarde aussi dans le salon de config Discord, seule copie qui
-      // survit si le volume venait à être perdu.
-      saveGuildConfig(interaction.guild, ["prefixes"]).catch(() => {});
       await interaction.reply({
         content: `**${PREFIX_FIELDS[extra].label}** réglé sur \`${value}\`.`,
         flags: MessageFlags.Ephemeral,

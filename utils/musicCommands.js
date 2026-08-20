@@ -5,7 +5,6 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
-const { waitForHydration } = require("./configChannel");
 const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
@@ -276,10 +275,6 @@ const modHandlers = {
  */
 async function handleMusicTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
-
-  // Si le bot vient de redémarrer, attend que le préfixe ait fini d'être
-  // restauré depuis Discord avant de le lire (voir utils/configChannel.js).
-  await waitForHydration(message.guild.id);
 
   const content = message.content.trim();
   const { main: MAIN_PREFIX, musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);

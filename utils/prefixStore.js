@@ -9,11 +9,9 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-// Valeurs par défaut avant toute config (la vraie valeur, une fois changée
-// via &panel, est restaurée depuis Discord — voir utils/configChannel.js ;
-// ces valeurs ne servent que si cette restauration ne trouve rien du tout).
-// main = préfixe musique ; musicMod = préfixe des commandes de modération
-// de ce même bot (voir utils/modMessageRouter.js).
+// Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
+// main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
+// avec le CrowBot du serveur (voir utils/musicCommands.js).
 const DEFAULT_PREFIXES = { main: "?", musicMod: "&" };
 
 let cache = null;
@@ -58,27 +56,4 @@ function setPrefix(guildId, type, value) {
   save();
 }
 
-/**
- * Valeurs personnalisées brutes d'un serveur (sans les valeurs par défaut),
- * utilisé par utils/configChannel.js pour sauvegarder/restaurer via Discord.
- * @param {string} guildId
- */
-function getRawGuildData(guildId) {
-  return load()[guildId] || {};
-}
-
-/**
- * Recharge les valeurs personnalisées d'un serveur depuis une source externe
- * (voir utils/configChannel.js — la config sauvegardée dans un salon Discord
- * dédié, qui survit aux redéploiements Railway contrairement au disque local).
- * @param {string} guildId
- * @param {object} remoteData
- */
-function hydrateFromRemote(guildId, remoteData) {
-  if (!remoteData) return;
-  const data = load();
-  data[guildId] = { ...data[guildId], ...remoteData };
-  save();
-}
-
-module.exports = { getPrefixes, setPrefix, getRawGuildData, hydrateFromRemote, DEFAULT_PREFIXES };
+module.exports = { getPrefixes, setPrefix, DEFAULT_PREFIXES };
