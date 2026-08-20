@@ -77,26 +77,28 @@ const FALLBACK_NODES = [
   { host: "lavalink.serenetia.com", auth: "https://dsc.gg/ajidevserver" },
 ];
 
-const LavalinkNodes = [
-  ...(process.env.LAVALINK_HOST
-    ? [
-        {
-          name: "principal",
-          url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT || "443"}`,
-          auth: process.env.LAVALINK_PASSWORD || "youshallnotpass",
-          secure: process.env.LAVALINK_SECURE ? process.env.LAVALINK_SECURE === "true" : true,
-        },
-      ]
-    : []),
-  // Le nœud de LAVALINK_HOST peut déjà figurer dans la liste de secours : on
-  // l'y retire pour ne pas déclarer deux fois la même URL.
-  ...FALLBACK_NODES.filter((node) => node.host !== process.env.LAVALINK_HOST).map((node, i) => ({
-    name: `secours-${i + 1}`,
-    url: `${node.host}:443`,
-    auth: node.auth,
-    secure: true,
-  })),
-];
+// Un nœud configuré explicitement (typiquement le nœud privé du projet) est
+// utilisé SEUL : Shoukaku se connecte à tous les nœuds déclarés dès le
+// démarrage, donc garder les nœuds publics en secours reviendrait à les
+// solliciter à chaque redéploiement — c'est précisément ce qui nous a fait
+// bannir par leur limite de connexions ("Too many websocket connections
+// attempt for this bot"). Les nœuds publics ne servent que si rien n'est
+// configuré.
+const LavalinkNodes = process.env.LAVALINK_HOST
+  ? [
+      {
+        name: "prive",
+        url: `${process.env.LAVALINK_HOST}:${process.env.LAVALINK_PORT || "443"}`,
+        auth: process.env.LAVALINK_PASSWORD || "youshallnotpass",
+        secure: process.env.LAVALINK_SECURE ? process.env.LAVALINK_SECURE === "true" : true,
+      },
+    ]
+  : FALLBACK_NODES.map((node, i) => ({
+      name: `public-${i + 1}`,
+      url: `${node.host}:443`,
+      auth: node.auth,
+      secure: true,
+    }));
 
 console.log(`[lavalink] ${LavalinkNodes.length} nœud(s) déclaré(s) : ${LavalinkNodes.map((n) => n.url).join(", ")}`);
 

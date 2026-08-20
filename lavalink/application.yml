@@ -1,0 +1,77 @@
+server:
+  # Railway impose le port via la variable PORT. 2333 n'est qu'un repli pour
+  # un lancement en local.
+  port: ${PORT:2333}
+  # "::" et non "0.0.0.0" : le réseau privé de Railway est en IPv6, un service
+  # qui n'écoute qu'en IPv4 y est injoignable. L'écoute sur "::" couvre les
+  # deux familles d'adresses.
+  address: "::"
+
+lavalink:
+  server:
+    password: ${LAVALINK_PASSWORD}
+    sources:
+      # La source YouTube intégrée de Lavalink n'est plus fiable : c'est
+      # l'extension youtube-plugin ci-dessous qui la remplace. Les deux
+      # activées en même temps entrent en conflit, d'où le false ici.
+      youtube: false
+      bandcamp: true
+      soundcloud: true
+      twitch: true
+      vimeo: true
+      http: true
+      local: false
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+    trackStuckThresholdMs: 10000
+    useSeekGhosting: true
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: true
+    soundcloudSearchEnabled: true
+
+  plugins:
+    # Lecture YouTube.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.13.5"
+      snapshot: false
+    # Résolution des liens Spotify (titres, albums, playlists publiques).
+    # Sans elle, coller une URL Spotify ne donne rien.
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.7.3"
+      snapshot: false
+
+plugins:
+  youtube:
+    enabled: true
+    # Clients de secours : quand YouTube casse l'un d'eux, les autres prennent
+    # le relais sans intervention.
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - WEB
+      - WEBEMBEDDED
+
+  lavasrc:
+    sources:
+      spotify: true
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+    spotify:
+      clientId: "${SPOTIFY_CLIENT_ID}"
+      clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+      countryCode: FR
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
+    providers:
+      # Spotify ne fournit pas de flux audio exploitable : LavaSrc récupère
+      # les métadonnées puis retrouve la piste sur YouTube. L'ISRC en premier
+      # donne la correspondance la plus fiable.
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+
+logging:
+  level:
+    root: INFO
+    lavalink: INFO
