@@ -6,26 +6,9 @@
 //   "sys"   -> rang sys accordé par &zinki (ou propriétaire)
 //   "owner" -> propriétaire du bot uniquement
 // `prefix` vaut "main" (préfixe musique) ou "mod" (préfixe &).
+// La musique est volontairement absente de ce catalogue : elle vit sur son
+// propre préfixe, rappelé en pied de l'aide, et l'encombrait inutilement.
 const CATEGORIES = [
-  {
-    key: "musique",
-    label: "Musique",
-    commands: [
-      { name: "play <titre | lien>", prefix: "main", scope: null, description: "Joue un titre, un lien YouTube/Spotify ou une playlist publique" },
-      { name: "play", prefix: "main", scope: null, description: "Sans titre : ouvre ta playlist de favoris" },
-      { name: "join [@membre]", prefix: "main", scope: null, description: "Suit en direct ce que tu écoutes sur Spotify" },
-      { name: "queue", prefix: "main", scope: null, description: "Affiche la file d'attente" },
-      { name: "skip", prefix: "main", scope: null, description: "Passe au titre suivant" },
-      { name: "pause", prefix: "main", scope: null, description: "Met la lecture en pause" },
-      { name: "resume", prefix: "main", scope: null, description: "Reprend la lecture" },
-      { name: "volume <0-150>", prefix: "main", scope: null, description: "Règle le volume" },
-      { name: "loop off|song|queue", prefix: "main", scope: null, description: "Change le mode de répétition" },
-      { name: "stop", prefix: "main", scope: null, description: "Arrête tout et vide la file" },
-      { name: "leave", prefix: "main", scope: null, description: "Fait quitter le vocal au bot" },
-      { name: "Bouton « Favori »", prefix: null, scope: null, description: "Sur le panel de lecture : met le titre en cours dans tes favoris" },
-      { name: "Bouton « Mes favoris »", prefix: null, scope: null, description: "Ouvre ta playlist depuis le panel de lecture" },
-    ],
-  },
   {
     key: "public",
     label: "Public",
@@ -40,9 +23,14 @@ const CATEGORIES = [
     key: "clear",
     label: "Nettoyage",
     commands: [
-      { name: "uo clear", prefix: null, scope: null, description: "Sans préfixe : efface tes propres messages du salon" },
-      { name: "anas clear", prefix: null, scope: null, description: "Identique à uo clear" },
-      { name: "yanis clear", prefix: null, scope: null, description: "Identique à uo clear" },
+      // Les trois déclencheurs font strictement la même chose : une seule
+      // entrée plutôt que trois lignes identiques.
+      {
+        name: "uo clear",
+        prefix: null,
+        scope: null,
+        description: "Sans préfixe, efface tes propres messages du salon. Variantes : `anas clear`, `yanis clear`",
+      },
     ],
   },
   {
