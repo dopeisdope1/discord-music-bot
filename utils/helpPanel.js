@@ -33,18 +33,37 @@ function formatCommand(cmd, prefixes) {
   return `${label} — ${cmd.description}`;
 }
 
+// Nom court affiché dans les listes en ligne : sans les arguments pour une
+// commande préfixée ("play <titre>" -> "play"), mais intégral pour les
+// entrées sans préfixe, dont le nom EST la formulation ("uo clear").
+const shortName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
+
 function homeBody(categories, prefixes) {
-  const total = categories.reduce((n, c) => n + c.commands.length, 0);
-  const lines = categories.map((c) => `**${c.label}** — ${c.commands.length} commande(s)`);
+  const all = categories.flatMap((c) => c.commands);
+
+  // Regroupé par niveau d'accès plutôt que par thème : c'est ce qui répond à
+  // « qu'est-ce que j'ai le droit de faire », la question posée par l'aide.
+  const groups = [
+    ["Commandes publiques", all.filter((c) => !c.scope)],
+    ["Commandes salon", all.filter((c) => c.scope === "salon")],
+    ["Commandes Sys", all.filter((c) => c.scope === "sys" || c.scope === "owner")],
+  ];
+
+  const lines = groups
+    .filter(([, cmds]) => cmds.length)
+    .map(([label, cmds]) => {
+      const names = [...new Set(cmds.map(shortName))];
+      return `**${label} (${names.length}) :** ${names.join(", ")}`;
+    });
 
   return [
-    "Sélectionne une **catégorie** dans le menu ci-dessous pour voir le détail.",
-    "Les arguments entre `[]` sont facultatifs, ceux entre `<>` sont obligatoires.",
+    "Bienvenue sur le **panel d'aide** du bot",
+    "Sélectionne une **catégorie** via le menu ci-dessous pour découvrir tes commandes disponibles",
+    "Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**",
     "",
     ...lines,
     "",
     `Préfixe musique : \`${prefixes.main}\` · préfixe commandes : \`${prefixes.musicMod}\``,
-    `${total} commande(s) accessible(s) pour toi.`,
   ].join("\n");
 }
 
