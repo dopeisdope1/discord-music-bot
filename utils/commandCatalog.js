@@ -22,15 +22,18 @@ const CATEGORIES = [
       { name: "loop off|song|queue", prefix: "main", scope: null, description: "Change le mode de répétition" },
       { name: "stop", prefix: "main", scope: null, description: "Arrête tout et vide la file" },
       { name: "leave", prefix: "main", scope: null, description: "Fait quitter le vocal au bot" },
+      { name: "Bouton « Favori »", prefix: null, scope: null, description: "Sur le panel de lecture : met le titre en cours dans tes favoris" },
+      { name: "Bouton « Mes favoris »", prefix: null, scope: null, description: "Ouvre ta playlist depuis le panel de lecture" },
     ],
   },
   {
-    key: "favoris",
-    label: "Favoris",
+    key: "public",
+    label: "Public",
     commands: [
-      { name: "play", prefix: "main", scope: null, description: "Sans titre : ta playlist, avec un menu pour lancer un titre" },
-      { name: "Bouton « Favori »", prefix: null, scope: null, description: "Sur le panel de lecture : met le titre en cours dans tes favoris" },
-      { name: "Bouton « Mes favoris »", prefix: null, scope: null, description: "Ouvre ta playlist depuis le panel de lecture" },
+      { name: "pic [@membre]", prefix: "mod", scope: null, description: "Affiche l'avatar d'un membre" },
+      { name: "banner [@membre]", prefix: "mod", scope: null, description: "Affiche la bannière d'un membre" },
+      { name: "server", prefix: "mod", scope: null, description: "Affiche les informations du serveur" },
+      { name: "snipe", prefix: "mod", scope: null, description: "Affiche le dernier message supprimé du salon" },
     ],
   },
   {

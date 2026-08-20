@@ -148,6 +148,11 @@ client.spotifyFollows = new Collection();
 client.playerOwners = new Collection();
 client.playerAllowed = new Collection();
 
+// Dernier message supprimé par salon, pour &snipe. Volontairement en mémoire
+// seulement : l'information est éphémère par nature et n'a aucune raison de
+// survivre à un redémarrage.
+client.snipes = new Collection();
+
 // ---- Événements Kazagumo ----
 client.kazagumo
   .on("playerStart", async (player) => {
@@ -450,6 +455,17 @@ client.on("messageCreate", (message) => {
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
+});
+
+// ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
+client.on("messageDelete", (message) => {
+  if (!message.guild || message.author?.bot) return;
+  client.snipes.set(message.channel.id, {
+    content: message.content || "*(pas de contenu texte)*",
+    authorTag: message.author?.tag || "Inconnu",
+    authorAvatar: message.author?.displayAvatarURL?.() || null,
+    deletedAt: Date.now(),
+  });
 });
 
 // ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie

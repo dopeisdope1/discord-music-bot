@@ -12,6 +12,7 @@ const accessStore = require("./accessStore");
 const { channelHandlers } = require("./channelCommands");
 const { buildHelpPanel } = require("./helpPanel");
 const { buildConfigPanel } = require("./configPanel");
+const { publicHandlers } = require("./publicCommands");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -311,6 +312,13 @@ const modHandlers = {
   async help(client, message) {
     await message.reply(buildHelpPanel(message.guild.id, message.author.id));
   },
+
+  // Commandes publiques d'affichage : aucune autorisation requise, elles ne
+  // font que lire des informations.
+  pic: publicHandlers.pic,
+  banner: publicHandlers.banner,
+  server: publicHandlers.server,
+  snipe: publicHandlers.snipe,
 
   async panel(client, message) {
     if (!accessStore.isAllowed("sys", message.author.id)) return;
