@@ -36,6 +36,12 @@ const CATEGORIES = [
       { name: "hide", prefix: "mod", scope: "salon", description: "Masque le salon à @everyone" },
       { name: "unhide", prefix: "mod", scope: "salon", description: "Réaffiche le salon" },
       { name: "renew", prefix: "mod", scope: "salon", description: "Recrée le salon à neuf (l'historique est perdu)" },
+      {
+        name: "zinki assasini [@membre] [raison]",
+        prefix: null,
+        scope: "sys",
+        description: "Sans préfixe, ouvre le panneau de bannissement (confirmation obligatoire)",
+      },
     ],
   },
   {

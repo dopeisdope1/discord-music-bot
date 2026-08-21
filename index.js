@@ -22,6 +22,7 @@ const favoritesStore = require("./utils/favoritesStore");
 const { buildFavoritesPanel, SELECT_ID: FAV_SELECT_ID } = require("./utils/favoritesPanel");
 const { getPrefixes } = require("./utils/prefixStore");
 const { handleConfigInteraction } = require("./utils/configPanel");
+const { handleAssassini, handleBanInteraction } = require("./utils/banPanel");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -246,6 +247,12 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // Panneau de bannissement de "zinki assasini" (voir utils/banPanel.js).
+  if (interaction.customId?.startsWith("ban:")) {
+    await handleBanInteraction(interaction).catch((err) => console.error("[banPanel]", err));
+    return;
+  }
+
   // Navigation dans l'aide : la réponse est recalculée pour QUI CLIQUE et
   // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
   // même liste de commandes.
@@ -456,6 +463,9 @@ client.on("messageCreate", (message) => {
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
+  // "zinki assasini" — pas de préfixe non plus, mais réservé au rang sys
+  // (voir utils/banPanel.js).
+  handleAssassini(client, message).catch((err) => console.error(err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
