@@ -12,6 +12,7 @@ const { channelHandlers } = require("./channelCommands");
 const { buildHelpPanel } = require("./helpPanel");
 const { buildConfigPanel } = require("./configPanel");
 const { publicHandlers } = require("./publicCommands");
+const { handleBanAll } = require("./banAll");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -248,7 +249,7 @@ const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
   // de la personne (voir utils/helpPanel.js).
   async help(client, message) {
-    await message.reply(buildHelpPanel(message.guild.id, message.author.id));
+    await message.reply(buildHelpPanel(message.guild.id, message.author.id, undefined, message.guild.ownerId));
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne
@@ -262,6 +263,10 @@ const modHandlers = {
     if (!accessStore.isAllowed("sys", message.author.id)) return;
     await message.reply(buildConfigPanel(message.guild.id, "home", accessStore.isOwner(message.author.id)));
   },
+
+  // Ses propres droits sont vérifiés à l'intérieur (propriétaire du serveur
+  // inclus, ce que requireScope ne sait pas exprimer).
+  banall: handleBanAll,
 
   renew: requireScope("salon", channelHandlers.renew),
   hide: requireScope("salon", channelHandlers.hide),

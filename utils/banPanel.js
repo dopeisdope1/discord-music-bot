@@ -213,4 +213,4 @@ async function handleBanInteraction(interaction) {
   }
 }
 
-module.exports = { handleAssassini, handleBanInteraction, ID };
+module.exports = { handleAssassini, handleBanInteraction, refusalReason, card, ID };

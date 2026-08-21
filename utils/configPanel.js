@@ -29,13 +29,14 @@ const SECTIONS = [
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
   { key: "moderation", label: "Modération", description: "Qui échappe au quota et qui gère les salons" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
+  { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
 ];
 
 const sectionsFor = (isOwner) => SECTIONS.filter((s) => isOwner || !s.ownerOnly);
 
 // Rubrique à rouvrir après avoir modifié une portée : les portées "clear" et
 // "salon" sont toutes deux gérées depuis Modération.
-const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys" };
+const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys", banall: "banall" };
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
@@ -84,6 +85,16 @@ function sectionBody(section, guildId) {
       "",
       "Le rang sys donne accès à **tout le bot** : commandes de salon, dispenses, et ce panneau.",
       "Un sys ne peut pas en nommer d'autres — cette rubrique n'est visible que par toi.",
+    ].join("\n");
+  }
+
+  if (section === "banall") {
+    return [
+      `> **Autorisés** : ${mentions(accessStore.list("banall"))}`,
+      "",
+      "Ces membres peuvent lancer `banall`, qui bannit tout le serveur d'un coup.",
+      "Le propriétaire du serveur y a toujours droit, sans figurer ici.",
+      "Le rang sys ne suffit **pas** : cet accès s'accorde un par un, et seulement par toi.",
     ].join("\n");
   }
 
@@ -146,6 +157,8 @@ function buildConfigPanel(guildId, current = "home", isOwner = false) {
     for (const row of accessRows("salon", "accès aux salons")) container.addActionRowComponents(row);
   } else if (meta.key === "sys") {
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
+  } else if (meta.key === "banall") {
+    for (const row of accessRows("banall", "ban de masse")) container.addActionRowComponents(row);
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };

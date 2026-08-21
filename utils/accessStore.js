@@ -15,7 +15,12 @@ const DATA_FILE = path.join(DATA_DIR, "access.json");
 // accordées en production.
 const LEGACY_FILE = path.join(DATA_DIR, "clearBypass.json");
 
-const SCOPES = ["clear", "salon", "sys"];
+const SCOPES = ["clear", "salon", "sys", "banall"];
+
+// Portées que le rang sys n'hérite PAS : elles doivent être accordées une par
+// une. "banall" en fait partie — vider un serveur entier est trop lourd de
+// conséquences pour être un effet de bord du rang sys.
+const NO_SYS_INHERIT = new Set(["owner", "banall"]);
 
 let cache = null;
 
@@ -86,7 +91,7 @@ const isSys = (userId) => (load().sys || []).includes(userId);
 function isAllowed(scope, userId) {
   if (isOwner(userId)) return true;
   if (scope === "owner") return false;
-  if (isSys(userId)) return true;
+  if (isSys(userId) && !NO_SYS_INHERIT.has(scope)) return true;
   return (load()[scope] || []).includes(userId);
 }
 

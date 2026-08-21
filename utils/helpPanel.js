@@ -16,11 +16,16 @@ const SELECT_ID = "help_nav";
 const HOME = "__home__";
 const MAX_BODY = 3500;
 
-/** Ce que la personne peut utiliser, selon la portée exigée par la commande. */
-function accessChecker(userId) {
+/**
+ * Ce que la personne peut utiliser, selon la portée exigée par la commande.
+ * `guildOwnerId` est nécessaire pour "banall" : le propriétaire du serveur y
+ * a droit sans figurer dans aucune liste (voir utils/banAll.js).
+ */
+function accessChecker(userId, guildOwnerId) {
   return (scope) => {
     if (!scope) return true;
     if (scope === "owner") return accessStore.isOwner(userId);
+    if (scope === "banall" && userId === guildOwnerId) return true;
     return accessStore.isAllowed(scope, userId);
   };
 }
@@ -46,7 +51,9 @@ function homeBody(categories, prefixes) {
   const groups = [
     ["Commandes publiques", all.filter((c) => !c.scope)],
     ["Commandes modération", all.filter((c) => c.scope === "salon")],
-    ["Commandes Sys", all.filter((c) => c.scope === "sys" || c.scope === "owner")],
+    // "banall" a sa propre portée mais reste un droit élevé : il s'affiche
+    // avec les commandes sys plutôt que dans une ligne à lui tout seul.
+    ["Commandes Sys", all.filter((c) => ["sys", "owner", "banall"].includes(c.scope))],
   ];
 
   const lines = groups
@@ -106,9 +113,9 @@ function buildSelect(categories, current) {
  * Panneau d'aide filtré sur les droits réels de la personne. Components V2
  * sans setAccentColor : pas de barre de couleur sur le côté.
  */
-function buildHelpPanel(guildId, userId, current = HOME) {
+function buildHelpPanel(guildId, userId, current = HOME, guildOwnerId = null) {
   const prefixes = getPrefixes(guildId);
-  const categories = categoriesFor(accessChecker(userId));
+  const categories = categoriesFor(accessChecker(userId, guildOwnerId));
   const category = categories.find((c) => c.key === current);
 
   const container = new ContainerBuilder();

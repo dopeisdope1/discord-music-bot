@@ -42,6 +42,12 @@ const CATEGORIES = [
         scope: "sys",
         description: "Sans préfixe, ouvre le panneau de bannissement (confirmation obligatoire)",
       },
+      {
+        name: "banall [raison]",
+        prefix: "mod",
+        scope: "banall",
+        description: "Bannit tout le serveur (confirmation obligatoire)",
+      },
     ],
   },
   {

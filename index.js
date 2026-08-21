@@ -23,6 +23,7 @@ const { buildFavoritesPanel, SELECT_ID: FAV_SELECT_ID } = require("./utils/favor
 const { getPrefixes } = require("./utils/prefixStore");
 const { handleConfigInteraction } = require("./utils/configPanel");
 const { handleAssassini, handleBanInteraction } = require("./utils/banPanel");
+const { handleBanAllInteraction } = require("./utils/banAll");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -253,11 +254,19 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // Ban de masse (voir utils/banAll.js). Aucune ambiguïté avec le bloc
+  // ci-dessus : le deux-points fait partie du préfixe, donc "banall:" ne
+  // commence pas par "ban:".
+  if (interaction.customId?.startsWith("banall:")) {
+    await handleBanAllInteraction(interaction).catch((err) => console.error("[banAll]", err));
+    return;
+  }
+
   // Navigation dans l'aide : la réponse est recalculée pour QUI CLIQUE et
   // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
   // même liste de commandes.
   if (interaction.isStringSelectMenu?.() && interaction.customId === HELP_SELECT_ID) {
-    const panel = buildHelpPanel(interaction.guild.id, interaction.user.id, interaction.values[0]);
+    const panel = buildHelpPanel(interaction.guild.id, interaction.user.id, interaction.values[0], interaction.guild.ownerId);
     return interaction
       .reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral })
       .catch(() => {});
