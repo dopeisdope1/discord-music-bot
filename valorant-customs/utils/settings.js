@@ -25,6 +25,8 @@ const DEFAULTS = {
   staffRoleId: config.staffRoleId,
   // true = seuls les propriétaires/gestionnaires peuvent créer une partie.
   restrictCreation: false,
+  // Préfixe des commandes, modifiable depuis le panneau.
+  prefix: process.env.PREFIX || "+",
 };
 
 let overrides = null;

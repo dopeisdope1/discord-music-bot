@@ -1,7 +1,11 @@
 # Valorant Customs — bot Discord
 
-Organisation de parties personnalisées Valorant : embed sombre interactif, équipes,
-liste d'attente, salons vocaux privés et surtout **système anti-absent** avec timer.
+Organisation de parties personnalisées Valorant : panneau interactif en
+**Components V2**, équipes, liste d'attente, salons vocaux privés et surtout
+**système anti-absent** avec timer.
+
+**Aucune commande slash** : tout passe par un préfixe, `+` par défaut, changeable
+à chaud depuis le panneau de contrôle.
 
 ## Installation
 
@@ -9,21 +13,23 @@ liste d'attente, salons vocaux privés et surtout **système anti-absent** avec 
 cd valorant-customs
 npm install
 cp .env.example .env    # puis renseigne DISCORD_TOKEN
-npm run deploy          # publie les commandes slash (instantané, par serveur)
 npm start
 ```
 
 ### Portail développeur Discord
 
-- **Bot → Privileged Gateway Intents** : activer **Server Members Intent**.
+- **Bot → Privileged Gateway Intents** : activer **Message Content Intent**
+  (commandes préfixe) et **Server Members Intent** (déplacements vocaux).
 - **Permissions à donner au bot** : `Gérer les salons`, `Déplacer des membres`,
-  `Voir les salons`, `Envoyer des messages`, `Intégrer des liens`.
+  `Voir les salons`, `Envoyer des messages`, `Gérer les messages`.
 
 ### Variables d'environnement
 
 | Variable | Rôle |
 | --- | --- |
 | `DISCORD_TOKEN` | **obligatoire** — token du bot |
+| `PREFIX` | préfixe initial (défaut `+`, ensuite modifiable depuis le panneau) |
+| `VALORANT_EMOJI` | emoji du titre, ex. `<:valorant:123456789012345678>` |
 | `BOT_OWNER_IDS` | roots supplémentaires (le propriétaire de l'application est détecté tout seul) |
 | `LOG_CHANNEL_ID` | salon des logs (création, join, leave, avertissement, retrait…) |
 | `STAFF_ROLE_ID` | rôle autorisé à gérer **toutes** les parties |
@@ -38,20 +44,23 @@ npm start
 ```
 valorant-customs/
 ├── index.js                  # point d'entrée : intents, chargement, arrêt propre
-├── deploy-commands.js        # publication des commandes slash
 ├── config.js                 # couleurs, emojis, formats, maps, délais
 ├── commands/
-│   ├── custom.js             # /custom  — crée la partie + embed interactif
-│   ├── avertir.js            # /avertir — déclenche le timer anti-absent
-│   ├── move.js               # /move    — force le déplacement vocal
-│   ├── panel.js              # /panel   — panneau de contrôle (propriétaires)
-│   └── profil.js             # /profil  — pseudo Valorant + rang
+│   ├── custom.js             # +custom  — crée la partie + panneau interactif
+│   ├── avertir.js            # +avertir — déclenche le timer anti-absent
+│   ├── move.js               # +move    — force le déplacement vocal
+│   ├── panel.js              # +panel   — panneau de contrôle (propriétaires)
+│   ├── profil.js             # +profil  — pseudo Valorant + rang
+│   └── aide.js               # +aide    — liste des commandes
 ├── events/
 │   ├── ready.js              # purge + reprise des timers après redémarrage
-│   ├── interactionCreate.js  # routage boutons / menus / modales / slash
+│   ├── messageCreate.js      # commandes préfixe (préfixe relu à chaque message)
+│   ├── interactionCreate.js  # routage boutons / menus / modales
 │   └── voiceStateUpdate.js   # annule l'avertissement dès que le joueur arrive
 ├── utils/
-│   ├── embeds.js             # tout le rendu (embeds, boutons, modale)
+│   ├── display.js            # ⭐ panneau de partie en Components V2
+│   ├── embeds.js             # embeds courts (avertissement, proposition…)
+│   ├── reply.js              # réponses aux commandes préfixe
 │   ├── matches.js            # modèle de partie + rafraîchissement du message
 │   ├── matchActions.js       # actions : rejoindre, quitter, lancer, terminer…
 │   ├── warnings.js           # ⭐ anti-absent : timers, retrait, liste d'attente
@@ -68,13 +77,20 @@ valorant-customs/
 
 ## Commandes
 
+Préfixe par défaut `+`. Les arguments de `+custom` se donnent dans n'importe
+quel ordre — le bot reconnaît tout seul un format, une map, un rang.
+
 | Commande | Qui | Effet |
 | --- | --- | --- |
-| `/custom [format] [map] [rang_minimum] [rejoindre]` | tous | crée la partie |
-| `/avertir joueur [partie]` | hôte / staff | lance le compte à rebours anti-absent |
-| `/move joueur [equipe] [partie]` | hôte / staff | déplace le joueur dans le vocal de son équipe |
-| `/profil [pseudo] [rang] [division] [joueur]` | tous | consulte / met à jour le profil Valorant |
-| `/panel` | **root + propriétaires** | panneau de contrôle (éphémère) |
+| `+custom [5v5] [map] [rang] [sansmoi]` | tous | crée la partie |
+| `+avertir @joueur [#id]` | hôte / responsables | lance le compte à rebours anti-absent |
+| `+move @joueur [1\|2]` · `+move tous` | hôte / responsables | déplace dans le bon vocal |
+| `+profil [Pseudo#TAG] [rang]` · `+profil @joueur` | tous | consulte / met à jour le profil |
+| `+panel` | **root + propriétaires** | ouvre le panneau de contrôle en privé |
+| `+aide` | tous | liste les commandes avec le préfixe en vigueur |
+
+Alias disponibles : `partie`, `warn`/`afk`, `deplacer`, `pseudo`/`rang`,
+`panneau`, `help`.
 
 ## Hiérarchie d'accès
 
@@ -83,36 +99,35 @@ valorant-customs/
 | 👑 **Root** | personne — c'est le propriétaire de l'application Discord (détecté au démarrage) et/ou `BOT_OWNER_IDS` | tout, **seul à donner ou retirer l'ownership** |
 | 🛡️ **Propriétaire** | le root, depuis le panneau | accès complet au bot + panneau (sauf la section Propriétaires) |
 | 🔧 **Gestionnaire** | root et propriétaires | gérer *toutes* les parties (avertir, move, kick, terminer) — pas le panneau |
-| 🎮 **Joueur** | par défaut | rejoindre, liste d'attente, `/profil`, créer ses parties |
+| 🎮 **Joueur** | par défaut | rejoindre, liste d'attente, `+profil`, créer ses parties |
 
 Le root n'est stocké dans aucun fichier : impossible de le perdre, impossible de
 se le faire retirer depuis le panneau. Chaque clic dans le panneau revérifie les
 droits — un `customId` ne suffit jamais à autoriser une action.
 
-## Le panneau de contrôle (`/panel`)
+## Le panneau de contrôle (`+panel`)
 
-Entièrement éphémère : personne d'autre ne le voit, même lancé dans un salon
-public. Quatre sections, navigables sans quitter le message :
+`+panel` supprime ton message et poste un bouton **Ouvrir le panneau**. Le clic
+est une interaction : la réponse est donc **strictement privée**, visible de toi
+seul, même dans un salon public. Quatre sections, navigables sans quitter le
+message :
 
 - 👑 **Propriétaires** *(root uniquement)* — donner / retirer l'ownership du bot.
 - 🔑 **Gestionnaires** — nommer ou révoquer les gestionnaires de parties.
 - 🎮 **Parties en cours** — pour chaque partie : `Kick`, `Échanger 2 joueurs`,
   `Mélanger` (répartition aléatoire équilibrée), `Rapatrier en vocal`,
   `Recréer les salons`, `Terminer`.
-- ⚙️ **Réglages** — délais d'avertissement et de réponse, attribution
-  automatique, présence en vocal, création réservée, salon de logs, catégorie
-  des vocaux. Ces réglages remplacent le `.env` à chaud et sont persistés dans
-  `data/settings.json`.
-
-Boutons de l'embed : **Rejoindre Équipe 1 / 2**, **Liste d'attente**, **Quitter**,
-**Lancer la partie**, **Avertir un joueur**, **Terminer la partie**.
+- ⚙️ **Réglages** — **préfixe des commandes**, délais d'avertissement et de
+  réponse, attribution automatique, présence en vocal, création réservée, salon
+  de logs, catégorie des vocaux. Ces réglages remplacent le `.env` à chaud, sans
+  redémarrage, et sont persistés dans `data/settings.json`.
 
 ## Le système anti-absent
 
-1. L'hôte lance `/avertir @joueur` (ou le bouton **Avertir un joueur**).
+1. L'hôte lance `+avertir @joueur` (ou le bouton **Avertir un joueur**, avant lancement).
 2. Le bot ping le joueur : *« Tu as 60 secondes pour rejoindre le salon vocal de
    ton équipe. Passé ce délai, ta place sera donnée à quelqu'un d'autre. »*
-3. Le compte à rebours s'affiche en direct dans l'embed, à côté du joueur.
+3. Le compte à rebours s'affiche en direct dans le panneau, à côté du joueur.
 4. **Le joueur arrive** → l'avertissement est levé immédiatement (pas besoin
    d'attendre la fin du timer).
    **Le joueur est absent** → retrait automatique de l'équipe, message public
@@ -131,3 +146,30 @@ avec divisions 1-3. La saisie est tolérante : `plat3`, `Diamant 2`, `immo`, `nc
 Les emojis sont des carrés Unicode par défaut. Pour les vraies icônes Valorant :
 uploade-les en emojis serveur et remplace le champ `emoji` dans
 [`utils/ranks.js`](utils/ranks.js) par `<:fer:123456789012345678>`.
+
+Même principe pour le logo du titre : `VALORANT_EMOJI=<:valorant:123…>` dans le
+`.env`.
+
+## Rendu du panneau de partie
+
+Le panneau est construit en **Components V2** (`ContainerBuilder` +
+`TextDisplay` + `Separator`, `flags: MessageFlags.IsComponentsV2`) — voir
+[`utils/display.js`](utils/display.js) :
+
+```
+## Partie personnalisée — Valorant
+**Host** : @hôte · **Format** : 5 vs 5
+────────────────────────────────
+**Statut** : partie en cours — les salons vocaux des équipes ont été créés.
+────────────────────────────────
+**Équipe 1 — 5/5**
+1. @joueur — `pseudo` · 🟫 Fer
+…
+────────────────────────────────
+-# Les salons vocaux sont visibles par tout le monde, mais seuls les joueurs
+   de chaque équipe peuvent s'y connecter, parler et stream.
+[ Terminer la partie ]
+```
+
+Partie lancée : un seul bouton, comme sur la maquette. En attente : les boutons
+d'inscription, `Lancer la partie` et `Avertir un joueur` s'ajoutent.

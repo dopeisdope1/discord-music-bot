@@ -1,105 +1,78 @@
 /**
- * /profil — consulte ou met à jour son profil Valorant (pseudo + rang).
- * Ces informations alimentent l'affichage des équipes dans l'embed de partie.
+ * `profil` — consulte ou met à jour son profil Valorant (pseudo + rang).
+ *
+ *   +profil                          → ton profil
+ *   +profil @joueur                  → le profil de quelqu'un d'autre
+ *   +profil TenZ#0505 Diamant 2      → crée / met à jour le tien
+ *   +profil Immortel                 → change seulement le rang
+ *   +profil NouveauPseudo#EUW        → change seulement le pseudo
  */
-
-const { SlashCommandBuilder, MessageFlags, InteractionContextType } = require("discord.js");
 
 const config = require("../config");
 const store = require("../utils/store");
-const { rankChoices, formatRank, RANK_BY_KEY } = require("../utils/ranks");
-const { errorEmbed, successEmbed, infoEmbed } = require("../utils/embeds");
+const settings = require("../utils/settings");
+const { parseRank, formatRank, RANK_HELP } = require("../utils/ranks");
 const { findMatchesForPlayer, refreshMatchMessage } = require("../utils/matches");
+const { replyError, replyOk, replyInfo } = require("../utils/reply");
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("profil")
-    .setDescription("Affiche ou met à jour ton profil Valorant (pseudo + rang)")
-    .setContexts(InteractionContextType.Guild)
-    .addStringOption((option) =>
-      option
-        .setName("pseudo")
-        .setDescription("Ton Riot ID complet, ex. TenZ#0505")
-        .setMaxLength(40))
-    .addStringOption((option) =>
-      option
-        .setName("rang")
-        .setDescription("Ton rang actuel")
-        .addChoices(...rankChoices()))
-    .addIntegerOption((option) =>
-      option
-        .setName("division")
-        .setDescription("Division dans le rang (1, 2 ou 3)")
-        .addChoices({ name: "1", value: 1 }, { name: "2", value: 2 }, { name: "3", value: 3 }))
-    .addUserOption((option) =>
-      option
-        .setName("joueur")
-        .setDescription("Consulter le profil d'un autre joueur")),
+  name: "profil",
+  aliases: ["profile", "pseudo", "rang"],
+  description: "Affiche ou met à jour ton profil Valorant",
+  usage: "profil [Pseudo#TAG] [rang]  ·  profil @joueur",
 
-  async execute(interaction) {
-    const other = interaction.options.getUser("joueur");
-    const pseudo = interaction.options.getString("pseudo");
-    const rangKey = interaction.options.getString("rang");
-    const division = interaction.options.getInteger("division");
+  async execute(message, args) {
+    const prefix = settings.get("prefix");
+    const mentioned = message.mentions.users.first();
 
     // ---- Consultation ----
-    if (other || (!pseudo && !rangKey && !division)) {
-      const targetId = other?.id || interaction.user.id;
+    if (mentioned || !args.length) {
+      const targetId = mentioned?.id || message.author.id;
       const profile = store.getProfile(targetId);
       if (!profile) {
-        return interaction.reply({
-          embeds: [errorEmbed(
-            other
-              ? `<@${targetId}> n'a pas encore renseigné de profil Valorant.`
-              : "Tu n'as pas encore de profil. Renseigne-le avec `/profil pseudo:TonPseudo#TAG rang:...`.",
-          )],
-          flags: MessageFlags.Ephemeral,
-        });
+        return replyError(
+          message,
+          mentioned
+            ? `<@${targetId}> n'a pas encore renseigné de profil Valorant.`
+            : `Tu n'as pas encore de profil. Fais \`${prefix}profil TonPseudo#TAG Diamant 2\`.`,
+        );
       }
 
-      return interaction.reply({
-        embeds: [infoEmbed([
-          `👤 **Profil de <@${targetId}>**`,
-          config.separator,
-          `**Riot ID** · \`${profile.riotId}\``,
-          `**Rang** · ${formatRank(profile.rank)}`,
-          `**Mis à jour** · <t:${Math.floor(profile.updatedAt / 1000)}:R>`,
-        ].join("\n"))],
-        flags: MessageFlags.Ephemeral,
-      });
+      return replyInfo(message, [
+        `👤 **Profil de <@${targetId}>**`,
+        config.separator,
+        `**Riot ID** · \`${profile.riotId}\``,
+        `**Rang** · ${formatRank(profile.rank)}`,
+        `**Mis à jour** · <t:${Math.floor(profile.updatedAt / 1000)}:R>`,
+      ].join("\n"));
     }
 
     // ---- Mise à jour ----
-    const existing = store.getProfile(interaction.user.id);
-    if (!pseudo && !existing) {
-      return interaction.reply({
-        embeds: [errorEmbed("Renseigne aussi ton `pseudo` (Riot ID) pour créer ton profil.")],
-        flags: MessageFlags.Ephemeral,
-      });
+    const existing = store.getProfile(message.author.id);
+    const riotToken = args.find((arg) => arg.includes("#"));
+    const rankText = args.filter((arg) => arg !== riotToken).join(" ").trim();
+    const rank = rankText ? parseRank(rankText) : null;
+
+    if (rankText && !rank) {
+      return replyError(message, `Rang non reconnu : \`${rankText}\`.\nValeurs acceptées : ${RANK_HELP} — avec une division si tu veux (« Diamant 2 »).`);
+    }
+    if (!riotToken && !rank) {
+      return replyError(message, `Format attendu : \`${prefix}profil TonPseudo#TAG Diamant 2\`.`);
+    }
+    if (!riotToken && !existing) {
+      return replyError(message, `Il me faut aussi ton Riot ID : \`${prefix}profil TonPseudo#TAG ${rankText}\`.`);
     }
 
-    const rank = rangKey
-      ? { key: rangKey, division: RANK_BY_KEY.get(rangKey)?.divisions ? division ?? null : null }
-      : existing?.rank || { key: "unranked", division: null };
-
-    // Changer uniquement la division sans repréciser le rang reste possible.
-    if (!rangKey && division && existing?.rank?.key && RANK_BY_KEY.get(existing.rank.key)?.divisions) {
-      rank.division = division;
-    }
-
-    const profile = store.setProfile(interaction.user.id, {
-      riotId: pseudo?.trim() || existing.riotId,
-      rank,
+    const profile = store.setProfile(message.author.id, {
+      riotId: riotToken || existing.riotId,
+      rank: rank || existing?.rank || { key: "unranked", division: null },
     });
 
-    // Les embeds où le joueur apparaît reflètent immédiatement le changement.
-    for (const match of findMatchesForPlayer(interaction.guildId, interaction.user.id)) {
-      await refreshMatchMessage(interaction.client, match);
+    // Les parties où le joueur apparaît reflètent le changement immédiatement.
+    for (const match of findMatchesForPlayer(message.guildId, message.author.id)) {
+      await refreshMatchMessage(message.client, match);
     }
 
-    return interaction.reply({
-      embeds: [successEmbed(`Profil mis à jour : \`${profile.riotId}\` · ${formatRank(profile.rank)}`)],
-      flags: MessageFlags.Ephemeral,
-    });
+    return replyOk(message, `Profil mis à jour : \`${profile.riotId}\` · ${formatRank(profile.rank)}`);
   },
 };

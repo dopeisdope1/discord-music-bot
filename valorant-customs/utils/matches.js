@@ -20,7 +20,7 @@
  */
 
 const store = require("./store");
-const { buildMatchEmbed, buildMatchComponents } = require("./embeds");
+const { buildMatchPanel } = require("./display");
 
 function createMatch({ guildId, channelId, hostId, format, map, minRank }) {
   return {
@@ -93,10 +93,7 @@ async function refreshMatchMessage(client, match) {
   if (!channel) return;
   try {
     const message = await channel.messages.fetch(match.messageId);
-    await message.edit({
-      embeds: [buildMatchEmbed(match)],
-      components: buildMatchComponents(match),
-    });
+    await message.edit(buildMatchPanel(match));
   } catch (error) {
     // Message supprimé à la main : on n'insiste pas, la partie reste utilisable
     // via les commandes slash.

@@ -1,9 +1,9 @@
 /**
  * Toutes les actions sur une partie, quel que soit le point d'entrée
- * (bouton, menu déroulant, modale ou commande slash).
+ * (bouton, menu déroulant, modale ou commande préfixe).
  *
- * Chaque action renvoie sa réponse en éphémère : l'embed de la partie est la
- * seule source de vérité publique, on ne pollue pas le salon.
+ * Chaque action déclenchée par un composant répond en éphémère : le panneau de
+ * la partie reste la seule source de vérité publique.
  */
 
 const { MessageFlags } = require("discord.js");
@@ -20,7 +20,7 @@ const {
 } = require("./matches");
 const {
   errorEmbed, successEmbed, infoEmbed,
-  buildMatchEmbed, buildMatchComponents, buildWarnSelect,
+  buildWarnSelect,
   buildProfileModal, parseCustomId,
 } = require("./embeds");
 const {
@@ -50,7 +50,7 @@ async function actionJoin(interaction, match, teamNo) {
   const profile = store.getProfile(userId);
   if (!profile) {
     if (!interaction.isMessageComponent?.()) {
-      return replyError(interaction, "Renseigne d'abord ton profil avec `/profil` (pseudo Valorant + rang).");
+      return replyError(interaction, `Renseigne d'abord ton profil : \`${settings.get("prefix")}profil TonPseudo#TAG Diamant 2\`.`);
     }
     return interaction.showModal(buildProfileModal(match.id, `join:${teamNo}`));
   }
@@ -60,7 +60,7 @@ async function actionJoin(interaction, match, teamNo) {
     return replyError(
       interaction,
       `Rang insuffisant : cette partie demande **${required.emoji} ${required.label}** minimum, ton profil indique ${formatRank(profile.rank)}.\n` +
-      "Mets ton rang à jour avec `/profil` s'il a changé.",
+      `Mets ton rang à jour avec \`${settings.get("prefix")}profil\` s'il a changé.`,
     );
   }
 
@@ -111,7 +111,7 @@ async function actionWaitlist(interaction, match) {
   const profile = store.getProfile(userId);
   if (!profile) {
     if (!interaction.isMessageComponent?.()) {
-      return replyError(interaction, "Renseigne d'abord ton profil avec `/profil` (pseudo Valorant + rang).");
+      return replyError(interaction, `Renseigne d'abord ton profil : \`${settings.get("prefix")}profil TonPseudo#TAG Diamant 2\`.`);
     }
     return interaction.showModal(buildProfileModal(match.id, "waitlist"));
   }
@@ -340,7 +340,7 @@ async function handleComponent(interaction) {
 
   const match = resolveMatch(parsed.matchId);
   if (!match) {
-    await replyError(interaction, "Cette partie n'existe plus (bot redémarré ou partie purgée). Crée-en une nouvelle avec `/custom`.");
+    await replyError(interaction, `Cette partie n'existe plus (bot redémarré ou partie purgée). Crée-en une nouvelle avec \`${settings.get("prefix")}custom\`.`);
     return true;
   }
 
@@ -410,5 +410,4 @@ async function handleProfileModal(interaction) {
 module.exports = {
   actionJoin, actionWaitlist, actionLeave, actionStart, actionEnd, endMatch,
   runWarning, handleComponent, handleProfileModal,
-  buildMatchEmbed, buildMatchComponents,
 };

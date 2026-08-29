@@ -44,12 +44,17 @@ module.exports = {
     waiting: 0x2b2d31,
     live: 0xff4655, // rouge Valorant : la partie est lancée
     ended: 0x4e5058,
+    // Barre d'accent des panneaux Components V2 (colonne de gauche).
+    panel: 0x2b2d31,
     warn: 0xfaa61a,
     error: 0xed4245,
     success: 0x57f287,
   },
 
   emojis: {
+    // Logo Valorant affiché dans le titre du panneau de partie.
+    // Colle ici l'emoji de ton serveur, ex. "<:valorant:123456789012345678>".
+    valorant: process.env.VALORANT_EMOJI || "",
     team1: "🔴",
     team2: "🔵",
     waitlist: "🕐",

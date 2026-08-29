@@ -28,12 +28,8 @@ module.exports = {
 
   async execute(interaction) {
     try {
-      // ---- Commandes slash ----
-      if (interaction.isChatInputCommand()) {
-        const command = interaction.client.commands.get(interaction.commandName);
-        if (!command) return safeError(interaction, "Cette commande n'existe plus. Relance `npm run deploy`.");
-        return await command.execute(interaction);
-      }
+      // Le bot n'a aucune commande slash : seuls les composants (boutons,
+      // menus, modales) arrivent ici. Les commandes passent par messageCreate.
 
       // ---- Boutons et menus déroulants (string, user, salon) ----
       if (interaction.isButton() || interaction.isAnySelectMenu()) {
@@ -51,7 +47,7 @@ module.exports = {
         return;
       }
     } catch (error) {
-      console.error(`[interaction] Erreur sur ${interaction.commandName || interaction.customId} :`, error);
+      console.error(`[interaction] Erreur sur ${interaction.customId} :`, error);
       await safeError(interaction, "Une erreur inattendue est survenue. L'incident a été enregistré côté serveur.");
     }
   },

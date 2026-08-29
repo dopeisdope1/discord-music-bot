@@ -1,6 +1,9 @@
 /**
- * Tout le rendu visuel du bot : embeds sombres, boutons, sélecteurs, modale.
- * Aucun effet de bord ici — ce module construit des objets, rien d'autre.
+ * Embeds courts et composants partagés : réponses aux commandes, avertissement
+ * anti-absent, proposition de place, modale de profil.
+ *
+ * Le panneau de partie, lui, est en Components V2 → voir utils/display.js.
+ * Aucun effet de bord ici : ce module construit des objets, rien d'autre.
  */
 
 const {
@@ -9,11 +12,11 @@ const {
 } = require("discord.js");
 
 const config = require("../config");
-const { formatRank, RANK_BY_KEY } = require("./ranks");
-const store = require("./store");
 const settings = require("./settings");
+const { formatRank } = require("./ranks");
+const store = require("./store");
 
-// Préfixe commun à tous les customId du bot : "vc" = Valorant Custom.
+// Préfixe commun aux customId liés à une partie : "vc" = Valorant Custom.
 // Format : vc:<action>:<matchId>[:<extra>]
 const ID = "vc";
 const customId = (action, matchId, extra) =>
@@ -24,156 +27,18 @@ const parseCustomId = (raw) => {
   return prefix === ID ? { action, matchId, extra } : null;
 };
 
-const STATUS = {
-  waiting: { emoji: "🟡", label: "En attente", color: config.colors.waiting },
-  live:    { emoji: "🔴", label: "En cours",   color: config.colors.live },
-  ended:   { emoji: "⚫", label: "Terminée",   color: config.colors.ended },
-};
-
-// ---- Embeds génériques (réponses éphémères, erreurs...) ----
+// ---- Embeds génériques ----
 
 const simpleEmbed = (color, description) => new EmbedBuilder().setColor(color).setDescription(description);
 const errorEmbed = (message) => simpleEmbed(config.colors.error, `❌ ${message}`);
 const successEmbed = (message) => simpleEmbed(config.colors.success, `✅ ${message}`);
 const infoEmbed = (message) => simpleEmbed(config.colors.base, message);
 
-// ---- Embed principal de la partie ----
-
-/** Une ligne de joueur : `1` @mention · `Riot#TAG` · 🟪 Diamant 2 */
-function playerLine(match, userId, index) {
-  const profile = store.getProfile(userId);
-  const riotId = profile?.riotId ? `\`${profile.riotId}\`` : "`pseudo non renseigné`";
-  const rank = formatRank(profile?.rank);
-  const warning = match.warnings?.[userId];
-  // Le joueur averti est signalé dans l'embed avec son compte à rebours.
-  const warned = warning ? ` ${config.emojis.warn} <t:${Math.floor(warning.deadline / 1000)}:R>` : "";
-  return `\`${index}\` <@${userId}> · ${riotId} · ${rank}${warned}`;
-}
-
-function teamField(match, teamNo) {
-  const members = match.teams[teamNo];
-  const size = match.format.perTeam;
-  const emoji = teamNo === 1 ? config.emojis.team1 : config.emojis.team2;
-
-  const lines = members.map((userId, i) => playerLine(match, userId, i + 1));
-  // Les places libres sont affichées : on voit d'un coup d'œil ce qu'il manque.
-  for (let i = members.length; i < size; i += 1) {
-    lines.push(`\`${i + 1}\` ${config.emojis.empty} *place libre*`);
-  }
-
-  const voice = match.voice?.[teamNo] ? `\n🔊 <#${match.voice[teamNo]}>` : "";
-  return {
-    name: `${emoji} Équipe ${teamNo} — ${members.length}/${size}`,
-    value: `${lines.join("\n")}${voice}`.slice(0, 1024),
-    inline: false,
-  };
-}
-
-function waitlistField(match) {
-  if (!match.waitlist.length) return null;
-  const lines = match.waitlist.slice(0, 10).map((userId, i) => playerLine(match, userId, i + 1));
-  if (match.waitlist.length > 10) lines.push(`*… et ${match.waitlist.length - 10} autre(s)*`);
-  return {
-    name: `${config.emojis.waitlist} Liste d'attente — ${match.waitlist.length}`,
-    value: lines.join("\n").slice(0, 1024),
-    inline: false,
-  };
-}
-
-function buildMatchEmbed(match) {
-  const status = STATUS[match.status] || STATUS.waiting;
-  const total = match.teams[1].length + match.teams[2].length;
-  const capacity = match.format.perTeam * 2;
-
-  const header = [
-    `${config.emojis.host} **Hôte** · <@${match.hostId}>`,
-    `🎮 **Format** · \`${match.format.label}\`${match.map ? `   ${config.emojis.map} **Map** · \`${match.map}\`` : ""}`,
-  ];
-  if (match.minRank) {
-    const rank = RANK_BY_KEY.get(match.minRank);
-    if (rank) header.push(`🏅 **Rang minimum** · ${rank.emoji} ${rank.label}`);
-  }
-  header.push("", `${status.emoji} **${status.label}** — ${total}/${capacity} joueur(s)`, config.separator);
-
-  const embed = new EmbedBuilder()
-    .setColor(status.color)
-    .setTitle("Partie personnalisée — Valorant")
-    .setDescription(header.join("\n"))
-    .addFields(teamField(match, 1), teamField(match, 2))
-    .setFooter({ text: `Partie #${match.id} · Salons vocaux privés créés au lancement de la partie` })
-    .setTimestamp(match.createdAt);
-
-  const waitlist = waitlistField(match);
-  if (waitlist) embed.addFields(waitlist);
-
-  if (match.status === "ended") {
-    embed.addFields({
-      name: config.separator,
-      value: "🛑 **Cette partie est terminée.** Les salons vocaux d'équipe ont été supprimés.",
-    });
-  }
-
-  return embed;
-}
-
-/** Boutons de la partie — leur état suit le statut de la partie. */
-function buildMatchComponents(match) {
-  if (match.status === "ended") return [];
-
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(customId("join", match.id, "1"))
-      .setLabel("Rejoindre Équipe 1")
-      .setEmoji(config.emojis.team1)
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(customId("join", match.id, "2"))
-      .setLabel("Rejoindre Équipe 2")
-      .setEmoji(config.emojis.team2)
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(customId("waitlist", match.id))
-      .setLabel("Liste d'attente")
-      .setEmoji(config.emojis.waitlist)
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(customId("leave", match.id))
-      .setLabel("Quitter")
-      .setEmoji(config.emojis.leave)
-      .setStyle(ButtonStyle.Secondary),
-  );
-
-  const row2 = new ActionRowBuilder();
-  if (match.status === "waiting") {
-    row2.addComponents(
-      new ButtonBuilder()
-        .setCustomId(customId("start", match.id))
-        .setLabel("Lancer la partie")
-        .setEmoji(config.emojis.start)
-        .setStyle(ButtonStyle.Success),
-    );
-  }
-  row2.addComponents(
-    new ButtonBuilder()
-      .setCustomId(customId("warn", match.id))
-      .setLabel("Avertir un joueur")
-      .setEmoji(config.emojis.warn)
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(customId("end", match.id))
-      .setLabel("Terminer la partie")
-      .setEmoji(config.emojis.end)
-      .setStyle(ButtonStyle.Danger),
-  );
-
-  return [row1, row2];
-}
-
 // ---- Système d'avertissement ----
 
 /** Message public d'avertissement : c'est LE message qui ping le joueur. */
 function buildWarningEmbed(match, targetId, teamNo, deadline) {
-  const seconds = Math.round(settings.get("warnMs") / 1000);
+  const seconds = settings.warnSeconds();
   const voiceMention = match.voice?.[teamNo]
     ? `<#${match.voice[teamNo]}>`
     : `le salon vocal de ton équipe (**Équipe ${teamNo}**)`;
@@ -283,9 +148,8 @@ function buildProfileModal(matchId, pendingAction) {
 }
 
 module.exports = {
-  ID, customId, parseCustomId, STATUS,
+  ID, customId, parseCustomId,
   errorEmbed, successEmbed, infoEmbed,
-  buildMatchEmbed, buildMatchComponents,
   buildWarningEmbed, buildWarnSelect,
   buildOfferEmbed, buildOfferComponents,
   buildProfileModal,

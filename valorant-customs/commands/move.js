@@ -1,65 +1,62 @@
 /**
- * /move — force le déplacement d'un joueur dans le salon vocal de son équipe.
- * Utile quand quelqu'un rejoint le mauvais salon ou arrive en retard.
+ * `move` — force le déplacement d'un joueur dans le salon vocal de son équipe.
+ *
+ *   +move @joueur          → dans le salon de SON équipe
+ *   +move @joueur 2        → force l'Équipe 2
+ *   +move tous             → rapatrie tout le monde
  */
 
-const { SlashCommandBuilder, MessageFlags, InteractionContextType } = require("discord.js");
-
 const store = require("../utils/store");
+const settings = require("../utils/settings");
 const { canManage } = require("../utils/permissions");
-const { errorEmbed, successEmbed } = require("../utils/embeds");
 const { findTeam, findActiveMatchInChannel, findMatchesForPlayer } = require("../utils/matches");
 const { moveToTeamChannel } = require("../utils/voice");
+const { replyError, replyOk } = require("../utils/reply");
+
+const ALL = ["tous", "tout", "all", "everyone"];
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("move")
-    .setDescription("Déplace un joueur dans le salon vocal de son équipe")
-    .setContexts(InteractionContextType.Guild)
-    .addUserOption((option) =>
-      option
-        .setName("joueur")
-        .setDescription("Le joueur à déplacer")
-        .setRequired(true))
-    .addIntegerOption((option) =>
-      option
-        .setName("equipe")
-        .setDescription("Forcer une équipe précise (par défaut : celle du joueur)")
-        .addChoices({ name: "🔴 Équipe 1", value: 1 }, { name: "🔵 Équipe 2", value: 2 }))
-    .addStringOption((option) =>
-      option
-        .setName("partie")
-        .setDescription("ID de la partie (pied de l'embed) si plusieurs parties tournent")),
+  name: "move",
+  aliases: ["deplacer", "vocal"],
+  description: "Déplace un joueur (ou tout le monde) dans le bon salon vocal",
+  usage: "move @joueur [1|2]  ·  move tous",
 
-  async execute(interaction) {
-    const target = interaction.options.getUser("joueur");
-    const forcedTeam = interaction.options.getInteger("equipe");
-    const matchId = interaction.options.getString("partie");
+  async execute(message, args) {
+    const prefix = settings.get("prefix");
+    const explicitId = args.find((arg) => arg.startsWith("#"))?.slice(1);
+    const match = explicitId ? store.getMatch(explicitId) : findActiveMatchInChannel(message.channelId);
 
-    const fail = (message) => interaction.reply({ embeds: [errorEmbed(message)], flags: MessageFlags.Ephemeral });
-
-    let match = matchId ? store.getMatch(matchId.replace("#", "").trim()) : findActiveMatchInChannel(interaction.channelId);
-    if (!match && !matchId) {
-      const candidates = findMatchesForPlayer(interaction.guildId, target.id);
-      if (candidates.length === 1) [match] = candidates;
+    if (!match) return replyError(message, `Aucune partie en cours dans ce salon. Lance-en une avec \`${prefix}custom\`.`);
+    if (!canManage(match, message.member)) {
+      return replyError(message, "Seul l'hôte de la partie (ou un responsable) peut déplacer un joueur.");
     }
-    if (!match) return fail("Aucune partie trouvée. Précise son ID avec l'option `partie`.");
-    if (!canManage(match, interaction.member)) {
-      return fail("Seul l'hôte de la partie (ou un membre du staff) peut déplacer un joueur.");
+    if (!match.voice?.[1] && !match.voice?.[2]) {
+      return replyError(message, "Les salons vocaux n'existent pas encore : lance d'abord la partie avec **Lancer la partie**.");
     }
 
-    const teamNo = forcedTeam || findTeam(match, target.id);
-    if (!teamNo) return fail(`<@${target.id}> n'est dans aucune équipe de cette partie.`);
-    if (!match.voice?.[teamNo]) {
-      return fail("Les salons vocaux n'existent pas encore : lance d'abord la partie avec le bouton **Lancer la partie**.");
+    // ---- Rapatriement complet ----
+    if (args.some((arg) => ALL.includes(arg.toLowerCase()))) {
+      let moved = 0;
+      for (const teamNo of [1, 2]) {
+        for (const userId of match.teams[teamNo]) {
+          const result = await moveToTeamChannel(message.guild, match, teamNo, userId);
+          if (result.moved) moved += 1;
+        }
+      }
+      return replyOk(message, `**${moved}** joueur(s) déplacé(s) dans le salon de leur équipe.`);
     }
 
-    const result = await moveToTeamChannel(interaction.guild, match, teamNo, target.id);
-    if (!result.moved) return fail(result.reason);
+    // ---- Un joueur ----
+    const target = message.mentions.users.first();
+    if (!target) return replyError(message, `Mentionne le joueur : \`${prefix}move @joueur\` (ou \`${prefix}move tous\`).`);
 
-    return interaction.reply({
-      embeds: [successEmbed(`<@${target.id}> a été déplacé dans <#${match.voice[teamNo]}>.`)],
-      flags: MessageFlags.Ephemeral,
-    });
+    const forced = args.find((arg) => arg === "1" || arg === "2");
+    const teamNo = forced ? Number(forced) : findTeam(match, target.id);
+    if (!teamNo) return replyError(message, `<@${target.id}> n'est dans aucune équipe de cette partie.`);
+
+    const result = await moveToTeamChannel(message.guild, match, teamNo, target.id);
+    if (!result.moved) return replyError(message, result.reason);
+
+    return replyOk(message, `<@${target.id}> a été déplacé dans <#${match.voice[teamNo]}>.`);
   },
 };

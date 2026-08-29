@@ -290,6 +290,7 @@ function buildSettings() {
     .setColor(config.colors.base)
     .setTitle("⚙️  Réglages")
     .setDescription([
+      `⌨️ **Préfixe des commandes** · \`${settings.get("prefix")}\``,
       `⏱️ **Délai d'avertissement** · ${settings.warnSeconds()} s`,
       `🎟️ **Délai de réponse (place proposée)** · ${settings.promoteSeconds()} s`,
       `⚡ **Attribution automatique** · ${onOff(settings.get("autoPromote"))} *(sans confirmation)*`,
@@ -304,6 +305,7 @@ function buildSettings() {
     embeds: [embed],
     components: [
       new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(pid("set-prefix")).setLabel("Changer le préfixe").setEmoji("⌨️").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(pid("set-delays")).setLabel("Modifier les délais").setEmoji("⏱️").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(pid("toggle", "autoPromote")).setLabel("Attribution auto").setEmoji("⚡").setStyle(settings.get("autoPromote") ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(pid("toggle", "warnAcceptAnyVoice")).setLabel("Tout vocal").setEmoji("🔊").setStyle(settings.get("warnAcceptAnyVoice") ? ButtonStyle.Success : ButtonStyle.Secondary),
@@ -328,6 +330,24 @@ function buildSettings() {
       backRow(),
     ],
   };
+}
+
+function buildPrefixModal() {
+  return new ModalBuilder()
+    .setCustomId(pid("prefix-modal"))
+    .setTitle("Préfixe des commandes")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("prefix")
+          .setLabel("Nouveau préfixe (1 à 5 caractères)")
+          .setPlaceholder("+")
+          .setValue(settings.get("prefix"))
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(5)
+          .setRequired(true),
+      ),
+    );
 }
 
 function buildDelaysModal() {
@@ -551,6 +571,14 @@ async function handlePanelComponent(interaction) {
   }
 
   switch (action) {
+    // ---- Ouverture depuis la commande préfixe : réponse strictement privée ----
+    case "open":
+      await interaction.reply({
+        ...buildHome(userId, interaction.guildId),
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+
     // ---- Navigation ----
     case "home":
       await interaction.update(buildHome(userId, interaction.guildId));
@@ -703,6 +731,9 @@ async function handlePanelComponent(interaction) {
     }
 
     // ---- Réglages ----
+    case "set-prefix":
+      await interaction.showModal(buildPrefixModal());
+      return true;
     case "set-delays":
       await interaction.showModal(buildDelaysModal());
       return true;
@@ -728,13 +759,38 @@ async function handlePanelComponent(interaction) {
   }
 }
 
-/** Modale des délais (ouverte depuis la section Réglages). */
+/** Modales du panneau : préfixe et délais. */
 async function handlePanelModal(interaction) {
   const parsed = parsePanelId(interaction.customId);
-  if (!parsed || parsed.action !== "delays-modal") return false;
+  if (!parsed || !["delays-modal", "prefix-modal"].includes(parsed.action)) return false;
 
   if (!access.canOpenPanel(interaction.user.id)) {
     await denied(interaction);
+    return true;
+  }
+
+  // ---- Changement de préfixe ----
+  if (parsed.action === "prefix-modal") {
+    const value = interaction.fields.getTextInputValue("prefix").trim();
+
+    // Un préfixe avec un espace, ou vide, rendrait toutes les commandes
+    // inatteignables : on refuse plutôt que de casser le bot silencieusement.
+    if (!value || /\s/.test(value) || value.length > 5) {
+      await interaction.reply({
+        embeds: [errorEmbed("Le préfixe doit faire 1 à 5 caractères, sans espace.")],
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    settings.set("prefix", value);
+    logEvent(interaction.client, "access", {
+      description: `<@${interaction.user.id}> a changé le préfixe des commandes en \`${value}\`.`,
+    });
+
+    const view = buildSettings();
+    if (interaction.isFromMessage()) await interaction.update(view);
+    else await interaction.reply({ ...view, flags: MessageFlags.Ephemeral });
     return true;
   }
 
@@ -762,6 +818,8 @@ async function handlePanelModal(interaction) {
 }
 
 module.exports = {
+  // Bouton posé par la commande `panel` pour ouvrir le panneau en privé.
+  OPEN_BUTTON_ID: pid("open"),
   // Vues (exportées aussi pour les tests)
   buildHome, buildOwners, buildManagers, buildMatchList, buildMatchView, buildSettings,
   // Routage

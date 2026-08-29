@@ -1,13 +1,11 @@
 {
   "name": "valorant-customs-bot",
   "version": "1.0.0",
-  "description": "Bot Discord d'organisation de parties personnalisées Valorant (embeds sombres, anti-absent, salons vocaux privés)",
+  "description": "Bot Discord de parties personnalisées Valorant (commandes préfixe, panneau Components V2, anti-absent)",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js",
-    "deploy": "node deploy-commands.js",
-    "deploy:global": "node deploy-commands.js --global"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

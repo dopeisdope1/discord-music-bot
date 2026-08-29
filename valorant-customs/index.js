@@ -1,11 +1,10 @@
 /**
  * Bot Discord — parties personnalisées Valorant.
  *
- * Point d'entrée : charge la configuration, les commandes, les événements,
- * puis connecte le client. Toute la logique métier vit dans utils/.
+ * Commandes **préfixe uniquement** (aucune slash command) : le préfixe par
+ * défaut est `+` et se change depuis le panneau de contrôle, à chaud.
  *
- *   npm run deploy   → publie les commandes slash sur tes serveurs
- *   npm start        → démarre le bot
+ *   npm start
  */
 
 const fs = require("fs");
@@ -14,6 +13,7 @@ const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js"
 
 const config = require("./config");
 const store = require("./utils/store");
+const settings = require("./utils/settings");
 
 if (!config.token) {
   console.error("❌ DISCORD_TOKEN manquant : copie .env.example en .env et renseigne le token du bot.");
@@ -23,6 +23,9 @@ if (!config.token) {
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    // Lecture du contenu des messages : indispensable aux commandes préfixe.
+    GatewayIntentBits.MessageContent,
     // Indispensable au système anti-absent : savoir qui est dans quel vocal.
     GatewayIntentBits.GuildVoiceStates,
     // Récupération des membres (déplacements, permissions de salon).
@@ -36,18 +39,21 @@ const client = new Client({
   allowedMentions: { parse: [], repliedUser: false },
 });
 
-// ---- Chargement des commandes slash ----
+// ---- Chargement des commandes (nom + alias pointent sur le même module) ----
 client.commands = new Collection();
 const commandsPath = path.join(__dirname, "commands");
 for (const file of fs.readdirSync(commandsPath).filter((name) => name.endsWith(".js"))) {
   const command = require(path.join(commandsPath, file));
-  if (!command?.data?.name || typeof command.execute !== "function") {
-    console.warn(`⚠️  commands/${file} ignoré : il lui manque "data" ou "execute".`);
+  if (!command?.name || typeof command.execute !== "function") {
+    console.warn(`⚠️  commands/${file} ignoré : il lui manque "name" ou "execute".`);
     continue;
   }
-  client.commands.set(command.data.name, command);
+  client.commands.set(command.name, command);
+  for (const alias of command.aliases || []) client.commands.set(alias, command);
 }
-console.log(`📦 ${client.commands.size} commande(s) chargée(s) : ${[...client.commands.keys()].map((name) => `/${name}`).join(", ")}`);
+
+const uniqueNames = [...new Set([...client.commands.values()].map((command) => command.name))];
+console.log(`📦 ${uniqueNames.length} commande(s) : ${uniqueNames.map((name) => `${settings.get("prefix")}${name}`).join(", ")}`);
 
 // ---- Chargement des événements ----
 const eventsPath = path.join(__dirname, "events");
@@ -75,6 +81,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 client.login(config.token).catch((error) => {
   console.error("❌ Connexion impossible :", error.message);
-  console.error("   Vérifie DISCORD_TOKEN, et que les intents « Server Members » et « Presence » requis sont activés sur le portail développeur.");
+  console.error("   Vérifie DISCORD_TOKEN, et que les intents « Message Content » et « Server Members »");
+  console.error("   sont activés sur le portail développeur (Bot > Privileged Gateway Intents).");
   process.exit(1);
 });
