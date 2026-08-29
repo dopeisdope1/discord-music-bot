@@ -20,6 +20,7 @@ module.exports = {
   aliases: ["profile", "pseudo", "rang"],
   description: "Affiche ou met à jour ton profil Valorant",
   usage: "profil [Pseudo#TAG] [rang]  ·  profil @joueur",
+  tier: "player",
 
   async execute(message, args) {
     const prefix = settings.get("prefix");

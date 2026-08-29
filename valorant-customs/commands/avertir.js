@@ -28,6 +28,7 @@ module.exports = {
   aliases: ["warn", "afk"],
   description: "Avertit un joueur absent : il perd sa place s'il ne rejoint pas le vocal à temps",
   usage: "avertir @joueur [#idPartie]",
+  tier: "host",
 
   async execute(message, args) {
     const prefix = settings.get("prefix");

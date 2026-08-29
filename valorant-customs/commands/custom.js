@@ -59,6 +59,7 @@ module.exports = {
   aliases: ["partie", "cust"],
   description: "Crée une partie personnalisée",
   usage: "custom [5v5] [map] [rang minimum] [sansmoi]",
+  tier: "player",
 
   async execute(message, args) {
     // Verrou activable depuis le panneau : création réservée aux autorisés.

@@ -20,6 +20,7 @@ module.exports = {
   aliases: ["deplacer", "vocal"],
   description: "Déplace un joueur (ou tout le monde) dans le bon salon vocal",
   usage: "move @joueur [1|2]  ·  move tous",
+  tier: "host",
 
   async execute(message, args) {
     const prefix = settings.get("prefix");

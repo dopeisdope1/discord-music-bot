@@ -20,6 +20,7 @@ module.exports = {
   aliases: ["panneau", "admin"],
   description: "Ouvre le panneau de contrôle (propriétaires du bot)",
   usage: "panel",
+  tier: "owner",
 
   async execute(message) {
     if (!access.canOpenPanel(message.author.id)) {
