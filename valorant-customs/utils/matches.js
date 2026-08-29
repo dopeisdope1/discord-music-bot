@@ -11,6 +11,7 @@
  *   map: string|null,
  *   minRank: string|null,          // clé de rang (ex. "diamond")
  *   status: "waiting" | "live" | "ended",
+ *   startAt: number|null,           // lancement programmé
  *   teams: { 1: [userId], 2: [userId] },
  *   waitlist: [userId],
  *   voice: { 1: channelId|null, 2: channelId|null },
@@ -22,7 +23,7 @@
 const store = require("./store");
 const { buildMatchPanel } = require("./display");
 
-function createMatch({ guildId, channelId, hostId, format, map, minRank }) {
+function createMatch({ guildId, channelId, hostId, format, map, minRank, startAt }) {
   return {
     id: store.newMatchId(),
     guildId,
@@ -34,6 +35,8 @@ function createMatch({ guildId, channelId, hostId, format, map, minRank }) {
     map: map || null,
     minRank: minRank || null,
     status: "waiting",
+    // Heure de lancement programmée (timestamp ms) ou null.
+    startAt: startAt || null,
     teams: { 1: [], 2: [] },
     waitlist: [],
     voice: { 1: null, 2: null },

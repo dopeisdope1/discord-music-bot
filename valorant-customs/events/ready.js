@@ -9,6 +9,7 @@ const store = require("../utils/store");
 const { restoreTimers } = require("../utils/warnings");
 const settings = require("../utils/settings");
 const access = require("../utils/access");
+const automation = require("../utils/automation");
 
 module.exports = {
   name: Events.ClientReady,
@@ -33,8 +34,10 @@ module.exports = {
     const purged = store.purgeStaleMatches(config.timings.matchTtlMs);
     if (purged) console.log(`[ready] ${purged} partie(s) terminée(s) ou expirée(s) purgée(s).`);
 
-    // Un redémarrage ne doit pas annuler un avertissement en cours.
+    // Un redémarrage ne doit annuler ni un avertissement en cours, ni une
+    // partie programmée à une heure précise.
     await restoreTimers(client);
+    automation.restoreScheduledStarts(client);
 
     client.user.setPresence({
       activities: [{ name: "les customs Valorant", type: ActivityType.Watching }],

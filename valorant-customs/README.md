@@ -63,7 +63,8 @@ valorant-customs/
 │   ├── reply.js              # réponses aux commandes préfixe
 │   ├── matches.js            # modèle de partie + rafraîchissement du message
 │   ├── matchActions.js       # actions : rejoindre, quitter, lancer, terminer…
-│   ├── warnings.js           # ⭐ anti-absent : timers, retrait, liste d'attente
+│   ├── warnings.js           # ⭐ anti-absent : timers, retrait, « prendre sa place »
+│   ├── automation.js         # ⭐ lancement / avertissement / fin automatiques
 │   ├── panel.js              # ⭐ panneau de contrôle (vues + routage)
 │   ├── access.js             # root / propriétaires / gestionnaires
 │   ├── settings.js           # réglages modifiables à chaud depuis le panneau
@@ -82,7 +83,7 @@ quel ordre — le bot reconnaît tout seul un format, une map, un rang.
 
 | Commande | Qui | Effet |
 | --- | --- | --- |
-| `+custom [5v5] [map] [rang] [sansmoi]` | tous | crée la partie |
+| `+custom [5v5] [map] [rang] [21h30] [sansmoi]` | tous | crée la partie (et l'heure de lancement) |
 | `+avertir @joueur [#id]` | hôte / responsables | lance le compte à rebours anti-absent |
 | `+move @joueur [1\|2]` · `+move tous` | hôte / responsables | déplace dans le bon vocal |
 | `+profil [Pseudo#TAG] [rang]` · `+profil @joueur` | tous | consulte / met à jour le profil |
@@ -117,23 +118,51 @@ message :
 - 🎮 **Parties en cours** — pour chaque partie : `Kick`, `Échanger 2 joueurs`,
   `Mélanger` (répartition aléatoire équilibrée), `Rapatrier en vocal`,
   `Recréer les salons`, `Terminer`.
-- ⚙️ **Réglages** — **préfixe des commandes**, délais d'avertissement et de
-  réponse, attribution automatique, présence en vocal, création réservée, salon
-  de logs, catégorie des vocaux. Ces réglages remplacent le `.env` à chaud, sans
-  redémarrage, et sont persistés dans `data/settings.json`.
+- 🤖 **Automatisations** — lancement auto, avertissement auto, attribution auto
+  de la place libre, fin auto sur vocaux vides, création réservée.
+- ⚙️ **Réglages** — **préfixe des commandes**, délais, salon de logs, catégorie
+  des vocaux, rôle staff.
+- 🎨 **Apparence** — emoji du titre et **emojis de rang** : colle tes icônes
+  Valorant, aucun fichier à éditer.
+
+Ces réglages remplacent le `.env` à chaud, sans redémarrage, et sont persistés
+dans `data/settings.json`.
+
+## Tout est automatique
+
+Une fois `+custom` tapé, plus aucune commande n'est nécessaire :
+
+| Étape | Ce que fait le bot | Réglage |
+| --- | --- | --- |
+| Les équipes se remplissent | rien à faire, les joueurs cliquent sur les boutons | — |
+| **Équipes complètes** | lance la partie, crée les deux salons vocaux privés, déplace ceux déjà en vocal | `autoStart` |
+| **Heure programmée** (`+custom 21h30`) | même chose, à l'heure dite | — |
+| **Au lancement** | avertit d'un seul message tous ceux qui ne sont pas en vocal | `autoWarn` |
+| **Délai écoulé** | retire l'absent, annonce « X n'est pas là » avec un bouton **Prendre sa place** | — |
+| **Salons vides** | termine la partie et supprime les salons | `autoEndMinutes` |
+
+Tout se débraye depuis 🤖 **Automatisations** dans le panneau.
+
+### Les salons vocaux d'équipe
+
+Créés au lancement : `🔴 Équipe 1 · #id` et `🔵 Équipe 2 · #id`, limités au nombre
+de joueurs du format. `@everyone` peut **voir** le salon mais **pas s'y
+connecter** : seuls les joueurs de l'équipe concernée (plus l'hôte et le rôle
+staff) ont *Se connecter*, *Parler* et *Vidéo*. Ils sont supprimés à la fin.
 
 ## Le système anti-absent
 
-1. L'hôte lance `+avertir @joueur` (ou le bouton **Avertir un joueur**, avant lancement).
+1. Le bot avertit **tout seul** au lancement (voir ci-dessus). Manuellement :
+   `+avertir @joueur`, ou le bouton **Avertir un joueur** avant le lancement.
 2. Le bot ping le joueur : *« Tu as 60 secondes pour rejoindre le salon vocal de
    ton équipe. Passé ce délai, ta place sera donnée à quelqu'un d'autre. »*
 3. Le compte à rebours s'affiche en direct dans le panneau, à côté du joueur.
 4. **Le joueur arrive** → l'avertissement est levé immédiatement (pas besoin
    d'attendre la fin du timer).
-   **Le joueur est absent** → retrait automatique de l'équipe, message public
-   `@joueur a été retiré pour absence. Une place est libre !`, puis la place est
-   proposée au premier de la liste d'attente avec **Prendre la place** /
-   **Passer mon tour** (60 s pour répondre, sinon on passe au suivant).
+   **Le joueur est absent** → retrait automatique, et un message public annonce
+   *« @joueur n'est pas là »* avec un bouton **Prendre sa place**. La liste
+   d'attente est prioritaire pendant 60 s (réglable), puis la place s'ouvre à
+   tout le monde. Un seul clic suffit.
 
 Les échéances sont persistées : un redémarrage du bot ne fait jamais « oublier »
 un avertissement en cours.
@@ -143,12 +172,12 @@ un avertissement en cours.
 Fer, Bronze, Argent, Or, Platine, Diamant, Ascendant, Immortel, Radiant (+ Non classé),
 avec divisions 1-3. La saisie est tolérante : `plat3`, `Diamant 2`, `immo`, `nc`…
 
-Les emojis sont des carrés Unicode par défaut. Pour les vraies icônes Valorant :
-uploade-les en emojis serveur et remplace le champ `emoji` dans
-[`utils/ranks.js`](utils/ranks.js) par `<:fer:123456789012345678>`.
+Les emojis sont des carrés Unicode par défaut. Pour les vraies icônes Valorant,
+uploade-les en emojis serveur puis passe par le panneau : 🎨 **Apparence** →
+choisis un rang → colle son emoji. Aucun fichier à éditer.
 
-Même principe pour le logo du titre : `VALORANT_EMOJI=<:valorant:123…>` dans le
-`.env`.
+Astuce : tape `\:nomdelemoji:` dans Discord pour obtenir le code complet
+`<:nom:123456789012345678>`.
 
 ## Rendu du panneau de partie
 

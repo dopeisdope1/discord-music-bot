@@ -12,7 +12,7 @@ const config = require("../config");
 const store = require("./store");
 const { logEvent } = require("./logger");
 const { canManage, missingBotPermissions } = require("./permissions");
-const { meetsMinimum, parseRank, formatRank, RANK_HELP, RANK_BY_KEY } = require("./ranks");
+const { meetsMinimum, parseRank, formatRank, rankEmoji, RANK_HELP, RANK_BY_KEY } = require("./ranks");
 const {
   findTeam, isInWaitlist, isInMatch, teamIsFull, playerCount,
   removePlayer, addToTeam, addToWaitlist,
@@ -59,7 +59,7 @@ async function actionJoin(interaction, match, teamNo) {
     const required = RANK_BY_KEY.get(match.minRank);
     return replyError(
       interaction,
-      `Rang insuffisant : cette partie demande **${required.emoji} ${required.label}** minimum, ton profil indique ${formatRank(profile.rank)}.\n` +
+      `Rang insuffisant : cette partie demande **${rankEmoji(required.key)} ${required.label}** minimum, ton profil indique ${formatRank(profile.rank)}.\n` +
       `Mets ton rang à jour avec \`${settings.get("prefix")}profil\` s'il a changé.`,
     );
   }
@@ -94,7 +94,12 @@ async function actionJoin(interaction, match, teamNo) {
   });
 
   const suffix = currentTeam ? ` (tu as quitté l'Équipe ${currentTeam})` : "";
-  return replyOk(interaction, `Tu rejoins l'**Équipe ${teamNo}**${suffix}.`);
+  await replyOk(interaction, `Tu rejoins l'**Équipe ${teamNo}**${suffix}.`);
+
+  // Équipes au complet → la partie se lance toute seule (réglage autoStart).
+  const automation = require("./automation");
+  await automation.maybeAutoStart(interaction.client, interaction.guild, match, interaction.channel?.parentId || null);
+  return true;
 }
 
 // ═════════════════════════ LISTE D'ATTENTE ═════════════════════════
@@ -118,7 +123,7 @@ async function actionWaitlist(interaction, match) {
 
   if (!meetsMinimum(profile.rank, match.minRank)) {
     const required = RANK_BY_KEY.get(match.minRank);
-    return replyError(interaction, `Rang insuffisant : **${required.emoji} ${required.label}** minimum requis.`);
+    return replyError(interaction, `Rang insuffisant : **${rankEmoji(required.key)} ${required.label}** minimum requis.`);
   }
 
   const previousTeam = findTeam(match, userId);
@@ -172,65 +177,26 @@ async function actionLeave(interaction, match) {
 
 async function actionStart(interaction, match) {
   if (!canManage(match, interaction.member)) {
-    return replyError(interaction, "Seul l'hôte de la partie (ou un membre du staff) peut la lancer.");
-  }
-  if (match.status !== "waiting") return replyError(interaction, "Cette partie est déjà lancée ou terminée.");
-  if (!match.teams[1].length || !match.teams[2].length) {
-    return replyError(interaction, "Il faut au moins un joueur dans chaque équipe pour lancer la partie.");
-  }
-
-  const missing = missingBotPermissions(interaction.guild);
-  if (missing.length) {
-    return replyError(
-      interaction,
-      `Il me manque des permissions pour créer les salons vocaux : **${missing.join(", ")}**.\n` +
-      "Ajoute-les au rôle du bot, puis relance la partie.",
-    );
+    return replyError(interaction, "Seul l'hôte de la partie (ou un responsable) peut la lancer.");
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  // Les salons sont créés dans la catégorie configurée, sinon celle du salon
-  // où la partie a été lancée.
-  const parentId = interaction.channel?.parentId || null;
-  const { error } = await createTeamChannels(interaction.guild, match, parentId);
-  if (error) {
-    return interaction.editReply({ embeds: [errorEmbed(`Création des salons vocaux impossible : ${error}`)] });
-  }
-
-  match.status = "live";
-  store.save();
-  await refreshMatchMessage(interaction.client, match);
-
-  // Déplacement automatique de ceux qui sont déjà connectés quelque part.
-  let moved = 0;
-  for (const teamNo of [1, 2]) {
-    for (const userId of match.teams[teamNo]) {
-      const result = await moveToTeamChannel(interaction.guild, match, teamNo, userId);
-      if (result.moved) moved += 1;
-    }
-  }
-
-  await announce(interaction.client, match, {
-    embeds: [
-      infoEmbed([
-        `${config.emojis.start} **La partie est lancée !**`,
-        "",
-        `${config.emojis.team1} Équipe 1 · <#${match.voice[1]}>`,
-        `${config.emojis.team2} Équipe 2 · <#${match.voice[2]}>`,
-        "",
-        "Les joueurs déjà en vocal ont été déplacés automatiquement.",
-      ].join("\n")),
-    ],
+  // Même chemin que le lancement automatique : salons créés dans la catégorie
+  // configurée, sinon celle du salon de la partie.
+  const automation = require("./automation");
+  const result = await automation.launchMatch(interaction.client, interaction.guild, match, {
+    actorId: interaction.user.id,
+    parentId: interaction.channel?.parentId || null,
   });
 
-  logEvent(interaction.client, "start", {
-    matchId: match.id,
-    description: `Partie lancée par <@${interaction.user.id}> — salons vocaux créés, ${moved} joueur(s) déplacé(s).`,
-  });
+  if (!result.ok) return interaction.editReply({ embeds: [errorEmbed(result.error)] });
 
+  const warned = result.warned?.length
+    ? ` **${result.warned.length}** absent(s) ont été avertis automatiquement.`
+    : "";
   return interaction.editReply({
-    embeds: [successEmbed(`Partie lancée. Salons créés, **${moved}** joueur(s) déplacé(s) automatiquement.`)],
+    embeds: [successEmbed(`Partie lancée. Salons créés, **${result.moved}** joueur(s) déplacé(s).${warned}`)],
   });
 }
 
@@ -311,19 +277,27 @@ async function runWarning(interaction, match, targetId) {
   );
 }
 
-// ═══════════════════════ PROPOSITIONS DE PLACE ═══════════════════════
+// ═══════════════════ « PRENDRE SA PLACE » ═══════════════════
 
-async function actionOffer(interaction, match, teamNo, candidateId, accepted) {
-  if (interaction.user.id !== candidateId) {
-    return replyError(interaction, "Cette proposition ne t'est pas adressée.");
+/**
+ * N'importe qui peut cliquer : les mêmes vérifications que pour une inscription
+ * normale s'appliquent (profil renseigné, rang minimum), plus la fenêtre de
+ * priorité accordée à la liste d'attente.
+ */
+async function actionClaim(interaction, match, teamNo) {
+  const userId = interaction.user.id;
+
+  const profile = store.getProfile(userId);
+  if (!profile) return interaction.showModal(buildProfileModal(match.id, `claim:${teamNo}`));
+
+  if (!meetsMinimum(profile.rank, match.minRank)) {
+    const required = RANK_BY_KEY.get(match.minRank);
+    return replyError(interaction, `Rang insuffisant : **${rankEmoji(required.key)} ${required.label}** minimum requis.`);
   }
 
-  const result = accepted
-    ? await warnings.acceptOffer(interaction.client, match, teamNo, candidateId)
-    : await warnings.declineOffer(interaction.client, match, teamNo, candidateId);
-
+  const result = await warnings.claimSpot(interaction.client, match, teamNo, userId);
   if (!result.ok) return replyError(interaction, result.error);
-  return replyOk(interaction, accepted ? `Tu rejoins l'**Équipe ${teamNo}** !` : "Tu as passé ton tour, tu restes en liste d'attente.");
+  return replyOk(interaction, `Tu prends la place libre en **Équipe ${teamNo}** !`);
 }
 
 // ═══════════════════════════ ROUTAGE ═══════════════════════════
@@ -366,11 +340,8 @@ async function handleComponent(interaction) {
     case "warn-select":
       await runWarning(interaction, match, interaction.values[0]);
       return true;
-    case "offer-accept":
-      await actionOffer(interaction, match, Number(parsed.extra[0]), parsed.extra[1], true);
-      return true;
-    case "offer-decline":
-      await actionOffer(interaction, match, Number(parsed.extra[0]), parsed.extra[1], false);
+    case "claim":
+      await actionClaim(interaction, match, Number(parsed.extra[0]));
       return true;
     default:
       return false;
@@ -401,6 +372,7 @@ async function handleProfileModal(interaction) {
   // `extra` contient l'action mise en attente : "join:1" ou "waitlist".
   const [pendingAction, teamNo] = parsed.extra;
   if (pendingAction === "join") await actionJoin(interaction, match, Number(teamNo));
+  else if (pendingAction === "claim") await actionClaim(interaction, match, Number(teamNo));
   else if (pendingAction === "waitlist") await actionWaitlist(interaction, match);
   else await replyOk(interaction, `Profil enregistré : \`${riotId}\` · ${formatRank(rank)}.`);
 

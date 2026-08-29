@@ -27,7 +27,7 @@ const {
 const config = require("../config");
 const store = require("./store");
 const settings = require("./settings");
-const { formatRank, RANK_BY_KEY } = require("./ranks");
+const { formatRank, rankEmoji, RANK_BY_KEY } = require("./ranks");
 const { customId } = require("./embeds");
 
 /** "5v5" → "5 vs 5", comme sur la maquette. */
@@ -36,7 +36,12 @@ const formatLabel = (format) => `${format.perTeam} vs ${format.perTeam}`;
 const STATUS_LINE = {
   waiting: (match) => {
     const total = match.teams[1].length + match.teams[2].length;
-    return `en attente de joueurs — **${total}/${match.format.perTeam * 2}** inscrits.`;
+    const line = `en attente de joueurs — **${total}/${match.format.perTeam * 2}** inscrits.`;
+    // Heure de début programmée : Discord affiche l'heure locale de chacun.
+    return match.startAt
+      ? `${line}
+⏰ **Début** <t:${Math.floor(match.startAt / 1000)}:t> (<t:${Math.floor(match.startAt / 1000)}:R>)`
+      : line;
   },
   live: () => "partie en cours — les salons vocaux des équipes ont été créés.",
   ended: () => "partie terminée — les salons vocaux ont été supprimés.",
@@ -110,7 +115,8 @@ function buildMatchPanel(match) {
   const container = new ContainerBuilder().setAccentColor(config.colors.panel);
 
   // Titre
-  const icon = config.emojis.valorant ? `${config.emojis.valorant} ` : "";
+  const titleEmoji = settings.get("titleEmoji") || config.emojis.valorant;
+  const icon = titleEmoji ? `${titleEmoji} ` : "";
   container.addTextDisplayComponents(text(`## ${icon}Partie personnalisée — Valorant`));
 
   // Hôte / format / map / rang minimum
@@ -118,7 +124,7 @@ function buildMatchPanel(match) {
   if (match.map) header.push(`**Map** : ${match.map}`);
   if (match.minRank) {
     const rank = RANK_BY_KEY.get(match.minRank);
-    if (rank) header.push(`**Rang min.** : ${rank.emoji} ${rank.label}`);
+    if (rank) header.push(`**Rang min.** : ${rankEmoji(rank.key)} ${rank.label}`);
   }
   container.addTextDisplayComponents(text(header.join(" · ")));
 

@@ -8,6 +8,7 @@ const { Events } = require("discord.js");
 const config = require("../config");
 const store = require("../utils/store");
 const { cancelWarning } = require("../utils/warnings");
+const automation = require("../utils/automation");
 const settings = require("../utils/settings");
 
 module.exports = {
@@ -15,10 +16,26 @@ module.exports = {
 
   async execute(oldState, newState) {
     const channelId = newState.channelId;
-    if (!channelId || channelId === oldState.channelId) return; // déconnexion ou mute
-
     const userId = newState.id;
     const client = newState.client;
+    const guild = newState.guild || oldState.guild;
+
+    // ---- Départ d'un salon d'équipe : fin automatique si tout se vide ----
+    if (oldState.channelId && oldState.channelId !== channelId) {
+      for (const match of store.allMatches()) {
+        if (match.guildId !== guild.id || match.status !== "live") continue;
+        if (match.voice?.[1] !== oldState.channelId && match.voice?.[2] !== oldState.channelId) continue;
+        await automation.checkEmptyChannels(client, guild, match);
+      }
+    }
+
+    if (!channelId || channelId === oldState.channelId) return; // déconnexion ou mute
+
+    // ---- Arrivée dans un salon d'équipe : on annule la fin programmée ----
+    for (const match of store.allMatches()) {
+      if (match.guildId !== guild.id || match.status !== "live") continue;
+      if (match.voice?.[1] === channelId || match.voice?.[2] === channelId) automation.cancelAutoEnd(match.id);
+    }
 
     for (const match of store.allMatches()) {
       if (match.guildId !== newState.guild.id || match.status === "ended") continue;

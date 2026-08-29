@@ -19,7 +19,7 @@
 
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  StringSelectMenuBuilder, UserSelectMenuBuilder, ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder, UserSelectMenuBuilder, ChannelSelectMenuBuilder, RoleSelectMenuBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
   ChannelType, MessageFlags,
 } = require("discord.js");
@@ -29,7 +29,7 @@ const access = require("./access");
 const settings = require("./settings");
 const store = require("./store");
 const { logEvent } = require("./logger");
-const { formatRank } = require("./ranks");
+const { formatRank, rankEmoji, RANKS } = require("./ranks");
 const {
   findTeam, removePlayer, addToTeam, refreshMatchMessage, announce,
 } = require("./matches");
@@ -92,7 +92,9 @@ function buildHome(userId, guildId) {
   const options = [
     { label: "Gestionnaires", value: "managers", description: "Donner l'accès à la gestion des parties", emoji: "🔑" },
     { label: "Parties en cours", value: "matches", description: "Kick, swap, mélange, salons vocaux, fin", emoji: "🎮" },
-    { label: "Réglages", value: "settings", description: "Délais, auto-attribution, logs, catégorie", emoji: "⚙️" },
+    { label: "Automatisations", value: "automations", description: "Lancement, avertissement et fin automatiques", emoji: "🤖" },
+    { label: "Réglages", value: "settings", description: "Préfixe, délais, logs, catégorie, rôle staff", emoji: "⚙️" },
+    { label: "Apparence", value: "appearance", description: "Emoji du titre et emojis de rang", emoji: "🎨" },
   ];
   // La distribution de l'ownership n'apparaît que pour le root.
   if (access.isRoot(userId)) {
@@ -282,9 +284,66 @@ function buildMatchView(match, notice = null) {
 
 // ────────────────────────────── RÉGLAGES ──────────────────────────────
 
+/** Bouton bascule : vert quand actif, gris quand inactif. */
+const toggleButton = (key, label, emoji) =>
+  new ButtonBuilder()
+    .setCustomId(pid("toggle", key))
+    .setLabel(label)
+    .setEmoji(emoji)
+    .setStyle(settings.get(key) ? ButtonStyle.Success : ButtonStyle.Secondary);
+
+// ─────────────────────────── AUTOMATISATIONS ───────────────────────────
+
+function buildAutomations() {
+  const autoEnd = settings.get("autoEndMinutes");
+
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.live)
+    .setTitle("🤖  Automatisations")
+    .setDescription([
+      "Ce qui se passe **tout seul**, sans qu'aucune commande soit tapée :",
+      config.separator,
+      `▶️ **Lancement automatique** · ${onOff(settings.get("autoStart"))}`,
+      "-# Dès que les deux équipes sont complètes : salons vocaux créés, joueurs déplacés.",
+      "",
+      `⚠️ **Avertissement automatique** · ${onOff(settings.get("autoWarn"))}`,
+      `-# Au lancement, quiconque n'est pas en vocal est averti : ${settings.warnSeconds()} s, sinon retrait.`,
+      "",
+      `🎟️ **Attribution automatique de la place** · ${onOff(settings.get("autoPromote"))}`,
+      "-# Activé : le 1er de la liste d'attente prend la place sans cliquer. Désactivé : bouton « Prendre sa place ».",
+      "",
+      `🛑 **Fin automatique** · ${autoEnd ? `après **${autoEnd} min** de vocaux vides` : "⚪ désactivée"}`,
+      "",
+      `🔊 **N'importe quel vocal vaut présence** · ${onOff(settings.get("warnAcceptAnyVoice"))}`,
+      "-# Avant le lancement uniquement : après, il faut être dans le vocal de son équipe.",
+      "",
+      `🔒 **Création réservée** · ${onOff(settings.get("restrictCreation"))}`,
+    ].join("\n"));
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        toggleButton("autoStart", "Lancement auto", "▶️"),
+        toggleButton("autoWarn", "Avertissement auto", "⚠️"),
+        toggleButton("autoPromote", "Attribution auto", "🎟️"),
+      ),
+      new ActionRowBuilder().addComponents(
+        toggleButton("warnAcceptAnyVoice", "Tout vocal", "🔊"),
+        toggleButton("restrictCreation", "Création réservée", "🔒"),
+        new ButtonBuilder().setCustomId(pid("set-delays")).setLabel("Délais").setEmoji("⏱️").setStyle(ButtonStyle.Primary),
+      ),
+      backRow(),
+    ],
+  };
+}
+
+// ────────────────────────────── RÉGLAGES ──────────────────────────────
+
 function buildSettings() {
   const logChannelId = settings.get("logChannelId");
   const categoryId = settings.get("voiceCategoryId");
+  const staffRoleId = settings.get("staffRoleId");
 
   const embed = new EmbedBuilder()
     .setColor(config.colors.base)
@@ -292,13 +351,12 @@ function buildSettings() {
     .setDescription([
       `⌨️ **Préfixe des commandes** · \`${settings.get("prefix")}\``,
       `⏱️ **Délai d'avertissement** · ${settings.warnSeconds()} s`,
-      `🎟️ **Délai de réponse (place proposée)** · ${settings.promoteSeconds()} s`,
-      `⚡ **Attribution automatique** · ${onOff(settings.get("autoPromote"))} *(sans confirmation)*`,
-      `🔊 **N'importe quel vocal vaut présence** · ${onOff(settings.get("warnAcceptAnyVoice"))} *(avant lancement)*`,
-      `🔒 **Création réservée** · ${onOff(settings.get("restrictCreation"))} *(/custom limité aux autorisés)*`,
+      `🎟️ **Priorité liste d'attente** · ${settings.promoteSeconds()} s`,
       config.separator,
       `📝 **Salon de logs** · ${logChannelId ? `<#${logChannelId}>` : "*aucun*"}`,
       `📁 **Catégorie des vocaux** · ${categoryId ? `<#${categoryId}>` : "*celle du salon de la partie*"}`,
+      `🛡️ **Rôle staff** · ${staffRoleId ? `<@&${staffRoleId}>` : "*aucun*"}`,
+      "-# Le rôle staff peut gérer toutes les parties, sans accéder à ce panneau.",
     ].join("\n"));
 
   return {
@@ -307,9 +365,6 @@ function buildSettings() {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(pid("set-prefix")).setLabel("Changer le préfixe").setEmoji("⌨️").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(pid("set-delays")).setLabel("Modifier les délais").setEmoji("⏱️").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(pid("toggle", "autoPromote")).setLabel("Attribution auto").setEmoji("⚡").setStyle(settings.get("autoPromote") ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(pid("toggle", "warnAcceptAnyVoice")).setLabel("Tout vocal").setEmoji("🔊").setStyle(settings.get("warnAcceptAnyVoice") ? ButtonStyle.Success : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(pid("toggle", "restrictCreation")).setLabel("Création réservée").setEmoji("🔒").setStyle(settings.get("restrictCreation") ? ButtonStyle.Success : ButtonStyle.Secondary),
       ),
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
@@ -327,9 +382,83 @@ function buildSettings() {
           .setMinValues(0)
           .setMaxValues(1),
       ),
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(pid("set-staff"))
+          .setPlaceholder("🛡️ Rôle staff (laisser vide = aucun)")
+          .setMinValues(0)
+          .setMaxValues(1),
+      ),
       backRow(),
     ],
   };
+}
+
+// ────────────────────────────── APPARENCE ──────────────────────────────
+
+function buildAppearance() {
+  const titleEmoji = settings.get("titleEmoji");
+
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.base)
+    .setTitle("🎨  Apparence")
+    .setDescription([
+      `**Emoji du titre** · ${titleEmoji || "*aucun*"}`,
+      "-# S'affiche devant « Partie personnalisée — Valorant ».",
+      config.separator,
+      "**Emojis de rang**",
+      ...RANKS.map((rank) => `${rankEmoji(rank.key)} ${rank.label}`),
+      "",
+      "-# Uploade tes icônes Valorant en emojis serveur, puis choisis un rang",
+      "-# ci-dessous et colle son emoji. Tape `\\:nom:` dans Discord pour obtenir",
+      "-# le code complet `<:nom:123456789>`.",
+    ].join("\n"));
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(pid("rank-emoji"))
+          .setPlaceholder("Changer l'emoji d'un rang…")
+          .addOptions(RANKS.map((rank) => ({
+            label: rank.label,
+            value: rank.key,
+            description: settings.get("rankEmojis")?.[rank.key] ? "personnalisé" : "par défaut",
+          }))),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(pid("set-title-emoji")).setLabel("Emoji du titre").setEmoji("🎨").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(pid("reset-emojis")).setLabel("Tout réinitialiser").setEmoji("♻️").setStyle(ButtonStyle.Secondary),
+      ),
+      backRow(),
+    ],
+  };
+}
+
+/**
+ * Modale de saisie d'un emoji. `target` vaut "title" ou une clé de rang.
+ * On accepte un emoji Unicode comme un emoji serveur `<:nom:id>`.
+ */
+function buildEmojiModal(target) {
+  const rank = RANKS.find((entry) => entry.key === target);
+  const current = target === "title" ? settings.get("titleEmoji") : (settings.get("rankEmojis")?.[target] || "");
+
+  const modal = new ModalBuilder()
+    .setCustomId(pid("emoji-modal", target))
+    .setTitle(rank ? `Emoji — ${rank.label}` : "Emoji du titre");
+
+  modal.addComponents(new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId("emoji")
+      .setLabel("Emoji (vide = valeur par défaut)")
+      .setPlaceholder("<:fer:123456789012345678> ou 🟫")
+      .setValue(current)
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(64)
+      .setRequired(false),
+  ));
+  return modal;
 }
 
 function buildPrefixModal() {
@@ -368,9 +497,19 @@ function buildDelaysModal() {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("promote")
-          .setLabel("Réponse à une place proposée (secondes)")
+          .setLabel("Priorité liste d'attente (secondes)")
           .setPlaceholder("60")
           .setValue(String(settings.promoteSeconds()))
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(4)
+          .setRequired(true),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("autoend")
+          .setLabel("Fin auto si vocaux vides (minutes, 0 = off)")
+          .setPlaceholder("10")
+          .setValue(String(settings.get("autoEndMinutes")))
           .setStyle(TextInputStyle.Short)
           .setMaxLength(4)
           .setRequired(true),
@@ -598,6 +737,8 @@ async function handlePanelComponent(interaction) {
         await interaction.update(await buildOwners(client, userId));
       } else if (section === "managers") await interaction.update(await buildManagers(client));
       else if (section === "matches") await interaction.update(buildMatchList(interaction.guildId));
+      else if (section === "automations") await interaction.update(buildAutomations());
+      else if (section === "appearance") await interaction.update(buildAppearance());
       else await interaction.update(buildSettings());
       return true;
     }
@@ -740,17 +881,32 @@ async function handlePanelComponent(interaction) {
     case "toggle": {
       // Liste blanche : un customId forgé ne doit pas pouvoir écrire
       // n'importe quelle clé de réglage.
-      const TOGGLEABLE = ["autoPromote", "warnAcceptAnyVoice", "restrictCreation"];
+      const TOGGLEABLE = ["autoStart", "autoWarn", "autoPromote", "warnAcceptAnyVoice", "restrictCreation"];
       if (!TOGGLEABLE.includes(args[0])) return false;
       settings.toggle(args[0]);
-      await interaction.update(buildSettings());
+      await interaction.update(buildAutomations());
       return true;
     }
     case "set-log":
-    case "set-category": {
-      const key = action === "set-log" ? "logChannelId" : "voiceCategoryId";
-      settings.set(key, interaction.values[0] || null);
+    case "set-category":
+    case "set-staff": {
+      const keys = { "set-log": "logChannelId", "set-category": "voiceCategoryId", "set-staff": "staffRoleId" };
+      settings.set(keys[action], interaction.values[0] || null);
       await interaction.update(buildSettings());
+      return true;
+    }
+
+    // ---- Apparence ----
+    case "set-title-emoji":
+      await interaction.showModal(buildEmojiModal("title"));
+      return true;
+    case "rank-emoji":
+      await interaction.showModal(buildEmojiModal(interaction.values[0]));
+      return true;
+    case "reset-emojis": {
+      settings.set("rankEmojis", {});
+      settings.set("titleEmoji", "");
+      await interaction.update(buildAppearance());
       return true;
     }
 
@@ -762,7 +918,7 @@ async function handlePanelComponent(interaction) {
 /** Modales du panneau : préfixe et délais. */
 async function handlePanelModal(interaction) {
   const parsed = parsePanelId(interaction.customId);
-  if (!parsed || !["delays-modal", "prefix-modal"].includes(parsed.action)) return false;
+  if (!parsed || !["delays-modal", "prefix-modal", "emoji-modal"].includes(parsed.action)) return false;
 
   if (!access.canOpenPanel(interaction.user.id)) {
     await denied(interaction);
@@ -794,15 +950,39 @@ async function handlePanelModal(interaction) {
     return true;
   }
 
+  // ---- Emoji (titre ou rang) ----
+  if (parsed.action === "emoji-modal") {
+    const target = parsed.args[0];
+    const value = interaction.fields.getTextInputValue("emoji").trim();
+
+    if (target === "title") {
+      settings.set("titleEmoji", value);
+    } else {
+      const map = { ...(settings.get("rankEmojis") || {}) };
+      if (value) map[target] = value;
+      else delete map[target]; // vide = retour au carré Unicode par défaut
+      settings.set("rankEmojis", map);
+    }
+
+    const view = buildAppearance();
+    if (interaction.isFromMessage()) await interaction.update(view);
+    else await interaction.reply({ ...view, flags: MessageFlags.Ephemeral });
+    return true;
+  }
+
   const warn = Number.parseInt(interaction.fields.getTextInputValue("warn"), 10);
   const promote = Number.parseInt(interaction.fields.getTextInputValue("promote"), 10);
+  const autoEnd = Number.parseInt(interaction.fields.getTextInputValue("autoend"), 10);
 
   // Bornes volontairement larges mais non nulles : un délai de 0 s rendrait
   // l'avertissement inutilisable, au-delà d'une heure il n'a plus de sens.
   const valid = (value) => Number.isFinite(value) && value >= 5 && value <= 3600;
-  if (!valid(warn) || !valid(promote)) {
+  if (!valid(warn) || !valid(promote) || !Number.isFinite(autoEnd) || autoEnd < 0 || autoEnd > 1440) {
     await interaction.reply({
-      embeds: [errorEmbed("Les délais doivent être des nombres de secondes entre **5** et **3600**.")],
+      embeds: [errorEmbed(
+        "Les délais doivent être des nombres de secondes entre **5** et **3600**, " +
+        "et la fin automatique entre **0** et **1440** minutes.",
+      )],
       flags: MessageFlags.Ephemeral,
     });
     return true;
@@ -810,8 +990,9 @@ async function handlePanelModal(interaction) {
 
   settings.set("warnMs", warn * 1000);
   settings.set("promoteMs", promote * 1000);
+  settings.set("autoEndMinutes", autoEnd);
 
-  const view = buildSettings();
+  const view = buildAutomations();
   if (interaction.isFromMessage()) await interaction.update(view);
   else await interaction.reply({ ...view, flags: MessageFlags.Ephemeral });
   return true;
@@ -821,7 +1002,8 @@ module.exports = {
   // Bouton posé par la commande `panel` pour ouvrir le panneau en privé.
   OPEN_BUTTON_ID: pid("open"),
   // Vues (exportées aussi pour les tests)
-  buildHome, buildOwners, buildManagers, buildMatchList, buildMatchView, buildSettings,
+  buildHome, buildOwners, buildManagers, buildMatchList, buildMatchView,
+  buildSettings, buildAutomations, buildAppearance,
   // Routage
   handlePanelComponent, handlePanelModal, parsePanelId,
 };

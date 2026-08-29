@@ -52,11 +52,24 @@ function parseRank(input) {
   return { key: rank.key, division: rank.divisions ? division : null };
 }
 
+/**
+ * Emoji d'un rang : celui défini depuis le panneau s'il y en a un, sinon le
+ * carré Unicode par défaut. Permet d'utiliser les vraies icônes Valorant du
+ * serveur sans toucher au code.
+ */
+function rankEmoji(key) {
+  // require paresseux : settings ne dépend pas de ranks, mais on évite ainsi
+  // toute surprise d'ordre de chargement.
+  const settings = require("./settings");
+  const custom = settings.get("rankEmojis") || {};
+  return custom[key] || RANK_BY_KEY.get(key)?.emoji || "⬛";
+}
+
 /** "🟪 Diamant 2" — sûr même si le rang stocké est invalide/absent. */
 function formatRank(rank) {
   const entry = RANK_BY_KEY.get(rank?.key) || RANK_BY_KEY.get("unranked");
   const division = entry.divisions && rank?.division ? ` ${rank.division}` : "";
-  return `${entry.emoji} ${entry.label}${division}`;
+  return `${rankEmoji(entry.key)} ${entry.label}${division}`;
 }
 
 /** Valeur numérique comparable : Fer 1 = 3, Fer 2 = 4... Radiant = 29. */
@@ -82,4 +95,4 @@ function rankChoices({ includeUnranked = true } = {}) {
 /** Liste lisible pour les messages d'erreur. */
 const RANK_HELP = RANKS.map((rank) => rank.label).join(", ");
 
-module.exports = { RANKS, RANK_BY_KEY, RANK_HELP, parseRank, formatRank, rankValue, meetsMinimum, rankChoices, normalize };
+module.exports = { RANKS, RANK_BY_KEY, RANK_HELP, parseRank, formatRank, rankEmoji, rankValue, meetsMinimum, rankChoices, normalize };

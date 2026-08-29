@@ -27,6 +27,20 @@ const DEFAULTS = {
   restrictCreation: false,
   // Préfixe des commandes, modifiable depuis le panneau.
   prefix: process.env.PREFIX || "+",
+
+  // ---- Automatisations (toutes débrayables depuis le panneau) ----
+  // Lance la partie toute seule dès que les deux équipes sont complètes.
+  autoStart: true,
+  // Au lancement, avertit automatiquement ceux qui ne sont pas en vocal.
+  autoWarn: true,
+  // Termine la partie si les salons d'équipe restent vides N minutes (0 = jamais).
+  autoEndMinutes: 10,
+
+  // ---- Apparence ----
+  // Emoji affiché dans le titre du panneau de partie.
+  titleEmoji: process.env.VALORANT_EMOJI || "",
+  // Emojis de rang personnalisés : { iron: "<:fer:123…>", … }
+  rankEmojis: {},
 };
 
 let overrides = null;

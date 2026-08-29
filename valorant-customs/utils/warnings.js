@@ -4,13 +4,15 @@
  * ═══════════════════════════════════════════════════════════════════════
  *
  * Cycle complet :
- *   1. L'hôte (ou le staff) avertit un joueur : /avertir ou bouton « Avertir ».
+ *   1. L'avertissement part TOUT SEUL au lancement de la partie pour quiconque
+ *      n'est pas dans le vocal de son équipe (voir utils/automation.js).
+ *      Il reste déclenchable à la main : commande `avertir` ou panneau.
  *   2. Le bot ping le joueur : « Tu as 1 minute pour rejoindre le vocal… ».
- *   3. Un timer de 60 s démarre, visible en direct dans l'embed de la partie.
+ *   3. Un timer de 60 s démarre, visible en direct dans le panneau de partie.
  *   4a. Le joueur rejoint le vocal → l'avertissement est annulé immédiatement
  *       (voir events/voiceStateUpdate.js), sans attendre la fin du timer.
- *   4b. Sinon → retrait automatique de l'équipe, message public, et la place
- *       est proposée au premier de la liste d'attente (avec confirmation).
+ *   4b. Sinon → retrait automatique, et un message public annonce que la
+ *       personne n'est pas là avec un bouton **Prendre sa place**.
  *
  * Les timers sont conservés en mémoire MAIS les échéances sont persistées :
  * après un redémarrage, restoreTimers() ré-arme tout (ou tranche
@@ -25,7 +27,7 @@ const {
   refreshMatchMessage, announce, fetchMatchChannel,
 } = require("./matches");
 const {
-  buildWarningEmbed, buildOfferEmbed, buildOfferComponents,
+  buildWarningEmbed, buildFreeSpotEmbed, buildClaimComponents,
   infoEmbed, successEmbed,
 } = require("./embeds");
 const { isInTeamVoice, syncTeamPermissions, moveToTeamChannel } = require("./voice");
@@ -36,11 +38,7 @@ const MAX_TIMEOUT = 2 ** 31 - 1;
 
 /** @type {Map<string, NodeJS.Timeout>} clé `matchId:userId` */
 const warnTimers = new Map();
-/** @type {Map<string, NodeJS.Timeout>} clé `matchId:teamNo` */
-const offerTimers = new Map();
-
 const warnKey = (matchId, userId) => `${matchId}:${userId}`;
-const offerKey = (matchId, teamNo) => `${matchId}:${teamNo}`;
 
 function clearTimer(map, key) {
   const timer = map.get(key);
@@ -56,7 +54,7 @@ function clearTimer(map, key) {
  *
  * @returns {Promise<{ok: boolean, error?: string, teamNo?: number, deadline?: number}>}
  */
-async function startWarning(client, match, targetId, issuerId) {
+async function startWarning(client, match, targetId, issuerId, { notify = true } = {}) {
   if (match.status === "ended") return { ok: false, error: "Cette partie est terminée." };
 
   const teamNo = findTeam(match, targetId);
@@ -76,13 +74,17 @@ async function startWarning(client, match, targetId, issuerId) {
   match.warnings[targetId] = { deadline, teamNo, issuerId, noticeId: null };
   store.save();
 
-  // Le SEUL message du bot qui ping réellement : l'avertissement doit se voir.
-  const notice = await announce(client, match, {
-    content: `<@${targetId}>`,
-    embeds: [buildWarningEmbed(match, targetId, teamNo, deadline)],
-    mentionUsers: [targetId],
-  });
-  if (notice) match.warnings[targetId].noticeId = notice.id;
+  // Un des rares messages du bot qui ping réellement : l'avertissement doit se
+  // voir. `notify: false` sert à l'avertissement automatique du lancement, qui
+  // poste un seul message groupé pour tous les absents (voir automation.js).
+  if (notify) {
+    const notice = await announce(client, match, {
+      content: `<@${targetId}>`,
+      embeds: [buildWarningEmbed(match, targetId, teamNo, deadline)],
+      mentionUsers: [targetId],
+    });
+    if (notice) match.warnings[targetId].noticeId = notice.id;
+  }
   store.save();
 
   scheduleWarning(client, match.id, targetId, deadline);
@@ -143,14 +145,6 @@ async function resolveWarning(client, matchId, targetId) {
   store.save();
   await refreshMatchMessage(client, match);
 
-  await announce(client, match, {
-    content: `<@${targetId}> a été retiré pour absence. Une place est libre !`,
-    embeds: [
-      infoEmbed(`⛔ **Équipe ${warning.teamNo}** — <@${targetId}> n'a pas rejoint le salon vocal dans le délai imparti.`),
-    ],
-    mentionUsers: [targetId],
-  });
-
   if (guild) await syncTeamPermissions(guild, match, warning.teamNo);
 
   logEvent(client, "kick", {
@@ -158,7 +152,8 @@ async function resolveWarning(client, matchId, targetId) {
     description: `<@${targetId}> retiré de l'Équipe ${warning.teamNo} pour absence (avertissement expiré).`,
   });
 
-  await offerSpot(client, match, warning.teamNo);
+  // Le message d'absence EST la proposition : un bouton « Prendre sa place ».
+  await offerSpot(client, match, warning.teamNo, { absentId: targetId });
 }
 
 /**
@@ -189,124 +184,80 @@ async function cancelWarning(client, match, targetId, { reason = null, silent = 
 /** Coupe tous les timers d'une partie (fin de partie / suppression). */
 function clearMatchTimers(match) {
   for (const userId of Object.keys(match.warnings || {})) clearTimer(warnTimers, warnKey(match.id, userId));
-  for (const teamNo of Object.keys(match.offers || {})) clearTimer(offerTimers, offerKey(match.id, teamNo));
 }
 
-// ═════════════════════ LISTE D'ATTENTE : PROPOSITION ═════════════════════
+// ═════════════════ PLACE LIBRE : « PRENDRE SA PLACE » ═════════════════
 
 /**
- * Propose la place libérée au premier de la liste d'attente.
- * Par défaut avec confirmation (boutons) ; AUTO_PROMOTE=true l'ajoute direct.
+ * Annonce une place libre avec un bouton **Prendre sa place**.
+ *
+ * Pas de proposition privée ni de confirmation à rallonge : un message public,
+ * un clic, c'est réglé. La liste d'attente garde une priorité — pendant les
+ * premières secondes, seuls ses membres peuvent cliquer — puis la place s'ouvre
+ * à tout le monde. Si l'attribution automatique est activée, le premier de la
+ * liste est ajouté directement, sans clic.
+ *
+ * @param {{absentId?: string}} options absentId = le joueur qui vient d'être
+ *        retiré, pour l'annoncer dans le même message.
  */
-async function offerSpot(client, match, teamNo) {
+async function offerSpot(client, match, teamNo, { absentId = null } = {}) {
   if (match.status === "ended" || teamIsFull(match, teamNo)) return;
-  if (match.offers?.[teamNo]) return; // une proposition est déjà en cours
 
-  if (!match.waitlist.length) {
-    await announce(client, match, {
-      embeds: [infoEmbed(`${config.emojis.waitlist} Aucun joueur en liste d'attente : la place en **Équipe ${teamNo}** reste ouverte.`)],
-    });
+  // Attribution automatique : personne n'a rien à cliquer.
+  if (settings.get("autoPromote") && match.waitlist.length) {
+    await promoteCandidate(client, match, teamNo, match.waitlist[0], "automatiquement");
     return;
   }
 
-  const candidateId = match.waitlist[0];
+  // Priorité à la liste d'attente pendant ce laps de temps.
+  const reservedUntil = match.waitlist.length ? Date.now() + settings.get("promoteMs") : 0;
+  match.offers[teamNo] = { reservedUntil, reserved: [...match.waitlist], messageId: null };
+  store.save();
 
-  if (settings.get("autoPromote")) {
-    await promoteCandidate(client, match, teamNo, candidateId, "automatiquement");
-    return;
+  const lines = [];
+  if (absentId) lines.push(`⛔ <@${absentId}> **n'est pas là** — il a été retiré de l'**Équipe ${teamNo}**.`);
+  else lines.push(`🎟️ Une place s'est libérée en **Équipe ${teamNo}**.`);
+  lines.push("", "**Clique ci-dessous pour prendre sa place.**");
+  if (reservedUntil) {
+    lines.push("", `-# Réservé à la liste d'attente jusqu'à <t:${Math.floor(reservedUntil / 1000)}:T>, puis ouvert à tous.`);
   }
 
-  const deadline = Date.now() + settings.get("promoteMs");
   const message = await announce(client, match, {
-    content: `<@${candidateId}>`,
-    embeds: [buildOfferEmbed(match, teamNo, candidateId, deadline)],
-    components: buildOfferComponents(match, teamNo, candidateId),
-    mentionUsers: [candidateId],
+    // On ping l'absent et la liste d'attente : ce sont eux les concernés.
+    content: [absentId ? `<@${absentId}>` : null, ...match.waitlist.slice(0, 5).map((id) => `<@${id}>`)]
+      .filter(Boolean).join(" ") || undefined,
+    embeds: [buildFreeSpotEmbed(match, teamNo, absentId, reservedUntil)],
+    components: buildClaimComponents(match, teamNo),
+    mentionUsers: [absentId, ...match.waitlist.slice(0, 5)].filter(Boolean),
   });
 
-  match.offers[teamNo] = { userId: candidateId, deadline, messageId: message?.id || null };
+  match.offers[teamNo].messageId = message?.id || null;
   store.save();
-  scheduleOfferExpiry(client, match.id, teamNo, deadline);
 }
 
-function scheduleOfferExpiry(client, matchId, teamNo, deadline) {
-  const key = offerKey(matchId, teamNo);
-  clearTimer(offerTimers, key);
+/**
+ * Quelqu'un clique sur « Prendre sa place ».
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+async function claimSpot(client, match, teamNo, userId) {
+  if (match.status === "ended") return { ok: false, error: "Cette partie est terminée." };
+  if (teamIsFull(match, teamNo)) return { ok: false, error: `L'**Équipe ${teamNo}** est déjà complète.` };
+  if (findTeam(match, userId) === teamNo) return { ok: false, error: `Tu es déjà dans l'**Équipe ${teamNo}**.` };
 
-  const delay = Math.min(Math.max(deadline - Date.now(), 0), MAX_TIMEOUT);
-  const timer = setTimeout(() => {
-    offerTimers.delete(key);
-    expireOffer(client, matchId, teamNo).catch((error) =>
-      console.error(`[warnings] Expiration de proposition impossible (#${matchId}) :`, error));
-  }, delay);
-  offerTimers.set(key, timer);
-}
-
-/** Pas de réponse dans le délai : le joueur sort de la liste, au suivant. */
-async function expireOffer(client, matchId, teamNo) {
-  const match = store.getMatch(matchId);
-  const offer = match?.offers?.[teamNo];
-  if (!match || !offer) return;
-
-  delete match.offers[teamNo];
-  match.waitlist = match.waitlist.filter((id) => id !== offer.userId);
-  store.save();
-
-  await closeOfferMessage(client, match, offer, `⏱️ <@${offer.userId}> n'a pas répondu à temps : retiré de la liste d'attente.`);
-  await refreshMatchMessage(client, match);
-
-  logEvent(client, "promote", {
-    matchId: match.id,
-    description: `Proposition expirée pour <@${offer.userId}> (Équipe ${teamNo}) — retiré de la liste d'attente.`,
-  });
-
-  await offerSpot(client, match, teamNo);
-}
-
-/** Le joueur accepte la place (bouton « Prendre la place »). */
-async function acceptOffer(client, match, teamNo, candidateId) {
   const offer = match.offers?.[teamNo];
-  if (!offer || offer.userId !== candidateId) {
-    return { ok: false, error: "Cette proposition n'est plus valable." };
-  }
-  if (teamIsFull(match, teamNo)) {
-    return { ok: false, error: `L'Équipe ${teamNo} est déjà complète.` };
+  // Fenêtre de priorité : la liste d'attente d'abord, tout le monde ensuite.
+  if (offer?.reservedUntil > Date.now() && offer.reserved?.length && !offer.reserved.includes(userId)) {
+    return {
+      ok: false,
+      error: `Cette place est réservée à la liste d'attente jusqu'à <t:${Math.floor(offer.reservedUntil / 1000)}:T>. Réessaie après.`,
+    };
   }
 
-  clearTimer(offerTimers, offerKey(match.id, teamNo));
   delete match.offers[teamNo];
   store.save();
 
-  await promoteCandidate(client, match, teamNo, candidateId, "après confirmation");
-  await closeOfferMessage(client, match, offer, `✅ <@${candidateId}> a pris la place en **Équipe ${teamNo}**.`);
-  return { ok: true };
-}
-
-/** Le joueur passe son tour : il repart en fin de liste, au suivant. */
-async function declineOffer(client, match, teamNo, candidateId) {
-  const offer = match.offers?.[teamNo];
-  if (!offer || offer.userId !== candidateId) {
-    return { ok: false, error: "Cette proposition n'est plus valable." };
-  }
-
-  clearTimer(offerTimers, offerKey(match.id, teamNo));
-  delete match.offers[teamNo];
-
-  // Passer son tour ≠ quitter : le joueur retourne en fin de liste d'attente.
-  match.waitlist = [...match.waitlist.filter((id) => id !== candidateId), candidateId];
-  store.save();
-
-  await closeOfferMessage(client, match, offer, `⏭️ <@${candidateId}> a passé son tour.`);
-  await refreshMatchMessage(client, match);
-
-  // Si personne d'autre n'attend, on évite de reproposer en boucle au même joueur.
-  if (match.waitlist[0] !== candidateId) {
-    await offerSpot(client, match, teamNo);
-  } else {
-    await announce(client, match, {
-      embeds: [infoEmbed(`${config.emojis.waitlist} Plus personne d'autre en attente : la place en **Équipe ${teamNo}** reste ouverte.`)],
-    });
-  }
+  await promoteCandidate(client, match, teamNo, userId, "en cliquant");
+  await closeOfferMessage(client, match, offer, `✅ <@${userId}> a pris la place en **Équipe ${teamNo}**.`);
   return { ok: true };
 }
 
@@ -325,28 +276,35 @@ async function promoteCandidate(client, match, teamNo, candidateId, howLabel) {
   const guild = await client.guilds.fetch(match.guildId).catch(() => null);
   if (guild) {
     await syncTeamPermissions(guild, match, teamNo);
-    // Si la partie tourne déjà et que le joueur est en vocal, on le place direct.
-    if (match.status === "live") await moveToTeamChannel(guild, match, teamNo, candidateId);
+    // Partie déjà lancée : on place le remplaçant tout de suite, et s'il n'est
+    // pas en vocal il hérite du même avertissement que les autres.
+    if (match.status === "live") {
+      const moved = await moveToTeamChannel(guild, match, teamNo, candidateId);
+      if (!moved.moved && settings.get("autoWarn")) {
+        await startWarning(client, match, candidateId, client.user.id);
+      }
+    }
   }
 
   logEvent(client, "promote", {
     matchId: match.id,
-    description: `<@${candidateId}> ajouté à l'Équipe ${teamNo} depuis la liste d'attente (${howLabel}).`,
+    description: `<@${candidateId}> ajouté à l'Équipe ${teamNo} (${howLabel}).`,
   });
 }
 
-/** Désactive les boutons du message de proposition et affiche le verdict. */
+/** Désactive le bouton du message de place libre et affiche le verdict. */
 async function closeOfferMessage(client, match, offer, verdict) {
   if (!offer?.messageId) return;
   const channel = await fetchMatchChannel(client, match);
   if (!channel) return;
   try {
     const message = await channel.messages.fetch(offer.messageId);
-    await message.edit({ embeds: [infoEmbed(verdict)], components: [] });
+    await message.edit({ content: null, embeds: [infoEmbed(verdict)], components: [] });
   } catch {
     // Message supprimé entre-temps : sans conséquence.
   }
 }
+
 
 // ═══════════════════════ REPRISE APRÈS REDÉMARRAGE ═══════════════════════
 
@@ -356,29 +314,21 @@ async function closeOfferMessage(client, match, offer, verdict) {
  * ne doit jamais faire « oublier » un avertissement en cours.
  */
 async function restoreTimers(client) {
-  let warnings = 0;
-  let offers = 0;
+  let restored = 0;
 
   for (const match of store.allMatches()) {
     if (match.status === "ended") continue;
-
     for (const [userId, warning] of Object.entries(match.warnings || {})) {
       scheduleWarning(client, match.id, userId, warning.deadline);
-      warnings += 1;
-    }
-    for (const [teamNo, offer] of Object.entries(match.offers || {})) {
-      scheduleOfferExpiry(client, match.id, Number(teamNo), offer.deadline);
-      offers += 1;
+      restored += 1;
     }
   }
 
-  if (warnings || offers) {
-    console.log(`[warnings] Reprise : ${warnings} avertissement(s) et ${offers} proposition(s) ré-armés.`);
-  }
+  if (restored) console.log(`[warnings] Reprise : ${restored} avertissement(s) ré-armé(s).`);
 }
 
 module.exports = {
   startWarning, cancelWarning, resolveWarning, clearMatchTimers,
-  offerSpot, acceptOffer, declineOffer,
+  offerSpot, claimSpot,
   restoreTimers,
 };

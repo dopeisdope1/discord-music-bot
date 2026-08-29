@@ -81,34 +81,45 @@ function buildWarnSelect(match) {
   );
 }
 
-// ---- Proposition de place au premier de la liste d'attente ----
+// ---- Place libre : « Prendre sa place » ----
 
-function buildOfferEmbed(match, teamNo, candidateId, deadline) {
+/**
+ * Message public d'une place libérée. Quand un joueur vient d'être retiré pour
+ * absence, c'est CE message qui l'annonce — un seul message, un seul bouton.
+ */
+function buildFreeSpotEmbed(match, teamNo, absentId, reservedUntil) {
   const emoji = teamNo === 1 ? config.emojis.team1 : config.emojis.team2;
-  return new EmbedBuilder()
-    .setColor(config.colors.success)
-    .setAuthor({ name: "🎟️  Une place s'est libérée" })
-    .setDescription([
-      `<@${candidateId}> tu es **premier de la liste d'attente** : une place est libre en **Équipe ${teamNo}** ${emoji}.`,
+
+  const lines = absentId
+    ? [
+      `⛔ <@${absentId}> **n'est pas là** — il a été retiré de l'**Équipe ${teamNo}** ${emoji}.`,
       "",
-      `⏳ Réponds <t:${Math.floor(deadline / 1000)}:R>, sinon la place passe au suivant.`,
-    ].join("\n"))
+      "**Sa place est libre : clique sur le bouton pour la prendre.**",
+    ]
+    : [
+      `🎟️ Une place s'est libérée en **Équipe ${teamNo}** ${emoji}.`,
+      "",
+      "**Clique sur le bouton pour la prendre.**",
+    ];
+
+  if (reservedUntil) {
+    lines.push("", `⏳ Réservée à la liste d'attente jusqu'à <t:${Math.floor(reservedUntil / 1000)}:T>, puis ouverte à tous.`);
+  }
+
+  return new EmbedBuilder()
+    .setColor(absentId ? config.colors.warn : config.colors.success)
+    .setDescription(lines.join("\n"))
     .setFooter({ text: `Partie #${match.id}` });
 }
 
-function buildOfferComponents(match, teamNo, candidateId) {
+function buildClaimComponents(match, teamNo) {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(customId("offer-accept", match.id, `${teamNo}:${candidateId}`))
-        .setLabel("Prendre la place")
-        .setEmoji("✅")
+        .setCustomId(customId("claim", match.id, String(teamNo)))
+        .setLabel(`Prendre sa place (Équipe ${teamNo})`)
+        .setEmoji("🎟️")
         .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(customId("offer-decline", match.id, `${teamNo}:${candidateId}`))
-        .setLabel("Passer mon tour")
-        .setEmoji("⏭️")
-        .setStyle(ButtonStyle.Secondary),
     ),
   ];
 }
@@ -151,6 +162,6 @@ module.exports = {
   ID, customId, parseCustomId,
   errorEmbed, successEmbed, infoEmbed,
   buildWarningEmbed, buildWarnSelect,
-  buildOfferEmbed, buildOfferComponents,
+  buildFreeSpotEmbed, buildClaimComponents,
   buildProfileModal,
 };
