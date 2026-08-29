@@ -16,11 +16,11 @@ const store = require("../utils/store");
 const access = require("../utils/access");
 const settings = require("../utils/settings");
 const { logEvent } = require("../utils/logger");
-const { parseRank, formatRank, normalize, rankEmoji, RANK_BY_KEY } = require("../utils/ranks");
+const { parseRank, normalize } = require("../utils/ranks");
 const { createMatch, addToTeam } = require("../utils/matches");
 const { buildMatchPanel } = require("../utils/display");
 const automation = require("../utils/automation");
-const { replyError, replyOk } = require("../utils/reply");
+const { replyError } = require("../utils/reply");
 
 const NO_JOIN = ["sansmoi", "nojoin", "spectateur", "host"];
 const RANDOM_MAP = ["aleatoire", "random", "hasard"];
@@ -114,10 +114,10 @@ module.exports = {
       startAt: parsed.startAt,
     });
 
-    // L'hôte s'inscrit d'office s'il joue ET s'il a déjà un profil : sans
-    // profil, on ne peut pas afficher son pseudo/rang dans le panneau.
-    const profile = store.getProfile(message.author.id);
-    if (parsed.autoJoin && profile) addToTeam(match, message.author.id, 1);
+    // L'hôte est inscrit d'office, profil ou pas : `custom`, c'est pour lancer,
+    // pas pour se faire réclamer un pseudo. Sans profil, sa ligne affiche juste
+    // sa mention ; il complète quand il veut avec la commande `profil`.
+    if (parsed.autoJoin) addToTeam(match, message.author.id, 1);
 
     // Enregistrée AVANT l'envoi : si quelqu'un clique dans la milliseconde qui
     // suit, la partie est déjà connue du bot.
@@ -135,23 +135,10 @@ module.exports = {
       description: `Partie ${format.label} créée par <@${message.author.id}>${parsed.map ? ` sur **${parsed.map}**` : ""}.`,
     });
 
-    if (parsed.autoJoin && !profile) {
-      return replyError(
-        message,
-        "Partie créée, mais tu n'as pas encore de profil Valorant : tu n'as donc pas été inscrit.\n" +
-        `Clique sur **Rejoindre Équipe 1** (une fenêtre s'ouvrira) ou fais \`${settings.get("prefix")}profil TonPseudo#TAG Diamant 2\`.`,
-      );
-    }
-
-    if (parsed.startAt) {
-      const stamp = Math.floor(parsed.startAt / 1000);
-      return replyOk(message, `Partie créée — lancement automatique <t:${stamp}:t> (<t:${stamp}:R>).`);
-    }
-
-    if (parsed.minRank) {
-      const rank = RANK_BY_KEY.get(parsed.minRank);
-      return replyOk(message, `Partie créée — rang minimum **${rankEmoji(rank.key)} ${rank.label}**${profile ? `, tu es inscrit avec ${formatRank(profile.rank)}` : ""}.`);
-    }
-    return replyOk(message, "Partie créée.");
+    // Aucun message de confirmation : le panneau EST la réponse. Il affiche
+    // déjà l'hôte, le format, la map, le rang minimum et l'heure de début.
+    // Le message de commande disparaît pour ne laisser que le panneau.
+    await message.delete().catch(() => {});
+    return true;
   },
 };
