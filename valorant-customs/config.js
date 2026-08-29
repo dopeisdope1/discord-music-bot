@@ -65,6 +65,26 @@ module.exports = {
     host: "👑",
     map: "🗺️",
     empty: "➖",
+    // États de présence en vocal, affichés à droite de chaque joueur.
+    present: "🟢",
+    absent: "🔴",
+    unknown: "❔",
+    voice: "🎙️",
+    refresh: "🔄",
+    link: "🔗",
+    claim: "🎟️",
+    balance: "⚖️",
+  },
+
+  // Récupération du vrai rang Valorant — voir utils/riot.js pour le détail du
+  // choix d'API. Tout est surchargeable depuis le panneau (🎯 Rangs).
+  riot: {
+    // Clé de l'API communautaire (HenrikDev). Sans elle, les rangs restent
+    // saisis à la main : le bot n'invente jamais un rang.
+    apiKey: process.env.RIOT_API_KEY || process.env.VALORANT_API_KEY || "",
+    // Autre implémentation compatible / proxy interne.
+    base: process.env.RIOT_API_BASE || "https://api.henrikdev.xyz",
+    region: (process.env.RIOT_REGION || "eu").toLowerCase(),
   },
 
   // Séparateur visuel réutilisé dans tous les embeds.

@@ -22,15 +22,19 @@
 
 const store = require("./store");
 const { buildMatchPanel } = require("./display");
+const { presenceSnapshot } = require("./voice");
 
-function createMatch({ guildId, channelId, hostId, format, map, minRank, startAt }) {
+function createMatch({ guildId, channelId, hostId, hostAvatar = null, format, map, minRank, startAt }) {
   return {
     id: store.newMatchId(),
     guildId,
     channelId,
     messageId: null,
     hostId,
+    // Vignette du panneau : évite d'aller chercher l'utilisateur à chaque rendu.
+    hostAvatar: hostAvatar || null,
     createdAt: Date.now(),
+    startedAt: null,
     format,
     map: map || null,
     minRank: minRank || null,
@@ -89,19 +93,77 @@ async function fetchMatchChannel(client, match) {
   }
 }
 
-/** Ré-affiche l'embed de la partie à partir de son état courant. */
-async function refreshMatchMessage(client, match) {
-  if (!match.messageId) return;
+// ---- Rafraîchissement du panneau, sans matraquer l'API ----
+
+// Discord limite les éditions d'un même message. Cinq joueurs qui cliquent
+// dans la même seconde ne doivent pas déclencher cinq éditions : on regroupe.
+const MIN_EDIT_INTERVAL_MS = 1_200;
+/** @type {Map<string, number>} matchId → horodatage de la dernière édition */
+const lastEdit = new Map();
+/** @type {Map<string, NodeJS.Timeout>} édition différée déjà programmée */
+const pendingEdit = new Map();
+
+/** Rendu du panneau avec la présence vocale lue dans le cache. */
+function renderMatchPanel(client, match) {
+  const guild = client.guilds.cache.get(match.guildId) || null;
+  const presence = guild ? presenceSnapshot(guild, match) : null;
+  return buildMatchPanel(match, { presence });
+}
+
+async function editMatchMessage(client, match) {
+  lastEdit.set(match.id, Date.now());
   const channel = await fetchMatchChannel(client, match);
   if (!channel) return;
   try {
     const message = await channel.messages.fetch(match.messageId);
-    await message.edit(buildMatchPanel(match));
+    await message.edit(renderMatchPanel(client, match));
   } catch (error) {
-    // Message supprimé à la main : on n'insiste pas, la partie reste utilisable
-    // via les commandes slash.
+    // Message supprimé à la main : on n'insiste pas, la partie reste pilotable
+    // par les commandes et le panneau de contrôle.
     console.error(`[matches] Rafraîchissement impossible (#${match.id}) :`, error.message);
   }
+}
+
+/**
+ * Ré-affiche le panneau de la partie à partir de son état courant.
+ *
+ * Les appels rapprochés sont fusionnés : le dernier état gagne, et une seule
+ * édition part réellement. Les minuteries sont `unref()` — elles n'empêchent
+ * jamais le process de s'arrêter.
+ */
+async function refreshMatchMessage(client, match) {
+  if (!match.messageId) return;
+
+  const since = Date.now() - (lastEdit.get(match.id) || 0);
+  if (since >= MIN_EDIT_INTERVAL_MS) {
+    const timer = pendingEdit.get(match.id);
+    if (timer) {
+      clearTimeout(timer);
+      pendingEdit.delete(match.id);
+    }
+    return editMatchMessage(client, match);
+  }
+
+  // Une édition différée est déjà programmée : elle prendra l'état à jour.
+  if (pendingEdit.has(match.id)) return;
+
+  const timer = setTimeout(() => {
+    pendingEdit.delete(match.id);
+    // On relit la partie : elle a pu être terminée entre-temps.
+    const current = store.getMatch(match.id) || match;
+    editMatchMessage(client, current).catch(() => {});
+  }, MIN_EDIT_INTERVAL_MS - since);
+
+  timer.unref?.();
+  pendingEdit.set(match.id, timer);
+}
+
+/** Coupe les éditions différées d'une partie (fin de partie / purge). */
+function cancelRefresh(matchId) {
+  const timer = pendingEdit.get(matchId);
+  if (timer) clearTimeout(timer);
+  pendingEdit.delete(matchId);
+  lastEdit.delete(matchId);
 }
 
 /**
@@ -145,10 +207,13 @@ function findMatchesForPlayer(guildId, userId) {
     .filter((match) => match.guildId === guildId && match.status !== "ended" && isInMatch(match, userId));
 }
 
+/** La partie est-elle au complet ? */
+const matchIsFull = (match) => playerCount(match) >= match.format.perTeam * 2;
+
 module.exports = {
   createMatch,
-  findTeam, isInWaitlist, isInMatch, teamIsFull, playerCount,
+  findTeam, isInWaitlist, isInMatch, teamIsFull, playerCount, matchIsFull,
   removePlayer, addToTeam, addToWaitlist,
-  fetchMatchChannel, refreshMatchMessage, announce,
+  fetchMatchChannel, refreshMatchMessage, renderMatchPanel, cancelRefresh, announce,
   findMatchByMessage, findActiveMatchInChannel, findMatchesForPlayer,
 };

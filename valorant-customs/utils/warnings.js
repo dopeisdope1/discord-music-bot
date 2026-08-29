@@ -32,6 +32,7 @@ const {
 } = require("./embeds");
 const { isInTeamVoice, syncTeamPermissions, moveToTeamChannel } = require("./voice");
 const settings = require("./settings");
+const { withLock } = require("./mutex");
 
 // setTimeout plafonne à ~24,8 jours : on borne pour éviter un déclenchement immédiat.
 const MAX_TIMEOUT = 2 ** 31 - 1;
@@ -209,6 +210,19 @@ async function offerSpot(client, match, teamNo, { absentId = null } = {}) {
     return;
   }
 
+  // Remplacement désactivé : on annonce la place libre, sans bouton. L'hôte
+  // reste maître de qui entre (panneau de contrôle).
+  if (!settings.get("allowReplacement")) {
+    await announce(client, match, {
+      embeds: [infoEmbed(
+        absentId
+          ? `⛔ <@${absentId}> a été retiré de l'**Équipe ${teamNo}** — une place est libre.`
+          : `🎟️ Une place s'est libérée en **Équipe ${teamNo}**.`,
+      )],
+    });
+    return;
+  }
+
   // Priorité à la liste d'attente pendant ce laps de temps.
   const reservedUntil = match.waitlist.length ? Date.now() + settings.get("promoteMs") : 0;
   match.offers[teamNo] = { reservedUntil, reserved: [...match.waitlist], messageId: null };
@@ -236,15 +250,22 @@ async function offerSpot(client, match, teamNo, { absentId = null } = {}) {
 }
 
 /**
- * Quelqu'un clique sur « Prendre sa place ».
- * @returns {Promise<{ok: boolean, error?: string}>}
+ * ═══ SECTION CRITIQUE ═══
+ *
+ * Vérifie puis attribue la place, **sans le moindre `await`** : aucune autre
+ * tâche ne peut s'intercaler entre « la place est libre ? » et « elle est à
+ * toi ». C'est ce qui règle le cas « deux joueurs cliquent en même temps » —
+ * le second reçoit un refus explicite, jamais une 6ᵉ place dans une équipe
+ * de 5.
+ *
+ * @returns {{ok: true, offer: object|null} | {ok: false, error: string}}
  */
-async function claimSpot(client, match, teamNo, userId) {
+function takeSeat(match, teamNo, userId) {
   if (match.status === "ended") return { ok: false, error: "Cette partie est terminée." };
-  if (teamIsFull(match, teamNo)) return { ok: false, error: `L'**Équipe ${teamNo}** est déjà complète.` };
+  if (teamIsFull(match, teamNo)) return { ok: false, error: `L'**Équipe ${teamNo}** est déjà complète — quelqu'un a été plus rapide.` };
   if (findTeam(match, userId) === teamNo) return { ok: false, error: `Tu es déjà dans l'**Équipe ${teamNo}**.` };
 
-  const offer = match.offers?.[teamNo];
+  const offer = match.offers?.[teamNo] || null;
   // Fenêtre de priorité : la liste d'attente d'abord, tout le monde ensuite.
   if (offer?.reservedUntil > Date.now() && offer.reserved?.length && !offer.reserved.includes(userId)) {
     return {
@@ -254,17 +275,39 @@ async function claimSpot(client, match, teamNo, userId) {
   }
 
   delete match.offers[teamNo];
+  addToTeam(match, userId, teamNo);
   store.save();
+  return { ok: true, offer };
+}
 
-  await promoteCandidate(client, match, teamNo, userId, "en cliquant");
-  await closeOfferMessage(client, match, offer, `✅ <@${userId}> a pris la place en **Équipe ${teamNo}**.`);
+/**
+ * Quelqu'un clique sur « Prendre sa place ».
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+async function claimSpot(client, match, teamNo, userId) {
+  if (!settings.get("allowReplacement")) {
+    return { ok: false, error: "Le remplacement des joueurs absents est désactivé sur ce bot." };
+  }
+
+  // Le verrou sérialise aussi vis-à-vis des autres mutations de la partie
+  // (lancement, équilibrage, départ d'un joueur) qui, elles, font des `await`.
+  const seat = await withLock(`match:${match.id}`, () => takeSeat(match, teamNo, userId));
+  if (!seat.ok) return seat;
+
+  await afterPromotion(client, match, teamNo, userId, "en cliquant");
+  await closeOfferMessage(client, match, seat.offer, `✅ <@${userId}> a pris la place en **Équipe ${teamNo}**.`);
   return { ok: true };
 }
 
-/** Ajout effectif dans l'équipe + synchronisation vocale. */
+/** Ajout direct (attribution automatique au 1er de la liste d'attente). */
 async function promoteCandidate(client, match, teamNo, candidateId, howLabel) {
   addToTeam(match, candidateId, teamNo);
   store.save();
+  await afterPromotion(client, match, teamNo, candidateId, howLabel);
+}
+
+/** Suites d'une attribution : annonce, permissions, déplacement, avertissement. */
+async function afterPromotion(client, match, teamNo, candidateId, howLabel) {
   await refreshMatchMessage(client, match);
 
   await announce(client, match, {

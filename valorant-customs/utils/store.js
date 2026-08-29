@@ -62,20 +62,68 @@ class JsonStore {
 
 // { matches: { [matchId]: Match } }
 const matchStore = new JsonStore("matches.json", { matches: {} });
-// { users: { [userId]: { riotId, rank: { key, division }, updatedAt } } }
+/**
+ * { users: { [userId]: Profile } }
+ *
+ * Profile = {
+ *   riotId,      // "Snow#EUW" tel qu'affiché
+ *   riotName,    // "Snow"
+ *   riotTag,     // "EUW"
+ *   puuid,       // identifiant Riot stable (null si liaison non validée)
+ *   region,      // "eu", "na"…
+ *   rank,        // { key, division }
+ *   rr,          // points dans le palier (null si inconnu)
+ *   source,      // "api" | "manual" | "unknown"
+ *   syncedAt,    // dernière récupération réussie via l'API
+ *   updatedAt,
+ * }
+ *
+ * Les anciens profils (riotId + rank seulement) restent lisibles : les champs
+ * absents valent simplement `undefined`, et `source` est déduit à la lecture.
+ */
 const profileStore = new JsonStore("profiles.json", { users: {} });
 
 // ---- Profils Valorant ----
 
 function getProfile(userId) {
-  return profileStore.data.users[userId] || null;
+  const profile = profileStore.data.users[userId];
+  if (!profile) return null;
+  // Profil créé avant l'intégration de l'API : il vient forcément d'une saisie.
+  return { source: "manual", rr: null, ...profile };
 }
 
-function setProfile(userId, { riotId, rank }) {
-  const profile = { riotId, rank, updatedAt: Date.now() };
+/** Écrase le profil (liaison initiale / saisie manuelle complète). */
+function setProfile(userId, patch) {
+  const profile = { rank: null, rr: null, source: "manual", ...patch, updatedAt: Date.now() };
   profileStore.data.users[userId] = profile;
   profileStore.save();
   return profile;
+}
+
+/** Met à jour quelques champs sans perdre le reste (rafraîchissement du rang). */
+function updateProfile(userId, patch) {
+  const current = profileStore.data.users[userId] || {};
+  const profile = { ...current, ...patch, updatedAt: Date.now() };
+  profileStore.data.users[userId] = profile;
+  profileStore.save();
+  return profile;
+}
+
+function deleteProfile(userId) {
+  const existed = Boolean(profileStore.data.users[userId]);
+  delete profileStore.data.users[userId];
+  profileStore.save();
+  return existed;
+}
+
+/** Nombre de profils enregistrés / liés à l'API — statistiques du panneau. */
+function profileStats() {
+  const profiles = Object.values(profileStore.data.users);
+  return {
+    total: profiles.length,
+    linked: profiles.filter((profile) => profile.puuid).length,
+    fromApi: profiles.filter((profile) => profile.source === "api").length,
+  };
 }
 
 // ---- Parties ----
@@ -128,7 +176,7 @@ function saveAllNow() {
 }
 
 module.exports = {
-  getProfile, setProfile,
+  getProfile, setProfile, updateProfile, deleteProfile, profileStats,
   allMatches, getMatch, putMatch, deleteMatch, newMatchId, purgeStaleMatches,
   save: () => matchStore.save(),
   saveAllNow,

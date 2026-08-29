@@ -7,17 +7,28 @@ const { EmbedBuilder } = require("discord.js");
 const config = require("../config");
 const settings = require("./settings");
 
+/**
+ * Types d'événements.
+ *
+ * `important: true` = conservé même quand le niveau de logs est réglé sur
+ * « essentiel » depuis le panneau. Le reste (inscriptions, départs…) devient
+ * vite bavard sur un serveur actif.
+ */
 const EVENTS = {
-  create:  { emoji: "🆕", color: config.colors.base,    label: "Partie créée" },
+  create:  { emoji: "🆕", color: config.colors.base,    label: "Partie créée",       important: true },
   join:    { emoji: "✅", color: config.colors.success, label: "Joueur inscrit" },
   leave:   { emoji: "↩️", color: config.colors.waiting, label: "Joueur parti" },
-  warn:    { emoji: "⚠️", color: config.colors.warn,    label: "Avertissement" },
-  kick:    { emoji: "⛔", color: config.colors.error,   label: "Joueur retiré" },
-  promote: { emoji: "🎟️", color: config.colors.success, label: "Place attribuée" },
-  start:   { emoji: "▶️", color: config.colors.live,    label: "Partie lancée" },
-  end:     { emoji: "🛑", color: config.colors.ended,   label: "Partie terminée" },
+  warn:    { emoji: "⚠️", color: config.colors.warn,    label: "Avertissement",      important: true },
+  kick:    { emoji: "⛔", color: config.colors.error,   label: "Joueur retiré",      important: true },
+  promote: { emoji: "🎟️", color: config.colors.success, label: "Place attribuée",    important: true },
+  start:   { emoji: "▶️", color: config.colors.live,    label: "Partie lancée",      important: true },
+  end:     { emoji: "🛑", color: config.colors.ended,   label: "Partie terminée",    important: true },
   voice:   { emoji: "🔊", color: config.colors.base,    label: "Salons vocaux" },
-  access:  { emoji: "🔑", color: config.colors.live,    label: "Accès au bot" },
+  balance: { emoji: "⚖️", color: config.colors.base,    label: "Équilibrage" },
+  rank:    { emoji: "🏆", color: config.colors.base,    label: "Rang / compte Riot" },
+  access:  { emoji: "🔑", color: config.colors.live,    label: "Accès au bot",       important: true },
+  config:  { emoji: "⚙️", color: config.colors.base,    label: "Configuration",      important: true },
+  error:   { emoji: "🔴", color: config.colors.error,   label: "Erreur",             important: true },
 };
 
 /**
@@ -26,10 +37,14 @@ const EVENTS = {
  * @param {{matchId?: string, description: string, fields?: {name: string, value: string}[]}} payload
  */
 async function logEvent(client, type, payload) {
-  const meta = EVENTS[type] || { emoji: "•", color: config.colors.base, label: type };
+  const meta = EVENTS[type] || { emoji: "•", color: config.colors.base, label: type, important: true };
   const line = `[${meta.label}]${payload.matchId ? ` #${payload.matchId}` : ""} ${payload.description.replace(/\n/g, " ")}`;
+  // La console reçoit TOUT, quels que soient les réglages : c'est le journal
+  // de bord de l'hébergeur, il ne doit jamais être amputé.
   console.log(line);
 
+  if (!settings.get("logsEnabled")) return;
+  if (settings.get("logLevel") === "important" && !meta.important) return;
   if (!settings.get("logChannelId")) return;
   try {
     const channel = await client.channels.fetch(settings.get("logChannelId"));
@@ -50,4 +65,4 @@ async function logEvent(client, type, payload) {
   }
 }
 
-module.exports = { logEvent };
+module.exports = { logEvent, EVENTS };

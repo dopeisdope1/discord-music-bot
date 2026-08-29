@@ -124,10 +124,88 @@ async function syncTeamPermissions(guild, match, teamNo) {
 }
 
 /**
+ * Vérifie que les salons d'équipe existent encore et recrée ceux qui manquent.
+ *
+ * Un salon supprimé à la main (ou une catégorie effacée) ne doit pas casser la
+ * partie : on le recrée avec les mêmes permissions. Appelé au démarrage du bot
+ * et par le moniteur.
+ *
+ * @returns {Promise<{recreated: number[], error: string|null}>}
+ */
+async function ensureTeamChannels(guild, match, parentIdFallback = null) {
+  const recreated = [];
+
+  for (const teamNo of [1, 2]) {
+    const channelId = getTeamChannelId(match, teamNo);
+    if (!channelId) continue;
+    try {
+      const channel = await guild.channels.fetch(channelId);
+      if (channel) continue;
+      match.voice[teamNo] = null;
+    } catch {
+      // 10003 Unknown Channel : il a été supprimé, on repart de zéro.
+      match.voice[teamNo] = null;
+    }
+    recreated.push(teamNo);
+  }
+
+  if (!recreated.length) return { recreated: [], error: null };
+
+  const { error } = await createTeamChannels(guild, match, parentIdFallback);
+  return { recreated, error };
+}
+
+/** À quelle équipe appartient ce salon vocal ? @returns {1|2|null} */
+function teamForChannel(match, channelId) {
+  if (!channelId) return null;
+  if (match.voice?.[1] === channelId) return 1;
+  if (match.voice?.[2] === channelId) return 2;
+  return null;
+}
+
+/**
+ * Photo de la présence en vocal, lue **dans le cache** — aucune requête HTTP.
+ *
+ * Sert au rendu du panneau (🟢/🔴 à côté de chaque joueur) : il se redessine
+ * souvent, hors de question d'aller chercher chaque membre à chaque fois.
+ *
+ * @returns {Map<string, boolean>} userId → présent dans le vocal de SON équipe
+ */
+function presenceSnapshot(guild, match) {
+  const presence = new Map();
+  if (!guild) return presence;
+
+  for (const teamNo of [1, 2]) {
+    const channelId = getTeamChannelId(match, teamNo);
+    const channel = channelId ? guild.channels.cache.get(channelId) : null;
+
+    for (const userId of match.teams[teamNo]) {
+      if (channel) {
+        presence.set(userId, channel.members?.has(userId) ?? false);
+      } else {
+        // Salons pas encore créés : présent = connecté à n'importe quel vocal,
+        // même règle que le système anti-absent.
+        const state = guild.voiceStates.cache.get(userId);
+        presence.set(userId, settings.get("warnAcceptAnyVoice") ? Boolean(state?.channelId) : false);
+      }
+    }
+  }
+
+  return presence;
+}
+
+/**
  * Déplace un joueur dans le salon de son équipe s'il est déjà en vocal.
+ *
+ * @param {{force?: boolean}} options force = ignore le réglage « déplacement
+ *        automatique » (commande `move`, bouton « Rapatrier », « Mon vocal »).
  * @returns {Promise<{moved: boolean, reason?: string}>}
  */
-async function moveToTeamChannel(guild, match, teamNo, userId) {
+async function moveToTeamChannel(guild, match, teamNo, userId, { force = false } = {}) {
+  if (!force && !settings.get("autoMove")) {
+    return { moved: false, reason: "Le déplacement automatique est désactivé dans le panneau." };
+  }
+
   const channelId = getTeamChannelId(match, teamNo);
   if (!channelId) return { moved: false, reason: "Le salon vocal de cette équipe n'existe pas encore." };
 
@@ -161,6 +239,6 @@ async function deleteTeamChannels(client, match) {
 
 module.exports = {
   TEAM_CHANNEL_NAMES,
-  getTeamChannelId, isInTeamVoice, fetchMember,
-  createTeamChannels, syncTeamPermissions, moveToTeamChannel, deleteTeamChannels,
+  getTeamChannelId, isInTeamVoice, fetchMember, teamForChannel, presenceSnapshot,
+  createTeamChannels, ensureTeamChannels, syncTeamPermissions, moveToTeamChannel, deleteTeamChannels,
 };

@@ -1,5 +1,4 @@
 const { createRateLimiter } = require("./rateLimiter");
-const { randomClearJoke } = require("./jokes");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
 const accessStore = require("./accessStore");
@@ -54,16 +53,17 @@ async function handleSelfClear(client, message) {
 
   // Envoie la confirmation tout de suite (le nettoyage peut prendre quelques
   // secondes à cause du rate-limit Discord sur bulkDelete), puis l'édite avec
-  // le nombre exact une fois terminé — même séquence que l'ancien système.
-  const joke = randomClearJoke();
-  const tempMessage = await channel.send({ embeds: [buildStatusEmbed("success", joke)] }).catch(() => null);
+  // le nombre exact une fois terminé.
+  const tempMessage = await channel
+    .send({ embeds: [buildStatusEmbed("success", "Nettoyage en cours…")] })
+    .catch(() => null);
   if (tempMessage) setTimeout(() => tempMessage.delete().catch(() => {}), 15_000);
 
   const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
   const toDelete = messages ? [...messages.values()].filter((m) => m.author.id === message.author.id) : [];
   const count = toDelete.length ? await deleteMessages(channel, toDelete) : 0;
 
-  tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** supprimé(s) — ${joke}`)] }).catch(() => {});
+  tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** message(s) supprimé(s).`)] }).catch(() => {});
 
   return true;
 }

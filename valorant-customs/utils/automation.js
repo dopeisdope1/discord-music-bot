@@ -24,9 +24,11 @@ const { missingBotPermissions } = require("./permissions");
 const { refreshMatchMessage, announce, teamIsFull } = require("./matches");
 const { infoEmbed, successEmbed } = require("./embeds");
 const {
-  createTeamChannels, moveToTeamChannel, isInTeamVoice, getTeamChannelId,
+  createTeamChannels, ensureTeamChannels, moveToTeamChannel, isInTeamVoice,
+  getTeamChannelId, syncTeamPermissions,
 } = require("./voice");
 const warnings = require("./warnings");
+const { withLock } = require("./mutex");
 
 /** @type {Map<string, NodeJS.Timeout>} minuteries de fin automatique, par partie */
 const emptyTimers = new Map();
@@ -45,26 +47,44 @@ const MAX_TIMEOUT = 2 ** 31 - 1;
  * @returns {Promise<{ok: boolean, error?: string, moved?: number, warned?: string[]}>}
  */
 async function launchMatch(client, guild, match, { actorId, parentId = null, auto = false } = {}) {
-  if (match.status !== "waiting") return { ok: false, error: "Cette partie est déjà lancée ou terminée." };
-  if (!match.teams[1].length || !match.teams[2].length) {
-    return { ok: false, error: "Il faut au moins un joueur dans chaque équipe pour lancer la partie." };
-  }
+  if (!guild) return { ok: false, error: "Serveur introuvable." };
 
-  const missing = missingBotPermissions(guild);
-  if (missing.length) {
-    return {
-      ok: false,
-      error: `Il me manque des permissions pour créer les salons vocaux : **${missing.join(", ")}**.`,
-    };
-  }
+  // Tout ce qui modifie la partie passe par le verrou : deux inscriptions
+  // simultanées sur la dernière place ne peuvent pas lancer deux fois.
+  const prepared = await withLock(`match:${match.id}`, async () => {
+    if (match.status !== "waiting") return { error: "Cette partie est déjà lancée ou terminée." };
+    if (!match.teams[1].length || !match.teams[2].length) {
+      return { error: "Il faut au moins un joueur dans chaque équipe pour lancer la partie." };
+    }
 
-  const { error } = await createTeamChannels(guild, match, parentId);
-  if (error) return { ok: false, error: `Création des salons vocaux impossible : ${error}` };
+    const missing = missingBotPermissions(guild);
+    if (missing.length) {
+      return { error: `Il me manque des permissions pour créer les salons vocaux : **${missing.join(", ")}**.` };
+    }
 
-  match.status = "live";
-  match.startAt = null;
-  cancelScheduledStart(match.id);
-  store.save();
+    // ---- Équilibrage par rang, juste avant de figer les équipes ----
+    // C'est le dernier moment où l'on connaît la composition définitive : les
+    // permissions des salons sont calculées ensuite, sur les bonnes équipes.
+    let balanced = null;
+    if (settings.get("autoBalance")) {
+      const { applyBalance } = require("./matchActions");
+      const result = applyBalance(client, match);
+      if (!result.error) balanced = result;
+    }
+
+    const { error } = await createTeamChannels(guild, match, parentId);
+    if (error) return { error: `Création des salons vocaux impossible : ${error}` };
+
+    match.status = "live";
+    match.startedAt = Date.now();
+    match.startAt = null;
+    cancelScheduledStart(match.id);
+    store.save();
+    return { balanced };
+  });
+
+  if (prepared.error) return { ok: false, error: prepared.error };
+
   await refreshMatchMessage(client, match);
 
   // Déplacement automatique de ceux qui sont déjà connectés quelque part.
@@ -76,6 +96,10 @@ async function launchMatch(client, guild, match, { actorId, parentId = null, aut
     }
   }
 
+  const balanceLine = prepared.balanced?.moved
+    ? `⚖️ Équipes équilibrées par rang — écart de force : **${prepared.balanced.gap}**.`
+    : null;
+
   await announce(client, match, {
     embeds: [infoEmbed([
       `▶️ **La partie est lancée${auto ? " automatiquement (équipes complètes)" : ""} !**`,
@@ -84,7 +108,8 @@ async function launchMatch(client, guild, match, { actorId, parentId = null, aut
       `🔵 Équipe 2 · <#${match.voice[2]}>`,
       "",
       moved ? `${moved} joueur(s) déjà en vocal ont été déplacés.` : "Rejoignez le salon de votre équipe.",
-    ].join("\n"))],
+      balanceLine,
+    ].filter((line) => line !== null).join("\n"))],
   });
 
   logEvent(client, "start", {
@@ -92,8 +117,11 @@ async function launchMatch(client, guild, match, { actorId, parentId = null, aut
     description: `Partie lancée ${auto ? "automatiquement" : `par <@${actorId}>`} — salons créés, ${moved} joueur(s) déplacé(s).`,
   });
 
+  // Surveillance de présence : un seul moniteur pour toutes les parties.
+  require("./monitor").watch(client);
+
   const warned = settings.get("autoWarn") ? await warnAbsentees(client, guild, match, actorId) : [];
-  return { ok: true, moved, warned };
+  return { ok: true, moved, warned, balanced: prepared.balanced };
 }
 
 /**
@@ -290,8 +318,63 @@ function cancelAutoEnd(matchId) {
   cancelEmptyTimer(matchId);
 }
 
+// ═══════════════════ REPRISE DES PARTIES APRÈS REDÉMARRAGE ═══════════════════
+
+/**
+ * Le bot a redémarré au milieu d'une partie : on la reprend là où elle en
+ * était, sans rien demander à personne.
+ *
+ *   1. Les salons d'équipe existent-ils encore ? Sinon on les recrée.
+ *   2. Les permissions sont resynchronisées (l'effectif a pu changer).
+ *   3. La présence est revérifiée : quelqu'un a pu partir pendant la coupure.
+ *   4. Le panneau est redessiné avec l'état réel.
+ *
+ * Les avertissements en cours, eux, sont ré-armés par warnings.restoreTimers().
+ */
+async function resumeLiveMatches(client) {
+  const live = store.allMatches().filter((match) => match.status === "live");
+  if (!live.length) return 0;
+
+  let resumed = 0;
+
+  for (const match of live) {
+    try {
+      const guild = await client.guilds.fetch(match.guildId).catch(() => null);
+      if (!guild) continue;
+
+      // Salons supprimés pendant la coupure : on les recrée à l'identique.
+      const { recreated, error } = await ensureTeamChannels(guild, match, null);
+      if (error) {
+        logEvent(client, "error", {
+          matchId: match.id,
+          description: `Reprise partielle : recréation des salons impossible — ${error}`,
+        });
+      } else if (recreated.length) {
+        store.save();
+        logEvent(client, "voice", {
+          matchId: match.id,
+          description: `Reprise : salon(s) d'équipe ${recreated.join(" et ")} recréé(s) après redémarrage.`,
+        });
+      }
+
+      for (const teamNo of [1, 2]) await syncTeamPermissions(guild, match, teamNo);
+      await refreshMatchMessage(client, match);
+
+      // Quelqu'un est parti pendant la coupure : on relance le cycle normal.
+      if (settings.get("autoWarn")) await warnAbsentees(client, guild, match, client.user.id);
+
+      resumed += 1;
+    } catch (error) {
+      console.error(`[automation] Reprise impossible (#${match.id}) :`, error.message);
+    }
+  }
+
+  if (resumed) console.log(`[automation] Reprise : ${resumed} partie(s) en cours ré-synchronisée(s).`);
+  return resumed;
+}
+
 module.exports = {
   launchMatch, warnAbsentees, maybeAutoStart,
   scheduleStart, cancelScheduledStart, restoreScheduledStarts,
-  checkEmptyChannels, cancelAutoEnd,
+  checkEmptyChannels, cancelAutoEnd, resumeLiveMatches,
 };

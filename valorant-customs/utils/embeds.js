@@ -13,8 +13,8 @@ const {
 
 const config = require("../config");
 const settings = require("./settings");
-const { formatRank } = require("./ranks");
 const store = require("./store");
+const riot = require("./riot");
 
 // Préfixe commun aux customId liés à une partie : "vc" = Valorant Custom.
 // Format : vc:<action>:<matchId>[:<extra>]
@@ -58,14 +58,16 @@ function buildWarningEmbed(match, targetId, teamNo, deadline) {
 
 /** Sélecteur des joueurs de la partie (bouton « Avertir un joueur »). */
 function buildWarnSelect(match) {
+  // require paresseux : rankService lit le store, pas les embeds — mais on
+  // évite ainsi tout risque de cycle au chargement.
+  const { formatProfileRank } = require("./rankService");
   const options = [];
   for (const teamNo of [1, 2]) {
     for (const userId of match.teams[teamNo]) {
       const profile = store.getProfile(userId);
-      const rankLabel = profile?.rank ? ` · ${formatRank(profile.rank)}` : "";
       options.push({
         label: (profile?.riotId || `Joueur ${userId}`).slice(0, 100),
-        description: `Équipe ${teamNo}${rankLabel}`.slice(0, 100),
+        description: `Équipe ${teamNo} · ${formatProfileRank(profile)}`.replace(/<a?:\w+:\d+>/g, "").slice(0, 100),
         value: userId,
         emoji: teamNo === 1 ? config.emojis.team1 : config.emojis.team2,
       });
@@ -124,37 +126,49 @@ function buildClaimComponents(match, teamNo) {
   ];
 }
 
-// ---- Modale de profil Valorant ----
+// ---- Modale de liaison du compte Riot ----
 
 /**
- * Ouverte automatiquement quand un joueur sans profil clique sur « Rejoindre ».
- * `pendingAction` (ex. "join:1") permet de rejouer l'action après validation.
+ * Ouverte automatiquement quand un joueur sans compte lié clique sur
+ * « Rejoindre ». `pendingAction` (ex. "join:1") permet de rejouer l'action
+ * après validation — le joueur ne reclique jamais deux fois.
+ *
+ * Le formulaire s'adapte à la configuration :
+ *   • récupération auto disponible → **un seul champ**, le Riot ID. Le rang
+ *     est récupéré tout seul, le joueur n'a rien d'autre à taper.
+ *   • pas de clé d'API → second champ pour saisir le rang à la main, seul
+ *     moyen honnête de l'afficher (on n'invente jamais un rang).
  */
 function buildProfileModal(matchId, pendingAction) {
+  const auto = riot.isEnabled();
+
   const modal = new ModalBuilder()
     .setCustomId(customId("profile-modal", matchId, pendingAction))
-    .setTitle("Ton profil Valorant");
+    .setTitle(auto ? "Lier ton compte Valorant" : "Ton profil Valorant");
 
   const riotId = new TextInputBuilder()
     .setCustomId("riotId")
-    .setLabel("Riot ID (Pseudo#TAG)")
+    .setLabel("Ton Riot ID (Pseudo#TAG)")
     .setPlaceholder("TenZ#0505")
     .setStyle(TextInputStyle.Short)
+    .setMinLength(3)
     .setMaxLength(40)
     .setRequired(true);
 
-  const rank = new TextInputBuilder()
-    .setCustomId("rank")
-    .setLabel("Ton rang actuel")
-    .setPlaceholder("Diamant 2, Immortel, Non classé...")
-    .setStyle(TextInputStyle.Short)
-    .setMaxLength(30)
-    .setRequired(true);
+  modal.addComponents(new ActionRowBuilder().addComponents(riotId));
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(riotId),
-    new ActionRowBuilder().addComponents(rank),
-  );
+  if (!auto) {
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId("rank")
+        .setLabel("Ton rang actuel")
+        .setPlaceholder("Diamant 2, Immortel, Non classé…")
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(30)
+        .setRequired(true),
+    ));
+  }
+
   return modal;
 }
 

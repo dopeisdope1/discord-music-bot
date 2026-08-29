@@ -36,6 +36,32 @@ const DEFAULTS = {
   // Termine la partie si les salons d'équipe restent vides N minutes (0 = jamais).
   autoEndMinutes: 10,
 
+  // ---- Rangs Valorant (voir utils/riot.js) ----
+  // Récupération automatique du vrai rang depuis l'API. Sans clé d'API, le bot
+  // retombe tout seul sur la saisie manuelle : il n'invente jamais un rang.
+  autoRank: true,
+  // Clé d'API. Vide = celle du .env (RIOT_API_KEY). Jamais affichée en clair.
+  riotApiKey: "",
+  // Région par défaut quand l'API ne la renvoie pas : eu, na, ap, kr, latam, br.
+  riotRegion: (process.env.RIOT_REGION || "eu").toLowerCase(),
+  // Durée de vie du rang en cache, en minutes.
+  rankCacheMinutes: 30,
+
+  // ---- Équipes ----
+  // Répartition équilibrée par rang au lancement (sinon : ordre d'inscription).
+  autoBalance: true,
+  // Déplacement automatique des joueurs dans le vocal de leur équipe.
+  autoMove: true,
+  // Bouton « Prendre la place » quand un joueur est retiré pour absence.
+  allowReplacement: true,
+  // Partie lancée : avertir un joueur qui quitte le vocal de son équipe.
+  autoWarnOnLeave: true,
+
+  // ---- Logs ----
+  logsEnabled: true,
+  // "all" = tout ; "important" = uniquement partie/absence/erreurs.
+  logLevel: "all",
+
   // ---- Apparence ----
   // Emoji affiché dans le titre du panneau de partie.
   titleEmoji: process.env.VALORANT_EMOJI || "",
