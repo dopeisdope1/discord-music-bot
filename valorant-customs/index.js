@@ -14,9 +14,20 @@ const { Client, GatewayIntentBits, Collection, Partials } = require("discord.js"
 const config = require("./config");
 const store = require("./utils/store");
 const settings = require("./utils/settings");
+const lock = require("./utils/lock");
 
 if (!config.token) {
   console.error("❌ DISCORD_TOKEN manquant : copie .env.example en .env et renseigne le token du bot.");
+  process.exit(1);
+}
+
+// Deux instances avec le même token répondraient toutes les deux à chaque
+// commande. On refuse de démarrer plutôt que de créer ce chaos.
+const held = lock.acquire();
+if (!held.ok) {
+  console.error(`❌ Une autre instance du bot tourne déjà (PID ${held.pid}, depuis ${held.since}).`);
+  console.error("   Arrête-la d'abord, sinon chaque commande recevrait deux réponses.");
+  console.error(`   Au besoin : taskkill /PID ${held.pid} /F`);
   process.exit(1);
 }
 
@@ -68,6 +79,7 @@ for (const file of fs.readdirSync(eventsPath).filter((name) => name.endsWith(".j
 client.on("error", (error) => console.error("[client] Erreur :", error));
 process.on("unhandledRejection", (error) => console.error("[process] Promesse rejetée :", error));
 process.on("uncaughtException", (error) => console.error("[process] Exception non gérée :", error));
+process.on("exit", () => lock.release());
 
 // Arrêt propre : on ne perd jamais une partie en cours (Railway envoie SIGTERM).
 for (const signal of ["SIGINT", "SIGTERM"]) {
