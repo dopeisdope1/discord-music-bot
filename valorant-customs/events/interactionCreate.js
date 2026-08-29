@@ -9,6 +9,7 @@ const { Events, MessageFlags } = require("discord.js");
 
 const { errorEmbed } = require("../utils/embeds");
 const { handleComponent, handleProfileModal } = require("../utils/matchActions");
+const { handlePanelComponent, handlePanelModal } = require("../utils/panel");
 
 /** Répond (ou édite) sans jamais lever une seconde erreur. */
 async function safeError(interaction, message) {
@@ -34,16 +35,18 @@ module.exports = {
         return await command.execute(interaction);
       }
 
-      // ---- Boutons et menus déroulants ----
-      if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        const handled = await handleComponent(interaction);
+      // ---- Boutons et menus déroulants (string, user, salon) ----
+      if (interaction.isButton() || interaction.isAnySelectMenu()) {
+        // Le panneau (`vp:`) d'abord, les parties (`vc:`) ensuite : chaque
+        // routeur ignore poliment ce qui ne le concerne pas.
+        const handled = (await handlePanelComponent(interaction)) || (await handleComponent(interaction));
         if (!handled) return safeError(interaction, "Ce bouton n'est plus pris en charge.");
         return;
       }
 
       // ---- Modales ----
       if (interaction.isModalSubmit()) {
-        const handled = await handleProfileModal(interaction);
+        const handled = (await handlePanelModal(interaction)) || (await handleProfileModal(interaction));
         if (!handled) return safeError(interaction, "Ce formulaire n'est plus pris en charge.");
         return;
       }

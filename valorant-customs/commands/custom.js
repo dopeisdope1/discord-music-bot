@@ -6,6 +6,8 @@ const { SlashCommandBuilder, MessageFlags, InteractionContextType } = require("d
 
 const config = require("../config");
 const store = require("../utils/store");
+const access = require("../utils/access");
+const settings = require("../utils/settings");
 const { logEvent } = require("../utils/logger");
 const { rankChoices, formatRank } = require("../utils/ranks");
 const { createMatch, addToTeam } = require("../utils/matches");
@@ -45,6 +47,14 @@ module.exports = {
     if (!interaction.inGuild()) {
       return interaction.reply({
         embeds: [errorEmbed("Cette commande ne fonctionne que sur un serveur.")],
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    // Verrou activable depuis le panneau : création réservée aux autorisés.
+    if (settings.get("restrictCreation") && !access.isManager(interaction.user.id)) {
+      return interaction.reply({
+        embeds: [errorEmbed("La création de parties est réservée aux membres autorisés par le propriétaire du bot.")],
         flags: MessageFlags.Ephemeral,
       });
     }

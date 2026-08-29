@@ -8,6 +8,7 @@ const { Events } = require("discord.js");
 const config = require("../config");
 const store = require("../utils/store");
 const { cancelWarning } = require("../utils/warnings");
+const settings = require("../utils/settings");
 
 module.exports = {
   name: Events.VoiceStateUpdate,
@@ -28,7 +29,7 @@ module.exports = {
       // Salon d'équipe existant : il faut être dedans. Sinon (partie pas encore
       // lancée), n'importe quel vocal vaut présence — même règle que le timer.
       const teamChannelId = match.voice?.[warning.teamNo];
-      const present = teamChannelId ? channelId === teamChannelId : config.behaviour.warnAcceptAnyVoice;
+      const present = teamChannelId ? channelId === teamChannelId : settings.get("warnAcceptAnyVoice");
       if (!present) continue;
 
       await cancelWarning(client, match, userId, {

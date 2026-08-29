@@ -11,6 +11,7 @@ const {
 const config = require("../config");
 const { formatRank, RANK_BY_KEY } = require("./ranks");
 const store = require("./store");
+const settings = require("./settings");
 
 // Préfixe commun à tous les customId du bot : "vc" = Valorant Custom.
 // Format : vc:<action>:<matchId>[:<extra>]
@@ -172,7 +173,7 @@ function buildMatchComponents(match) {
 
 /** Message public d'avertissement : c'est LE message qui ping le joueur. */
 function buildWarningEmbed(match, targetId, teamNo, deadline) {
-  const seconds = Math.round(config.timings.warnMs / 1000);
+  const seconds = Math.round(settings.get("warnMs") / 1000);
   const voiceMention = match.voice?.[teamNo]
     ? `<#${match.voice[teamNo]}>`
     : `le salon vocal de ton équipe (**Équipe ${teamNo}**)`;

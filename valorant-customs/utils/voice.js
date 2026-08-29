@@ -5,7 +5,7 @@
  */
 
 const { ChannelType, PermissionFlagsBits } = require("discord.js");
-const config = require("../config");
+const settings = require("./settings");
 
 const TEAM_CHANNEL_NAMES = { 1: "🔴 Équipe 1", 2: "🔵 Équipe 2" };
 
@@ -35,7 +35,7 @@ async function isInTeamVoice(guild, match, teamNo, userId) {
 
   const teamChannelId = getTeamChannelId(match, teamNo);
   if (teamChannelId) return channelId === teamChannelId;
-  return config.behaviour.warnAcceptAnyVoice;
+  return settings.get("warnAcceptAnyVoice");
 }
 
 /** Overwrites d'un salon d'équipe : personne n'entre sauf les joueurs concernés. */
@@ -60,9 +60,9 @@ function buildOverwrites(guild, match, teamNo) {
   // L'hôte et le staff gardent l'accès pour arbitrer. Le Set évite un doublon
   // d'overwrite si l'hôte joue lui-même dans l'équipe (Discord le refuserait).
   const memberIds = new Set([...match.teams[teamNo], match.hostId]);
-  if (config.staffRoleId && guild.roles.cache.has(config.staffRoleId)) {
+  if (settings.get("staffRoleId") && guild.roles.cache.has(settings.get("staffRoleId"))) {
     overwrites.push({
-      id: config.staffRoleId,
+      id: settings.get("staffRoleId"),
       allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.MoveMembers],
     });
   }
@@ -87,7 +87,7 @@ function buildOverwrites(guild, match, teamNo) {
  * @returns {Promise<{created: number[], error: string|null}>}
  */
 async function createTeamChannels(guild, match, parentIdFallback) {
-  const parent = config.voiceCategoryId || parentIdFallback || null;
+  const parent = settings.get("voiceCategoryId") || parentIdFallback || null;
   const created = [];
 
   for (const teamNo of [1, 2]) {

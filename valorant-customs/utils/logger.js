@@ -5,6 +5,7 @@
 
 const { EmbedBuilder } = require("discord.js");
 const config = require("../config");
+const settings = require("./settings");
 
 const EVENTS = {
   create:  { emoji: "🆕", color: config.colors.base,    label: "Partie créée" },
@@ -16,6 +17,7 @@ const EVENTS = {
   start:   { emoji: "▶️", color: config.colors.live,    label: "Partie lancée" },
   end:     { emoji: "🛑", color: config.colors.ended,   label: "Partie terminée" },
   voice:   { emoji: "🔊", color: config.colors.base,    label: "Salons vocaux" },
+  access:  { emoji: "🔑", color: config.colors.live,    label: "Accès au bot" },
 };
 
 /**
@@ -28,9 +30,9 @@ async function logEvent(client, type, payload) {
   const line = `[${meta.label}]${payload.matchId ? ` #${payload.matchId}` : ""} ${payload.description.replace(/\n/g, " ")}`;
   console.log(line);
 
-  if (!config.logChannelId) return;
+  if (!settings.get("logChannelId")) return;
   try {
-    const channel = await client.channels.fetch(config.logChannelId);
+    const channel = await client.channels.fetch(settings.get("logChannelId"));
     if (!channel?.isTextBased()) return;
 
     const embed = new EmbedBuilder()

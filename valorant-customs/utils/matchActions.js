@@ -27,6 +27,7 @@ const {
   createTeamChannels, deleteTeamChannels, syncTeamPermissions, moveToTeamChannel,
 } = require("./voice");
 const warnings = require("./warnings");
+const settings = require("./settings");
 
 const ephemeral = (embed, components = []) => ({
   embeds: [embed],
@@ -233,6 +234,37 @@ async function actionStart(interaction, match) {
   });
 }
 
+/**
+ * Fin de partie, sans interaction : timers coupés, salons supprimés, embed
+ * figé. Utilisé par le bouton « Terminer » et par le panneau de contrôle.
+ *
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+async function endMatch(client, match, actorId) {
+  if (match.status === "ended") return { ok: false, error: "Cette partie est déjà terminée." };
+
+  warnings.clearMatchTimers(match);
+  match.warnings = {};
+  match.offers = {};
+  match.status = "ended";
+  store.save();
+
+  await deleteTeamChannels(client, match);
+  store.save();
+  await refreshMatchMessage(client, match);
+
+  await announce(client, match, {
+    embeds: [infoEmbed(`${config.emojis.end} **Partie terminée** par <@${actorId}>. Merci à tous !`)],
+  });
+
+  logEvent(client, "end", {
+    matchId: match.id,
+    description: `Partie terminée par <@${actorId}> (${playerCount(match)} joueur(s) inscrits).`,
+  });
+
+  return { ok: true };
+}
+
 async function actionEnd(interaction, match) {
   if (!canManage(match, interaction.member)) {
     return replyError(interaction, "Seul l'hôte de la partie (ou un membre du staff) peut la terminer.");
@@ -241,24 +273,8 @@ async function actionEnd(interaction, match) {
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  warnings.clearMatchTimers(match);
-  match.warnings = {};
-  match.offers = {};
-  match.status = "ended";
-  store.save();
-
-  await deleteTeamChannels(interaction.client, match);
-  store.save();
-  await refreshMatchMessage(interaction.client, match);
-
-  await announce(interaction.client, match, {
-    embeds: [infoEmbed(`${config.emojis.end} **Partie terminée** par <@${interaction.user.id}>. Merci à tous !`)],
-  });
-
-  logEvent(interaction.client, "end", {
-    matchId: match.id,
-    description: `Partie terminée par <@${interaction.user.id}> (${playerCount(match)} joueur(s) inscrits).`,
-  });
+  const result = await endMatch(interaction.client, match, interaction.user.id);
+  if (!result.ok) return interaction.editReply({ embeds: [errorEmbed(result.error)] });
 
   return interaction.editReply({ embeds: [successEmbed("Partie terminée et salons vocaux supprimés.")] });
 }
@@ -274,7 +290,7 @@ async function actionWarnMenu(interaction, match) {
   if (!row) return replyError(interaction, "Aucun joueur n'est inscrit dans les équipes pour l'instant.");
 
   return interaction.reply(ephemeral(
-    infoEmbed(`${config.emojis.warn} Sélectionne le joueur à avertir. Il aura **${Math.round(config.timings.warnMs / 1000)} secondes** pour rejoindre le vocal de son équipe.`),
+    infoEmbed(`${config.emojis.warn} Sélectionne le joueur à avertir. Il aura **${Math.round(settings.get("warnMs") / 1000)} secondes** pour rejoindre le vocal de son équipe.`),
     [row],
   ));
 }
@@ -288,7 +304,7 @@ async function runWarning(interaction, match, targetId) {
   const result = await warnings.startWarning(interaction.client, match, targetId, interaction.user.id);
   if (!result.ok) return replyError(interaction, result.error);
 
-  const seconds = Math.round(config.timings.warnMs / 1000);
+  const seconds = Math.round(settings.get("warnMs") / 1000);
   return replyOk(
     interaction,
     `<@${targetId}> a été averti (**Équipe ${result.teamNo}**). Retrait automatique dans **${seconds} s** s'il ne rejoint pas le vocal.`,
@@ -392,7 +408,7 @@ async function handleProfileModal(interaction) {
 }
 
 module.exports = {
-  actionJoin, actionWaitlist, actionLeave, actionStart, actionEnd,
+  actionJoin, actionWaitlist, actionLeave, actionStart, actionEnd, endMatch,
   runWarning, handleComponent, handleProfileModal,
   buildMatchEmbed, buildMatchComponents,
 };

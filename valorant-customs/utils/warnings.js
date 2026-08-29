@@ -29,6 +29,7 @@ const {
   infoEmbed, successEmbed,
 } = require("./embeds");
 const { isInTeamVoice, syncTeamPermissions, moveToTeamChannel } = require("./voice");
+const settings = require("./settings");
 
 // setTimeout plafonne à ~24,8 jours : on borne pour éviter un déclenchement immédiat.
 const MAX_TIMEOUT = 2 ** 31 - 1;
@@ -71,7 +72,7 @@ async function startWarning(client, match, targetId, issuerId) {
     return { ok: false, error: "Ce joueur est déjà connecté au salon vocal de son équipe." };
   }
 
-  const deadline = Date.now() + config.timings.warnMs;
+  const deadline = Date.now() + settings.get("warnMs");
   match.warnings[targetId] = { deadline, teamNo, issuerId, noticeId: null };
   store.save();
 
@@ -89,7 +90,7 @@ async function startWarning(client, match, targetId, issuerId) {
 
   logEvent(client, "warn", {
     matchId: match.id,
-    description: `<@${targetId}> (Équipe ${teamNo}) averti par <@${issuerId}> — ${Math.round(config.timings.warnMs / 1000)} s pour rejoindre le vocal.`,
+    description: `<@${targetId}> (Équipe ${teamNo}) averti par <@${issuerId}> — ${Math.round(settings.get("warnMs") / 1000)} s pour rejoindre le vocal.`,
   });
 
   return { ok: true, teamNo, deadline };
@@ -210,12 +211,12 @@ async function offerSpot(client, match, teamNo) {
 
   const candidateId = match.waitlist[0];
 
-  if (config.behaviour.autoPromote) {
+  if (settings.get("autoPromote")) {
     await promoteCandidate(client, match, teamNo, candidateId, "automatiquement");
     return;
   }
 
-  const deadline = Date.now() + config.timings.promoteMs;
+  const deadline = Date.now() + settings.get("promoteMs");
   const message = await announce(client, match, {
     content: `<@${candidateId}>`,
     embeds: [buildOfferEmbed(match, teamNo, candidateId, deadline)],

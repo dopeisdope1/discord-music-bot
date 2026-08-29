@@ -1,10 +1,15 @@
 /**
  * Qui a le droit de faire quoi sur une partie.
- * Règle simple : l'hôte gère SA partie, le staff gère toutes les parties.
+ *
+ * L'hôte gère SA partie. Gèrent TOUTES les parties :
+ *   - le staff du serveur (admins Discord ou rôle STAFF_ROLE_ID) ;
+ *   - les propriétaires et gestionnaires du bot, nommés depuis le panneau
+ *     (voir utils/access.js).
  */
 
 const { PermissionFlagsBits } = require("discord.js");
-const config = require("../config");
+const settings = require("./settings");
+const access = require("./access");
 
 function isHost(match, userId) {
   return match.hostId === userId;
@@ -13,7 +18,7 @@ function isHost(match, userId) {
 /** Admin Discord (Gérer le serveur / Modérer) ou porteur du rôle staff configuré. */
 function isStaff(member) {
   if (!member) return false;
-  if (config.staffRoleId && member.roles?.cache?.has(config.staffRoleId)) return true;
+  if (settings.get("staffRoleId") && member.roles?.cache?.has(settings.get("staffRoleId"))) return true;
   return Boolean(
     member.permissions?.has(PermissionFlagsBits.ManageGuild) ||
     member.permissions?.has(PermissionFlagsBits.ModerateMembers) ||
@@ -23,7 +28,8 @@ function isStaff(member) {
 
 /** Droit de gérer la partie : lancer, terminer, avertir, kick, move... */
 function canManage(match, member) {
-  return isHost(match, member?.id) || isStaff(member);
+  if (!member) return false;
+  return isHost(match, member.id) || access.isManager(member.id) || isStaff(member);
 }
 
 /**
