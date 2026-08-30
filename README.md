@@ -199,7 +199,10 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
   - **Membres** : `&nick @membre <pseudo>`, `&resetnick @membre`,
     `&role add|remove @membre @rôle`.
   - **Admin** : `&panel` (rubriques visibles selon tes droits — voir
-    section 6ter), `&sources` (diagnostic audio, rang sys uniquement).
+    section 6ter), `&sources` (diagnostic audio, rang sys uniquement),
+    `&owners`, `&whitelist`, `&allbots`, `&antinuke` (voir section 6sexies).
+  - **Serveur** : `&role create|delete|rename|color|admin`, `&channel
+    create|delete|rename|topic`, `&dero` (voir section 6quinquies).
   - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
     clear` / `yanis clear` — efface les messages de son PROPRE auteur
     uniquement, sans rapport avec `&clear` (voir `utils/selfClear.js`).
@@ -415,6 +418,45 @@ tu veux la positionner ailleurs (ex : "Bienvenue {user}, lis le
 règlement !"). Désactivé tant qu'aucun salon ou aucun message n'est
 configuré.
 
+## 6sexies. Anti-nuke (`&antinuke`, `&panel` > Anti-nuke)
+
+**Désactivé par défaut.** Détecte des rafales d'actions destructrices
+(création/suppression de salons ou de rôles, bannissements, expulsions,
+débannissements — 3 en 10s) et certaines actions immédiates, dangereuses
+dès la première fois (ajout de bot non autorisé, création de webhook,
+mention `@everyone`/`@here`, permission **Administrateur** donnée à un
+rôle). L'exécuteur est identifié via le journal d'audit Discord — comme
+`utils/moderationLog.js`, dont l'anti-nuke est indépendant (une même
+entrée d'audit alimente les deux, sans lien entre eux).
+
+- **Sanction** configurable : `timeout` (10 min, par défaut — la moins
+  destructrice), `kick` ou `ban`. `&antinuke punishment <valeur>` ou
+  bouton dans le panel.
+- **Owner, rang sys et whitelist sont exemptés en entier** — pas
+  seulement de la sanction : leurs actions ne comptent même pas dans les
+  seuils, rien n'est jamais annulé chez eux. Whitelist par utilisateur
+  dans `&panel` > Anti-nuke, par rôle via `&antinuke wlrole @rôle`.
+- **Restauration automatique** seulement pour les bannissements/
+  débannissements (débannir/rebannir immédiatement, action simple et sans
+  risque). **Pas de recréation de salon/rôle supprimé à l'identique** en
+  l'état actuel — détection et sanction seulement pour ces cas-là :
+  recréer une structure fidèlement (permissions, position, catégorie)
+  demanderait de maintenir des instantanés en continu, une complexité
+  qui n'a pas semblé justifiée pour une première version.
+- **Plafond de 5 sanctions par minute et par serveur**, tous guards
+  confondus : en pleine réponse à un vrai raid, le moteur ne part pas
+  lui-même dans une rafale de kicks/bans qui ressemblerait à un nuke aux
+  yeux du CrowBot.
+
+### CrowBot tourne aussi son propre anti-nuke sur ce serveur
+
+**Ajoute le compte du CrowBot à la whitelist de cet anti-nuke** (`&panel`
+> Anti-nuke, ou `&antinuke` puis ajouter son ID). Sans ça, une action
+légitime du CrowBot (débannir quelqu'un dans le cadre de son propre
+anti-nuke, par exemple) peut être vue comme suspecte ici et annulée par
+erreur — les deux bots agissant chacun de leur côté sur le même serveur,
+sans se coordonner.
+
 ## 7. Notes sur le support Spotify
 
 `!play <nom>` cherche directement sur Spotify (API officielle, via
@@ -488,19 +530,17 @@ faux.
 
 ## 7quater. Ce que ce bot ne fait pas (par choix, pas par limitation)
 
-Pas d'anti-nuke complet (détection de rafales destructrices avec neutralisation
-automatique), pas de blacklist réseau, pas de captcha anti-raid, pas de salons
-vocaux temporaires, pas de système de warns (explicitement exclu). **Ce n'est
-pas une limitation technique** : le CrowBot déjà présent sur le serveur
-(dépôt séparé `discord-bot-2`) couvre tout ça en détail — bans/kicks/salons/
-rôles/webhooks en masse avec restauration, bots non autorisés, afflux de
-joins, blacklist globale. Le reconstruire ici serait une pure copie, ce que
-la refonte du 30/08/2026 a explicitement évité (voir section 6quater pour ce
-qui a été ajouté à la place, en complément).
+Demande explicite du 30/08/2026, revenant sur le choix initial de rester
+complémentaire au CrowBot du serveur (dépôt séparé `discord-bot-2`) :
+l'anti-nuke est maintenant construit ici aussi (section 6sexies). Restent
+volontairement absents — vraie limitation de temps/complexité, pas une
+question de principe cette fois : blacklist réseau multi-serveurs, captcha
+anti-raid, salons vocaux temporaires, système de warns (explicitement
+exclu, celui-là reste un choix). Le CrowBot continue de les couvrir.
 
 Aucune commande sur un préfixe caché ou un mécanisme parallèle au système de
-permissions décrit en section 6ter : tout, y compris `&banall`, passe par le
-même moteur central.
+permissions décrit en section 6ter : tout, y compris `&banall` et l'anti-nuke,
+passe par le même moteur central.
 
 ## 8. Notes sur Components V2
 

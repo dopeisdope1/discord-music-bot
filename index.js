@@ -36,6 +36,7 @@ const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require(".
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
 const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
 const { relayAuditLogEntry, logMessageDelete } = require("./utils/moderationLog");
+const { checkAuditEntry, checkEveryoneMention, checkJoinFlood } = require("./utils/guard/definitions");
 
 const client = new Client({
   intents: [
@@ -623,6 +624,9 @@ client.on("messageCreate", (message) => {
   // Anti-spam léger, désactivé par défaut par serveur (voir &panel > Protection
   // et utils/automod/antiSpam.js) — ne fait rien tant que personne ne l'active.
   checkAntiSpam(client, message).catch((err) => console.error("[antiSpam]", err));
+  // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut
+  // (voir utils/guard/definitions.js).
+  checkEveryoneMention(client, message).catch((err) => console.error("[guard:antieveryone]", err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
@@ -795,6 +799,14 @@ client.on("guildMemberAdd", async (member) => {
   }
 });
 
+// Anti-nuke : afflux de joins, désactivé par défaut (voir utils/guard/
+// definitions.js). Listener séparé du message de bienvenue ci-dessus,
+// volontairement : ce dernier sort tôt si aucun salon n'est configuré, ce
+// qui n'a aucun rapport avec l'activation de l'anti-nuke.
+client.on("guildMemberAdd", (member) => {
+  checkJoinFlood(client, member).catch((err) => console.error("[guard:antijoin]", err));
+});
+
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée
 // d'audit Discord — ban, kick, timeout, salon/rôle supprimé, etc. — est
 // relayée vers le salon configuré via &panel > Logs, quel qu'en soit
@@ -803,6 +815,14 @@ client.on("guildMemberAdd", async (member) => {
 client.on("guildAuditLogEntryCreate", (entry, guild) => {
   relayAuditLogEntry(client, guild, entry).catch((err) => {
     console.error("[moderationLog] échec du relais d'une entrée d'audit :", err);
+  });
+  // Anti-nuke (voir utils/guard/), désactivé par défaut — même entrée
+  // d'audit, deux traitements distincts et indépendants : le relais ci-
+  // dessus journalise l'action brute, le moteur de guard réagit si un
+  // seuil est franchi. checkAuditEntry() ne fait rien pour un type
+  // d'événement qu'aucun guard ne suit.
+  checkAuditEntry(client, guild, entry).catch((err) => {
+    console.error("[guard] échec du traitement d'une entrée d'audit :", err);
   });
 });
 

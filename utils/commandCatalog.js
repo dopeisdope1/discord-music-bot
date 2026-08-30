@@ -139,6 +139,12 @@ const CATEGORIES = [
       },
       { name: "whitelist", prefix: "mod", permission: "protection.whitelist", description: "Liste paginée des exemptés de l'anti-spam" },
       { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
+      {
+        name: "antinuke [on|off|punishment|wlrole]",
+        prefix: "mod",
+        permission: "protection.guard.manage",
+        description: "Anti-nuke : rafales de bans/kicks/salons/rôles/webhooks/bots détectées et sanctionnées automatiquement",
+      },
     ],
   },
 ];

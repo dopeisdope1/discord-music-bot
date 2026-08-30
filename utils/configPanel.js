@@ -30,6 +30,9 @@ const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS
 const historyStore = require("./moderationHistoryStore");
 const automod = require("./automod/antiSpam");
 const welcomeStore = require("./welcomeStore");
+const guardConfig = require("./guard/config");
+const guardWhitelist = require("./guard/whitelist");
+const { DEFINITIONS: GUARD_DEFINITIONS } = require("./guard/definitions");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -124,6 +127,7 @@ const SECTIONS = [
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
+  { key: "guard", label: "Anti-nuke", description: "Détection de rafales destructrices et sanction automatique", permission: "protection.guard.manage" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
@@ -303,8 +307,32 @@ function sectionBody(section, guild, member, state) {
       "",
       `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
-      "Seul l'anti-spam est couvert ici : anti-lien, anti-@everyone et l'essentiel de l'anti-raid sont déjà " +
-        "gérés par le CrowBot du serveur — les dupliquer n'apporterait rien.",
+      "Cette whitelist n'exempte que de l'anti-spam. L'anti-@everyone et l'anti-nuke ont leur propre whitelist, " +
+        "voir la rubrique **Anti-nuke**.",
+    ].join("\n");
+  }
+
+  if (section === "guard") {
+    const config = guardConfig.getConfig(guildId);
+    const whitelist = guardWhitelist.getWhitelist(guildId);
+    const guardLines = GUARD_DEFINITIONS.map((d) => {
+      const rule = d.threshold ? `${d.threshold.count} en ${d.threshold.windowMs / 1000}s` : "immédiat";
+      return `> \`${d.key}\` — ${d.label} (${rule})`;
+    });
+    return [
+      `> **Anti-nuke** : ${config.enabled ? "activé" : "désactivé"}`,
+      `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
+      `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
+      "",
+      "**Guards actifs :**",
+      ...guardLines,
+      "",
+      "Owner, rang sys et whitelist sont entièrement exemptés (pas seulement de la sanction — leurs actions ne " +
+        "comptent même pas dans les seuils). Pas de restauration de salon/rôle supprimé en v1 (voir le README) : " +
+        "détection + sanction + log seulement, sauf ban/débannissement, simples à annuler.",
+      "",
+      "**Important** : ajoute le compte du CrowBot à cette whitelist pour éviter que ses propres actions " +
+        "anti-nuke (dé-bannir quelqu'un, par exemple) ne soient elles-mêmes annulées par erreur.",
     ].join("\n");
   }
 
@@ -421,30 +449,54 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
     for (const row of accessRows("salon", "accès legacy aux salons")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
+    // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
+    // toutes les clés : Discord plafonne un menu à 25 options, et le
+    // catalogue (utils/permissions/catalog.js) a vocation à grandir —
+    // chaque catégorie reste largement sous la limite, indéfiniment.
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
       )
     );
     if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
-      const granted = permStore.getRoleGrants(guild.id, state.permissionsRoleId);
-      const options = permCatalog.PERMISSIONS.filter((p) => p.roleGrantable !== false).map((p) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(p.label.slice(0, 100))
-          .setDescription(p.key)
-          .setValue(p.key)
-          .setDefault(granted.includes(p.key))
-      );
+      const categories = permCatalog.byCategory();
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:permkeys:${state.permissionsRoleId}`)
-            .setPlaceholder("Permissions accordées à ce rôle")
-            .setMinValues(0)
-            .setMaxValues(options.length)
-            .addOptions(options)
+            .setCustomId(`${ID}:permcat:${state.permissionsRoleId}`)
+            .setPlaceholder("Choisir une catégorie de permissions")
+            .addOptions(
+              categories.map((c) =>
+                new StringSelectMenuOptionBuilder().setLabel(c.label).setValue(c.category).setDefault(state.permissionsCategory === c.category)
+              )
+            )
         )
       );
+      const activeCategory = categories.find((c) => c.category === state.permissionsCategory);
+      if (activeCategory) {
+        const granted = permStore.getRoleGrants(guild.id, state.permissionsRoleId);
+        const options = activeCategory.permissions
+          .filter((p) => p.roleGrantable !== false)
+          .map((p) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(p.label.slice(0, 100))
+              .setDescription(p.key)
+              .setValue(p.key)
+              .setDefault(granted.includes(p.key))
+          );
+        if (options.length) {
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`${ID}:permkeys:${state.permissionsRoleId}:${activeCategory.category}`)
+                .setPlaceholder(`Permissions "${activeCategory.label}" accordées à ce rôle`)
+                .setMinValues(0)
+                .setMaxValues(options.length)
+                .addOptions(options)
+            )
+          );
+        }
+      }
     }
   } else if (meta.key === "profiles") {
     container.addActionRowComponents(
@@ -540,6 +592,29 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         )
       );
     }
+  } else if (meta.key === "guard") {
+    const config = guardConfig.getConfig(guild.id);
+    const nextPunishment = { timeout: "kick", kick: "ban", ban: "timeout" }[config.punishment];
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:guard:toggle`)
+          .setLabel(config.enabled ? "Désactiver l'anti-nuke" : "Activer l'anti-nuke")
+          .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:guard:punishment`)
+          .setLabel(`Sanction : ${config.punishment} (changer → ${nextPunishment})`)
+          .setStyle(ButtonStyle.Secondary)
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder().setCustomId(`${ID}:guardwladd`).setPlaceholder("Ajouter à la whitelist anti-nuke")
+      ),
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder().setCustomId(`${ID}:guardwldel`).setPlaceholder("Retirer de la whitelist anti-nuke")
+      )
+    );
   } else if (meta.key === "welcome") {
     const config = welcomeStore.getConfig(guild.id);
     container.addActionRowComponents(
@@ -630,7 +705,7 @@ function formatHistoryResults(results) {
  * salon après l'envoi, n'importe qui pourrait cliquer dessus.
  */
 async function handleConfigInteraction(interaction) {
-  const [, action, extra] = interaction.customId.split(":");
+  const [, action, extra, extra2] = interaction.customId.split(":");
   const member = interaction.member;
 
   if (!hasAnyPanelAccess(member)) {
@@ -652,10 +727,25 @@ async function handleConfigInteraction(interaction) {
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
 
+  if (action === "permcat") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", { permissionsRoleId: extra, permissionsCategory: interaction.values[0] });
+  }
+
   if (action === "permkeys") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    permStore.setRoleGrants(guildId, extra, interaction.values);
-    return goto("permissions", { permissionsRoleId: extra });
+    // extra = roleId, extra2 = catégorie affichée dans ce menu : on ne
+    // remplace que les clés DE CETTE catégorie, les autres catégories
+    // déjà accordées à ce rôle restent intactes.
+    const categoryKeys = new Set(
+      permCatalog
+        .byCategory()
+        .find((c) => c.category === extra2)
+        ?.permissions.map((p) => p.key) || []
+    );
+    const current = permStore.getRoleGrants(guildId, extra).filter((k) => !categoryKeys.has(k));
+    permStore.setRoleGrants(guildId, extra, [...current, ...interaction.values]);
+    return goto("permissions", { permissionsRoleId: extra, permissionsCategory: extra2 });
   }
 
   if (action === "profilerole") {
@@ -748,6 +838,27 @@ async function handleConfigInteraction(interaction) {
     if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
     else automod.removeFromWhitelist(guildId, "users", userId);
     return goto("protection");
+  }
+
+  if (action === "guard" && extra === "toggle") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    guardConfig.setEnabled(guildId, !guardConfig.getConfig(guildId).enabled);
+    return goto("guard");
+  }
+
+  if (action === "guard" && extra === "punishment") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const next = { timeout: "kick", kick: "ban", ban: "timeout" }[guardConfig.getConfig(guildId).punishment];
+    guardConfig.setPunishment(guildId, next);
+    return goto("guard");
+  }
+
+  if (action === "guardwladd" || action === "guardwldel") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const userId = interaction.values[0];
+    if (action === "guardwladd") guardWhitelist.add(guildId, "users", userId);
+    else guardWhitelist.remove(guildId, "users", userId);
+    return goto("guard");
   }
 
   if (action === "welcomechannel") {

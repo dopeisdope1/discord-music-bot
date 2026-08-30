@@ -41,6 +41,7 @@ const PERMISSIONS = [
   // --- Protection ---
   { key: "protection.automod", category: "protection", label: "Configurer l'anti-spam (panel)" },
   { key: "protection.whitelist", category: "protection", label: "Gérer la whitelist anti-spam (&whitelist, panel)" },
+  { key: "protection.guard.manage", category: "protection", label: "Configurer l'anti-nuke (&antinuke, panel)" },
 
   // --- Serveur --- (structure du serveur, distinct de "channels" qui reste
   // limité au salon courant — création/suppression touchent tout le serveur)

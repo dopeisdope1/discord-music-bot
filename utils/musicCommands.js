@@ -340,6 +340,7 @@ const modHandlers = {
   whitelist: serverAdmin.whitelist,
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,
+  antinuke: serverAdmin.antinuke,
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,

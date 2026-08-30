@@ -18,6 +18,8 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
+const guardConfig = require("./guard/config");
+const guardWhitelist = require("./guard/whitelist");
 const deroStore = require("./deroStore");
 const { checkBotPermission, report } = require("./moderation/actions");
 
@@ -583,8 +585,64 @@ async function applyDeroToNewChannel(channel) {
   }
 }
 
+// --- &antinuke : statut, marche/arrêt, sanction, whitelist par rôle (la
+// whitelist par utilisateur vit dans &panel > Anti-nuke, un UserSelectMenu
+// suffit là où un rôle a besoin d'un RoleSelectMenu à part). ---
+
+async function antinuke(client, message, args) {
+  if (!can(message.member, "protection.guard.manage")) return;
+  const sub = (args[0] || "").toLowerCase();
+  const guildId = message.guild.id;
+
+  if (sub === "on" || sub === "off") {
+    guardConfig.setEnabled(guildId, sub === "on");
+    return reply(message, "success", `Anti-nuke ${sub === "on" ? "activé" : "désactivé"}.`);
+  }
+
+  if (sub === "punishment") {
+    const value = (args[1] || "").toLowerCase();
+    if (!guardConfig.setPunishment(guildId, value)) {
+      return reply(message, "error", "Sanction invalide. Utilise : `timeout`, `kick` ou `ban`.");
+    }
+    return reply(message, "success", `Sanction de l'anti-nuke réglée sur **${value}**.`);
+  }
+
+  if (sub === "wlrole") {
+    const role = message.mentions.roles?.first();
+    if (!role) return reply(message, "error", "Indique un rôle : `antinuke wlrole @rôle`.");
+    const removed = guardWhitelist.remove(guildId, "roles", role.id);
+    if (!removed) guardWhitelist.add(guildId, "roles", role.id);
+    return reply(
+      message,
+      "success",
+      removed ? `**${role.name}** retiré de la whitelist anti-nuke.` : `**${role.name}** ajouté à la whitelist anti-nuke.`
+    );
+  }
+
+  const config = guardConfig.getConfig(guildId);
+  await message.reply({
+    embeds: [
+      buildStatusEmbed(
+        "info",
+        [
+          `> **Statut** : ${config.enabled ? "activé" : "désactivé"}`,
+          `> **Sanction** : ${config.punishment}`,
+          "",
+          "`antinuke on|off` — activer/désactiver",
+          "`antinuke punishment timeout|kick|ban` — changer la sanction",
+          "`antinuke wlrole @rôle` — exempter/retirer un rôle",
+          "",
+          "Whitelist par utilisateur, liste des guards et leurs seuils : `&panel` > Anti-nuke.",
+        ].join("\n"),
+        { title: "Anti-nuke" }
+      ),
+    ],
+  });
+}
+
 module.exports = {
   owners,
+  antinuke,
   whitelist,
   allbots,
   handleServerAdminInteraction,
