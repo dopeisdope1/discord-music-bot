@@ -266,11 +266,12 @@ Chaque rubrique n'apparaît que si tu y as droit :
   Discord notables et permissions de modération accordées, pour n'importe
   quel rôle du serveur.
 - **Logs** — un salon par catégorie (**Modération**, **Membres**,
-  **Serveur**, **Bots**) plutôt qu'un seul pour tout ; voir plus bas. Bouton
-  "Créer les salons automatiquement" : crée les salons manquants (regroupés
-  dans une catégorie "Logs"), masqués à `@everyone` — seuls les membres avec
-  la permission Discord **Administrateur** les voient, celle-ci passant
-  outre toute restriction de salon, rien d'autre à faire.
+  **Serveur**, **Bots**, **Messages**) plutôt qu'un seul pour tout ; voir
+  plus bas. Bouton "Créer les salons automatiquement" : crée les salons
+  manquants (regroupés dans une catégorie "Logs"), masqués à `@everyone` —
+  seuls les membres avec la permission Discord **Administrateur** les
+  voient, celle-ci passant outre toute restriction de salon, rien d'autre à
+  faire.
 - **Historique** — 5 dernières actions en aperçu, plus un bouton
   "Rechercher" (fenêtre modale : cible / modérateur / type / ID) ; ou en
   texte via `&modlogs [@membre|id]`.
@@ -301,9 +302,20 @@ nettoyage : on retire l'accès, pas les traces.
 Le salon de logs (par catégorie, voir plus haut) reçoit un message
 **permanent** (il ne s'efface jamais, contrairement aux confirmations
 ailleurs dans le bot) pour : bannissement, débannissement, expulsion,
-softban, timeout, rôles ajoutés/retirés, pseudo modifié, mode lent,
-salon/rôle créé ou supprimé, webhook créé, nettoyage en masse, bot ajouté,
-déconnexion vocale forcée.
+softban, timeout, rôles ajoutés/retirés (avec le détail des rôles
+concernés), pseudo modifié, mode lent, salon créé/supprimé/renommé (type,
+catégorie, NSFW, topic), rôle créé/supprimé/renommé (couleur, mentionnable,
+affiché séparément, position), verrouillage de salon, webhook créé,
+nettoyage en masse, bot ajouté, déconnexion vocale forcée, et suppression
+d'un message précis avec son contenu (catégorie **Messages**, alimentée par
+le même mécanisme que `&snipe` — le message doit avoir été vu en cache par
+le bot, Discord ne retient le contenu d'un message supprimé nulle part
+côté serveur).
+
+Chaque entrée suit la même présentation : titre, une ligne par champ
+("**Label :** valeur", avec de vraies mentions Discord cliquables pour les
+membres/salons), **Auteur** et **Raison** ajoutés automatiquement à la fin
+quand ils sont connus, et un horodatage en petit texte tout en bas.
 
 Deux sources, sans doublon :
 - les commandes de **ce bot** (`&kick`, `&ban`, `&timeout`...) journalisent

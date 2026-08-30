@@ -33,7 +33,7 @@ const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyAc
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
 const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
-const { relayAuditLogEntry } = require("./utils/moderationLog");
+const { relayAuditLogEntry, logMessageDelete } = require("./utils/moderationLog");
 
 const client = new Client({
   intents: [
@@ -621,6 +621,12 @@ client.on("messageDelete", (message) => {
     authorAvatar: message.author?.displayAvatarURL?.() || null,
     deletedAt: Date.now(),
   });
+  // Salon de logs "Messages" (voir &panel > Logs et utils/moderationLog.js) :
+  // uniquement si le message était encore en cache (partiel sinon, sans
+  // auteur ni contenu exploitable — rien à journaliser dans ce cas).
+  if (message.author) {
+    logMessageDelete(client, message).catch((err) => console.error("[moderationLog]", err));
+  }
 });
 
 // ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie

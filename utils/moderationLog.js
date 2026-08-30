@@ -1,4 +1,4 @@
-const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, AuditLogEvent } = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, AuditLogEvent, ChannelType } = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
 
@@ -16,11 +16,6 @@ const historyStore = require("./moderationHistoryStore");
 // bot lui-même (voir relayAuditLogEntry) : ces actions sont déjà journalisées
 // avec le VRAI modérateur par utils/moderation/actions.js, qui connaît
 // message.author/interaction.user directement.
-//
-// Volontairement pas exhaustif : les entrées bruyantes et rarement utiles en
-// modération (changement de pseudo par soi-même, mise à jour de salon
-// mineure, épinglage de message...) sont omises pour que le salon de logs
-// reste lisible.
 //
 // `category` route vers utils/modLogStore.js (un salon par catégorie).
 // `describe` retourne { title, fields } — titre en gras, puis une ligne par
@@ -88,10 +83,10 @@ const HANDLERS = {
       const added = e.changes.find((c) => c.key === "$add")?.new;
       const removed = e.changes.find((c) => c.key === "$remove")?.new;
       const fields = [targetField(e)];
-      if (added?.length) fields.push({ label: "Rôles ajoutés", value: added.map((r) => r.name).join(", ") });
-      if (removed?.length) fields.push({ label: "Rôles retirés", value: removed.map((r) => r.name).join(", ") });
+      if (added?.length) fields.push({ label: "Rôle(s) ajouté(s)", value: added.map((r) => `${r.name} (${r.id})`).join("\n") });
+      if (removed?.length) fields.push({ label: "Rôle(s) retiré(s)", value: removed.map((r) => `${r.name} (${r.id})`).join("\n") });
       if (fields.length === 1) return null;
-      return { title: "Rôles modifiés", fields };
+      return { title: "Modification des rôles", fields };
     },
     history: (e) => {
       const added = e.changes.find((c) => c.key === "$add")?.new || [];
@@ -105,17 +100,30 @@ const HANDLERS = {
       };
     },
   },
+  [AuditLogEvent.ChannelCreate]: {
+    category: "server",
+    describe: (e) => ({ title: "Salon créé", fields: [channelField(e), ...channelDetailFields(e.target)] }),
+  },
+  [AuditLogEvent.ChannelDelete]: {
+    category: "server",
+    describe: (e) => ({ title: "Salon supprimé", fields: [channelField(e), ...channelDetailFields(e.target)] }),
+  },
   [AuditLogEvent.ChannelUpdate]: {
     category: "channels",
-    // Seul le changement de mode lent nous intéresse : le reste (topic, nom,
-    // NSFW...) est de la gestion de salon générale, pas de la modération.
     describe: (e) => {
+      const fields = [channelField(e)];
+      const name = e.changes.find((c) => c.key === "name");
+      if (name && name.old !== name.new) fields.push({ label: "Nom", value: `${name.old} → ${name.new}` });
+      const topic = e.changes.find((c) => c.key === "topic");
+      if (topic && topic.old !== topic.new) {
+        fields.push({ label: "Topic", value: `${topic.old || "*aucun*"} → ${topic.new || "*aucun*"}` });
+      }
+      const nsfw = e.changes.find((c) => c.key === "nsfw");
+      if (nsfw) fields.push({ label: "NSFW", value: boolLabel(nsfw.new) });
       const slowmode = e.changes.find((c) => c.key === "rate_limit_per_user");
-      if (!slowmode) return null;
-      const seconds = Number(slowmode.new || 0);
-      return seconds
-        ? { title: "Mode lent", fields: [channelField(e), { label: "Durée", value: `${seconds}s` }] }
-        : { title: "Mode lent désactivé", fields: [channelField(e)] };
+      if (slowmode) fields.push({ label: "Mode lent", value: `${Number(slowmode.new || 0)}s` });
+      if (fields.length === 1) return null; // rien d'intéressant pour la modération (position, permissions...)
+      return { title: "Salon mis à jour", fields };
     },
     history: (e) => {
       const slowmode = e.changes.find((c) => c.key === "rate_limit_per_user");
@@ -131,21 +139,21 @@ const HANDLERS = {
     category: "channels",
     describe: (e) => overwriteDescribe(e, "modifiée"),
   },
-  [AuditLogEvent.ChannelCreate]: {
-    category: "server",
-    describe: (e) => ({ title: "Salon créé", fields: [targetField(e)] }),
-  },
-  [AuditLogEvent.ChannelDelete]: {
-    category: "server",
-    describe: (e) => ({ title: "Salon supprimé", fields: [targetField(e)] }),
-  },
   [AuditLogEvent.RoleCreate]: {
     category: "server",
-    describe: (e) => ({ title: "Rôle créé", fields: [targetField(e, "Rôle")] }),
+    describe: (e) => ({ title: "Création de rôle", fields: [targetField(e, "Rôle créé"), ...roleDetailFields(e.target)] }),
   },
   [AuditLogEvent.RoleDelete]: {
     category: "server",
-    describe: (e) => ({ title: "Rôle supprimé", fields: [targetField(e, "Rôle")] }),
+    describe: (e) => ({ title: "Suppression de rôle", fields: [targetField(e, "Rôle supprimé"), ...roleDetailFields(e.target)] }),
+  },
+  [AuditLogEvent.RoleUpdate]: {
+    category: "server",
+    describe: (e) => {
+      const name = e.changes.find((c) => c.key === "name");
+      if (!name || name.old === name.new) return null; // seul le renommage nous intéresse ici
+      return { title: "Rôle mis à jour", fields: [targetField(e, "Rôle mis à jour"), { label: "Nom", value: `${name.old} → ${name.new}` }] };
+    },
   },
   [AuditLogEvent.WebhookCreate]: {
     category: "server",
@@ -161,8 +169,8 @@ const HANDLERS = {
       ],
     }),
     // Pas d'écriture d'historique ici : &clear (utils/moderation/actions.js)
-    // enregistre déjà une entrée plus riche (avec le filtre utilisé) au
-    // moment de l'action — un doublon générique n'ajouterait rien.
+    // enregistre déjà une entrée plus riche (avec la cible) au moment de
+    // l'action — un doublon générique n'ajouterait rien.
   },
   [AuditLogEvent.BotAdd]: {
     category: "bots",
@@ -174,20 +182,53 @@ const HANDLERS = {
   },
 };
 
+const boolLabel = (v) => (v ? "Oui" : "Non");
+
+const CHANNEL_TYPE_LABELS = {
+  [ChannelType.GuildText]: "Textuel",
+  [ChannelType.GuildVoice]: "Vocal",
+  [ChannelType.GuildCategory]: "Catégorie",
+  [ChannelType.GuildAnnouncement]: "Annonces",
+  [ChannelType.GuildStageVoice]: "Conférence",
+  [ChannelType.GuildForum]: "Forum",
+};
+
 /** Champ générique pour une cible : mention Discord (ne ping jamais, voir index.js) + ID. */
 function targetField(entry, label = "Cible") {
   const t = entry.target;
   const id = t?.id ?? entry.targetId;
   if (!id) return { label, value: "cible inconnue" };
-  // Les rôles/webhooks n'ont pas de mention "<@...>" universelle fiable :
-  // on retombe sur le nom connu, l'ID restant la référence exacte dans tous les cas.
   if (t?.tag) return { label, value: `<@${id}> (${id})` };
   if (t?.name) return { label, value: `${t.name} (${id})` };
   return { label, value: `\`${id}\`` };
 }
 
 function channelField(entry) {
-  return { label: "Salon", value: entry.targetId ? `<#${entry.targetId}> (${entry.targetId})` : "salon inconnu" };
+  const id = entry.targetId;
+  if (!id) return { label: "Salon", value: "salon inconnu" };
+  const name = entry.target?.name;
+  return { label: "Salon", value: name ? `<#${id}> ${name} (${id})` : `<#${id}> (${id})` };
+}
+
+/** Détails d'un salon (création/suppression) : disponibles tant que `channel` est un objet résolu. */
+function channelDetailFields(channel) {
+  if (!channel || typeof channel !== "object") return [];
+  const fields = [{ label: "Type", value: CHANNEL_TYPE_LABELS[channel.type] || "Inconnu" }];
+  if (channel.parent?.name) fields.push({ label: "Catégorie", value: `${channel.parent.name} (${channel.parent.id})` });
+  if ("nsfw" in channel) fields.push({ label: "NSFW", value: boolLabel(channel.nsfw) });
+  if ("topic" in channel) fields.push({ label: "Topic", value: channel.topic || "Aucun topic" });
+  return fields;
+}
+
+/** Détails d'un rôle (création/suppression) : disponibles tant que `role` est un objet résolu. */
+function roleDetailFields(role) {
+  if (!role || typeof role !== "object") return [];
+  return [
+    { label: "Couleur", value: role.hexColor || "#000000" },
+    { label: "Mentionnable", value: boolLabel(role.mentionable) },
+    { label: "Affiché séparément", value: boolLabel(role.hoist) },
+    { label: "Position", value: String(role.position ?? "?") },
+  ];
 }
 
 function channelLabel(entry) {
@@ -201,6 +242,12 @@ function overwriteDescribe(entry, verb) {
   return { title: `Permission de salon ${verb}`, fields: [channelField(entry)] };
 }
 
+/** Horodatage lisible, même format que le CrowBot du serveur (jj/mm/aaaa hh:mm:ss, heure du serveur). */
+function formatTimestamp(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 /**
  * Poste une entrée de log déjà construite (titre + champs) dans le salon
  * configuré pour `category` (utils/modLogStore.js). Fonction partagée :
@@ -210,7 +257,7 @@ function overwriteDescribe(entry, verb) {
  * plutôt que dans chaque appelant : même format de carte partout.
  * @param {import('discord.js').Client} client
  * @param {string} guildId
- * @param {"moderation"|"members"|"server"|"bots"|"channels"} category
+ * @param {"moderation"|"members"|"server"|"bots"|"channels"|"messages"} category
  * @param {{ title: string, fields: {label: string, value: string}[], moderatorId?: string|null, moderatorTag?: string|null, reason?: string|null }} entry
  */
 async function postModerationEntry(client, guildId, category, { title, fields, moderatorId = null, moderatorTag = null, reason = null }) {
@@ -224,24 +271,29 @@ async function postModerationEntry(client, guildId, category, { title, fields, m
   const channel = guild?.channels.cache.get(channelId) ?? (await guild?.channels.fetch(channelId).catch(() => null));
   if (!channel?.isTextBased()) return;
 
+  // "Auteur" n'est ajouté que si un exécuteur est connu : certains événements
+  // (voir logMessageDelete) fournissent déjà leur propre champ "Auteur" au
+  // sens différent (l'auteur DU message, pas de l'action) — pas la peine
+  // d'en ajouter un second, vide, à la suite.
   const allFields = [
     ...fields,
-    { label: "Auteur", value: moderatorId ? `<@${moderatorId}> (${moderatorId})` : moderatorTag || "inconnu" },
+    moderatorId || moderatorTag ? { label: "Auteur", value: moderatorId ? `<@${moderatorId}> (${moderatorId})` : moderatorTag } : null,
     reason ? { label: "Raison", value: reason } : null,
   ].filter(Boolean);
 
   // Components V2, comme le reste du bot (panels, confirmations) — sans
   // setAccentColor, volontairement : c'est justement cette barre colorée sur
   // le côté qui donnait encore un air d'embed classique (voir le même choix
-  // dans utils/configPanel.js et utils/helpPanel.js). Le titre en gras +
-  // séparateur + une ligne par champ reprend la présentation déjà en place
-  // ailleurs sur le serveur (salon de logs du CrowBot).
+  // dans utils/configPanel.js et utils/helpPanel.js). Titre en gras +
+  // séparateur + une ligne par champ + un horodatage en petit texte : même
+  // présentation que le salon de logs du CrowBot déjà présent sur le serveur.
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${title}**`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(allFields.map((f) => `**${f.label} :** ${f.value}`).join("\n"))
   );
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${formatTimestamp()}`));
 
   // Message permanent, volontairement pas de suppression automatique : c'est
   // tout l'intérêt de ce salon face aux confirmations qui s'effacent d'elles-
@@ -304,4 +356,29 @@ async function relayAuditLogEntry(client, guild, entry) {
   }
 }
 
-module.exports = { relayAuditLogEntry, postModerationEntry };
+/**
+ * Journalise la suppression d'UN message (pas en masse, voir
+ * MessageBulkDelete ci-dessus) avec son contenu — catégorie "messages",
+ * distincte de "moderation". Le journal d'audit Discord ne donne ni le
+ * contenu ni, dans la plupart des cas, un exécuteur fiable pour une
+ * suppression de message ordinaire : ceci s'appuie plutôt sur le message
+ * mis en cache par le client au moment de sa suppression (voir index.js,
+ * même mécanisme que &snipe) — l'auteur du message, pas qui l'a supprimé,
+ * que Discord ne fournit dans aucun des deux cas pour un message qu'on a
+ * supprimé soi-même.
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Message} message message tel qu'en cache avant suppression
+ */
+async function logMessageDelete(client, message) {
+  await postModerationEntry(client, message.guild.id, "messages", {
+    title: "Message supprimé",
+    fields: [
+      { label: "Auteur", value: `<@${message.author.id}> (${message.author.id})` },
+      { label: "Salon", value: `<#${message.channel.id}> (${message.channel.id})` },
+      { label: "Contenu", value: message.content ? message.content.slice(0, 1000) : "*(aucun contenu texte)*" },
+      { label: "Message ID", value: message.id },
+    ],
+  });
+}
+
+module.exports = { relayAuditLogEntry, postModerationEntry, logMessageDelete };

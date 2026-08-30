@@ -8,14 +8,15 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "modLog.json");
 
 // Un salon par catégorie plutôt qu'un seul pour tout (section 17-19 du
-// cahier des charges) : modération/membres/serveur/bots peuvent chacun
-// avoir leur propre salon, ou partager le même.
-const CATEGORIES = ["moderation", "members", "server", "bots"];
+// cahier des charges) : modération/membres/serveur/bots/messages peuvent
+// chacun avoir leur propre salon, ou partager le même.
+const CATEGORIES = ["moderation", "members", "server", "bots", "messages"];
 const CATEGORY_LABELS = {
   moderation: "Modération",
   members: "Membres",
   server: "Serveur",
   bots: "Bots",
+  messages: "Messages",
 };
 
 let cache = null;

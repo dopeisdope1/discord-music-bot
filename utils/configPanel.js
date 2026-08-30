@@ -38,6 +38,7 @@ const LOG_CHANNEL_NAMES = {
   members: "logs-membres",
   server: "logs-serveur",
   bots: "logs-bots",
+  messages: "logs-messages",
 };
 
 /**
