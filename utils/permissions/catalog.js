@@ -46,12 +46,12 @@ const PERMISSIONS = [
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));
 
 const CATEGORY_LABELS = {
-  moderation: "🛡️ Modération",
-  channels: "📋 Salons",
-  members: "👥 Membres",
-  logs: "📜 Logs",
-  panel: "🔐 Panel",
-  protection: "🛡️ Protection",
+  moderation: "Modération",
+  channels: "Salons",
+  members: "Membres",
+  logs: "Logs",
+  panel: "Panel",
+  protection: "Protection",
 };
 
 /** Vrai si `key` existe dans le catalogue et peut être accordée à un rôle. */

@@ -12,10 +12,10 @@ const DATA_FILE = path.join(DATA_DIR, "modLog.json");
 // avoir leur propre salon, ou partager le même.
 const CATEGORIES = ["moderation", "members", "server", "bots"];
 const CATEGORY_LABELS = {
-  moderation: "🛡️ Modération",
-  members: "👤 Membres",
-  server: "🏠 Serveur",
-  bots: "🤖 Bots",
+  moderation: "Modération",
+  members: "Membres",
+  server: "Serveur",
+  bots: "Bots",
 };
 
 let cache = null;

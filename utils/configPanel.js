@@ -42,18 +42,18 @@ const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage, ancien accès aux salons", permission: "sys" },
-  { key: "permissions", label: "🔐 Permissions", description: "Permissions de modération par rôle", permission: "panel.permissions.manage" },
-  { key: "profiles", label: "🔐 Profils", description: "Appliquer un profil prédéfini (Helper/Modérateur/Admin) à un rôle", permission: "panel.permissions.manage" },
-  { key: "roles", label: "👥 Rôles", description: "Nom, couleur, position, membres, permissions notables", permission: "panel.roles.manage" },
+  { key: "permissions", label: "Permissions", description: "Permissions de modération par rôle", permission: "panel.permissions.manage" },
+  { key: "profiles", label: "Profils", description: "Appliquer un profil prédéfini (Helper/Modérateur/Admin) à un rôle", permission: "panel.permissions.manage" },
+  { key: "roles", label: "Rôles", description: "Nom, couleur, position, membres, permissions notables", permission: "panel.roles.manage" },
   {
     key: "logs",
-    label: "📜 Logs",
+    label: "Logs",
     description: "Salon de logs par catégorie (modération/membres/serveur/bots)",
     visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
   },
-  { key: "history", label: "📜 Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
-  { key: "protection", label: "🛡️ Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
-  { key: "access", label: "🔐 Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
+  { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
+  { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
+  { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
 ];
@@ -143,7 +143,7 @@ function sectionBody(section, guild, member, state) {
       `**Rôle : ${role.toString()}**`,
       "",
       ...permCatalog.byCategory().map((group) => {
-        const lines = group.permissions.map((p) => `${granted.has(p.key) ? "☑" : "☐"} ${p.label}`);
+        const lines = group.permissions.map((p) => `[${granted.has(p.key) ? "x" : " "}] ${p.label}`);
         return `**${group.label}**\n${lines.join("\n")}`;
       }),
       "",
@@ -216,7 +216,7 @@ function sectionBody(section, guild, member, state) {
     const config = automod.getConfig(guildId);
     const whitelist = automod.getWhitelist(guildId);
     return [
-      `> **Anti-spam/anti-flood** : ${config.enabled ? "✅ activé" : "⛔ désactivé"}`,
+      `> **Anti-spam/anti-flood** : ${config.enabled ? "activé" : "désactivé"}`,
       `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
       "",
       `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
@@ -237,7 +237,7 @@ function sectionBody(section, guild, member, state) {
       .filter(([userId]) => (seen.has(userId) ? false : seen.add(userId)))
       .map(([userId]) => {
         const present = guild.members.cache.has(userId);
-        return `> <@${userId}> — ${present ? "✅ membre" : "⚠️ absent du serveur"}`;
+        return `> <@${userId}> — ${present ? "membre" : "absent du serveur"}`;
       });
 
     return [

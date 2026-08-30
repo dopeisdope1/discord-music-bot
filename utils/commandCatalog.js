@@ -23,7 +23,7 @@ const CATEGORIES = [
   },
   {
     key: "moderation",
-    label: "🛡️ Modération",
+    label: "Modération",
     commands: [
       // Les trois déclencheurs font strictement la même chose : une seule
       // entrée plutôt que trois lignes identiques.
@@ -66,7 +66,7 @@ const CATEGORIES = [
   },
   {
     key: "channels",
-    label: "📋 Salons",
+    label: "Salons",
     commands: [
       { name: "lock [#salon]", prefix: "mod", permission: "channels.lock", description: "Empêche @everyone d'écrire dans le salon" },
       { name: "unlock [#salon]", prefix: "mod", permission: "channels.lock", description: "Rétablit l'écriture" },
@@ -80,7 +80,7 @@ const CATEGORIES = [
   },
   {
     key: "members",
-    label: "👥 Membres",
+    label: "Membres",
     commands: [
       { name: "nick @membre <pseudo>", prefix: "mod", permission: "members.nick", description: "Change le pseudo d'un membre" },
       { name: "resetnick @membre", prefix: "mod", permission: "members.nick", description: "Réinitialise le pseudo d'un membre" },

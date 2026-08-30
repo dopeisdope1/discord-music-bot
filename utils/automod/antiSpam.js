@@ -123,7 +123,7 @@ async function checkMessage(client, message) {
     guildId: message.guild.id,
     category: "moderation",
     color: 0xfee75c,
-    description: `🚨 **Anti-spam** — **${message.author.tag}** (${message.author.id}) mis en timeout ${config.timeoutSeconds}s (${timestamps.length} messages en ${config.windowSeconds}s)`,
+    description: `**Anti-spam** — **${message.author.tag}** (${message.author.id}) mis en timeout ${config.timeoutSeconds}s (${timestamps.length} messages en ${config.windowSeconds}s)`,
     action: "automod-timeout",
     targetId: message.author.id,
     targetTag: message.author.tag,

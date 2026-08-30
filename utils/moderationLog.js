@@ -32,19 +32,19 @@ const HANDLERS = {
   [AuditLogEvent.MemberBanAdd]: {
     category: "moderation",
     color: 0xed4245,
-    describe: (e) => `🔨 **Bannissement** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Bannissement** — ${targetLabel(e)}${reasonLine(e)}`,
     history: (e) => ({ action: "ban", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberBanRemove]: {
     category: "moderation",
     color: 0x57f287,
-    describe: (e) => `♻️ **Débannissement** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Débannissement** — ${targetLabel(e)}${reasonLine(e)}`,
     history: (e) => ({ action: "unban", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberKick]: {
     category: "moderation",
     color: 0xed4245,
-    describe: (e) => `👢 **Expulsion** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Expulsion** — ${targetLabel(e)}${reasonLine(e)}`,
     history: (e) => ({ action: "kick", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberUpdate]: {
@@ -57,12 +57,12 @@ const HANDLERS = {
       if (timeout) {
         if (timeout.new) {
           const until = Math.floor(new Date(timeout.new).getTime() / 1000);
-          return `🔇 **Timeout** — ${targetLabel(e)} jusqu'à <t:${until}:f>${reasonLine(e)}`;
+          return `**Timeout** — ${targetLabel(e)} jusqu'à <t:${until}:f>${reasonLine(e)}`;
         }
-        return `🔊 **Fin de timeout** — ${targetLabel(e)}${reasonLine(e)}`;
+        return `**Fin de timeout** — ${targetLabel(e)}${reasonLine(e)}`;
       }
       const nick = e.changes.find((c) => c.key === "nick");
-      if (nick) return `✏️ **Pseudo modifié** — ${targetLabel(e)} → **${nick.new || "*retiré*"}**${reasonLine(e)}`;
+      if (nick) return `**Pseudo modifié** — ${targetLabel(e)} → **${nick.new || "*retiré*"}**${reasonLine(e)}`;
       return null;
     },
     history: (e) => {
@@ -90,7 +90,7 @@ const HANDLERS = {
       if (added?.length) parts.push(`+ ${added.map((r) => r.name).join(", ")}`);
       if (removed?.length) parts.push(`− ${removed.map((r) => r.name).join(", ")}`);
       if (!parts.length) return null;
-      return `🎭 **Rôles modifiés** — ${targetLabel(e)} (${parts.join(" / ")})${reasonLine(e)}`;
+      return `**Rôles modifiés** — ${targetLabel(e)} (${parts.join(" / ")})${reasonLine(e)}`;
     },
     history: (e) => {
       const added = e.changes.find((c) => c.key === "$add")?.new || [];
@@ -114,8 +114,8 @@ const HANDLERS = {
       if (!slowmode) return null;
       const seconds = Number(slowmode.new || 0);
       return seconds
-        ? `🐌 **Mode lent** — ${channelMention(e)} réglé sur ${seconds}s${reasonLine(e)}`
-        : `🐌 **Mode lent désactivé** — ${channelMention(e)}${reasonLine(e)}`;
+        ? `**Mode lent** — ${channelMention(e)} réglé sur ${seconds}s${reasonLine(e)}`
+        : `**Mode lent désactivé** — ${channelMention(e)}${reasonLine(e)}`;
     },
     history: (e) => {
       const slowmode = e.changes.find((c) => c.key === "rate_limit_per_user");
@@ -136,32 +136,32 @@ const HANDLERS = {
   [AuditLogEvent.ChannelCreate]: {
     category: "server",
     color: 0x5865f2,
-    describe: (e) => `➕ **Salon créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Salon créé** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.ChannelDelete]: {
     category: "server",
     color: 0xed4245,
-    describe: (e) => `🗑️ **Salon supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Salon supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.RoleCreate]: {
     category: "server",
     color: 0x5865f2,
-    describe: (e) => `➕ **Rôle créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Rôle créé** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.RoleDelete]: {
     category: "server",
     color: 0xed4245,
-    describe: (e) => `🗑️ **Rôle supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Rôle supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.WebhookCreate]: {
     category: "server",
     color: 0xed4245,
-    describe: (e) => `🪝 **Webhook créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Webhook créé** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.MessageBulkDelete]: {
     category: "moderation",
     color: 0xfee75c,
-    describe: (e) => `🧹 **Nettoyage** — ${e.extra?.count ?? "?"} message(s) supprimé(s) dans ${channelLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Nettoyage** — ${e.extra?.count ?? "?"} message(s) supprimé(s) dans ${channelLabel(e)}${reasonLine(e)}`,
     // Pas d'écriture d'historique ici : &clear (utils/moderation/actions.js)
     // enregistre déjà une entrée plus riche (avec le filtre utilisé) au
     // moment de l'action — un doublon générique n'ajouterait rien.
@@ -169,12 +169,12 @@ const HANDLERS = {
   [AuditLogEvent.BotAdd]: {
     category: "bots",
     color: 0xed4245,
-    describe: (e) => `🤖 **Bot ajouté** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => `**Bot ajouté** — ${targetLabel(e)}${reasonLine(e)}`,
   },
   [AuditLogEvent.MemberDisconnect]: {
     category: "members",
     color: 0xfee75c,
-    describe: (e) => `🔌 **Déconnexion vocale forcée** — ${e.extra?.count ?? "?"} membre(s)${reasonLine(e)}`,
+    describe: (e) => `**Déconnexion vocale forcée** — ${e.extra?.count ?? "?"} membre(s)${reasonLine(e)}`,
   },
 };
 
@@ -198,7 +198,7 @@ function channelMention(entry) {
 function overwriteDescribe(entry, verb) {
   const denySend = entry.changes.some((c) => (c.key === "deny" ? String(c.new).includes("SEND_MESSAGES") : false));
   if (!denySend) return null; // pas un verrouillage @everyone : pas assez sûr pour l'afficher comme tel, on se tait
-  return `🔒 **Permission de salon ${verb}** — ${channelMention(entry)}${reasonLine(entry)}`;
+  return `**Permission de salon ${verb}** — ${channelMention(entry)}${reasonLine(entry)}`;
 }
 
 function reasonLine(entry) {

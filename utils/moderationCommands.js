@@ -78,7 +78,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0xed4245,
-      description: `👢 **Expulsion** — **${tag}** (${target.id})${reason ? `\n> Raison : ${reason}` : ""}`,
+      description: `**Expulsion** — **${tag}** (${target.id})${reason ? `\n> Raison : ${reason}` : ""}`,
       action: "kick",
       targetId: target.id,
       targetTag: tag,
@@ -114,7 +114,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0xed4245,
-      description: `🧨 **Softban** — **${tag}** (${target.id}) — messages des dernières 24h purgés${reason ? `\n> Raison : ${reason}` : ""}`,
+      description: `**Softban** — **${tag}** (${target.id}) — messages des dernières 24h purgés${reason ? `\n> Raison : ${reason}` : ""}`,
       action: "softban",
       targetId: target.id,
       targetTag: tag,
@@ -154,7 +154,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0xfee75c,
-      description: `🔇 **Timeout** — **${tag}** (${target.id}) pour ${formatDuration(ms)}${reason ? `\n> Raison : ${reason}` : ""}`,
+      description: `**Timeout** — **${tag}** (${target.id}) pour ${formatDuration(ms)}${reason ? `\n> Raison : ${reason}` : ""}`,
       action: "timeout",
       targetId: target.id,
       targetTag: tag,
@@ -192,7 +192,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0x57f287,
-      description: `🔊 **Fin de timeout** — **${tag}** (${target.id})`,
+      description: `**Fin de timeout** — **${tag}** (${target.id})`,
       action: "untimeout",
       targetId: target.id,
       targetTag: tag,
@@ -235,8 +235,8 @@ const handlers = {
       category: "server",
       color: 0xfee75c,
       description: seconds
-        ? `🐌 **Mode lent** — <#${target.id}> réglé sur ${seconds}s`
-        : `🐌 **Mode lent désactivé** — <#${target.id}>`,
+        ? `**Mode lent** — <#${target.id}> réglé sur ${seconds}s`
+        : `**Mode lent désactivé** — <#${target.id}>`,
       action: "slowmode",
       targetId: target.id,
       targetTag: null,
@@ -273,7 +273,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0xfee75c,
-      description: `✏️ **Pseudo modifié** — ${mentioned.user.tag} → **${newNick}**`,
+      description: `**Pseudo modifié** — ${mentioned.user.tag} → **${newNick}**`,
       action: "nick",
       targetId: mentioned.id,
       targetTag: mentioned.user.tag,
@@ -304,7 +304,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "moderation",
       color: 0xfee75c,
-      description: `✏️ **Pseudo réinitialisé** — ${mentioned.user.tag}`,
+      description: `**Pseudo réinitialisé** — ${mentioned.user.tag}`,
       action: "nick",
       targetId: mentioned.id,
       targetTag: mentioned.user.tag,
@@ -361,7 +361,7 @@ const handlers = {
       guildId: message.guild.id,
       category: "members",
       color: 0xfee75c,
-      description: `🎭 **Rôle ${sub === "add" ? "ajouté" : "retiré"}** — ${mentionedMember.user.tag} (${sub === "add" ? "+" : "−"} ${mentionedRole.name})`,
+      description: `**Rôle ${sub === "add" ? "ajouté" : "retiré"}** — ${mentionedMember.user.tag} (${sub === "add" ? "+" : "−"} ${mentionedRole.name})`,
       action: "role",
       targetId: mentionedMember.id,
       targetTag: mentionedMember.user.tag,
@@ -508,7 +508,7 @@ async function clear(client, message, args) {
   const deleted = await deleteMessages(message.channel, toDelete);
 
   const description = [
-    filter ? `🧹 **Nettoyage filtré (${filter.label})**` : targetUserId ? "🧹 **Nettoyage ciblé**" : "🧹 **Nettoyage**",
+    filter ? `**Nettoyage filtré (${filter.label})**` : targetUserId ? "**Nettoyage ciblé**" : "**Nettoyage**",
     `${deleted} message(s) supprimé(s) dans <#${message.channel.id}>`,
   ].join(" — ");
 
@@ -525,13 +525,13 @@ async function clear(client, message, args) {
     extra: { count: deleted, filter: filter ? first : null, targetUserId },
   });
 
-  // Confirmation courte, elle-même supprimée après quelques secondes : le
-  // salon de logs (voir report ci-dessus) garde la trace permanente, pas
-  // besoin que celle-ci reste affichée dans le salon nettoyé.
+  // Confirmation supprimée instantanément après l'envoi : le salon de logs
+  // (voir report ci-dessus) garde la trace permanente, pas besoin que celle-ci
+  // reste affichée dans le salon nettoyé.
   const confirmation = await message.channel
     .send({ embeds: [buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`)] })
     .catch(() => null);
-  if (confirmation) setTimeout(() => confirmation.delete().catch(() => {}), 5000);
+  if (confirmation) confirmation.delete().catch(() => {});
 }
 
 // --- &lockdown / &panic (section 24, périmètre réduit — voir le plan) ---
@@ -558,7 +558,7 @@ async function lockdown(client, message) {
     guildId: message.guild.id,
     category: "moderation",
     color: 0xed4245,
-    description: `🚨 **Lockdown** — ${locked} salon(s) verrouillé(s) par ${message.author.tag}`,
+    description: `**Lockdown** — ${locked} salon(s) verrouillé(s) par ${message.author.tag}`,
     action: "lockdown",
     targetId: null,
     targetTag: null,
@@ -591,7 +591,7 @@ async function unlockdown(client, message) {
     guildId: message.guild.id,
     category: "moderation",
     color: 0x57f287,
-    description: `✅ **Fin du lockdown** — ${unlocked} salon(s) déverrouillé(s) par ${message.author.tag}`,
+    description: `**Fin du lockdown** — ${unlocked} salon(s) déverrouillé(s) par ${message.author.tag}`,
     action: "unlockdown",
     targetId: null,
     targetTag: null,

@@ -207,7 +207,7 @@ async function handleBanAllInteraction(interaction) {
       guildId: guild.id,
       category: "moderation",
       color: 0xed4245,
-      description: `🔨 **Ban de masse** — **${done}** membre(s) banni(s)${failed ? `, ${failed} échec(s)` : ""}${reason ? `\n> Raison : ${reason}` : ""}`,
+      description: `**Ban de masse** — **${done}** membre(s) banni(s)${failed ? `, ${failed} échec(s)` : ""}${reason ? `\n> Raison : ${reason}` : ""}`,
       action: "banall",
       targetId: null,
       targetTag: `${done} membre(s)`,
