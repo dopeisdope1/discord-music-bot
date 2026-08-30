@@ -500,13 +500,27 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.deferReply({ ephemeral: true });
     try {
-      const outcome = await queueAndPlay(client.kazagumo, {
-        voiceChannel,
-        textChannel: interaction.channel,
-        member: interaction.member,
-        query: favorite.uri,
-        client,
-      });
+      const play = (query, engine) =>
+        queueAndPlay(client.kazagumo, {
+          voiceChannel,
+          textChannel: interaction.channel,
+          member: interaction.member,
+          query,
+          engine,
+          client,
+        });
+
+      // Le lien enregistré peut pointer vers une source devenue injouable —
+      // les favoris d'avant la bascule contiennent des liens YouTube, que
+      // l'hébergeur ne peut plus lire. On retombe alors sur une recherche par
+      // titre sur la source active, plutôt que de renvoyer un échec pour un
+      // titre parfaitement disponible ailleurs.
+      let outcome = await play(favorite.uri).catch(() => null);
+      if (!outcome) {
+        const search = [favorite.title, favorite.author].filter(Boolean).join(" ");
+        outcome = await play(search, SEARCH_ENGINE).catch(() => null);
+      }
+
       if (!outcome) {
         return interaction.editReply({
           embeds: [buildStatusEmbed("error", `Impossible de jouer **${favorite.title}**.`)],
