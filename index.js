@@ -510,16 +510,15 @@ client.on("interactionCreate", async (interaction) => {
           client,
         });
 
-      // Le lien enregistré peut pointer vers une source devenue injouable —
-      // les favoris d'avant la bascule contiennent des liens YouTube, que
-      // l'hébergeur ne peut plus lire. On retombe alors sur une recherche par
-      // titre sur la source active, plutôt que de renvoyer un échec pour un
-      // titre parfaitement disponible ailleurs.
-      let outcome = await play(favorite.uri).catch(() => null);
-      if (!outcome) {
-        const search = [favorite.title, favorite.author].filter(Boolean).join(" ");
-        outcome = await play(search, SEARCH_ENGINE).catch(() => null);
-      }
+      // Un lien YouTube mémorisé avant la bascule est écarté d'emblée : sa
+      // RECHERCHE aboutit (Lavalink retrouve les métadonnées), seule la
+      // lecture échoue ensuite. Attendre l'échec ne servirait donc à rien,
+      // il faut ne pas emprunter ce chemin du tout.
+      const staleYoutube = SEARCH_ENGINE !== "youtube" && /(?:youtube\.com|youtu\.be)/i.test(favorite.uri || "");
+      const search = [favorite.title, favorite.author].filter(Boolean).join(" ");
+
+      let outcome = staleYoutube ? null : await play(favorite.uri).catch(() => null);
+      if (!outcome) outcome = await play(search, SEARCH_ENGINE).catch(() => null);
 
       if (!outcome) {
         return interaction.editReply({
