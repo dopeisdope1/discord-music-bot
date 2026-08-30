@@ -38,6 +38,7 @@ const guardWhitelist = require("./guard/whitelist");
 const { ALL_GUARDS } = require("./guard/definitions");
 const commandCatalog = require("./commandCatalog");
 const toolsCatalog = require("./toolsCatalog");
+const commandForms = require("./commandForms");
 const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
@@ -162,6 +163,12 @@ const SECTIONS = [
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
+  {
+    key: "run",
+    label: "Exécuter",
+    description: "Lance une commande directement depuis le panel (salon/rôle/membre/texte)",
+    visible: hasCoreAccess,
+  },
   {
     key: "commands",
     label: "Commandes",
@@ -486,6 +493,32 @@ function sectionBody(section, guild, member, state) {
       "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. " +
         "Contrôle en jeu : &vc lock/unlock/limit/rename/kick (voir &help > Utilitaire).",
     ].join("\n");
+  }
+
+  if (section === "run") {
+    const active = commandForms.getFormState(member.id);
+    if (!active?.formKey) {
+      return [
+        "Exécute une commande directement depuis le panel — les mêmes vérifications qu'en tapant la commande " +
+          "s'appliquent (permissions, hiérarchie...), et la même fonction est appelée.",
+        "",
+        ...Object.values(commandForms.FORMS).map((f) => `> **${f.label}**`),
+        "",
+        "Choisis une commande ci-dessous.",
+      ].join("\n");
+    }
+    const form = commandForms.FORMS[active.formKey];
+    if (!form) return "Commande inconnue.";
+    const lines = [`**${form.label}**`, ""];
+    if (form.fields.includes("channel")) lines.push(`> **Salon** : ${active.channelId ? `<#${active.channelId}>` : "*non choisi*"}`);
+    if (form.fields.includes("role")) lines.push(`> **Rôle** : ${active.roleId ? `<@&${active.roleId}>` : "*non choisi (optionnel)*"}`);
+    if (form.fields.includes("user")) lines.push(`> **Membre** : ${active.userId ? `<@${active.userId}>` : "*non choisi*"}`);
+    for (const tf of form.textFields || []) {
+      const value = active.text?.[tf.key];
+      lines.push(`> **${tf.label}** : ${value ? `\`${value}\`` : tf.required === false ? "*non rempli (optionnel)*" : "*non rempli*"}`);
+    }
+    lines.push("", form.ready(active) ? "**Prêt à lancer.**" : "Complète les champs manquants avant de lancer.");
+    return lines.join("\n");
   }
 
   if (section === "commands") {
@@ -913,6 +946,53 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           .setDefaultChannels(hubId && guild.channels.cache.has(hubId) ? [hubId] : [])
       )
     );
+  } else if (meta.key === "run") {
+    const active = commandForms.getFormState(member.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:runpick`)
+          .setPlaceholder("Choisir une commande à exécuter")
+          .addOptions(
+            Object.entries(commandForms.FORMS).map(([key, f]) =>
+              new StringSelectMenuOptionBuilder().setLabel(f.label).setValue(key).setDefault(active?.formKey === key)
+            )
+          )
+      )
+    );
+    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
+    if (form) {
+      if (form.fields.includes("channel")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ChannelSelectMenuBuilder()
+              .setCustomId(`${ID}:runchannel`)
+              .setPlaceholder("Choisir un salon")
+              .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+              .setMinValues(0)
+              .setMaxValues(1)
+          )
+        );
+      }
+      if (form.fields.includes("role")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:runrole`).setPlaceholder("Choisir un rôle"))
+        );
+      }
+      if (form.fields.includes("user")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:runuser`).setPlaceholder("Choisir un membre"))
+        );
+      }
+      const buttons = [];
+      if (form.textFields?.length) {
+        buttons.push(new ButtonBuilder().setCustomId(`${ID}:runtextopen`).setLabel("Remplir le texte").setStyle(ButtonStyle.Secondary));
+      }
+      buttons.push(
+        new ButtonBuilder().setCustomId(`${ID}:runlaunch`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active || {}))
+      );
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons));
+    }
   } else if (meta.key === "commands") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1338,6 +1418,82 @@ async function handleConfigInteraction(interaction) {
     if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     voiceChannels.setHub(guildId, interaction.values[0] || null);
     return goto("voice");
+  }
+
+  if (action === "runpick") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    commandForms.setFormState(member.id, { formKey: interaction.values[0], channelId: null, roleId: null, userId: null, text: {} });
+    return goto("run");
+  }
+
+  if (action === "runchannel") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    commandForms.setFormState(member.id, { channelId: interaction.values[0] || null });
+    return goto("run");
+  }
+
+  if (action === "runrole") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    commandForms.setFormState(member.id, { roleId: interaction.values[0] || null });
+    return goto("run");
+  }
+
+  if (action === "runuser") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    commandForms.setFormState(member.id, { userId: interaction.values[0] || null });
+    return goto("run");
+  }
+
+  if (action === "runtextopen") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const active = commandForms.getFormState(member.id);
+    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
+    if (!form) return interaction.reply({ content: "Choisis d'abord une commande.", flags: MessageFlags.Ephemeral });
+    const modal = new ModalBuilder().setCustomId(`${ID}:runtext`).setTitle(form.label.slice(0, 45));
+    for (const tf of form.textFields) {
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId(tf.key)
+            .setLabel(tf.label.slice(0, 45))
+            .setStyle(TextInputStyle.Short)
+            .setMaxLength(tf.max || 200)
+            .setRequired(tf.required !== false)
+            .setValue(active.text?.[tf.key] || "")
+        )
+      );
+    }
+    return interaction.showModal(modal);
+  }
+
+  if (action === "runtext") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const active = commandForms.getFormState(member.id);
+    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
+    if (!form) return interaction.reply({ content: "Formulaire expiré, recommence.", flags: MessageFlags.Ephemeral });
+    const text = {};
+    for (const tf of form.textFields) text[tf.key] = interaction.fields.getTextInputValue(tf.key).trim();
+    commandForms.setFormState(member.id, { text });
+    await interaction.reply({ content: "Champs enregistrés.", flags: MessageFlags.Ephemeral });
+    return interaction.message?.edit(buildConfigPanel(guild, "run", member)).catch(() => {});
+  }
+
+  if (action === "runlaunch") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const active = commandForms.getFormState(member.id);
+    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
+    if (!form) return interaction.reply({ content: "Choisis d'abord une commande.", flags: MessageFlags.Ephemeral });
+    if (!form.ready(active)) return interaction.reply({ content: "Des champs obligatoires manquent encore.", flags: MessageFlags.Ephemeral });
+
+    await interaction.deferUpdate();
+    try {
+      await form.run(interaction.client, interaction, active);
+    } catch (err) {
+      console.error("[commandForms]", err);
+      await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+    commandForms.clearFormState(member.id);
+    return interaction.message?.edit(buildConfigPanel(guild, "run", member)).catch(() => {});
   }
 
   if (action === "doccat") {
