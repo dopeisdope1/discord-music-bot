@@ -782,7 +782,7 @@ async function handleConfigInteraction(interaction) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("value")
-          .setLabel("Message (un est tiré au hasard à chaque arrivée)")
+          .setLabel("Message (tiré au hasard à l'arrivée)")
           .setStyle(TextInputStyle.Paragraph)
           .setMaxLength(1000)
           .setRequired(true)
