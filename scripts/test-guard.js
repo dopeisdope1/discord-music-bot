@@ -206,6 +206,27 @@ async function main() {
     assert.ok(dernier.kicked, "le dernier arrivant d'un afflux suspect aurait dû être expulsé");
   });
 
+  console.log("\nDésactivation d'un guard précis (panel > Anti-nuke) :");
+
+  await cas("un guard désactivé individuellement ne se déclenche plus, même seuil atteint", async () => {
+    const attacker = fakeMember({ id: "attacker-5" });
+    const guild = fakeGuild({ id: "guild-single-toggle", members: [attacker] });
+    guardConfig.toggleGuard("guild-single-toggle", "antichannel"); // l'anti-nuke reste activé globalement
+    const client = { user: { id: BOT_ID } };
+    for (let i = 0; i < 5; i++) {
+      await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.ChannelCreate, executorId: attacker.id, targetId: `c${i}` }));
+    }
+    assert.ok(!attacker.timedOut, "antichannel désactivé individuellement ne doit plus sanctionner");
+  });
+
+  await cas("les autres guards restent actifs quand un seul est désactivé", async () => {
+    const attacker = fakeMember({ id: "attacker-6" });
+    const guild = fakeGuild({ id: "guild-single-toggle", members: [attacker] }); // même guilde que le test précédent : antichannel toujours désactivé dessus
+    const client = { user: { id: BOT_ID } };
+    await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.BotAdd, executorId: attacker.id, targetId: "newbot" }));
+    assert.ok(attacker.timedOut, "antibot doit rester actif même si antichannel est désactivé sur ce serveur");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 }
 

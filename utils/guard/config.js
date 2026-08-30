@@ -14,6 +14,10 @@ const DEFAULT_CONFIG = {
   // vers "kick"/"ban" si besoin d'une réponse plus dure.
   punishment: "timeout",
   punishmentDurationMs: 10 * 60 * 1000,
+  // Guards individuellement désactivés (clés de utils/guard/definitions.js,
+  // + "antieveryone"/"antijoin" qui ne sont pas dans DEFINITIONS) — le
+  // panel permet de couper un guard précis sans tout désactiver.
+  disabledGuards: [],
 };
 
 let cache = null;
@@ -44,6 +48,7 @@ function guildEntry(guildId) {
   if (typeof entry.enabled !== "boolean") entry.enabled = DEFAULT_CONFIG.enabled;
   if (!PUNISHMENTS.includes(entry.punishment)) entry.punishment = DEFAULT_CONFIG.punishment;
   if (typeof entry.punishmentDurationMs !== "number") entry.punishmentDurationMs = DEFAULT_CONFIG.punishmentDurationMs;
+  if (!Array.isArray(entry.disabledGuards)) entry.disabledGuards = [];
   return entry;
 }
 
@@ -65,4 +70,19 @@ function setPunishment(guildId, punishment) {
   return true;
 }
 
-module.exports = { getConfig, setEnabled, setPunishment, PUNISHMENTS };
+/** Vrai si le guard `key` doit s'exécuter : anti-nuke actif globalement ET pas désactivé individuellement. */
+function isGuardEnabled(guildId, key) {
+  const entry = guildEntry(guildId);
+  return entry.enabled && !entry.disabledGuards.includes(key);
+}
+
+/** @returns {boolean} nouvel état (true = désormais activé) */
+function toggleGuard(guildId, key) {
+  const entry = guildEntry(guildId);
+  const disabled = entry.disabledGuards.includes(key);
+  entry.disabledGuards = disabled ? entry.disabledGuards.filter((k) => k !== key) : [...entry.disabledGuards, key];
+  save();
+  return disabled;
+}
+
+module.exports = { getConfig, setEnabled, setPunishment, isGuardEnabled, toggleGuard, PUNISHMENTS };

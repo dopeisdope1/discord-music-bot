@@ -35,9 +35,12 @@ const badWords = require("./automod/badWords");
 const welcomeStore = require("./welcomeStore");
 const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
-const { DEFINITIONS: GUARD_DEFINITIONS } = require("./guard/definitions");
+const { ALL_GUARDS } = require("./guard/definitions");
 const commandCatalog = require("./commandCatalog");
 const toolsCatalog = require("./toolsCatalog");
+const muteStore = require("./muteStore");
+const ticketStore = require("./ticketStore");
+const voiceChannels = require("./voiceChannels");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -153,6 +156,9 @@ const SECTIONS = [
   { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
   { key: "guard", label: "Anti-nuke", description: "Détection de rafales destructrices et sanction automatique", permission: "protection.guard.manage" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
+  { key: "mute", label: "Mute", description: "Rôle utilisé par &mute/&tempmute/&cmute", permission: "protection.automod" },
+  { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
+  { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
@@ -382,17 +388,20 @@ function sectionBody(section, guild, member, state) {
   if (section === "guard") {
     const config = guardConfig.getConfig(guildId);
     const whitelist = guardWhitelist.getWhitelist(guildId);
-    const guardLines = GUARD_DEFINITIONS.map((d) => {
+    const guardLines = ALL_GUARDS.map((d) => {
       const rule = d.threshold ? `${d.threshold.count} en ${d.threshold.windowMs / 1000}s` : "immédiat";
-      return `> \`${d.key}\` — ${d.label} (${rule})`;
+      const on = guardConfig.isGuardEnabled(guildId, d.key);
+      return `> ${on ? "🟢" : "🔴"} \`${d.key}\` — ${d.label} (${rule})`;
     });
     return [
-      `> **Anti-nuke** : ${config.enabled ? "activé" : "désactivé"}`,
+      `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
       `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
       `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
-      "**Guards actifs :**",
+      "**Guards** (actif seulement si l'interrupteur général l'est aussi) :",
       ...guardLines,
+      "",
+      "Choisis un guard ci-dessous pour l'activer/le désactiver individuellement.",
       "",
       "Owner, rang sys et whitelist sont entièrement exemptés (pas seulement de la sanction — leurs actions ne " +
         "comptent même pas dans les seuils). Pas de restauration de salon/rôle supprimé en v1 (voir le README) : " +
@@ -447,6 +456,35 @@ function sectionBody(section, guild, member, state) {
       "",
       "Le rang sys donne accès à **tout le bot** : toutes les permissions de modération, ce panneau, les dispenses.",
       "Un sys ne peut pas en nommer d'autres — cette rubrique n'est visible que par toi.",
+    ].join("\n");
+  }
+
+  if (section === "mute") {
+    const roleId = muteStore.getMuteRoleId(guildId);
+    return [
+      `> **Rôle de mute** : ${roleId && guild.roles.cache.has(roleId) ? `<@&${roleId}>` : "*aucun — non configuré*"}`,
+      "",
+      "Ce rôle doit lui-même refuser Envoyer des messages/Parler sur tes salons (permissions Discord classiques) — " +
+        "le bot ne fait qu'attribuer/retirer ce rôle via &mute/&tempmute/&unmute (et les alias &cmute/&tempcmute/&uncmute).",
+    ].join("\n");
+  }
+
+  if (section === "tickets") {
+    const config = ticketStore.getConfig(guildId);
+    return [
+      `> **Rôle staff** : ${config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? `<@&${config.staffRoleId}>` : "*aucun*"}`,
+      "",
+      "Ajouté automatiquement à chaque ticket ouvert (voir &ticket setup pour poster le bouton \"Ouvrir un ticket\").",
+    ].join("\n");
+  }
+
+  if (section === "voice") {
+    const hubId = voiceChannels.getHub(guildId);
+    return [
+      `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
+      "",
+      "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. " +
+        "Contrôle en jeu : &vc lock/unlock/limit/rename/kick (voir &help > Utilitaire).",
     ].join("\n");
   }
 
@@ -754,6 +792,36 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:guardpick`)
+          .setPlaceholder("Activer/désactiver un guard précis")
+          .addOptions(
+            ALL_GUARDS.map((d) =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(d.label.slice(0, 100))
+                .setDescription(d.key)
+                .setValue(d.key)
+                .setDefault(state.guardKey === d.key)
+            )
+          )
+      )
+    );
+    if (state.guardKey) {
+      const def = ALL_GUARDS.find((d) => d.key === state.guardKey);
+      if (def) {
+        const on = guardConfig.isGuardEnabled(guild.id, def.key);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${ID}:guardtoggle:${def.key}`)
+              .setLabel(`${def.label} : ${on ? "désactiver" : "activer"}`)
+              .setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success)
+          )
+        );
+      }
+    }
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder().setCustomId(`${ID}:guardwladd`).setPlaceholder("Ajouter à la whitelist anti-nuke")
       ),
       new ActionRowBuilder().addComponents(
@@ -812,6 +880,39 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   } else if (meta.key === "banall") {
     for (const row of accessRows("banall", "ban de masse")) container.addActionRowComponents(row);
+  } else if (meta.key === "mute") {
+    const roleId = muteStore.getMuteRoleId(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`${ID}:muterole`)
+          .setPlaceholder("Choisir le rôle de mute")
+          .setDefaultRoles(roleId && guild.roles.cache.has(roleId) ? [roleId] : [])
+      )
+    );
+  } else if (meta.key === "tickets") {
+    const config = ticketStore.getConfig(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`${ID}:ticketstaff`)
+          .setPlaceholder("Choisir le rôle staff")
+          .setDefaultRoles(config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? [config.staffRoleId] : [])
+      )
+    );
+  } else if (meta.key === "voice") {
+    const hubId = voiceChannels.getHub(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:voicehubchannel`)
+          .setPlaceholder("Choisir le salon générateur")
+          .addChannelTypes(ChannelType.GuildVoice)
+          .setMinValues(0)
+          .setMaxValues(1)
+          .setDefaultChannels(hubId && guild.channels.cache.has(hubId) ? [hubId] : [])
+      )
+    );
   } else if (meta.key === "commands") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1126,6 +1227,17 @@ async function handleConfigInteraction(interaction) {
     return goto("guard");
   }
 
+  if (action === "guardpick") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("guard", { guardKey: interaction.values[0] });
+  }
+
+  if (action === "guardtoggle") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    guardConfig.toggleGuard(guildId, extra);
+    return goto("guard", { guardKey: extra });
+  }
+
   if (action === "guardwladd" || action === "guardwldel") {
     if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     const userId = interaction.values[0];
@@ -1208,6 +1320,24 @@ async function handleConfigInteraction(interaction) {
       });
     }
     return goto(SECTION_OF_SCOPE[extra] || "home");
+  }
+
+  if (action === "muterole") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    muteStore.setMuteRoleId(guildId, interaction.values[0] || null);
+    return goto("mute");
+  }
+
+  if (action === "ticketstaff") {
+    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    ticketStore.setStaffRole(guildId, interaction.values[0] || null);
+    return goto("tickets");
+  }
+
+  if (action === "voicehubchannel") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    voiceChannels.setHub(guildId, interaction.values[0] || null);
+    return goto("voice");
   }
 
   if (action === "doccat") {

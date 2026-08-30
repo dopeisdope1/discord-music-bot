@@ -104,7 +104,7 @@ async function checkEveryoneMention(client, message) {
   if (!message.mentions.everyone) return;
 
   const config = guardConfig.getConfig(message.guild.id);
-  if (!config.enabled) return;
+  if (!guardConfig.isGuardEnabled(message.guild.id, "antieveryone")) return;
   if (isFullyExempt(message.member)) return;
 
   await message.delete().catch(() => {});
@@ -132,8 +132,7 @@ async function checkEveryoneMention(client, message) {
 const JOIN_FLOOD = { count: 5, windowMs: 10_000 };
 
 async function checkJoinFlood(client, member) {
-  const config = guardConfig.getConfig(member.guild.id);
-  if (!config.enabled) return;
+  if (!guardConfig.isGuardEnabled(member.guild.id, "antijoin")) return;
   if (isFullyExempt(member)) return;
 
   const count = recordOccurrence(member.guild.id, "__joins__", "antijoin", JOIN_FLOOD.windowMs);
@@ -154,4 +153,14 @@ async function checkJoinFlood(client, member) {
   });
 }
 
-module.exports = { DEFINITIONS, checkAuditEntry, checkEveryoneMention, checkJoinFlood };
+// Liste complète pour le panel (&panel > Anti-nuke) : les 8 guards basés sur
+// l'audit log + antieveryone/antijoin, qui n'y figurent pas (déclenchés
+// autrement, voir plus haut) mais sont individuellement activables/désactivables
+// au même titre via guardConfig.isGuardEnabled/toggleGuard.
+const ALL_GUARDS = [
+  ...DEFINITIONS.map((d) => ({ key: d.key, label: d.label, threshold: d.threshold })),
+  { key: "antieveryone", label: "Mention @everyone/@here non autorisée", threshold: null },
+  { key: "antijoin", label: "Afflux de joins suspect", threshold: JOIN_FLOOD },
+];
+
+module.exports = { DEFINITIONS, ALL_GUARDS, checkAuditEntry, checkEveryoneMention, checkJoinFlood };

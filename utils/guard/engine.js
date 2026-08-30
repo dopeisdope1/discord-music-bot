@@ -93,7 +93,7 @@ async function applyPunishment(client, guild, executorMember, config, reason) {
  */
 async function handleAuditEntry(client, guild, entry, guardDef) {
   const config = guardConfig.getConfig(guild.id);
-  if (!config.enabled) return;
+  if (!guardConfig.isGuardEnabled(guild.id, guardDef.key)) return;
   if (entry.executorId === client.user.id) return;
 
   const executorMember = entry.executorId ? await guild.members.fetch(entry.executorId).catch(() => null) : null;
