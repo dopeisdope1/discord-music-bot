@@ -32,6 +32,7 @@ const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyAc
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
 const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
+const { relayAuditLogEntry } = require("./utils/moderationLog");
 
 const client = new Client({
   intents: [
@@ -44,6 +45,10 @@ const client = new Client({
     // intents privilégiés).
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildMembers,
+    // Nécessaire à guildAuditLogEntryCreate (voir plus bas) : sans lui, le
+    // salon de logs configuré via &panel ne reçoit jamais rien. Non
+    // privilégié, aucune activation manuelle requise sur le portail.
+    GatewayIntentBits.GuildModeration,
   ],
   // AUCUN ping par défaut, nulle part : ni @everyone/@here, ni rôles, ni
   // utilisateurs, ni ping de réponse. Les mentions restent affichées et
@@ -715,6 +720,17 @@ client.once("ready", () => {
 client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
+  });
+});
+
+// Journal de modération (voir utils/moderationLog.js) : chaque entrée
+// d'audit Discord — ban, kick, timeout, salon/rôle supprimé, etc. — est
+// relayée vers le salon configuré via &panel > Logs, quel qu'en soit
+// l'auteur : ce bot (&ban/&unban/&banall), le CrowBot du serveur, ou un
+// modérateur humain. Ne fait rien si aucun salon n'est configuré.
+client.on("guildAuditLogEntryCreate", (entry, guild) => {
+  relayAuditLogEntry(client, guild, entry).catch((err) => {
+    console.error("[moderationLog] échec du relais d'une entrée d'audit :", err);
   });
 });
 

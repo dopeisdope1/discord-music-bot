@@ -9,6 +9,8 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   UserSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -16,6 +18,7 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const accessStore = require("./accessStore");
+const { getLogChannelId, setLogChannelId } = require("./modLogStore");
 
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
 // qui permet à index.js de les router sans les énumérer un par un.
@@ -28,6 +31,7 @@ const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
   { key: "moderation", label: "Modération", description: "Qui échappe au quota et qui gère les salons" },
+  { key: "logs", label: "Logs", description: "Salon où atterrit le journal de toute la modération" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
 ];
@@ -76,6 +80,19 @@ function sectionBody(section, guildId) {
       "",
       `> **Accès aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
       "Ces membres peuvent utiliser `lock`, `unlock`, `hide`, `unhide` et `renew`.",
+    ].join("\n");
+  }
+
+  if (section === "logs") {
+    const channelId = getLogChannelId(guildId);
+    return [
+      `> **Salon de logs** : ${channelId ? `<#${channelId}>` : "*aucun — désactivé*"}`,
+      "",
+      "Chaque bannissement, expulsion, timeout, salon/rôle supprimé, etc. y est journalisé en permanence " +
+        "(le message ne s'efface pas tout seul, contrairement aux confirmations ailleurs dans le bot).",
+      "Couvre les actions de ce bot (`&ban`/`&unban`/`&banall`), celles du CrowBot du serveur, et celles de " +
+        "n'importe quel modérateur humain — Discord retient l'exécuteur réel de chaque action, quel que soit " +
+        "qui l'a lancée.",
     ].join("\n");
   }
 
@@ -155,6 +172,22 @@ function buildConfigPanel(guildId, current = "home", isOwner = false) {
     // autorisé par Discord dans un message.
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
     for (const row of accessRows("salon", "accès aux salons")) container.addActionRowComponents(row);
+  } else if (meta.key === "logs") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:logchannel`)
+          .setPlaceholder("Choisir le salon de logs")
+          .addChannelTypes(ChannelType.GuildText)
+      )
+    );
+    if (getLogChannelId(guildId)) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:logchannel:clear`).setLabel("Désactiver les logs").setStyle(ButtonStyle.Danger)
+        )
+      );
+    }
   } else if (meta.key === "sys") {
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   } else if (meta.key === "banall") {
@@ -188,6 +221,15 @@ async function handleConfigInteraction(interaction) {
 
   if (action === "nav") {
     return interaction.update(buildConfigPanel(guildId, interaction.values[0], isOwner));
+  }
+
+  if (action === "logchannel") {
+    if (extra === "clear") {
+      setLogChannelId(guildId, null);
+    } else {
+      setLogChannelId(guildId, interaction.values[0]);
+    }
+    return interaction.update(buildConfigPanel(guildId, "logs", isOwner));
   }
 
   if (action === "add" || action === "del") {

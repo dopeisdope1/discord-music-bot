@@ -421,6 +421,28 @@ Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section
 sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
 systématiquement "n'écoute rien sur Spotify", même si c'est faux.
 
+## 7ter bis. Journal de modération (`&panel` > Logs)
+
+Rubrique **Logs** de `&panel` : choisis un salon texte, et chaque action de
+modération y est journalisée en permanence (le message ne s'efface pas tout
+seul, contrairement aux confirmations "Nettoyage en cours…" ailleurs dans le
+bot). Aucun salon choisi par défaut — rien n'est journalisé tant que la
+rubrique n'a pas été configurée.
+
+Couvre bannissement, débannissement, expulsion, timeout, rôles ajoutés/
+retirés, salon/rôle créé ou supprimé, webhook créé, nettoyage en masse, bot
+ajouté, déconnexion vocale forcée. Le journal repose entièrement sur le
+**journal d'audit natif de Discord** (`guildAuditLogEntryCreate`, nécessite
+l'intent **GUILD_MODERATION** — non privilégié, aucune activation manuelle
+requise) : chaque entrée retient l'exécuteur réel de l'action, quel qu'il
+soit. Ce mécanisme couvre donc sans code spécifique :
+
+- les commandes de modération de ce bot (`&ban`/`&unban`/`&banall`) ;
+- celles du **CrowBot** du serveur (bot séparé, anti-nuke/modération) ;
+- celles de n'importe quel modérateur humain.
+
+Nécessite la permission **View Audit Log** sur le bot (voir section 3).
+
 ## 7quater. Anti-nuke ("antifast")
 
 Protection automatique contre les nukes (destruction rapide du serveur),
