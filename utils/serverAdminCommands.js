@@ -721,6 +721,7 @@ module.exports = {
   voicehub,
   vc,
   handleConfirmInteraction,
+  requestConfirmation,
   ROLE_ADMIN_SUBCOMMANDS,
   ID,
 };

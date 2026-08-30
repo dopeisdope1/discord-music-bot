@@ -19,10 +19,11 @@ const { moderationHandlers } = require("./moderationCommands");
 const { automodHandlers } = require("./automodCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
 const moderationExtra = require("./moderationExtra");
+const serverExtra = require("./serverExtra");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
-const { startGiveaway, rerollGiveaway } = require("./giveaways");
+const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
@@ -370,6 +371,9 @@ const modHandlers = {
     if (sub === "start") return startGiveaway(client, message, args.slice(1));
     if (sub === "reroll") return rerollGiveaway(client, message, args.slice(1));
   },
+  end: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "giveaway") return endGiveaway(client, message, args.slice(1));
+  },
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,
@@ -424,6 +428,22 @@ const modHandlers = {
   hideall: moderationExtra.hideall,
   unhideall: moderationExtra.unhideall,
   derank: moderationExtra.derank,
+
+  // Extensions "Gestion du serveur" — voir utils/serverExtra.js.
+  choose: serverExtra.choose,
+  embed: serverExtra.embedPrompt,
+  create: serverExtra.createEmoji,
+  massiverole: serverExtra.massiverole,
+  unmassiverole: serverExtra.unmassiverole,
+  voicemove: serverExtra.voicemove,
+  voicekick: serverExtra.voicekick,
+  bringall: serverExtra.bringall,
+  unbanall: serverExtra.unbanall,
+  temprole: serverExtra.temprole,
+  untemprole: serverExtra.untemprole,
+  sync: serverExtra.sync,
+  cleanup: serverExtra.cleanup,
+  autoreact: serverExtra.autoreact,
 };
 
 /**

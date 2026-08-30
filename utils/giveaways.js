@@ -76,32 +76,43 @@ function pickWinner(participants) {
   return participants[Math.floor(Math.random() * participants.length)];
 }
 
+/** Termine un giveaway (déjà marqué "ended" côté store), édite sa carte et annonce le gagnant. */
+async function finishGiveaway(client, giveaway, winnerId) {
+  const channel = client.channels.cache.get(giveaway.channelId);
+  if (!channel?.isTextBased()) return;
+
+  const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+  if (message) {
+    await message
+      .edit(
+        card("Giveaway terminé", [`**Lot :** ${giveaway.prize}`, winnerId ? `**Gagnant :** <@${winnerId}>` : "**Aucun participant.**"].join("\n"))
+      )
+      .catch(() => {});
+  }
+  if (winnerId) {
+    await channel.send({ content: `<@${winnerId}> a gagné **${giveaway.prize}** !`, allowedMentions: { users: [winnerId] } }).catch(() => {});
+  }
+}
+
 /** À appeler périodiquement (voir index.js) : termine les giveaways expirés et tire un gagnant. */
 async function checkExpiredGiveaways(client) {
   for (const giveaway of giveawayStore.getExpiredActive()) {
     const winnerId = pickWinner(giveaway.participants);
     giveawayStore.markEnded(giveaway.messageId, winnerId);
-
-    const channel = client.channels.cache.get(giveaway.channelId);
-    if (!channel?.isTextBased()) continue;
-
-    const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-    if (message) {
-      await message
-        .edit(
-          card(
-            "Giveaway terminé",
-            [`**Lot :** ${giveaway.prize}`, winnerId ? `**Gagnant :** <@${winnerId}>` : "**Aucun participant.**"].join("\n")
-          )
-        )
-        .catch(() => {});
-    }
-    if (winnerId) {
-      await channel
-        .send({ content: `<@${winnerId}> a gagné **${giveaway.prize}** !`, allowedMentions: { users: [winnerId] } })
-        .catch(() => {});
-    }
+    await finishGiveaway(client, giveaway, winnerId);
   }
+}
+
+/** &end giveaway <id> — termine un giveaway avant son échéance naturelle. */
+async function endGiveaway(client, message, args) {
+  if (!can(message.member, "server.giveaways.manage")) return;
+  const giveaway = args[0] ? giveawayStore.get(args[0]) : giveawayStore.getLatestInChannel(message.channel.id);
+  if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé (indique son ID, visible dans `giveaway reroll`).")] });
+  if (giveaway.ended) return message.reply({ embeds: [buildStatusEmbed("info", "Ce giveaway est déjà terminé.")] });
+
+  const winnerId = pickWinner(giveaway.participants);
+  giveawayStore.markEnded(giveaway.messageId, winnerId);
+  await finishGiveaway(client, giveaway, winnerId);
 }
 
 /** &giveaway reroll [id du message] — retire un nouveau gagnant du dernier giveaway du salon. */
@@ -117,4 +128,4 @@ async function rerollGiveaway(client, message, args) {
   await message.channel.send({ content: `Nouveau tirage : <@${winnerId}> remporte **${giveaway.prize}** !`, allowedMentions: { users: [winnerId] } });
 }
 
-module.exports = { startGiveaway, handleGiveawayButton, checkExpiredGiveaways, rerollGiveaway, ID };
+module.exports = { startGiveaway, handleGiveawayButton, checkExpiredGiveaways, rerollGiveaway, endGiveaway, ID };

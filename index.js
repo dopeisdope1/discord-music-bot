@@ -37,6 +37,7 @@ const { handlePollButton } = require("./utils/polls");
 const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveaways");
 const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
+const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -236,6 +237,7 @@ setInterval(() => {
 setInterval(() => {
   checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
   checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
+  checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
 }, 30_000);
 
 // Fait tourner les activités configurées (&playto/&listen/&watch/&compet/
@@ -404,6 +406,17 @@ client.on("interactionCreate", async (interaction) => {
   // et ne sont donc pas concernées.
   if (interaction.customId?.startsWith("cfg:")) {
     await handleConfigInteraction(interaction).catch((err) => console.error("[configPanel]", err));
+    return;
+  }
+
+  // Constructeur d'embed (&embed, voir utils/serverExtra.js) : bouton ouvre
+  // la modale, la modale postée déclenche l'envoi.
+  if (interaction.customId === "srvextra:embedopen") {
+    await handleEmbedButton(interaction).catch((err) => console.error("[serverExtra]", err));
+    return;
+  }
+  if (interaction.customId === "srvextra:embed") {
+    await handleEmbedModal(interaction).catch((err) => console.error("[serverExtra]", err));
     return;
   }
 
@@ -681,6 +694,8 @@ client.on("messageCreate", (message) => {
   // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut
   // (voir utils/guard/definitions.js).
   checkEveryoneMention(client, message).catch((err) => console.error("[guard:antieveryone]", err));
+  // Réactions automatiques par salon (&autoreact, voir utils/serverExtra.js).
+  applyAutoReact(message).catch((err) => console.error("[autoreact]", err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
