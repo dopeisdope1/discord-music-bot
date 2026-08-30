@@ -17,6 +17,7 @@ const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { moderationHandlers } = require("./moderationCommands");
 const { automodHandlers } = require("./automodCommands");
+const { botProfileHandlers } = require("./botProfileCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -372,6 +373,20 @@ const modHandlers = {
   link: automodHandlers.link,
   antimassmention: automodHandlers.antimassmention,
   badwords: automodHandlers.badwords,
+
+  // Profil/présence du bot — voir utils/botProfileCommands.js, rang sys
+  // uniquement (comme &owners/&sources/&allbots).
+  set: botProfileHandlers.set,
+  playto: botProfileHandlers.playto,
+  listen: botProfileHandlers.listen,
+  watch: botProfileHandlers.watch,
+  compet: botProfileHandlers.compet,
+  stream: botProfileHandlers.stream,
+  remove: botProfileHandlers.remove,
+  online: botProfileHandlers.online,
+  idle: botProfileHandlers.idle,
+  dnd: botProfileHandlers.dnd,
+  invisible: botProfileHandlers.invisible,
 };
 
 /**

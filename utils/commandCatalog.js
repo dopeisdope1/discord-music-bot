@@ -168,6 +168,17 @@ const CATEGORIES = [
         permission: "sys",
         description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
       },
+      { name: "set name <nom>", prefix: "mod", permission: "sys", description: "Change le nom du bot" },
+      { name: "set pic <lien>", prefix: "mod", permission: "sys", description: "Change la photo de profil du bot (lien ou pièce jointe)" },
+      { name: "set banner <lien>", prefix: "mod", permission: "sys", description: "Change la bannière du bot (lien ou pièce jointe)" },
+      {
+        name: "playto|listen|watch|compet|stream <message>",
+        prefix: "mod",
+        permission: "sys",
+        description: "Change l'activité du bot ; plusieurs phrases séparées par `,,` alternent",
+      },
+      { name: "remove activity", prefix: "mod", permission: "sys", description: "Supprime l'activité du bot" },
+      { name: "online|idle|dnd|invisible", prefix: "mod", permission: "sys", description: "Change le statut du bot" },
     ],
   },
   {

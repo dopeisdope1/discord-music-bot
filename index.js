@@ -35,6 +35,7 @@ const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
 const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveaways");
+const { applyPresence } = require("./utils/botProfileCommands");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -228,6 +229,17 @@ console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDO
 setInterval(() => {
   checkExpiredGiveaways(client).catch((err) => console.error("[giveaways]", err));
 }, 30_000);
+
+// Fait tourner les activités configurées (&playto/&listen/&watch/&compet/
+// &stream, voir utils/botProfileCommands.js) si plusieurs phrases ont été
+// réglées — sans effet si une seule (ou aucune) n'est configurée.
+setInterval(() => {
+  try {
+    applyPresence(client);
+  } catch (err) {
+    console.error("[botProfile]", err);
+  }
+}, 15_000);
 
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
@@ -798,6 +810,11 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+
+  // Réapplique le statut/activité configuré (&online/&idle/&dnd/&invisible,
+  // &playto/&listen/&watch/&compet/&stream) — Discord ne le garde pas d'un
+  // redémarrage à l'autre, contrairement au reste de la config du bot.
+  applyPresence(client);
 
   for (const guild of client.guilds.cache.values()) {
     // Sur un serveur avec beaucoup de membres, Discord ne pousse pas forcément
