@@ -407,10 +407,13 @@ que de la friction.
 Message envoyé au salon configuré à l'arrivée d'un membre, tiré au hasard
 parmi une liste (clé `server.welcome.manage`) : salon cible, délai de
 suppression automatique (10s/30s/1min/5min/jamais), messages ajoutés via
-une fenêtre de saisie et retirés depuis un menu. `{user}` dans un message
-est remplacé par une mention du nouvel arrivant (avec notification,
-contrairement au reste du bot qui ne ping jamais). Désactivé tant qu'aucun
-salon ou aucun message n'est configuré.
+une fenêtre de saisie et retirés depuis un menu. Le nouvel arrivant est
+**toujours mentionné, avec notification** (seul cas du bot qui ping,
+contrairement au reste qui n'en envoie jamais) : la mention est placée
+devant le message par défaut, ou à l'endroit de `{user}` dans le texte si
+tu veux la positionner ailleurs (ex : "Bienvenue {user}, lis le
+règlement !"). Désactivé tant qu'aucun salon ou aucun message n'est
+configuré.
 
 ## 7. Notes sur le support Spotify
 

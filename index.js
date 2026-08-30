@@ -780,12 +780,16 @@ client.on("guildMemberAdd", async (member) => {
   const channel = member.guild.channels.cache.get(config.channelId);
   if (!channel?.isTextBased()) return;
 
-  const sent = await channel
-    .send({ content: text.replace(/\{user\}/g, `<@${member.id}>`), allowedMentions: { users: [member.id] } })
-    .catch((err) => {
-      console.error("[welcome] échec d'envoi :", err.message);
-      return null;
-    });
+  // "{user}" place la mention où on veut dans le texte ; sans lui, la
+  // mention est ajoutée automatiquement devant — un message de bienvenue
+  // doit pinger l'arrivant par défaut, pas seulement si on connaît la syntaxe.
+  const mention = `<@${member.id}>`;
+  const content = text.includes("{user}") ? text.replace(/\{user\}/g, mention) : `${mention} ${text}`;
+
+  const sent = await channel.send({ content, allowedMentions: { users: [member.id] } }).catch((err) => {
+    console.error("[welcome] échec d'envoi :", err.message);
+    return null;
+  });
   if (sent && config.autoDeleteSeconds > 0) {
     setTimeout(() => sent.delete().catch(() => {}), config.autoDeleteSeconds * 1000);
   }
