@@ -47,13 +47,21 @@ lavalink:
 plugins:
   youtube:
     enabled: true
-    # Clients de secours : quand YouTube casse l'un d'eux, les autres prennent
-    # le relais sans intervention.
+    # Ordre choisi pour éviter le déchiffrement du lecteur web, que YouTube
+    # refuse depuis une adresse de centre de données comme celle de Railway
+    # ("Must find sig function", tous clients confondus). TVHTML5EMBEDDED et
+    # ANDROID_VR empruntent des chemins qui n'en dépendent pas ; WEB et
+    # WEBEMBEDDED sont retirés car ils exigent désormais un jeton
+    # d'authentification (PoToken) qu'on ne fournit pas.
+    # Noms valides pour cette extension : MUSIC, WEB, MWEB, WEBEMBEDDED,
+    # ANDROID, ANDROID_MUSIC, ANDROID_VR, IOS, TV, TVHTML5_SIMPLY. Un nom
+    # inconnu est ignoré en silence (un simple avertissement au démarrage),
+    # d'où l'importance de s'en tenir à cette liste.
     clients:
-      - MUSIC
       - ANDROID_VR
-      - WEB
-      - WEBEMBEDDED
+      - TVHTML5_SIMPLY
+      - TV
+      - MUSIC
 
   lavasrc:
     sources:
@@ -69,8 +77,11 @@ plugins:
       albumLoadLimit: 6
     providers:
       # Spotify ne fournit pas de flux audio exploitable : LavaSrc récupère
-      # les métadonnées puis retrouve la piste sur YouTube. L'ISRC en premier
-      # donne la correspondance la plus fiable.
+      # les métadonnées puis retrouve la piste ailleurs. SoundCloud en tête
+      # car YouTube refuse les requêtes venues d'un centre de données
+      # ("Sign in to confirm you're not a bot"). Les entrées YouTube restent
+      # en dernier recours, au cas où l'accès redeviendrait possible.
+      - "scsearch:%QUERY%"
       - "ytsearch:\"%ISRC%\""
       - "ytsearch:%QUERY%"
 

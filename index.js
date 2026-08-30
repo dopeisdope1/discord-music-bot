@@ -106,7 +106,12 @@ console.log(`[lavalink] ${LavalinkNodes.length} nœud(s) déclaré(s) : ${Lavali
 
 client.kazagumo = new Kazagumo(
   {
-    defaultSearchEngine: "youtube",
+    // SoundCloud et non YouTube : depuis un hébergeur comme Railway, YouTube
+    // répond "Sign in to confirm you're not a bot" à tous les clients et
+    // aucune lecture n'aboutit. SoundCloud n'impose pas cette vérification.
+    // Repasser à "youtube" le jour où un jeton d'authentification (PoToken)
+    // sera fourni au nœud.
+    defaultSearchEngine: "soundcloud",
     send: (guildId, payload) => {
       const guild = client.guilds.cache.get(guildId);
       if (guild) guild.shard.send(payload);
