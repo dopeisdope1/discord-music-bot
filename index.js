@@ -36,6 +36,7 @@ const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
 const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveaways");
 const { applyPresence } = require("./utils/botProfileCommands");
+const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -228,6 +229,13 @@ console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDO
 // disparaître, juste reprendre la vérification au redémarrage.
 setInterval(() => {
   checkExpiredGiveaways(client).catch((err) => console.error("[giveaways]", err));
+}, 30_000);
+
+// Lève les mutes/bans temporaires arrivés à échéance (&tempmute/&tempban,
+// voir utils/moderationExtra.js) — même fréquence que les giveaways.
+setInterval(() => {
+  checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
+  checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
 }, 30_000);
 
 // Fait tourner les activités configurées (&playto/&listen/&watch/&compet/

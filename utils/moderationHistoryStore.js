@@ -96,4 +96,32 @@ function search(guildId, filters = {}) {
   return limit ? results.slice(0, limit) : results;
 }
 
-module.exports = { record, search };
+/** @returns {boolean} vrai si une entrée a bien été supprimée */
+function deleteById(guildId, id) {
+  const list = load();
+  const index = list.findIndex((e) => e.guildId === guildId && e.id === id);
+  if (index === -1) return false;
+  list.splice(index, 1);
+  save();
+  return true;
+}
+
+/** @returns {number} nombre d'entrées supprimées */
+function deleteAllForTarget(guildId, targetId) {
+  const list = load();
+  const before = list.length;
+  cache = list.filter((e) => !(e.guildId === guildId && e.targetId === targetId));
+  save();
+  return before - cache.length;
+}
+
+/** @returns {number} nombre d'entrées supprimées */
+function deleteAllForGuild(guildId) {
+  const list = load();
+  const before = list.length;
+  cache = list.filter((e) => e.guildId !== guildId);
+  save();
+  return before - cache.length;
+}
+
+module.exports = { record, search, deleteById, deleteAllForTarget, deleteAllForGuild };

@@ -18,6 +18,7 @@ const { handleBan, handleUnban } = require("./banPanel");
 const { moderationHandlers } = require("./moderationCommands");
 const { automodHandlers } = require("./automodCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
+const moderationExtra = require("./moderationExtra");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -332,7 +333,16 @@ const modHandlers = {
   addrole: moderationHandlers.addrole,
   delrole: moderationHandlers.delrole,
   modlogs: moderationHandlers.modlogs,
-  clear: moderationHandlers.clear,
+  // "clear sanctions"/"clear all sanctions" gèrent l'historique d'un membre
+  // (utils/moderationExtra.js) ; tout le reste (y compris un mot-clé non
+  // reconnu, ex "clear owners") reste le nettoyage de messages habituel —
+  // jamais l'inverse, pour ne pas re-ouvrir la collision corrigée sur &clear.
+  clear: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
+    if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
+    return moderationHandlers.clear(client, message, args);
+  },
   purge: moderationHandlers.purge,
   lockdown: moderationHandlers.lockdown,
   panic: moderationHandlers.panic,
@@ -376,7 +386,12 @@ const modHandlers = {
 
   // Profil/présence du bot — voir utils/botProfileCommands.js, rang sys
   // uniquement (comme &owners/&sources/&allbots).
-  set: botProfileHandlers.set,
+  // "set muterole" gère le rôle de mute (utils/moderationExtra.js) ; le
+  // reste (name/pic/banner) reste le profil du bot (utils/botProfileCommands.js).
+  set: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "muterole") return moderationExtra.setMuteRole(client, message, args.slice(1));
+    return botProfileHandlers.set(client, message, args);
+  },
   playto: botProfileHandlers.playto,
   listen: botProfileHandlers.listen,
   watch: botProfileHandlers.watch,
@@ -387,6 +402,28 @@ const modHandlers = {
   idle: botProfileHandlers.idle,
   dnd: botProfileHandlers.dnd,
   invisible: botProfileHandlers.invisible,
+
+  // Mute par rôle (distinct du timeout natif), sanctions, tempban/banlist,
+  // masquage de masse, derank — voir utils/moderationExtra.js. Pas de
+  // système de warns (exclusion permanente, voir le fichier).
+  muterole: moderationExtra.muterole,
+  mute: moderationExtra.mute,
+  tempmute: moderationExtra.tempmute,
+  unmute: moderationExtra.unmute,
+  cmute: moderationExtra.cmute,
+  tempcmute: moderationExtra.tempcmute,
+  uncmute: moderationExtra.uncmute,
+  mutelist: moderationExtra.mutelist,
+  unmuteall: moderationExtra.unmuteall,
+  sanctions: moderationExtra.sanctions,
+  del: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));
+  },
+  tempban: moderationExtra.tempban,
+  banlist: moderationExtra.banlist,
+  hideall: moderationExtra.hideall,
+  unhideall: moderationExtra.unhideall,
+  derank: moderationExtra.derank,
 };
 
 /**

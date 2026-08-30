@@ -1,0 +1,456 @@
+const { PermissionFlagsBits, ChannelType } = require("discord.js");
+const { buildStatusEmbed } = require("./statusEmbed");
+const { can } = require("./permissions/engine");
+const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
+const { formatDuration, parseDuration } = require("./moderationCommands");
+const historyStore = require("./moderationHistoryStore");
+const muteStore = require("./muteStore");
+const tempBanStore = require("./tempBanStore");
+
+// Extensions du catalogue Modération/Paramètres de modération documentées
+// dans le panel mais pas encore câblées — voir utils/commandCatalog.js.
+// AUCUN système de warns ici (&warn/&warnings/&unwarn) : exclusion
+// explicite et permanente du cahier des charges d'origine, &warn reste donc
+// non implémentée volontairement, contrairement au reste de cette liste.
+
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+
+/** Cible = PREMIER argument exactement (mention ou ID) — jamais "une mention trouvée n'importe où" (voir le fix &clear). */
+function parseTarget(args) {
+  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
+  const idMatch = args[0]?.match(/^\d{15,25}$/);
+  return mentionMatch?.[1] || idMatch?.[0] || null;
+}
+
+async function fetchTargetOrReply(message, targetId, { label = "membre" } = {}) {
+  if (!targetId) {
+    await reply(message, "error", `Indique un ${label} (mention ou identifiant) en premier argument.`);
+    return null;
+  }
+  const target = await message.guild.members.fetch(targetId).catch(() => null);
+  if (!target) {
+    await reply(message, "error", "Ce membre n'est pas sur le serveur.");
+    return null;
+  }
+  return target;
+}
+
+// --- Rôle de mute (&muterole, &set muterole) ---
+
+async function muterole(client, message) {
+  if (!can(message.member, "protection.automod")) return;
+  const roleId = muteStore.getMuteRoleId(message.guild.id);
+  if (!roleId || !message.guild.roles.cache.has(roleId)) {
+    return reply(message, "info", "Aucun rôle de mute configuré. Utilise `set muterole @rôle`.");
+  }
+  return reply(message, "info", `Rôle de mute configuré : <@&${roleId}>.`);
+}
+
+/** Appelée par le dispatcher &set (voir utils/musicCommands.js) pour la sous-commande "muterole". */
+async function setMuteRole(client, message, args) {
+  if (!can(message.member, "protection.automod")) return;
+  const role = message.mentions.roles?.first();
+  if (!role) return reply(message, "error", "Indique un rôle : `set muterole @rôle`.");
+  muteStore.setMuteRoleId(message.guild.id, role.id);
+  await reply(
+    message,
+    "success",
+    `Rôle de mute réglé sur ${role}. Ce rôle doit lui-même refuser Envoyer des messages/Parler sur tes salons — ` +
+      "le bot ne fait qu'attribuer/retirer ce rôle, pas les permissions du rôle."
+  );
+}
+
+async function requireMuteRole(message) {
+  const roleId = muteStore.getMuteRoleId(message.guild.id);
+  const role = roleId ? message.guild.roles.cache.get(roleId) : null;
+  if (!role) {
+    await reply(message, "error", "Aucun rôle de mute configuré. Utilise `set muterole @rôle` d'abord.");
+    return null;
+  }
+  return role;
+}
+
+// --- &mute / &tempmute / &unmute (+ &cmute/&tempcmute/&uncmute, même mécanisme) ---
+
+async function muteMember(client, message, args, { temporary }) {
+  if (!can(message.member, "moderation.timeout")) return;
+  const role = await requireMuteRole(message);
+  if (!role) return;
+
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const refusal = checkHierarchy(message.guild, message.member, target);
+  if (refusal) return reply(message, "error", refusal);
+
+  let durationMs = null;
+  let reasonArgs = args.slice(1);
+  if (temporary) {
+    durationMs = parseDuration(args[1]);
+    if (!durationMs) return reply(message, "error", "Indique une durée valide : `tempmute @membre 10m [raison]`.");
+    reasonArgs = args.slice(2);
+  }
+  const reason = reasonArgs.join(" ").trim() || null;
+
+  if (target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} est déjà mute.`);
+
+  try {
+    await target.roles.add(role, `Mute par ${message.author.tag}${reason ? ` : ${reason}` : ""}`);
+  } catch (err) {
+    return reply(message, "error", `Discord a refusé : ${err.message}`);
+  }
+
+  if (temporary) muteStore.addTempMute(message.guild.id, target.id, Date.now() + durationMs);
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: temporary ? "Mute temporaire" : "Mute",
+    fields: [
+      { label: "Cible", value: `<@${target.id}> (${target.id})` },
+      ...(temporary ? [{ label: "Durée", value: formatDuration(durationMs) }] : []),
+    ],
+    action: temporary ? "tempmute" : "mute",
+    targetId: target.id,
+    targetTag: target.user.tag,
+    moderator: message.author,
+    reason,
+    channelId: message.channel.id,
+  });
+
+  await reply(
+    message,
+    "success",
+    `**${target.user.tag}** mute${temporary ? ` pour ${formatDuration(durationMs)}` : ""}.`
+  );
+}
+
+async function unmuteMember(client, message, args) {
+  if (!can(message.member, "moderation.timeout")) return;
+  const role = await requireMuteRole(message);
+  if (!role) return;
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  if (!target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} n'est pas mute.`);
+
+  try {
+    await target.roles.remove(role, `Démute par ${message.author.tag}`);
+  } catch (err) {
+    return reply(message, "error", `Discord a refusé : ${err.message}`);
+  }
+  muteStore.removeTempMute(message.guild.id, target.id);
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: "Démute",
+    fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
+    action: "unmute",
+    targetId: target.id,
+    targetTag: target.user.tag,
+    moderator: message.author,
+    channelId: message.channel.id,
+  });
+  await reply(message, "success", `**${target.user.tag}** n'est plus mute.`);
+}
+
+async function mutelist(client, message) {
+  if (!can(message.member, "moderation.timeout")) return;
+  const role = await requireMuteRole(message);
+  if (!role) return;
+  const members = role.members;
+  if (!members.size) return reply(message, "info", "Personne n'est mute actuellement.");
+  const lines = [...members.values()].slice(0, 50).map((m) => `<@${m.id}>`);
+  return reply(message, "info", `**${members.size} membre(s) mute** :\n${lines.join(", ")}`);
+}
+
+async function unmuteall(client, message) {
+  if (!can(message.member, "moderation.timeout")) return;
+  const role = await requireMuteRole(message);
+  if (!role) return;
+
+  const members = [...role.members.values()];
+  let count = 0;
+  for (const m of members) {
+    await m.roles.remove(role, `Démute de masse par ${message.author.tag}`).catch(() => {});
+    count++;
+  }
+  muteStore.clearTempMutes(message.guild.id);
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: "Démute de masse",
+    fields: [{ label: "Membres démute", value: String(count) }],
+    action: "unmuteall",
+    targetId: null,
+    targetTag: null,
+    moderator: message.author,
+    channelId: message.channel.id,
+    extra: { count },
+  });
+  await reply(message, "success", `**${count}** membre(s) démute.`);
+}
+
+/** Appelé périodiquement (voir index.js) pour lever les mutes temporaires arrivés à échéance. */
+async function checkExpiredMutes(client) {
+  const expired = muteStore.getExpiredTempMutes();
+  for (const entry of expired) {
+    muteStore.removeTempMute(entry.guildId, entry.userId);
+    const guild = client.guilds.cache.get(entry.guildId);
+    if (!guild) continue;
+    const roleId = muteStore.getMuteRoleId(entry.guildId);
+    const role = roleId ? guild.roles.cache.get(roleId) : null;
+    if (!role) continue;
+    const member = await guild.members.fetch(entry.userId).catch(() => null);
+    if (!member || !member.roles.cache.has(role.id)) continue;
+    await member.roles.remove(role, "Fin du mute temporaire").catch(() => {});
+    await report(client, {
+      guildId: entry.guildId,
+      category: "moderation",
+      title: "Fin du mute temporaire",
+      fields: [{ label: "Cible", value: `<@${member.id}> (${member.id})` }],
+      action: "unmute",
+      targetId: member.id,
+      targetTag: member.user.tag,
+      moderator: client.user,
+      channelId: null,
+    }).catch(() => {});
+  }
+}
+
+// --- Sanctions (&sanctions, &del sanction, &clear sanctions, &clear all sanctions) ---
+
+async function sanctions(client, message, args) {
+  if (!can(message.member, "logs.view")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const entries = historyStore.search(message.guild.id, { targetId: target.id, limit: 15 });
+  if (!entries.length) return reply(message, "info", `Aucune sanction enregistrée pour **${target.user.tag}**.`);
+
+  const lines = entries.map((e, i) => {
+    const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
+    return `**${i + 1}.** \`${e.action}\` — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
+  });
+  return reply(message, "info", `**Sanctions de ${target.user.tag}** (${entries.length}) :\n${lines.join("\n")}`);
+}
+
+async function delSanction(client, message, args) {
+  if (!can(message.member, "logs.manage")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const index = parseInt(args[1], 10);
+  if (!Number.isInteger(index) || index < 1) return reply(message, "error", "Indique un numéro : `del sanction @membre <nombre>` (voir `&sanctions`).");
+
+  const entries = historyStore.search(message.guild.id, { targetId: target.id, limit: 15 });
+  const entry = entries[index - 1];
+  if (!entry) return reply(message, "error", "Aucune sanction à ce numéro.");
+
+  historyStore.deleteById(message.guild.id, entry.id);
+  return reply(message, "success", `Sanction \`${entry.action}\` supprimée de l'historique de **${target.user.tag}**.`);
+}
+
+async function clearSanctions(client, message, args) {
+  if (!can(message.member, "logs.manage")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const removed = historyStore.deleteAllForTarget(message.guild.id, target.id);
+  return reply(message, "success", `${removed} sanction(s) supprimée(s) pour **${target.user.tag}**.`);
+}
+
+async function clearAllSanctions(client, message) {
+  if (!can(message.member, "logs.manage")) return;
+  const removed = historyStore.deleteAllForGuild(message.guild.id);
+  return reply(message, "success", `${removed} sanction(s) supprimée(s) sur tout le serveur.`);
+}
+
+// --- &tempban / &banlist ---
+
+async function tempban(client, message, args) {
+  if (!can(message.member, "moderation.ban")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.BanMembers, "BanMembers");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  if (!targetId) return reply(message, "error", "Indique un membre : `tempban @membre <durée> [raison]`.");
+
+  const target = await message.guild.members.fetch(targetId).catch(() => null);
+  if (target) {
+    const refusal = checkHierarchy(message.guild, message.member, target);
+    if (refusal) return reply(message, "error", refusal);
+  }
+
+  const durationMs = parseDuration(args[1]);
+  if (!durationMs) return reply(message, "error", "Indique une durée valide : `tempban @membre 1d [raison]`.");
+  const reason = args.slice(2).join(" ").trim() || null;
+
+  const tag = target?.user.tag || targetId;
+  try {
+    await message.guild.members.ban(targetId, { reason: `Tempban par ${message.author.tag}${reason ? ` : ${reason}` : ""} (${formatDuration(durationMs)})` });
+  } catch (err) {
+    return reply(message, "error", `Discord a refusé : ${err.message}`);
+  }
+  tempBanStore.add(message.guild.id, targetId, Date.now() + durationMs);
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: "Ban temporaire",
+    fields: [{ label: "Cible", value: `${tag} (${targetId})` }, { label: "Durée", value: formatDuration(durationMs) }],
+    action: "tempban",
+    targetId,
+    targetTag: tag,
+    moderator: message.author,
+    reason,
+    channelId: message.channel.id,
+  });
+  await reply(message, "success", `**${tag}** banni pour ${formatDuration(durationMs)}.`);
+}
+
+/** Appelé périodiquement (voir index.js) pour débannir les tempbans arrivés à échéance. */
+async function checkExpiredTempbans(client) {
+  const expired = tempBanStore.getExpired();
+  for (const entry of expired) {
+    tempBanStore.remove(entry.guildId, entry.userId);
+    const guild = client.guilds.cache.get(entry.guildId);
+    if (!guild) continue;
+    await guild.members.unban(entry.userId, "Fin du ban temporaire").catch(() => {});
+    await report(client, {
+      guildId: entry.guildId,
+      category: "moderation",
+      title: "Fin du ban temporaire",
+      fields: [{ label: "Cible", value: entry.userId }],
+      action: "unban",
+      targetId: entry.userId,
+      targetTag: null,
+      moderator: client.user,
+      channelId: null,
+    }).catch(() => {});
+  }
+}
+
+async function banlist(client, message) {
+  if (!can(message.member, "moderation.unban")) return;
+  const bans = await message.guild.bans.fetch().catch(() => null);
+  if (!bans) return reply(message, "error", "Impossible de récupérer la liste des bannis.");
+  if (!bans.size) return reply(message, "info", "Personne n'est banni.");
+  const lines = [...bans.values()].slice(0, 40).map((b) => `\`${b.user.tag}\` (${b.user.id})${b.reason ? ` — ${b.reason}` : ""}`);
+  return reply(message, "info", `**${bans.size} membre(s) banni(s)** :\n${lines.join("\n")}`);
+}
+
+// --- &hideall / &unhideall ---
+
+async function toggleAllChannels(client, message, { deny }) {
+  if (!can(message.member, "channels.manage")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const everyone = message.guild.roles.everyone;
+  const channels = message.guild.channels.cache.filter(
+    (c) => (c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement) && c.manageable
+  );
+
+  let changed = 0;
+  for (const channel of channels.values()) {
+    const currentlyDenied = channel.permissionOverwrites.cache.get(everyone.id)?.deny.has(PermissionFlagsBits.ViewChannel);
+    if (deny && currentlyDenied) continue;
+    if (!deny && !currentlyDenied) continue;
+    await channel.permissionOverwrites
+      .edit(everyone, { ViewChannel: deny ? false : null }, { reason: `${deny ? "Masquage" : "Affichage"} de masse par ${message.author.tag}` })
+      .catch(() => {});
+    changed++;
+  }
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: deny ? "Masquage de masse" : "Affichage de masse",
+    fields: [{ label: "Salons concernés", value: String(changed) }],
+    action: deny ? "hideall" : "unhideall",
+    targetId: null,
+    targetTag: null,
+    moderator: message.author,
+    channelId: message.channel.id,
+    extra: { changed },
+  });
+  await reply(message, "success", `**${changed}** salon(s) ${deny ? "masqué(s)" : "réaffiché(s)"}.`);
+}
+
+const hideall = (client, message) => toggleAllChannels(client, message, { deny: true });
+const unhideall = (client, message) => toggleAllChannels(client, message, { deny: false });
+
+// --- &derank ---
+
+async function derank(client, message, args) {
+  if (!can(message.member, "members.role")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const refusal = checkHierarchy(message.guild, message.member, target);
+  if (refusal) return reply(message, "error", refusal);
+
+  const me = message.guild.members.me;
+  const removable = target.roles.cache.filter((r) => r.id !== message.guild.id && r.position < me.roles.highest.position);
+  if (!removable.size) return reply(message, "info", `${target.user.tag} n'a aucun rôle que je peux retirer.`);
+
+  try {
+    await target.roles.remove(removable, `Derank par ${message.author.tag}`);
+  } catch (err) {
+    return reply(message, "error", `Discord a refusé : ${err.message}`);
+  }
+
+  await report(client, {
+    guildId: message.guild.id,
+    category: "members",
+    title: "Derank",
+    fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }, { label: "Rôles retirés", value: String(removable.size) }],
+    action: "derank",
+    targetId: target.id,
+    targetTag: target.user.tag,
+    moderator: message.author,
+    channelId: message.channel.id,
+    extra: { removed: [...removable.keys()] },
+  });
+  await reply(message, "success", `**${removable.size}** rôle(s) retiré(s) à **${target.user.tag}**.`);
+}
+
+module.exports = {
+  muterole,
+  setMuteRole,
+  mute: (client, message, args) => muteMember(client, message, args, { temporary: false }),
+  tempmute: (client, message, args) => muteMember(client, message, args, { temporary: true }),
+  unmute: unmuteMember,
+  cmute: (client, message, args) => muteMember(client, message, args, { temporary: false }),
+  tempcmute: (client, message, args) => muteMember(client, message, args, { temporary: true }),
+  uncmute: unmuteMember,
+  mutelist,
+  unmuteall,
+  checkExpiredMutes,
+  sanctions,
+  delSanction,
+  clearSanctions,
+  clearAllSanctions,
+  tempban,
+  checkExpiredTempbans,
+  banlist,
+  hideall,
+  unhideall,
+  derank,
+};
