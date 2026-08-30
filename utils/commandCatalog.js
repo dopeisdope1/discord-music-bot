@@ -63,6 +63,12 @@ const CATEGORIES = [
       // Tout se règle depuis le panneau : dispenses, accès aux salons,
       // préfixes, et le rang sys pour le propriétaire seul.
       { name: "panel", prefix: "mod", scope: "sys", description: "Panneau de configuration" },
+      {
+        name: "sources [titre ou lien]",
+        prefix: "mod",
+        scope: "sys",
+        description: "Dit d'où le son peut encore venir quand un morceau refuse de se lire",
+      },
     ],
   },
 ];

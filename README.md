@@ -74,9 +74,21 @@ directe, **un titre absent de SoundCloud est injouable**, même s'il se trouve
 sur Spotify ou YouTube — le bot retrouve son nom et sa pochette (métadonnées
 Spotify), mais aucun flux audio derrière.
 
+**Spotify n'a jamais fourni le son**, à aucun moment : il ne donne que le titre,
+l'artiste et la pochette. Quand un morceau Spotify se jouait « avant », l'audio
+venait en réalité de YouTube, en coulisses. C'est donc YouTube qui est tombé,
+pas Spotify — et c'est pour ça que des favoris enregistrés depuis Spotify ne
+se lancent plus.
+
 Dans ce cas, le bot tente d'abord de relancer le morceau par une recherche
 « titre + artiste » sur SoundCloud, puis explique clairement qu'il est
 introuvable au lieu d'afficher le message anglais de Lavalink.
+
+Pour savoir d'où le son peut encore venir à un instant donné, la commande
+`&sources [titre ou lien]` (accès Sys) interroge le nœud source par source et
+affiche la réponse exacte de chacune — elle distingue « ce morceau n'existe
+nulle part » de « cette source nous refuse l'accès », ce que les messages
+d'erreur habituels ne permettent pas de trancher.
 
 Pour lever la limite, il faut donner un compte à YouTube (procédure ci-dessous).
 

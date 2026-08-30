@@ -16,6 +16,7 @@ const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
+const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -265,6 +266,14 @@ const modHandlers = {
   async panel(client, message) {
     if (!accessStore.isAllowed("sys", message.author.id)) return;
     await message.reply(buildConfigPanel(message.guild.id, "home", accessStore.isOwner(message.author.id)));
+  },
+
+  // Dit d'où le son peut encore venir (voir utils/sourcesDiagnostic.js) : la
+  // seule façon de trancher, depuis la production, entre "ce morceau n'existe
+  // nulle part" et "cette source nous refuse l'accès".
+  async sources(client, message, args) {
+    if (!accessStore.isAllowed("sys", message.author.id)) return;
+    await handleSourcesDiagnostic(client, message, args);
   },
 
   // Ces trois-là vérifient leurs propres droits à l'intérieur : banall inclut
