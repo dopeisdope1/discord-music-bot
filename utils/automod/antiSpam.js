@@ -143,5 +143,6 @@ module.exports = {
   setEnabled,
   addToWhitelist,
   removeFromWhitelist,
+  isWhitelisted,
   checkMessage,
 };

@@ -179,7 +179,7 @@ async function handleServerAdminInteraction(interaction) {
 }
 
 // --- &role create/delete/rename/color/admin (gestion du rôle lui-même,
-// distinct de &role add/remove qui gère l'appartenance d'un membre — voir
+// distinct de &addrole/&delrole qui gèrent l'appartenance d'un membre — voir
 // utils/moderationCommands.js) ---
 
 const ROLE_ADMIN_SUBCOMMANDS = new Set(["create", "delete", "rename", "color", "admin"]);

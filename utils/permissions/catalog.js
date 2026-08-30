@@ -25,7 +25,7 @@ const PERMISSIONS = [
 
   // --- Membres ---
   { key: "members.nick", category: "members", label: "Modifier un pseudo (&nick, &resetnick)" },
-  { key: "members.role", category: "members", label: "Ajouter/retirer un rôle (&role add/remove)" },
+  { key: "members.role", category: "members", label: "Ajouter/retirer un rôle (&addrole, &delrole)" },
   // Pas de clé pour &userinfo/&avatar/&serverinfo : ce sont des commandes
   // publiques de lecture seule, comme &pic/&banner/&server déjà existantes.
 

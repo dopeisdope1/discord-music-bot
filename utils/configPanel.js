@@ -29,6 +29,9 @@ const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
 const automod = require("./automod/antiSpam");
+const antiLink = require("./automod/antiLink");
+const antiMention = require("./automod/antiMention");
+const badWords = require("./automod/badWords");
 const welcomeStore = require("./welcomeStore");
 const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
@@ -301,14 +304,26 @@ function sectionBody(section, guild, member, state) {
   if (section === "protection") {
     const config = automod.getConfig(guildId);
     const whitelist = automod.getWhitelist(guildId);
+    const linkConfig = antiLink.getConfig(guildId);
+    const linkAllowed = antiLink.getAllowedChannels(guildId);
+    const mentionConfig = antiMention.getConfig(guildId);
+    const wordsConfig = badWords.getConfig(guildId);
+    const words = badWords.getWords(guildId);
     return [
       `> **Anti-spam/anti-flood** : ${config.enabled ? "activé" : "désactivé"}`,
       `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
       "",
+      `> **Anti-lien** : ${linkConfig.enabled ? "activé" : "désactivé"} (mode : ${linkConfig.mode === "all" ? "tous les liens" : "invitations Discord"})`,
+      `> Salons exemptés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
+      "",
+      `> **Anti-mass-mention** : ${mentionConfig.enabled ? "activé" : "désactivé"} (seuil : ${mentionConfig.maxMentions} mentions, timeout ${mentionConfig.timeoutSeconds}s)`,
+      "",
+      `> **Mots interdits** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`,
+      "",
       `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
-      "Cette whitelist n'exempte que de l'anti-spam. L'anti-@everyone et l'anti-nuke ont leur propre whitelist, " +
-        "voir la rubrique **Anti-nuke**.",
+      "Cette whitelist exempte l'anti-spam, l'anti-lien, l'anti-mass-mention et les mots interdits. L'anti-@everyone " +
+        "et l'anti-nuke ont leur propre whitelist, voir la rubrique **Anti-nuke**.",
     ].join("\n");
   }
 
@@ -574,14 +589,57 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     );
   } else if (meta.key === "protection") {
     const config = automod.getConfig(guild.id);
+    const linkConfig = antiLink.getConfig(guild.id);
+    const mentionConfig = antiMention.getConfig(guild.id);
+    const wordsConfig = badWords.getConfig(guild.id);
+    const nextMode = linkConfig.mode === "all" ? "invite" : "all";
+    const MENTION_STEPS = [3, 5, 8, 10, 15, 20];
+    const nextMentionMax = MENTION_STEPS.find((n) => n > mentionConfig.maxMentions) || MENTION_STEPS[0];
+
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`${ID}:automod:toggle`)
           .setLabel(config.enabled ? "Désactiver l'anti-spam" : "Activer l'anti-spam")
-          .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+          .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:antilink:toggle`)
+          .setLabel(linkConfig.enabled ? "Désactiver l'anti-lien" : "Activer l'anti-lien")
+          .setStyle(linkConfig.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:antimention:toggle`)
+          .setLabel(mentionConfig.enabled ? "Désactiver l'anti-mass-mention" : "Activer l'anti-mass-mention")
+          .setStyle(mentionConfig.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:badwords:toggle`)
+          .setLabel(wordsConfig.enabled ? "Désactiver les mots interdits" : "Activer les mots interdits")
+          .setStyle(wordsConfig.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
       )
     );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:antilink:mode`)
+          .setLabel(`Mode anti-lien : ${linkConfig.mode === "all" ? "tous les liens" : "invitations"} (changer → ${nextMode === "all" ? "tous les liens" : "invitations"})`)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:antimention:threshold`)
+          .setLabel(`Seuil mentions : ${mentionConfig.maxMentions} (changer → ${nextMentionMax})`)
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:badwords:add`).setLabel("Ajouter un mot interdit").setStyle(ButtonStyle.Secondary)
+      )
+    );
+    const words = badWords.getWords(guild.id);
+    if (words.length) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:badwords:del`)
+            .setPlaceholder("Retirer un mot interdit")
+            .addOptions(words.slice(0, 25).map((w) => new StringSelectMenuOptionBuilder().setLabel(w.slice(0, 100)).setValue(w)))
+        )
+      );
+    }
     if (can(member, "protection.whitelist")) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -838,6 +896,67 @@ async function handleConfigInteraction(interaction) {
     if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
     else automod.removeFromWhitelist(guildId, "users", userId);
     return goto("protection");
+  }
+
+  if (action === "antilink" && extra === "toggle") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    antiLink.setEnabled(guildId, !antiLink.getConfig(guildId).enabled);
+    return goto("protection");
+  }
+
+  if (action === "antilink" && extra === "mode") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const next = antiLink.getConfig(guildId).mode === "all" ? "invite" : "all";
+    antiLink.setMode(guildId, next);
+    return goto("protection");
+  }
+
+  if (action === "antimention" && extra === "toggle") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    antiMention.setEnabled(guildId, !antiMention.getConfig(guildId).enabled);
+    return goto("protection");
+  }
+
+  if (action === "antimention" && extra === "threshold") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const steps = [3, 5, 8, 10, 15, 20];
+    const current = antiMention.getConfig(guildId).maxMentions;
+    const next = steps.find((n) => n > current) || steps[0];
+    antiMention.setMaxMentions(guildId, next);
+    return goto("protection");
+  }
+
+  if (action === "badwords" && extra === "toggle") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled);
+    return goto("protection");
+  }
+
+  if (action === "badwords" && extra === "del") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    badWords.removeWord(guildId, interaction.values[0]);
+    return goto("protection");
+  }
+
+  if (action === "badwords" && extra === "add") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const word = interaction.fields.getTextInputValue("value").trim();
+      if (!word) return interaction.reply({ content: "Mot vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
+      const added = badWords.addWord(guildId, word);
+      await interaction.reply({
+        content: added ? `\`${word}\` ajouté à la liste.` : "Ce mot y était déjà.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return interaction.message?.edit(buildConfigPanel(guild, "protection", member)).catch(() => {});
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:badwords:add`).setTitle("Ajouter un mot interdit");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("value").setLabel("Mot à interdire").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "guard" && extra === "toggle") {

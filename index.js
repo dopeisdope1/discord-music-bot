@@ -25,6 +25,9 @@ const { handleConfigInteraction } = require("./utils/configPanel");
 const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
 const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
+const { checkMessage: checkAntiLink } = require("./utils/automod/antiLink");
+const { checkMessage: checkAntiMention } = require("./utils/automod/antiMention");
+const { checkMessage: checkBadWords } = require("./utils/automod/badWords");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const { handleServerAdminInteraction, handleConfirmInteraction, applyDeroToNewChannel } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
@@ -650,6 +653,11 @@ client.on("messageCreate", (message) => {
   // Anti-spam léger, désactivé par défaut par serveur (voir &panel > Protection
   // et utils/automod/antiSpam.js) — ne fait rien tant que personne ne l'active.
   checkAntiSpam(client, message).catch((err) => console.error("[antiSpam]", err));
+  // Anti-lien, anti-mass-mention, mots interdits — même famille d'automod
+  // léger, désactivés par défaut par serveur (voir &panel > Protection).
+  checkAntiLink(client, message).catch((err) => console.error("[antiLink]", err));
+  checkAntiMention(client, message).catch((err) => console.error("[antiMention]", err));
+  checkBadWords(client, message).catch((err) => console.error("[badWords]", err));
   // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut
   // (voir utils/guard/definitions.js).
   checkEveryoneMention(client, message).catch((err) => console.error("[guard:antieveryone]", err));

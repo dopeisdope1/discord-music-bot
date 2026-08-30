@@ -55,6 +55,67 @@ async function fetchTargetOrReply(message, targetId, { label = "membre" } = {}) 
   return target;
 }
 
+/** Corps commun de &addrole/&delrole (voir plus bas) : `sub` vaut "add" ou "remove". */
+async function roleMembership(client, message, args, sub) {
+  if (!can(message.member, "members.role")) return;
+  const mentionedMember = message.mentions.members?.first();
+  const mentionedRole = message.mentions.roles?.first();
+  if (!mentionedMember || !mentionedRole) {
+    return reply(message, "error", `Indique un membre ET un rôle : \`${sub === "add" ? "addrole" : "delrole"} @membre @rôle\`.`);
+  }
+
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const refusal = checkHierarchy(message.guild, message.member, mentionedMember);
+  if (refusal) return reply(message, "error", refusal);
+
+  // Hiérarchie sur le RÔLE lui-même, distincte de la hiérarchie sur la
+  // cible : attribuer un rôle plus haut que le sien reste interdit même
+  // si la cible, elle, est en dessous.
+  const me = message.guild.members.me;
+  if (me.roles.highest.position <= mentionedRole.position) {
+    return reply(message, "error", "Mon rôle est trop bas pour gérer ce rôle — place-le plus haut dans la liste des rôles.");
+  }
+  if (message.member.id !== message.guild.ownerId && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (message.member.roles.highest.position <= mentionedRole.position) {
+      return reply(message, "error", "Tu ne peux pas gérer un rôle supérieur ou égal au tien.");
+    }
+  }
+
+  const already = mentionedMember.roles.cache.has(mentionedRole.id);
+  if (sub === "add" && already) return reply(message, "info", `${mentionedMember.user.tag} a déjà ce rôle.`);
+  if (sub === "remove" && !already) return reply(message, "info", `${mentionedMember.user.tag} n'a pas ce rôle.`);
+
+  try {
+    if (sub === "add") await mentionedMember.roles.add(mentionedRole, `Rôle ajouté par ${message.author.tag}`);
+    else await mentionedMember.roles.remove(mentionedRole, `Rôle retiré par ${message.author.tag}`);
+  } catch (err) {
+    console.error("[role] échec :", err);
+    return reply(message, "error", `Discord a refusé : ${err.message}`);
+  }
+  await report(client, {
+    guildId: message.guild.id,
+    category: "members",
+    title: sub === "add" ? "Rôle ajouté" : "Rôle retiré",
+    fields: [
+      { label: "Cible", value: `<@${mentionedMember.id}> (${mentionedMember.id})` },
+      { label: "Rôle", value: mentionedRole.name },
+    ],
+    action: "role",
+    targetId: mentionedMember.id,
+    targetTag: mentionedMember.user.tag,
+    moderator: message.author,
+    channelId: message.channel.id,
+    extra: sub === "add" ? { added: [mentionedRole.id] } : { removed: [mentionedRole.id] },
+  });
+  await reply(
+    message,
+    "success",
+    `Rôle **${mentionedRole.name}** ${sub === "add" ? "ajouté à" : "retiré de"} **${mentionedMember.user.tag}**.`
+  );
+}
+
 const handlers = {
   async kick(client, message, args) {
     if (!can(message.member, "moderation.kick")) return;
@@ -325,68 +386,12 @@ const handlers = {
     await reply(message, "success", `Pseudo de **${mentioned.user.tag}** réinitialisé.`);
   },
 
-  async role(client, message, args) {
-    if (!can(message.member, "members.role")) return;
-    const sub = (args[0] || "").toLowerCase();
-    if (sub !== "add" && sub !== "remove") {
-      return reply(message, "error", "Utilise `role add @membre @rôle` ou `role remove @membre @rôle`.");
-    }
-    const mentionedMember = message.mentions.members?.first();
-    const mentionedRole = message.mentions.roles?.first();
-    if (!mentionedMember || !mentionedRole) {
-      return reply(message, "error", "Indique un membre ET un rôle : `role add @membre @rôle`.");
-    }
+  async addrole(client, message, args) {
+    return roleMembership(client, message, args, "add");
+  },
 
-    const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
-    if (botPerm) return reply(message, "error", botPerm);
-
-    const refusal = checkHierarchy(message.guild, message.member, mentionedMember);
-    if (refusal) return reply(message, "error", refusal);
-
-    // Hiérarchie sur le RÔLE lui-même, distincte de la hiérarchie sur la
-    // cible : attribuer un rôle plus haut que le sien reste interdit même
-    // si la cible, elle, est en dessous.
-    const me = message.guild.members.me;
-    if (me.roles.highest.position <= mentionedRole.position) {
-      return reply(message, "error", "Mon rôle est trop bas pour gérer ce rôle — place-le plus haut dans la liste des rôles.");
-    }
-    if (message.member.id !== message.guild.ownerId && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      if (message.member.roles.highest.position <= mentionedRole.position) {
-        return reply(message, "error", "Tu ne peux pas gérer un rôle supérieur ou égal au tien.");
-      }
-    }
-
-    const already = mentionedMember.roles.cache.has(mentionedRole.id);
-    if (sub === "add" && already) return reply(message, "info", `${mentionedMember.user.tag} a déjà ce rôle.`);
-    if (sub === "remove" && !already) return reply(message, "info", `${mentionedMember.user.tag} n'a pas ce rôle.`);
-
-    try {
-      if (sub === "add") await mentionedMember.roles.add(mentionedRole, `Rôle ajouté par ${message.author.tag}`);
-      else await mentionedMember.roles.remove(mentionedRole, `Rôle retiré par ${message.author.tag}`);
-    } catch (err) {
-      console.error("[role] échec :", err);
-      return reply(message, "error", `Discord a refusé : ${err.message}`);
-    }
-    await report(client, {
-      guildId: message.guild.id,
-      category: "members",
-      title: sub === "add" ? "Rôle ajouté" : "Rôle retiré",
-      fields: [
-        { label: "Cible", value: `<@${mentionedMember.id}> (${mentionedMember.id})` },
-        { label: "Rôle", value: mentionedRole.name },
-      ],
-      action: "role",
-      targetId: mentionedMember.id,
-      targetTag: mentionedMember.user.tag,
-      moderator: message.author,
-      channelId: message.channel.id,
-      extra: sub === "add" ? { added: [mentionedRole.id] } : { removed: [mentionedRole.id] },
-    });
-    await reply(
-      message,
-      "success",
-      `Rôle **${mentionedRole.name}** ${sub === "add" ? "ajouté à" : "retiré de"} **${mentionedMember.user.tag}**.`
-    );
+  async delrole(client, message, args) {
+    return roleMembership(client, message, args, "remove");
   },
 
   async userinfo(client, message, args) {

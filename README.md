@@ -199,7 +199,7 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
     [#salon]`, `&hide`/`&unhide`/`&renew`, `&lockdown`/`&panic`,
     `&unlockdown`.
   - **Membres** : `&nick @membre <pseudo>`, `&resetnick @membre`,
-    `&role add|remove @membre @rôle`.
+    `&addrole @membre @rôle`, `&delrole @membre @rôle`.
   - **Admin** : `&panel` (rubriques visibles selon tes droits — voir
     section 6ter), `&sources` (diagnostic audio, rang sys uniquement),
     `&owners`, `&whitelist`, `&allbots`, `&antinuke` (voir section 6sexies).

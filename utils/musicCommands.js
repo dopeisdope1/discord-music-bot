@@ -16,6 +16,7 @@ const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { moderationHandlers } = require("./moderationCommands");
+const { automodHandlers } = require("./automodCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -321,14 +322,14 @@ const modHandlers = {
   nick: moderationHandlers.nick,
   resetnick: moderationHandlers.resetnick,
   // "role create/delete/rename/color/admin" gère le rôle lui-même (voir
-  // utils/serverAdminCommands.js) ; tout le reste ("role add/remove @membre
-  // @rôle") gère l'appartenance d'un membre (utils/moderationCommands.js) —
-  // une seule commande "&role" pour l'utilisateur, deux fichiers derrière.
+  // utils/serverAdminCommands.js) ; l'appartenance d'un membre à un rôle se
+  // fait via "&addrole"/"&delrole" (utils/moderationCommands.js), distincts.
   role: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (serverAdmin.ROLE_ADMIN_SUBCOMMANDS.has(sub)) return serverAdmin.roleAdmin(client, message, args);
-    return moderationHandlers.role(client, message, args);
   },
+  addrole: moderationHandlers.addrole,
+  delrole: moderationHandlers.delrole,
   modlogs: moderationHandlers.modlogs,
   clear: moderationHandlers.clear,
   purge: moderationHandlers.purge,
@@ -363,6 +364,14 @@ const modHandlers = {
   userinfo: moderationHandlers.userinfo,
   avatar: moderationHandlers.avatar,
   serverinfo: moderationHandlers.serverinfo,
+
+  // Automod léger (anti-lien/anti-mass-mention/mots interdits) — voir
+  // utils/automodCommands.js, permission "protection.automod" (même que
+  // l'anti-spam, configurable aussi depuis &panel > Protection).
+  antilink: automodHandlers.antilink,
+  link: automodHandlers.link,
+  antimassmention: automodHandlers.antimassmention,
+  badwords: automodHandlers.badwords,
 };
 
 /**

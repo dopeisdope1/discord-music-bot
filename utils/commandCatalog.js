@@ -85,8 +85,8 @@ const CATEGORIES = [
       { name: "unlockdown", prefix: "mod", permission: "channels.lockdown", description: "Lève un lockdown" },
       { name: "nick @membre <pseudo>", prefix: "mod", permission: "members.nick", description: "Change le pseudo d'un membre" },
       { name: "resetnick @membre", prefix: "mod", permission: "members.nick", description: "Réinitialise le pseudo d'un membre" },
-      { name: "role add @membre @rôle", prefix: "mod", permission: "members.role", description: "Ajoute un rôle à un membre" },
-      { name: "role remove @membre @rôle", prefix: "mod", permission: "members.role", description: "Retire un rôle à un membre" },
+      { name: "addrole @membre @rôle", prefix: "mod", permission: "members.role", description: "Ajoute un rôle à un membre" },
+      { name: "delrole @membre @rôle", prefix: "mod", permission: "members.role", description: "Retire un rôle à un membre" },
     ],
   },
   {
@@ -168,6 +168,62 @@ const CATEGORIES = [
         permission: "sys",
         description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
       },
+    ],
+  },
+  {
+    key: "modsettings",
+    label: "Paramètres de modération",
+    commands: [
+      {
+        name: "antilink <on|off>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Active/désactive la suppression automatique des liens",
+      },
+      {
+        name: "antilink <invite|all>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Règle le mode : invitations Discord seulement, ou tous les liens",
+      },
+      {
+        name: "link <allow|deny|reset> [#salon]",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Exempte (ou non) un salon de l'anti-lien",
+      },
+      {
+        name: "antimassmention <on|off>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Active/désactive le timeout automatique en cas de mass-mention",
+      },
+      {
+        name: "antimassmention <nombre>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Règle le nombre de mentions maximum dans un message",
+      },
+      {
+        name: "badwords <on|off>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Active/désactive le filtre de mots interdits",
+      },
+      {
+        name: "badwords add <mot>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Ajoute un mot à la liste des mots interdits",
+      },
+      {
+        name: "badwords del <mot>",
+        prefix: "mod",
+        permission: "protection.automod",
+        description: "Retire un mot de la liste des mots interdits",
+      },
+      { name: "badwords list", prefix: "mod", permission: "protection.automod", description: "Affiche la liste des mots interdits" },
+      { name: "badwords clear", prefix: "mod", permission: "protection.automod", description: "Vide la liste des mots interdits" },
     ],
   },
   {
