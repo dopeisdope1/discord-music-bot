@@ -7,10 +7,16 @@
 // monde. `prefix` vaut "main" (préfixe musique) ou "mod" (préfixe &).
 // La musique est volontairement absente de ce catalogue : elle vit sur son
 // propre préfixe, rappelé en pied de l'aide, et l'encombrait inutilement.
+//
+// Catégories organisées pour refléter la structure demandée (Utilitaire /
+// Contrôle du bot / Antiraid / Gestion du serveur / Modération) — seules
+// des commandes RÉELLEMENT implémentées figurent ici. La configuration des
+// logs et de l'anti-spam/anti-nuke vit déjà dans &panel (utils/configPanel.js,
+// rubriques Logs/Protection/Anti-nuke) : pas de doublon créé ici.
 const CATEGORIES = [
   {
-    key: "public",
-    label: "Public",
+    key: "utilitaire",
+    label: "Utilitaire",
     commands: [
       { name: "pic [@membre]", prefix: "mod", permission: null, description: "Affiche l'avatar d'un membre" },
       { name: "avatar [@membre]", prefix: "mod", permission: null, description: "Alias de `pic`" },
@@ -19,6 +25,7 @@ const CATEGORIES = [
       { name: "serverinfo", prefix: "mod", permission: null, description: "Alias de `server`, plus détaillé" },
       { name: "userinfo [@membre]", prefix: "mod", permission: null, description: "Informations sur un membre (rôles, arrivée, timeout en cours)" },
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
+      { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
       {
         name: "vc lock|unlock|limit <n>|rename <nom>|kick @membre",
         prefix: "mod",
@@ -68,12 +75,6 @@ const CATEGORIES = [
         description: "Bannit tout le serveur (confirmation obligatoire)",
       },
       { name: "modlogs [@membre|id]", prefix: "mod", permission: "logs.view", description: "Consulte l'historique de modération" },
-    ],
-  },
-  {
-    key: "channels",
-    label: "Salons",
-    commands: [
       { name: "lock [#salon]", prefix: "mod", permission: "channels.lock", description: "Empêche @everyone d'écrire dans le salon" },
       { name: "unlock [#salon]", prefix: "mod", permission: "channels.lock", description: "Rétablit l'écriture" },
       { name: "slowmode <durée|off> [#salon]", prefix: "mod", permission: "channels.slowmode", description: "Règle le mode lent (ex : `5s`, `1m`, `off`)" },
@@ -82,12 +83,6 @@ const CATEGORIES = [
       { name: "renew", prefix: "mod", permission: "channels.manage", description: "Recrée le salon à neuf (l'historique est perdu)" },
       { name: "lockdown", prefix: "mod", permission: "channels.lockdown", description: "Verrouille tous les salons gérables (urgence). Alias : `panic`" },
       { name: "unlockdown", prefix: "mod", permission: "channels.lockdown", description: "Lève un lockdown" },
-    ],
-  },
-  {
-    key: "members",
-    label: "Membres",
-    commands: [
       { name: "nick @membre <pseudo>", prefix: "mod", permission: "members.nick", description: "Change le pseudo d'un membre" },
       { name: "resetnick @membre", prefix: "mod", permission: "members.nick", description: "Réinitialise le pseudo d'un membre" },
       { name: "role add @membre @rôle", prefix: "mod", permission: "members.role", description: "Ajoute un rôle à un membre" },
@@ -96,7 +91,7 @@ const CATEGORIES = [
   },
   {
     key: "server",
-    label: "Serveur",
+    label: "Gestion du serveur",
     commands: [
       { name: "role create <nom>", prefix: "mod", permission: "server.roles.manage", description: "Crée un nouveau rôle" },
       { name: "role delete @rôle", prefix: "mod", permission: "server.roles.manage", description: "Supprime un rôle (confirmation obligatoire)" },
@@ -151,8 +146,8 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "admin",
-    label: "Administration",
+    key: "botcontrol",
+    label: "Contrôle du bot",
     commands: [
       // Tout se règle depuis le panneau : permissions, profils, rôles, logs,
       // accès, dispenses, et le rang sys pour le propriétaire seul.
@@ -173,14 +168,19 @@ const CATEGORIES = [
         permission: "sys",
         description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
       },
-      { name: "whitelist", prefix: "mod", permission: "protection.whitelist", description: "Liste paginée des exemptés de l'anti-spam" },
-      { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
+    ],
+  },
+  {
+    key: "antiraid",
+    label: "Antiraid",
+    commands: [
       {
         name: "antinuke [on|off|punishment|wlrole]",
         prefix: "mod",
         permission: "protection.guard.manage",
         description: "Anti-nuke : rafales de bans/kicks/salons/rôles/webhooks/bots détectées et sanctionnées automatiquement",
       },
+      { name: "whitelist", prefix: "mod", permission: "protection.whitelist", description: "Liste paginée des exemptés de l'anti-spam" },
     ],
   },
 ];
