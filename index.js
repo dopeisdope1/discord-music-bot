@@ -30,6 +30,7 @@ const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
+const { SEARCH_ENGINE } = require("./utils/searchEngine");
 
 const client = new Client({
   intents: [
@@ -588,7 +589,7 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
     const member = newPresence.member ?? guild.members.cache.get(newPresence.userId);
     const result = await client.kazagumo.search(spotifyActivityQuery(activity), {
       requester: member,
-      engine: "youtube",
+      engine: SEARCH_ENGINE,
     });
     if (!result || !result.tracks.length) return;
     // Position envoyée directement dans l'appel de lecture (recalculée juste

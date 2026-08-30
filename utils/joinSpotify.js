@@ -3,6 +3,7 @@ const { getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = r
 const { getOrCreatePlayer } = require("./musicPlayer");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { playbackErrorMessage } = require("./musicErrors");
+const { SEARCH_ENGINE } = require("./searchEngine");
 const { setPlayerOwner } = require("./playerControl");
 
 /**
@@ -43,7 +44,7 @@ async function handleJoinSpotify({ client, voiceChannel, textChannel, listenerMe
   try {
     result = await client.kazagumo.search(spotifyActivityQuery(activity), {
       requester: playerMember,
-      engine: "youtube",
+      engine: SEARCH_ENGINE,
     });
   } catch (err) {
     console.error(err);

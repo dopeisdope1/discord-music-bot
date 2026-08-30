@@ -3,6 +3,7 @@ const { buildTrackChoicePanel } = require("./spotifyPlayPanel");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { queueAndPlay } = require("./musicPlayer");
 const { playbackErrorMessage } = require("./musicErrors");
+const { SEARCH_ENGINE } = require("./searchEngine");
 
 const SELECTION_TIMEOUT_MS = 30_000;
 
@@ -47,7 +48,7 @@ async function handleSpotifyPlay({ kazagumo, client, voiceChannel, textChannel, 
         textChannel,
         member,
         query: `${track.name} ${trackArtists(track)}`,
-        engine: "youtube",
+        engine: SEARCH_ENGINE,
         client,
       });
       if (!outcome) {
