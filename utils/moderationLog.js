@@ -227,9 +227,11 @@ async function postModerationEntry(client, guildId, category, { color, descripti
   const channel = guild?.channels.cache.get(channelId) ?? (await guild?.channels.fetch(channelId).catch(() => null));
   if (!channel?.isTextBased()) return;
 
-  // Components V2, comme le reste du bot (panels, confirmations) — pas
-  // l'embed classique à barre colorée utilisé auparavant ici.
-  const container = new ContainerBuilder().setAccentColor(color);
+  // Components V2, comme le reste du bot (panels, confirmations) — sans
+  // setAccentColor, volontairement : c'est justement cette barre colorée sur
+  // le côté qui donnait encore un air d'embed classique (voir le même choix
+  // dans utils/configPanel.js et utils/helpPanel.js).
+  const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
