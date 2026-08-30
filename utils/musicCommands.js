@@ -13,6 +13,7 @@ const { buildHelpPanel } = require("./helpPanel");
 const { buildConfigPanel } = require("./configPanel");
 const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
+const { handleBan, handleUnban } = require("./banPanel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 
 const URL_REGEX = /^https?:\/\//i;
@@ -264,9 +265,12 @@ const modHandlers = {
     await message.reply(buildConfigPanel(message.guild.id, "home", accessStore.isOwner(message.author.id)));
   },
 
-  // Ses propres droits sont vérifiés à l'intérieur (propriétaire du serveur
-  // inclus, ce que requireScope ne sait pas exprimer).
+  // Ces trois-là vérifient leurs propres droits à l'intérieur : banall inclut
+  // le propriétaire du serveur, ce que requireScope ne sait pas exprimer, et
+  // ban/unban restent muets pour les non-autorisés.
   banall: handleBanAll,
+  ban: handleBan,
+  unban: handleUnban,
 
   renew: requireScope("salon", channelHandlers.renew),
   hide: requireScope("salon", channelHandlers.hide),

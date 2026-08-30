@@ -2,7 +2,8 @@ require("dotenv").config();
 const path = require("path");
 const { Client, GatewayIntentBits, Collection, MessageFlags } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
-const { Connectors } = require("shoukaku");
+const { Connectors, Constants: ShoukakuConstants } = require("shoukaku");
+const ShoukakuState = ShoukakuConstants.State;
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
@@ -22,7 +23,7 @@ const favoritesStore = require("./utils/favoritesStore");
 const { buildFavoritesPanel, SELECT_ID: FAV_SELECT_ID } = require("./utils/favoritesPanel");
 const { getPrefixes } = require("./utils/prefixStore");
 const { handleConfigInteraction } = require("./utils/configPanel");
-const { handleAssassini, handleBanInteraction } = require("./utils/banPanel");
+const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
@@ -134,6 +135,26 @@ client.kazagumo.shoukaku.on("close", (name, code, reason) =>
 client.kazagumo.shoukaku.on("disconnect", (name) =>
   console.warn(`⚠️ Nœud Lavalink "${name}" déconnecté.`)
 );
+
+// Filet de sécurité : Shoukaku cesse définitivement de retenter dans deux cas
+// vécus en production — quand il épuise reconnectTries, et quand le nœud est
+// injoignable au tout premier essai (bot démarré avant Lavalink). Le bot
+// restait alors muet jusqu'à un redémarrage manuel, alors que le nœud était
+// revenu. On revérifie donc périodiquement, et on relance la connexion nous-
+// mêmes tant qu'aucun nœud n'est branché.
+const NODE_WATCHDOG_MS = 60_000;
+setInterval(() => {
+  const nodes = [...(client.kazagumo.shoukaku.nodes?.values() || [])];
+  for (const node of nodes) {
+    if (node.state === ShoukakuState.CONNECTED) continue;
+    console.warn(`[lavalink] nœud "${node.name}" hors ligne, nouvelle tentative de connexion.`);
+    try {
+      node.connect();
+    } catch (err) {
+      console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message);
+    }
+  }
+}, NODE_WATCHDOG_MS).unref?.();
 
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
@@ -474,9 +495,6 @@ client.on("messageCreate", (message) => {
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
-  // "zinki assasini" — pas de préfixe non plus, mais réservé au rang sys
-  // (voir utils/banPanel.js).
-  handleAssassini(client, message).catch((err) => console.error(err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----

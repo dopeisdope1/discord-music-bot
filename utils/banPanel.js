@@ -7,6 +7,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   UserSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
@@ -32,9 +34,6 @@ function rememberRequest(data) {
   return token;
 }
 
-// "zinki assasini", avec la double consonne tolérée dans les deux sens, et le
-// reste de la ligne (mention, identifiant, raison) capturé à part.
-const TRIGGER_RE = /^zinki\s+assass?ini\b\s*(.*)$/i;
 
 /**
  * Raisons de refus, vérifiées AVANT d'afficher le panneau comme avant de
@@ -107,49 +106,100 @@ function buildConfirmPanel(target, actorId, reason) {
   );
 }
 
-/**
- * Déclencheur sans préfixe "zinki assasini", à appeler depuis messageCreate.
- * Réservé au rang sys : silence complet pour les autres, pour ne pas révéler
- * l'existence de la commande.
- * @returns {Promise<boolean>} true si le message était le déclencheur
- */
-async function handleAssassini(client, message) {
-  if (message.author.bot || !message.guild) return false;
-
-  const match = message.content.trim().match(TRIGGER_RE);
-  if (!match) return false;
-  if (!accessStore.isAllowed("sys", message.author.id)) return true;
-
-  const rest = match[1].trim();
+/** Sépare la cible (mention ou identifiant) du reste, qui devient la raison. */
+function parseTarget(message, args) {
+  const rest = args.join(" ").trim();
   const mentioned = message.mentions.users?.first();
   const idMatch = rest.match(/\d{15,25}/);
-  const targetId = mentioned?.id || idMatch?.[0] || null;
+  return {
+    targetId: mentioned?.id || idMatch?.[0] || null,
+    reason: rest
+      .replace(/<@!?\d+>/g, "")
+      .replace(/\d{15,25}/, "")
+      .trim(),
+  };
+}
 
-  // Ce qui reste une fois la cible retirée devient la raison.
-  const reason = rest
-    .replace(/<@!?\d+>/g, "")
-    .replace(/\d{15,25}/, "")
-    .trim();
+/**
+ * &ban [@membre | id] [raison] — réservé au rang sys, silence complet pour
+ * les autres. Sans cible, affiche un menu de sélection ; avec une cible,
+ * saute directement à la confirmation.
+ */
+async function handleBan(client, message, args) {
+  if (!accessStore.isAllowed("sys", message.author.id)) return;
+
+  const { targetId, reason } = parseTarget(message, args);
 
   if (!targetId) {
-    await message.reply(buildPickPanel(message.author.id, reason));
-    return true;
+    return message.reply(buildPickPanel(message.author.id, reason));
   }
 
   const target = await message.guild.members.fetch(targetId).catch(() => null);
   if (!target) {
-    await message.reply(card("Membre introuvable", "Ce membre n'est pas sur le serveur."));
-    return true;
+    return message.reply(card("Membre introuvable", "Ce membre n'est pas sur le serveur."));
   }
 
   const refusal = refusalReason(message.guild, target);
-  if (refusal) {
-    await message.reply(card("Bannissement impossible", refusal));
-    return true;
+  if (refusal) return message.reply(card("Bannissement impossible", refusal));
+
+  return message.reply(buildConfirmPanel(target, message.author.id, reason));
+}
+
+/**
+ * &unban [id] — sans argument, propose la liste des bannis. Aucune
+ * confirmation : contrairement au bannissement, l'action se défait d'elle-même
+ * en rebannissant.
+ */
+async function handleUnban(client, message, args) {
+  if (!accessStore.isAllowed("sys", message.author.id)) return;
+
+  if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
+    return message.reply(card("Action impossible", "Il me manque la permission **Bannir des membres**."));
   }
 
-  await message.reply(buildConfirmPanel(target, message.author.id, reason));
-  return true;
+  const explicitId = args.join(" ").match(/\d{15,25}/)?.[0];
+
+  if (explicitId) {
+    const existing = await message.guild.bans.fetch(explicitId).catch(() => null);
+    if (!existing) {
+      return message.reply(card("Introuvable", "Cet identifiant ne figure pas dans la liste des bannis."));
+    }
+    try {
+      await message.guild.bans.remove(explicitId, `Débannissement par ${message.author.tag}`);
+      return message.reply(card("Membre débanni", `**${existing.user.tag}** peut de nouveau rejoindre le serveur.`));
+    } catch (err) {
+      console.error("[unban] échec :", err);
+      return message.reply(card("Action impossible", `Discord a refusé : ${err.message}`));
+    }
+  }
+
+  const bans = await message.guild.bans.fetch().catch(() => null);
+  if (!bans || bans.size === 0) {
+    return message.reply(card("Aucun banni", "Personne n'est banni de ce serveur."));
+  }
+
+  // Un menu déroulant ne dépasse pas 25 options : au-delà, il faut passer par
+  // l'identifiant.
+  const shown = [...bans.values()].slice(0, 25);
+  const extra = bans.size > shown.length ? `\n\n${bans.size - shown.length} autre(s) — utilise \`unban <id>\`.` : "";
+
+  return message.reply(
+    card("Débannir un membre", `**${bans.size}** membre(s) banni(s).${extra}`, [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:un:${message.author.id}`)
+          .setPlaceholder("Choisis le membre à débannir")
+          .addOptions(
+            shown.map((b) =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(b.user.tag.slice(0, 100))
+                .setDescription((b.reason || "Aucune raison enregistrée").slice(0, 100))
+                .setValue(b.user.id)
+            )
+          )
+      ),
+    ])
+  );
 }
 
 async function handleBanInteraction(interaction) {
@@ -161,9 +211,28 @@ async function handleBanInteraction(interaction) {
     return interaction.reply({ content: "Tu n'as pas accès à cette commande.", flags: MessageFlags.Ephemeral });
   }
 
+  // Le menu de débannissement ne passe pas par un jeton : il n'a ni raison ni
+  // cible à mémoriser, le troisième segment est directement l'auteur.
+  if (action === "un") {
+    if (interaction.user.id !== token) {
+      return interaction.reply({ content: "Ce panneau n'est pas le tien.", flags: MessageFlags.Ephemeral });
+    }
+    const userId = interaction.values[0];
+    try {
+      const banned = await interaction.guild.bans.fetch(userId).catch(() => null);
+      await interaction.guild.bans.remove(userId, `Débannissement par ${interaction.user.tag}`);
+      return interaction.update(
+        card("Membre débanni", `**${banned?.user.tag || userId}** peut de nouveau rejoindre le serveur.`)
+      );
+    } catch (err) {
+      console.error("[unban] échec :", err);
+      return interaction.update(card("Action impossible", `Discord a refusé : ${err.message}`));
+    }
+  }
+
   const request = pending.get(token);
   if (!request) {
-    return interaction.update(card("Panneau expiré", "Relance `zinki assasini` pour recommencer."));
+    return interaction.update(card("Panneau expiré", "Relance la commande pour recommencer."));
   }
   if (interaction.user.id !== request.actorId) {
     return interaction.reply({ content: "Ce panneau n'est pas le tien.", flags: MessageFlags.Ephemeral });
@@ -213,4 +282,4 @@ async function handleBanInteraction(interaction) {
   }
 }
 
-module.exports = { handleAssassini, handleBanInteraction, refusalReason, card, ID };
+module.exports = { handleBan, handleUnban, handleBanInteraction, refusalReason, card, ID };
