@@ -450,17 +450,11 @@ const handlers = {
   },
 };
 
-// --- &clear (section 11) ---
+// --- &clear (ciblé uniquement : @membre ou id, jamais en aveugle) ---
 
 const DEFAULT_CLEAR_COUNT = 50;
 const MAX_CLEAR_COUNT = 200;
 const MAX_CLEAR_SCAN = 500;
-
-const CLEAR_FILTERS = {
-  bots: { test: (m) => m.author.bot, label: "messages de bots" },
-  links: { test: (m) => /https?:\/\//i.test(m.content), label: "messages contenant un lien" },
-  attachments: { test: (m) => m.attachments.size > 0, label: "messages avec pièce jointe" },
-};
 
 async function clear(client, message, args) {
   if (!can(message.member, "moderation.clear")) return;
@@ -468,38 +462,23 @@ async function clear(client, message, args) {
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageMessages, "ManageMessages");
   if (botPerm) return reply(message, "error", botPerm);
 
-  let remaining = [...args];
-  let filter = null;
-  let targetUserId = null;
-
-  const first = (remaining[0] || "").toLowerCase();
-  if (CLEAR_FILTERS[first]) {
-    filter = CLEAR_FILTERS[first];
-    remaining = remaining.slice(1);
-  } else {
-    const mentioned = message.mentions.users?.first();
-    const idMatch = remaining[0]?.match(/^\d{15,25}$/);
-    if (mentioned || idMatch) {
-      targetUserId = mentioned?.id || idMatch[0];
-      remaining = remaining.slice(1);
-    }
+  const mentioned = message.mentions.users?.first();
+  const idMatch = args[0]?.match(/^\d{15,25}$/);
+  const targetUserId = mentioned?.id || idMatch?.[0];
+  if (!targetUserId) {
+    return reply(message, "error", "Indique un membre : `clear @membre [nombre]` ou `clear <id> [nombre]`.");
   }
+  const remaining = args.slice(1);
 
   let count = DEFAULT_CLEAR_COUNT;
   const n = parseInt(remaining[0], 10);
   if (!isNaN(n) && n > 0) count = n;
   count = Math.min(count, MAX_CLEAR_COUNT);
 
-  const matches = (m) => {
-    if (targetUserId && m.author.id !== targetUserId) return false;
-    if (filter && !filter.test(m)) return false;
-    return true;
-  };
-
-  // Toujours par lots de 100 (le maximum que Discord accepte par requête,
-  // même sans filtre) jusqu'à réunir assez de messages ou atteindre le
-  // plafond de scan, pour ne jamais déclencher un nombre non borné d'appels
-  // sur un salon très actif.
+  // Toujours par lots de 100 (le maximum que Discord accepte par requête)
+  // jusqu'à réunir assez de messages de cette cible ou atteindre le plafond
+  // de scan, pour ne jamais déclencher un nombre non borné d'appels sur un
+  // salon très actif.
   let toDelete = [];
   let before;
   let scanned = 0;
@@ -508,14 +487,14 @@ async function clear(client, message, args) {
     if (!batch || !batch.size) break;
     scanned += batch.size;
     for (const m of batch.values()) {
-      if (matches(m)) toDelete.push(m);
+      if (m.author.id === targetUserId) toDelete.push(m);
       if (toDelete.length >= count) break;
     }
     before = [...batch.values()].pop()?.id;
   }
 
   if (!toDelete.length) {
-    return reply(message, "info", "Aucun message correspondant à supprimer.");
+    return reply(message, "info", "Aucun message de ce membre à supprimer.");
   }
 
   const deleted = await deleteMessages(message.channel, toDelete);
@@ -525,17 +504,16 @@ async function clear(client, message, args) {
     category: "moderation",
     title: "Suppression de messages",
     fields: [
+      { label: "Cible", value: `<@${targetUserId}> (${targetUserId})` },
       { label: "Salon", value: `<#${message.channel.id}> (${message.channel.id})` },
       { label: "Nombre", value: String(deleted) },
-      ...(targetUserId ? [{ label: "Cible", value: `<@${targetUserId}> (${targetUserId})` }] : []),
-      ...(filter ? [{ label: "Filtre", value: filter.label }] : []),
     ],
     action: "clear",
     targetId: targetUserId,
     targetTag: null,
     moderator: message.author,
     channelId: message.channel.id,
-    extra: { count: deleted, filter: filter ? first : null, targetUserId },
+    extra: { count: deleted, targetUserId },
   });
 
   // Confirmation supprimée instantanément après l'envoi : le salon de logs

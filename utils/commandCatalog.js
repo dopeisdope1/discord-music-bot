@@ -34,10 +34,10 @@ const CATEGORIES = [
         description: "Sans préfixe, efface tes propres messages du salon. Variantes : `anas clear`, `yanis clear`",
       },
       {
-        name: "clear [nombre|@membre|id|bots|links|attachments] [nombre]",
+        name: "clear <@membre|id> [nombre]",
         prefix: "mod",
         permission: "moderation.clear",
-        description: "Supprime des messages du salon, avec filtres. Alias : `purge`",
+        description: "Supprime les messages récents d'un membre précis dans le salon. Alias : `purge`",
       },
       { name: "kick @membre [raison]", prefix: "mod", permission: "moderation.kick", description: "Expulse un membre" },
       {
