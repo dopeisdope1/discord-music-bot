@@ -467,9 +467,14 @@ async function clear(client, message, args) {
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageMessages, "ManageMessages");
   if (botPerm) return reply(message, "error", botPerm);
 
-  const mentioned = message.mentions.users?.first();
+  // La cible doit être le PREMIER argument (pas juste "une mention présente
+  // quelque part dans le message") : sinon "&clear sanctions @membre" —
+  // sous-commande documentée mais pas encore implémentée, voir le catalogue
+  // — supprimerait réellement les messages de ce membre au lieu d'échouer
+  // proprement, `sanctions` étant alors pris pour du texte ignoré.
+  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
   const idMatch = args[0]?.match(/^\d{15,25}$/);
-  const targetUserId = mentioned?.id || idMatch?.[0];
+  const targetUserId = mentionMatch?.[1] || idMatch?.[0];
   if (!targetUserId) {
     return reply(message, "error", "Indique un membre : `clear @membre [nombre]` ou `clear <id> [nombre]`.");
   }
