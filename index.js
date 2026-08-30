@@ -110,9 +110,10 @@ client.kazagumo = new Kazagumo(
     // SoundCloud et non YouTube : depuis un hébergeur comme Railway, YouTube
     // répond "Sign in to confirm you're not a bot" à tous les clients et
     // aucune lecture n'aboutit. SoundCloud n'impose pas cette vérification.
-    // Repasser à "youtube" le jour où un jeton d'authentification (PoToken)
-    // sera fourni au nœud.
-    defaultSearchEngine: "soundcloud",
+    // La valeur vient de utils/searchEngine.js, seule source du projet : la
+    // réécrire en dur ici rendait MUSIC_SEARCH_ENGINE sans effet sur les
+    // recherches qui ne précisent pas de moteur.
+    defaultSearchEngine: SEARCH_ENGINE,
     send: (guildId, payload) => {
       const guild = client.guilds.cache.get(guildId);
       if (guild) guild.shard.send(payload);
@@ -120,15 +121,29 @@ client.kazagumo = new Kazagumo(
   },
   new Connectors.DiscordJS(client),
   LavalinkNodes,
-  // Le rythme de reconnexion dépend du type de nœud :
-  //   - nœud privé : il est à nous, personne à ménager. On retente vite et
-  //     sans plafond réaliste, sinon une simple maintenance du nœud suffit à
-  //     épuiser les tentatives et la musique reste morte jusqu'au prochain
-  //     redémarrage du bot — c'est exactement ce qui est arrivé.
-  //   - nœuds publics : espacer, sous peine de se faire bannir en 429.
-  process.env.LAVALINK_HOST
-    ? { reconnectTries: 100000, reconnectInterval: 5 }
-    : { reconnectTries: 200, reconnectInterval: 20 }
+  {
+    // Reprise de la lecture après une coupure du nœud. Se reconnecter ne
+    // suffisait pas : le bot retrouvait bien le nœud, mais plus rien ne jouait
+    // tant que personne ne relançait le morceau à la main.
+    //   - resume : si c'est notre WebSocket qui saute, Lavalink garde nos
+    //     lecteurs en vie pendant resumeTimeout et la musique ne s'interrompt
+    //     même pas.
+    //   - resumeByLibrary : si c'est le NŒUD qui est mort, sa session est
+    //     perdue avec lui. Le bot recrée alors les lecteurs et relance chaque
+    //     piste là où elle en était.
+    resume: true,
+    resumeTimeout: 60,
+    resumeByLibrary: true,
+    // Le rythme de reconnexion dépend du type de nœud :
+    //   - nœud privé : il est à nous, personne à ménager. On retente vite et
+    //     sans plafond réaliste, sinon une simple maintenance du nœud suffit à
+    //     épuiser les tentatives et la musique reste morte jusqu'au prochain
+    //     redémarrage du bot — c'est exactement ce qui est arrivé.
+    //   - nœuds publics : espacer, sous peine de se faire bannir en 429.
+    ...(process.env.LAVALINK_HOST
+      ? { reconnectTries: 100000, reconnectInterval: 5 }
+      : { reconnectTries: 200, reconnectInterval: 20 }),
+  }
 );
 
 client.kazagumo.shoukaku.on("ready", (name) => console.log(`✅ Nœud Lavalink "${name}" connecté.`));
@@ -177,11 +192,13 @@ setInterval(() => {
 
   for (const node of offline) {
     console.warn(`[lavalink] nœud "${node.name}" hors ligne (état ${node.state}), tentative de reconnexion.`);
-    try {
-      node.connect();
-    } catch (err) {
-      console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message);
-    }
+    // connect() est asynchrone : son échec ressort en promesse rejetée, que le
+    // try/catch synchrone d'origine ne voyait pas. Une promesse rejetée sans
+    // preneur arrête net le process sous Node — une tentative de reconnexion
+    // ratée suffisait donc à faire tomber tout le bot.
+    Promise.resolve(node.connect()).catch((err) =>
+      console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message)
+    );
   }
 }, NODE_WATCHDOG_MS);
 
@@ -210,6 +227,30 @@ client.playerAllowed = new Collection();
 // survivre à un redémarrage.
 client.snipes = new Collection();
 
+/**
+ * Abandonne la piste en cours et enchaîne sur la suivante.
+ *
+ * Kazagumo laisse le lecteur en plan quand une piste se bloque ou échoue :
+ * `queue.current` reste la piste morte, si bien qu'un player.play() nu la
+ * rejouerait en boucle. On la retire donc explicitement avant de relancer.
+ */
+async function skipDeadTrack(player, notice) {
+  const textChannel = client.channels.cache.get(player.textId);
+  if (textChannel && notice)
+    textChannel.send({ embeds: [buildStatusEmbed("warning", notice)] }).catch(() => {});
+
+  player.queue.current = null;
+
+  if (!player.queue.size) {
+    stopNowPlayingTracking(client, player.guildId);
+    return;
+  }
+
+  await player
+    .play()
+    .catch((err) => console.error("[musique] impossible d'enchaîner :", err.message));
+}
+
 // ---- Événements Kazagumo ----
 client.kazagumo
   .on("playerStart", async (player) => {
@@ -232,10 +273,28 @@ client.kazagumo
       }
     }
 
-    const panel = buildNowPlayingPanel(player, elapsedMs);
-    const msg = await textChannel.send(panel);
-    client.nowPlayingMessages.set(player.guildId, msg);
+    // L'envoi du panel peut échouer (permissions retirées sur le salon, salon
+    // supprimé, limite de débit) : sans ce filet, l'erreur ressortait en
+    // promesse rejetée hors de toute pile d'appel et arrêtait le process, donc
+    // la musique, pour un simple message non envoyé. Le suivi de lecture, lui,
+    // doit démarrer dans tous les cas.
+    let msg = null;
+    try {
+      msg = await textChannel.send(buildNowPlayingPanel(player, elapsedMs));
+    } catch (err) {
+      console.error("[musique] panel non envoyé :", err.message);
+    }
+
+    if (msg) client.nowPlayingMessages.set(player.guildId, msg);
     startNowPlayingTracking(client, player, elapsedMs);
+  })
+  .on("playerStuck", (player) => {
+    // Lavalink signale une piste bloquée (plus aucune donnée audio depuis
+    // trackStuckThresholdMs). Kazagumo n'en fait rien : sans ce handler, le
+    // lecteur restait muet sur cette piste indéfiniment, sans message et sans
+    // passer à la suivante.
+    console.warn(`[musique] piste bloquée sur le serveur ${player.guildId}, passage à la suivante.`);
+    skipDeadTrack(player, "La piste s'est bloquée, passage à la suivante.");
   })
   .on("playerEmpty", (player) => {
     const textChannel = client.channels.cache.get(player.textId);
@@ -265,6 +324,29 @@ client.kazagumo
 
     textChannel.send({ embeds: [buildStatusEmbed("error", String(message).slice(0, 1800))] });
   });
+
+// Filet de secours sur les pistes en échec. Lavalink fait normalement suivre
+// l'échec d'un événement de fin, que Kazagumo traite en passant au morceau
+// suivant ; quand cet événement n'arrive pas, la file restait bloquée sur la
+// piste morte, lecteur muet, alors que la suite était prête à jouer.
+// On ne double pas le passage pour autant : on ne bouge que si, quelques
+// secondes plus tard, c'est toujours la même piste qui est en cours et que
+// rien ne joue — sinon c'est que Kazagumo a déjà fait le travail.
+const DEAD_TRACK_GRACE_MS = 4_000;
+
+client.kazagumo.on("playerException", (player) => {
+  const stalled = player.queue.current;
+  if (!stalled) return;
+
+  setTimeout(() => {
+    if (client.kazagumo.players.get(player.guildId) !== player) return;
+    if (player.playing || player.paused) return;
+    if (player.queue.current !== stalled) return;
+
+    console.warn(`[musique] piste en échec sur le serveur ${player.guildId}, passage à la suivante.`);
+    skipDeadTrack(player, null);
+  }, DEAD_TRACK_GRACE_MS);
+});
 
 const MUSIC_BUTTON_IDS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop", "music_queue"]);
 // "music_queue" est en lecture seule, pas besoin de la permission de contrôle.
@@ -666,6 +748,19 @@ client.on("guildCreate", (guild) => {
   });
 });
 
+// Dernier rempart. Sous Node, une promesse rejetée sans preneur arrête le
+// process entier : une erreur réseau isolée sur une requête Discord, un salon
+// devenu inaccessible, un aller-retour Lavalink en échec, et la musique
+// s'arrêtait pour tout le monde. Ces incidents sont sans conséquence pour la
+// lecture en cours — on les journalise et le bot continue de tourner.
+// Ils restent visibles dans les logs, ce n'est pas une façon de les masquer.
+process.on("unhandledRejection", (reason) => {
+  console.error("[bot] promesse rejetée sans traitement :", reason?.stack || reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[bot] exception non rattrapée :", err?.stack || err);
+});
+
 // Sans handler, Node.js termine le process instantanément sur SIGTERM (le
 // signal que Railway envoie pour arrêter l'ancien conteneur à chaque
 // redéploiement) — on laisse une courte marge pour fermer proprement la
@@ -682,4 +777,11 @@ async function gracefulShutdown(signal) {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-client.login(process.env.DISCORD_TOKEN);
+// La connexion à Discord, elle, reste fatale : un bot qui n'a pas pu se
+// connecter ne sert à rien, autant sortir pour que l'hébergeur le relance
+// plutôt que de laisser tourner un process muet (le filet ci-dessus, sans ce
+// catch, transformerait un jeton invalide en bot silencieux et immortel).
+client.login(process.env.DISCORD_TOKEN).catch((err) => {
+  console.error("[bot] connexion à Discord impossible :", err.message);
+  process.exit(1);
+});

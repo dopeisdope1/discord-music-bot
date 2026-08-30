@@ -28,6 +28,9 @@ LAVALINK_PASSWORD=...
 LAVALINK_SECURE=true
 GIPHY_API_KEY=...   # optionnel — clé publique de démo utilisée sinon (`.gif`)
 DATA_DIR=...         # optionnel — voir "Rendre data/ permanent sur Railway" plus bas
+MUSIC_SEARCH_ENGINE=soundcloud  # optionnel — source de recherche (soundcloud par
+                                # défaut : YouTube refuse les requêtes venant d'un
+                                # hébergeur, "Sign in to confirm you're not a bot")
 BOT_OWNER_IDS=...    # optionnel — voir section 7quater (anti-nuke : `=owner`/`=antifast`/`=wl`)
 ```
 
@@ -38,16 +41,43 @@ WebSocket/HTTP — c'est le nœud Lavalink qui gère la connexion UDP vers Disco
 C'est nécessaire sur des hébergeurs comme Railway qui bloquent l'UDP sortant pour
 les services applicatifs classiques.
 
-- **Nœud public gratuit (par défaut)** : le bot utilise un nœud public si aucune
-  variable `LAVALINK_*` n'est définie. Pratique, mais **pas garanti dans le temps**
-  (les nœuds publics tombent ou changent sans préavis). Liste de nœuds à jour :
-  https://lavalink.darrennathanael.com/ ou https://freelavalink.serenetia.com/list
-  Si le bot n'arrive plus à jouer de musique, c'est probablement le nœud par défaut
-  qui est tombé : prends-en un autre dans la liste et mets à jour `LAVALINK_HOST`,
-  `LAVALINK_PORT`, `LAVALINK_PASSWORD`, `LAVALINK_SECURE` sur Railway.
-- **Nœud auto-hébergé (plus fiable)** : héberge ton propre serveur Lavalink sur un
-  petit VPS (voir https://lavalink.dev/getting-started/) et pointe les variables
-  `LAVALINK_*` dessus.
+- **Nœud privé du projet (ce qu'on utilise)** : le dossier `lavalink/` est un
+  service à part entière (`Dockerfile` + `application.yml`), déployé à côté du bot
+  et joint par le réseau privé de l'hébergeur. C'est lui que décrivent les
+  variables `LAVALINK_HOST` / `LAVALINK_PORT` / `LAVALINK_PASSWORD` /
+  `LAVALINK_SECURE`. Les nœuds publics gratuits comptaient les connexions **par
+  bot** et nous coupaient la musique au bout de quelques redéploiements.
+- **Nœuds publics (repli automatique)** : si aucune variable `LAVALINK_*` n'est
+  définie, le bot retombe sur une liste de nœuds publics. Pratique en dépannage,
+  mais **pas garanti dans le temps** (ils tombent ou changent sans préavis).
+  Listes à jour : https://lavalink.darrennathanael.com/ ou
+  https://freelavalink.serenetia.com/list
+
+### Mémoire du nœud (à ne pas retirer)
+
+Le `Dockerfile` fixe `_JAVA_OPTIONS` (tas, métaspace et mémoire directe plafonnés,
+GC série). Sans ces limites, la JVM se sert librement, l'hébergeur tue le conteneur
+pour dépassement, et **le son s'arrête au bout d'une seconde** — sans la moindre
+trace côté Java, puisque la JVM n'a pas le temps d'écrire quoi que ce soit. Le
+symptôme visible dans les logs, ce sont deux démarrages de Lavalink à quelques
+secondes d'intervalle alors qu'aucun déploiement n'a eu lieu.
+
+Si le service gagne un jour en mémoire, ces valeurs se relèvent en définissant
+`_JAVA_OPTIONS` dans les variables du service Lavalink : la variable de
+l'hébergeur l'emporte sur celle de l'image, sans toucher au code.
+
+### Ce qui se passe si le nœud tombe quand même
+
+Le bot ne reste plus muet en attendant une intervention :
+
+- il surveille l'état du nœud toutes les 30 s et relance la connexion lui-même
+  quand la bibliothèque a cessé de retenter ;
+- si c'est le WebSocket du bot qui saute, Lavalink garde les lecteurs en vie
+  pendant 60 s (`resume`) et la lecture n'est même pas interrompue ;
+- si c'est le nœud qui est mort, le bot recrée les lecteurs et **relance chaque
+  piste à la position où elle en était** (`resumeByLibrary`) dès qu'il est revenu ;
+- une piste bloquée ou en échec ne fige plus la file : elle est abandonnée et le
+  morceau suivant démarre.
 
 ## 3. Intents & permissions à activer
 
