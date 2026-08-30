@@ -212,7 +212,9 @@ function buildNav(current, member, isOwner) {
 // (demande explicite : "je dois retrouver TOUTES les commandes").
 const DOC_PAGE_SIZE = 8;
 
-const formatDocCommand = (cmd, prefixSymbol) => (cmd.prefix ? `\`${prefixSymbol}${cmd.name}\`` : `**${cmd.name}**`) + ` — ${cmd.description}`;
+// Même convention que la rubrique Anti-nuke (`> \`clé\` — label (règle)`) :
+// une barre de citation continue pour toute la liste, pas un bloc par ligne.
+const formatDocCommand = (cmd, prefixSymbol) => `> ${cmd.prefix ? `\`${prefixSymbol}${cmd.name}\`` : `**${cmd.name}**`} — ${cmd.description}`;
 
 function docCategoryPage(commands, prefixSymbol, page) {
   const totalPages = Math.max(1, Math.ceil(commands.length / DOC_PAGE_SIZE));
