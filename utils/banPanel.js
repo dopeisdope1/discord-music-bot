@@ -170,8 +170,8 @@ async function handleUnban(client, message, args) {
       await report(client, {
         guildId: message.guild.id,
         category: "moderation",
-        color: 0x57f287,
-        description: `**Débannissement** — **${existing.user.tag}** (${existing.user.id})`,
+        title: "Débannissement",
+        fields: [{ label: "Cible", value: `<@${existing.user.id}> (${existing.user.id})` }],
         action: "unban",
         targetId: existing.user.id,
         targetTag: existing.user.tag,
@@ -234,8 +234,8 @@ async function handleBanInteraction(interaction) {
       await report(interaction.client, {
         guildId: interaction.guild.id,
         category: "moderation",
-        color: 0x57f287,
-        description: `**Débannissement** — **${banned?.user.tag || userId}** (${userId})`,
+        title: "Débannissement",
+        fields: [{ label: "Cible", value: `<@${userId}> (${userId})` }],
         action: "unban",
         targetId: userId,
         targetTag: banned?.user.tag || null,
@@ -304,8 +304,8 @@ async function handleBanInteraction(interaction) {
       await report(interaction.client, {
         guildId: interaction.guild.id,
         category: "moderation",
-        color: 0xed4245,
-        description: `**Bannissement** — **${tag}** (${target.id})${reason ? `\n> Raison : ${reason}` : ""}`,
+        title: "Bannissement",
+        fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
         action: "ban",
         targetId: target.id,
         targetTag: tag,

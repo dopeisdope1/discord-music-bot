@@ -23,6 +23,10 @@ const historyStore = require("./moderationHistoryStore");
 // reste lisible.
 //
 // `category` route vers utils/modLogStore.js (un salon par catégorie).
+// `describe` retourne { title, fields } — titre en gras, puis une ligne par
+// champ ("**Label :** valeur"), même présentation que utils/moderation/
+// actions.js::report() pour les actions de CE bot : un seul format de carte
+// de log dans tout le bot.
 // `history` (optionnel) : quand présent, l'entrée est AUSSI ajoutée à
 // utils/moderationHistoryStore.js (recherche via &modlogs/panel) — réservé
 // aux actions qui ciblent un membre de façon disciplinaire ; le bruit
@@ -31,25 +35,21 @@ const historyStore = require("./moderationHistoryStore");
 const HANDLERS = {
   [AuditLogEvent.MemberBanAdd]: {
     category: "moderation",
-    color: 0xed4245,
-    describe: (e) => `**Bannissement** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Bannissement", fields: [targetField(e)] }),
     history: (e) => ({ action: "ban", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberBanRemove]: {
     category: "moderation",
-    color: 0x57f287,
-    describe: (e) => `**Débannissement** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Débannissement", fields: [targetField(e)] }),
     history: (e) => ({ action: "unban", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberKick]: {
     category: "moderation",
-    color: 0xed4245,
-    describe: (e) => `**Expulsion** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Expulsion", fields: [targetField(e)] }),
     history: (e) => ({ action: "kick", targetId: e.targetId, targetTag: e.target?.tag || null }),
   },
   [AuditLogEvent.MemberUpdate]: {
     category: "moderation",
-    color: 0xfee75c,
     // Un MemberUpdate couvre aussi les surnoms et la sourdine vocale : seuls
     // le timeout et le changement de pseudo nous intéressent ici.
     describe: (e) => {
@@ -57,12 +57,14 @@ const HANDLERS = {
       if (timeout) {
         if (timeout.new) {
           const until = Math.floor(new Date(timeout.new).getTime() / 1000);
-          return `**Timeout** — ${targetLabel(e)} jusqu'à <t:${until}:f>${reasonLine(e)}`;
+          return { title: "Timeout", fields: [targetField(e), { label: "Jusqu'à", value: `<t:${until}:f>` }] };
         }
-        return `**Fin de timeout** — ${targetLabel(e)}${reasonLine(e)}`;
+        return { title: "Fin de timeout", fields: [targetField(e)] };
       }
       const nick = e.changes.find((c) => c.key === "nick");
-      if (nick) return `**Pseudo modifié** — ${targetLabel(e)} → **${nick.new || "*retiré*"}**${reasonLine(e)}`;
+      if (nick) {
+        return { title: "Pseudo modifié", fields: [targetField(e), { label: "Nouveau pseudo", value: nick.new || "*retiré*" }] };
+      }
       return null;
     },
     history: (e) => {
@@ -82,15 +84,14 @@ const HANDLERS = {
   },
   [AuditLogEvent.MemberRoleUpdate]: {
     category: "members",
-    color: 0xfee75c,
     describe: (e) => {
       const added = e.changes.find((c) => c.key === "$add")?.new;
       const removed = e.changes.find((c) => c.key === "$remove")?.new;
-      const parts = [];
-      if (added?.length) parts.push(`+ ${added.map((r) => r.name).join(", ")}`);
-      if (removed?.length) parts.push(`− ${removed.map((r) => r.name).join(", ")}`);
-      if (!parts.length) return null;
-      return `**Rôles modifiés** — ${targetLabel(e)} (${parts.join(" / ")})${reasonLine(e)}`;
+      const fields = [targetField(e)];
+      if (added?.length) fields.push({ label: "Rôles ajoutés", value: added.map((r) => r.name).join(", ") });
+      if (removed?.length) fields.push({ label: "Rôles retirés", value: removed.map((r) => r.name).join(", ") });
+      if (fields.length === 1) return null;
+      return { title: "Rôles modifiés", fields };
     },
     history: (e) => {
       const added = e.changes.find((c) => c.key === "$add")?.new || [];
@@ -106,7 +107,6 @@ const HANDLERS = {
   },
   [AuditLogEvent.ChannelUpdate]: {
     category: "channels",
-    color: 0xfee75c,
     // Seul le changement de mode lent nous intéresse : le reste (topic, nom,
     // NSFW...) est de la gestion de salon générale, pas de la modération.
     describe: (e) => {
@@ -114,8 +114,8 @@ const HANDLERS = {
       if (!slowmode) return null;
       const seconds = Number(slowmode.new || 0);
       return seconds
-        ? `**Mode lent** — ${channelMention(e)} réglé sur ${seconds}s${reasonLine(e)}`
-        : `**Mode lent désactivé** — ${channelMention(e)}${reasonLine(e)}`;
+        ? { title: "Mode lent", fields: [channelField(e), { label: "Durée", value: `${seconds}s` }] }
+        : { title: "Mode lent désactivé", fields: [channelField(e)] };
     },
     history: (e) => {
       const slowmode = e.changes.find((c) => c.key === "rate_limit_per_user");
@@ -125,98 +125,95 @@ const HANDLERS = {
   },
   [AuditLogEvent.ChannelOverwriteCreate]: {
     category: "channels",
-    color: 0xfee75c,
     describe: (e) => overwriteDescribe(e, "créée"),
   },
   [AuditLogEvent.ChannelOverwriteUpdate]: {
     category: "channels",
-    color: 0xfee75c,
     describe: (e) => overwriteDescribe(e, "modifiée"),
   },
   [AuditLogEvent.ChannelCreate]: {
     category: "server",
-    color: 0x5865f2,
-    describe: (e) => `**Salon créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Salon créé", fields: [targetField(e)] }),
   },
   [AuditLogEvent.ChannelDelete]: {
     category: "server",
-    color: 0xed4245,
-    describe: (e) => `**Salon supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Salon supprimé", fields: [targetField(e)] }),
   },
   [AuditLogEvent.RoleCreate]: {
     category: "server",
-    color: 0x5865f2,
-    describe: (e) => `**Rôle créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Rôle créé", fields: [targetField(e, "Rôle")] }),
   },
   [AuditLogEvent.RoleDelete]: {
     category: "server",
-    color: 0xed4245,
-    describe: (e) => `**Rôle supprimé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Rôle supprimé", fields: [targetField(e, "Rôle")] }),
   },
   [AuditLogEvent.WebhookCreate]: {
     category: "server",
-    color: 0xed4245,
-    describe: (e) => `**Webhook créé** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Webhook créé", fields: [targetField(e)] }),
   },
   [AuditLogEvent.MessageBulkDelete]: {
     category: "moderation",
-    color: 0xfee75c,
-    describe: (e) => `**Nettoyage** — ${e.extra?.count ?? "?"} message(s) supprimé(s) dans ${channelLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({
+      title: "Suppression de messages",
+      fields: [
+        { label: "Salon", value: channelLabel(e) },
+        { label: "Nombre", value: String(e.extra?.count ?? "?") },
+      ],
+    }),
     // Pas d'écriture d'historique ici : &clear (utils/moderation/actions.js)
     // enregistre déjà une entrée plus riche (avec le filtre utilisé) au
     // moment de l'action — un doublon générique n'ajouterait rien.
   },
   [AuditLogEvent.BotAdd]: {
     category: "bots",
-    color: 0xed4245,
-    describe: (e) => `**Bot ajouté** — ${targetLabel(e)}${reasonLine(e)}`,
+    describe: (e) => ({ title: "Bot ajouté", fields: [targetField(e, "Bot")] }),
   },
   [AuditLogEvent.MemberDisconnect]: {
     category: "members",
-    color: 0xfee75c,
-    describe: (e) => `**Déconnexion vocale forcée** — ${e.extra?.count ?? "?"} membre(s)${reasonLine(e)}`,
+    describe: (e) => ({ title: "Déconnexion vocale forcée", fields: [{ label: "Nombre", value: String(e.extra?.count ?? "?") }] }),
   },
 };
 
-function targetLabel(entry) {
+/** Champ générique pour une cible : mention Discord (ne ping jamais, voir index.js) + ID. */
+function targetField(entry, label = "Cible") {
   const t = entry.target;
-  if (t?.tag) return `**${t.tag}** (${t.id ?? entry.targetId})`;
-  if (t?.name) return `**${t.name}** (${t.id ?? entry.targetId})`;
-  if (entry.targetId) return `\`${entry.targetId}\``;
-  return "cible inconnue";
+  const id = t?.id ?? entry.targetId;
+  if (!id) return { label, value: "cible inconnue" };
+  // Les rôles/webhooks n'ont pas de mention "<@...>" universelle fiable :
+  // on retombe sur le nom connu, l'ID restant la référence exacte dans tous les cas.
+  if (t?.tag) return { label, value: `<@${id}> (${id})` };
+  if (t?.name) return { label, value: `${t.name} (${id})` };
+  return { label, value: `\`${id}\`` };
+}
+
+function channelField(entry) {
+  return { label: "Salon", value: entry.targetId ? `<#${entry.targetId}> (${entry.targetId})` : "salon inconnu" };
 }
 
 function channelLabel(entry) {
   const c = entry.extra?.channel;
-  return c?.id ? `<#${c.id}>` : "un salon";
-}
-
-function channelMention(entry) {
-  return entry.targetId ? `<#${entry.targetId}>` : "un salon";
+  return c?.id ? `<#${c.id}> (${c.id})` : "un salon";
 }
 
 function overwriteDescribe(entry, verb) {
   const denySend = entry.changes.some((c) => (c.key === "deny" ? String(c.new).includes("SEND_MESSAGES") : false));
   if (!denySend) return null; // pas un verrouillage @everyone : pas assez sûr pour l'afficher comme tel, on se tait
-  return `**Permission de salon ${verb}** — ${channelMention(entry)}${reasonLine(entry)}`;
-}
-
-function reasonLine(entry) {
-  return entry.reason ? `\n> Raison : ${entry.reason}` : "";
+  return { title: `Permission de salon ${verb}`, fields: [channelField(entry)] };
 }
 
 /**
- * Poste une entrée de log déjà construite (couleur + description) dans le
- * salon configuré pour `category` (utils/modLogStore.js). Fonction partagée :
+ * Poste une entrée de log déjà construite (titre + champs) dans le salon
+ * configuré pour `category` (utils/modLogStore.js). Fonction partagée :
  * utilisée par le relais d'audit ci-dessous ET par utils/moderation/actions.js
  * pour les actions de CE bot — une seule implémentation de "comment on
- * envoie une ligne de log", pas deux.
+ * envoie une ligne de log", pas deux. Auteur et raison sont ajoutés ici
+ * plutôt que dans chaque appelant : même format de carte partout.
  * @param {import('discord.js').Client} client
  * @param {string} guildId
  * @param {"moderation"|"members"|"server"|"bots"|"channels"} category
- * @param {{ color: number, description: string, moderatorTag?: string|null }} entry
+ * @param {{ title: string, fields: {label: string, value: string}[], moderatorId?: string|null, moderatorTag?: string|null, reason?: string|null }} entry
  */
-async function postModerationEntry(client, guildId, category, { color, description, moderatorTag = null }) {
+async function postModerationEntry(client, guildId, category, { title, fields, moderatorId = null, moderatorTag = null, reason = null }) {
   // "channels" n'est pas une catégorie de salon distincte côté modLogStore
   // (section 17 ne la liste pas séparément) : ses entrées rejoignent "server".
   const routedCategory = category === "channels" ? "server" : category;
@@ -227,17 +224,23 @@ async function postModerationEntry(client, guildId, category, { color, descripti
   const channel = guild?.channels.cache.get(channelId) ?? (await guild?.channels.fetch(channelId).catch(() => null));
   if (!channel?.isTextBased()) return;
 
+  const allFields = [
+    ...fields,
+    { label: "Auteur", value: moderatorId ? `<@${moderatorId}> (${moderatorId})` : moderatorTag || "inconnu" },
+    reason ? { label: "Raison", value: reason } : null,
+  ].filter(Boolean);
+
   // Components V2, comme le reste du bot (panels, confirmations) — sans
   // setAccentColor, volontairement : c'est justement cette barre colorée sur
   // le côté qui donnait encore un air d'embed classique (voir le même choix
-  // dans utils/configPanel.js et utils/helpPanel.js).
+  // dans utils/configPanel.js et utils/helpPanel.js). Le titre en gras +
+  // séparateur + une ligne par champ reprend la présentation déjà en place
+  // ailleurs sur le serveur (salon de logs du CrowBot).
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${title}**`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `-# ${moderatorTag ? `Par ${moderatorTag}` : "Exécuteur inconnu"} • <t:${Math.floor(Date.now() / 1000)}:f>`
-    )
+    new TextDisplayBuilder().setContent(allFields.map((f) => `**${f.label} :** ${f.value}`).join("\n"))
   );
 
   // Message permanent, volontairement pas de suppression automatique : c'est
@@ -264,19 +267,21 @@ async function relayAuditLogEntry(client, guild, entry) {
   const handler = HANDLERS[entry.action];
   if (!handler) return;
 
-  let description;
+  let result;
   try {
-    description = handler.describe(entry);
+    result = handler.describe(entry);
   } catch (err) {
     console.error("[moderationLog] échec de description d'une entrée d'audit :", err);
     return;
   }
-  if (!description) return;
+  if (!result) return;
 
   await postModerationEntry(client, guild.id, handler.category, {
-    color: handler.color,
-    description,
+    title: result.title,
+    fields: result.fields,
+    moderatorId: entry.executorId || null,
     moderatorTag: entry.executor?.tag || null,
+    reason: entry.reason || null,
   });
 
   if (handler.history) {

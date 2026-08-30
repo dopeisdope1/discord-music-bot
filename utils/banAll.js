@@ -206,8 +206,11 @@ async function handleBanAllInteraction(interaction) {
     await report(interaction.client, {
       guildId: guild.id,
       category: "moderation",
-      color: 0xed4245,
-      description: `**Ban de masse** — **${done}** membre(s) banni(s)${failed ? `, ${failed} échec(s)` : ""}${reason ? `\n> Raison : ${reason}` : ""}`,
+      title: "Ban de masse",
+      fields: [
+        { label: "Bannis", value: String(done) },
+        ...(failed ? [{ label: "Échecs", value: String(failed) }] : []),
+      ],
       action: "banall",
       targetId: null,
       targetTag: `${done} membre(s)`,

@@ -122,8 +122,12 @@ async function checkMessage(client, message) {
   await report(client, {
     guildId: message.guild.id,
     category: "moderation",
-    color: 0xfee75c,
-    description: `**Anti-spam** — **${message.author.tag}** (${message.author.id}) mis en timeout ${config.timeoutSeconds}s (${timestamps.length} messages en ${config.windowSeconds}s)`,
+    title: "Anti-spam",
+    fields: [
+      { label: "Cible", value: `<@${message.author.id}> (${message.author.id})` },
+      { label: "Durée", value: `${config.timeoutSeconds}s` },
+      { label: "Déclencheur", value: `${timestamps.length} messages en ${config.windowSeconds}s` },
+    ],
     action: "automod-timeout",
     targetId: message.author.id,
     targetTag: message.author.tag,

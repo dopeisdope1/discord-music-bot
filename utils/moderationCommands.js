@@ -77,8 +77,8 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0xed4245,
-      description: `**Expulsion** — **${tag}** (${target.id})${reason ? `\n> Raison : ${reason}` : ""}`,
+      title: "Expulsion",
+      fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
       action: "kick",
       targetId: target.id,
       targetTag: tag,
@@ -113,8 +113,11 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0xed4245,
-      description: `**Softban** — **${tag}** (${target.id}) — messages des dernières 24h purgés${reason ? `\n> Raison : ${reason}` : ""}`,
+      title: "Softban",
+      fields: [
+        { label: "Cible", value: `<@${target.id}> (${target.id})` },
+        { label: "Messages purgés", value: "dernières 24h" },
+      ],
       action: "softban",
       targetId: target.id,
       targetTag: tag,
@@ -153,8 +156,11 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0xfee75c,
-      description: `**Timeout** — **${tag}** (${target.id}) pour ${formatDuration(ms)}${reason ? `\n> Raison : ${reason}` : ""}`,
+      title: "Timeout",
+      fields: [
+        { label: "Cible", value: `<@${target.id}> (${target.id})` },
+        { label: "Durée", value: formatDuration(ms) },
+      ],
       action: "timeout",
       targetId: target.id,
       targetTag: tag,
@@ -191,8 +197,8 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0x57f287,
-      description: `**Fin de timeout** — **${tag}** (${target.id})`,
+      title: "Fin de timeout",
+      fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
       action: "untimeout",
       targetId: target.id,
       targetTag: tag,
@@ -233,10 +239,11 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "server",
-      color: 0xfee75c,
-      description: seconds
-        ? `**Mode lent** — <#${target.id}> réglé sur ${seconds}s`
-        : `**Mode lent désactivé** — <#${target.id}>`,
+      title: seconds ? "Mode lent" : "Mode lent désactivé",
+      fields: [
+        { label: "Salon", value: `<#${target.id}> (${target.id})` },
+        ...(seconds ? [{ label: "Durée", value: `${seconds}s` }] : []),
+      ],
       action: "slowmode",
       targetId: target.id,
       targetTag: null,
@@ -272,8 +279,11 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0xfee75c,
-      description: `**Pseudo modifié** — ${mentioned.user.tag} → **${newNick}**`,
+      title: "Pseudo modifié",
+      fields: [
+        { label: "Cible", value: `<@${mentioned.id}> (${mentioned.id})` },
+        { label: "Nouveau pseudo", value: newNick },
+      ],
       action: "nick",
       targetId: mentioned.id,
       targetTag: mentioned.user.tag,
@@ -303,8 +313,8 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "moderation",
-      color: 0xfee75c,
-      description: `**Pseudo réinitialisé** — ${mentioned.user.tag}`,
+      title: "Pseudo réinitialisé",
+      fields: [{ label: "Cible", value: `<@${mentioned.id}> (${mentioned.id})` }],
       action: "nick",
       targetId: mentioned.id,
       targetTag: mentioned.user.tag,
@@ -360,8 +370,11 @@ const handlers = {
     await report(client, {
       guildId: message.guild.id,
       category: "members",
-      color: 0xfee75c,
-      description: `**Rôle ${sub === "add" ? "ajouté" : "retiré"}** — ${mentionedMember.user.tag} (${sub === "add" ? "+" : "−"} ${mentionedRole.name})`,
+      title: sub === "add" ? "Rôle ajouté" : "Rôle retiré",
+      fields: [
+        { label: "Cible", value: `<@${mentionedMember.id}> (${mentionedMember.id})` },
+        { label: "Rôle", value: mentionedRole.name },
+      ],
       action: "role",
       targetId: mentionedMember.id,
       targetTag: mentionedMember.user.tag,
@@ -507,16 +520,16 @@ async function clear(client, message, args) {
 
   const deleted = await deleteMessages(message.channel, toDelete);
 
-  const description = [
-    filter ? `**Nettoyage filtré (${filter.label})**` : targetUserId ? "**Nettoyage ciblé**" : "**Nettoyage**",
-    `${deleted} message(s) supprimé(s) dans <#${message.channel.id}>`,
-  ].join(" — ");
-
   await report(client, {
     guildId: message.guild.id,
     category: "moderation",
-    color: 0xfee75c,
-    description,
+    title: "Suppression de messages",
+    fields: [
+      { label: "Salon", value: `<#${message.channel.id}> (${message.channel.id})` },
+      { label: "Nombre", value: String(deleted) },
+      ...(targetUserId ? [{ label: "Cible", value: `<@${targetUserId}> (${targetUserId})` }] : []),
+      ...(filter ? [{ label: "Filtre", value: filter.label }] : []),
+    ],
     action: "clear",
     targetId: targetUserId,
     targetTag: null,
@@ -557,8 +570,8 @@ async function lockdown(client, message) {
   await report(client, {
     guildId: message.guild.id,
     category: "moderation",
-    color: 0xed4245,
-    description: `**Lockdown** — ${locked} salon(s) verrouillé(s) par ${message.author.tag}`,
+    title: "Lockdown",
+    fields: [{ label: "Salons verrouillés", value: String(locked) }],
     action: "lockdown",
     targetId: null,
     targetTag: null,
@@ -590,8 +603,8 @@ async function unlockdown(client, message) {
   await report(client, {
     guildId: message.guild.id,
     category: "moderation",
-    color: 0x57f287,
-    description: `**Fin du lockdown** — ${unlocked} salon(s) déverrouillé(s) par ${message.author.tag}`,
+    title: "Fin du lockdown",
+    fields: [{ label: "Salons déverrouillés", value: String(unlocked) }],
     action: "unlockdown",
     targetId: null,
     targetTag: null,

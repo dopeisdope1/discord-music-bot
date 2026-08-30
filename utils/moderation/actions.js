@@ -82,12 +82,16 @@ function checkBotPermission(guild, flag, flagName) {
  * commande de modération de ce bot — le modérateur enregistré est toujours
  * la vraie personne qui a tapé la commande (jamais le compte du bot, voir
  * l'explication dans utils/moderationLog.js).
+ *
+ * `fields` ne porte que ce qui est spécifique à l'action (ex: "Cible",
+ * "Durée") — Auteur et Raison sont ajoutés automatiquement par
+ * postModerationEntry, pas la peine de les répéter à chaque appel.
  * @param {import('discord.js').Client} client
  * @param {object} params
  * @param {string} params.guildId
  * @param {"moderation"|"members"|"server"} params.category
- * @param {number} params.color
- * @param {string} params.description texte déjà formaté pour l'embed du salon de logs
+ * @param {string} params.title ex: "Expulsion", "Timeout"
+ * @param {{label: string, value: string}[]} params.fields
  * @param {string} params.action ex: "ban", "kick", "timeout", "clear"...
  * @param {string} params.targetId
  * @param {string|null} [params.targetTag]
@@ -97,9 +101,15 @@ function checkBotPermission(guild, flag, flagName) {
  * @param {object|null} [params.extra]
  */
 async function report(client, params) {
-  const { guildId, category, color, description, action, targetId, targetTag, moderator, reason, channelId, extra } = params;
+  const { guildId, category, title, fields, action, targetId, targetTag, moderator, reason, channelId, extra } = params;
 
-  await postModerationEntry(client, guildId, category, { color, description, moderatorTag: moderator.tag });
+  await postModerationEntry(client, guildId, category, {
+    title,
+    fields,
+    moderatorId: moderator.id,
+    moderatorTag: moderator.tag,
+    reason,
+  });
 
   historyStore.record({
     guildId,
