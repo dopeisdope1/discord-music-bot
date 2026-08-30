@@ -204,7 +204,12 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
     section 6ter), `&sources` (diagnostic audio, rang sys uniquement),
     `&owners`, `&whitelist`, `&allbots`, `&antinuke` (voir section 6sexies).
   - **Serveur** : `&role create|delete|rename|color|admin`, `&channel
-    create|delete|rename|topic`, `&dero` (voir section 6quinquies).
+    create|delete|rename|topic`, `&dero`, `&voicehub` (voir section
+    6quinquies/6septies).
+  - **Communauté** : `&ticket setup`, `&poll`, `&giveaway start|reroll`
+    (voir section 6octies).
+  - **Public** (dans ton propre salon vocal temporaire) : `&vc lock|unlock|
+    limit|rename|kick` (voir section 6septies).
   - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
     clear` / `yanis clear` — efface les messages de son PROPRE auteur
     uniquement, sans rapport avec `&clear` (voir `utils/selfClear.js`).
@@ -475,6 +480,28 @@ c'est une question de propriété, pas de rôle :
 - `&vc limit <n>` — limite de places (0 = illimité).
 - `&vc rename <nom>` — renomme le salon.
 - `&vc kick @membre` — déconnecte quelqu'un de CE salon précisément.
+
+## 6octies. Communauté : tickets, sondages, giveaways
+
+**Tickets** (`&ticket setup [@role-staff]`, clé `server.tickets.manage`) —
+poste un message "Ouvrir un ticket" dans le salon courant. Un clic crée un
+salon privé (visible du demandeur, du rôle staff et du bot uniquement),
+avec un bouton "Fermer" dedans (demandeur, staff, ou `server.tickets.manage`).
+Un membre ne peut avoir qu'un ticket ouvert à la fois.
+
+**Sondages** (`&poll "question" "option1" "option2" [...]`, 2 à 5 options,
+clé `server.polls.manage`) — un bouton par option, un vote par personne
+(revoter change le vote), résultats en direct sous forme de barres. Vivent
+en mémoire, pas en base : redémarrer le bot remet les sondages en cours à
+zéro — une activité ponctuelle et courte, pas une donnée à conserver.
+
+**Giveaways** (`&giveaway start <durée> <lot>`, clé
+`server.giveaways.manage`) — bouton "Participer" (rejoindre/quitter), tirage
+automatique au terme (vérifié toutes les 30s), annonce du gagnant dans le
+salon. **Persistés** (contrairement aux sondages) : un redéploiement pendant
+qu'un giveaway est en cours ne le fait pas disparaître. `&giveaway reroll
+[id]` retire un nouveau gagnant du dernier giveaway du salon (ou d'un
+giveaway précis par ID de message).
 
 ## 7. Notes sur le support Spotify
 

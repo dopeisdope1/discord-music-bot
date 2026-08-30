@@ -29,6 +29,9 @@ const { revokeIfGone } = require("./utils/permissions/cleanup");
 const { handleServerAdminInteraction, handleConfirmInteraction, applyDeroToNewChannel } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const voiceChannels = require("./utils/voiceChannels");
+const { handleTicketButton } = require("./utils/tickets");
+const { handlePollButton } = require("./utils/polls");
+const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveaways");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -215,6 +218,14 @@ setInterval(() => {
 
 console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDOG_MS / 1000}s.`);
 
+// Vérifie périodiquement les giveaways arrivés à échéance (voir
+// utils/giveaways.js) — persistés (utils/giveawayStore.js), donc un
+// redéploiement pendant qu'un giveaway est en cours ne le fait pas
+// disparaître, juste reprendre la vérification au redémarrage.
+setInterval(() => {
+  checkExpiredGiveaways(client).catch((err) => console.error("[giveaways]", err));
+}, 30_000);
+
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();
 
@@ -395,6 +406,20 @@ client.on("interactionCreate", async (interaction) => {
     const isConfirm = interaction.customId.startsWith("srv:confirm:");
     const handler = isConfirm ? handleConfirmInteraction : handleServerAdminInteraction;
     await handler(interaction).catch((err) => console.error("[serverAdminCommands]", err));
+    return;
+  }
+
+  // Communauté (voir utils/tickets.js, utils/polls.js, utils/giveaways.js).
+  if (interaction.customId?.startsWith("ticket:")) {
+    await handleTicketButton(interaction).catch((err) => console.error("[tickets]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith("poll:")) {
+    await handlePollButton(interaction).catch((err) => console.error("[polls]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith("giveaway:")) {
+    await handleGiveawayButton(interaction).catch((err) => console.error("[giveaways]", err));
     return;
   }
 

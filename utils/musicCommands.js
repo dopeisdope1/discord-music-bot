@@ -17,6 +17,9 @@ const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { moderationHandlers } = require("./moderationCommands");
 const serverAdmin = require("./serverAdminCommands");
+const { setupTickets } = require("./tickets");
+const { createPoll } = require("./polls");
+const { startGiveaway, rerollGiveaway } = require("./giveaways");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
@@ -343,6 +346,18 @@ const modHandlers = {
   antinuke: serverAdmin.antinuke,
   voicehub: serverAdmin.voicehub,
   vc: serverAdmin.vc,
+
+  // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
+  // utils/giveaways.js.
+  ticket: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "setup") return setupTickets(client, message, args.slice(1));
+  },
+  poll: createPoll,
+  giveaway: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "start") return startGiveaway(client, message, args.slice(1));
+    if (sub === "reroll") return rerollGiveaway(client, message, args.slice(1));
+  },
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,

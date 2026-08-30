@@ -124,6 +124,30 @@ const CATEGORIES = [
         permission: "server.voice.manage",
         description: "Rejoindre ce salon crée un salon vocal personnel temporaire",
       },
+      {
+        name: "ticket setup [@role-staff]",
+        prefix: "mod",
+        permission: "server.tickets.manage",
+        description: "Poste le message \"Ouvrir un ticket\" dans le salon courant",
+      },
+      {
+        name: 'poll "question" "option1" "option2" [...]',
+        prefix: "mod",
+        permission: "server.polls.manage",
+        description: "Sondage à boutons (2 à 5 options), un vote par personne",
+      },
+      {
+        name: "giveaway start <durée> <lot>",
+        prefix: "mod",
+        permission: "server.giveaways.manage",
+        description: "Lance un giveaway (ex : `giveaway start 1h Nitro`), tirage automatique au terme",
+      },
+      {
+        name: "giveaway reroll [id]",
+        prefix: "mod",
+        permission: "server.giveaways.manage",
+        description: "Retire un gagnant du dernier giveaway du salon",
+      },
     ],
   },
   {
