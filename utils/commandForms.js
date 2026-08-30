@@ -3,6 +3,9 @@ const { startGiveaway } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
 const { moderationHandlers } = require("./moderationCommands");
+const moderationExtra = require("./moderationExtra");
+const { channelHandlers } = require("./channelCommands");
+const { handleBan, handleUnban } = require("./banPanel");
 const serverAdmin = require("./serverAdminCommands");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
@@ -129,6 +132,134 @@ const FORMS = {
     run: async (client, interaction, v) => {
       const msg = fakeMessage(interaction, {});
       await serverAdmin.roleAdmin(client, msg, ["create", ...v.text.name.split(/\s+/)]);
+    },
+  },
+
+  ban_member: {
+    label: "Bannir un membre",
+    fields: ["user"],
+    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await handleBan(client, msg, v.text?.reason ? [v.text.reason] : []);
+    },
+  },
+
+  softban_member: {
+    label: "Softban un membre",
+    fields: ["user"],
+    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationHandlers.softban(client, msg, v.text?.reason ? [v.text.reason] : []);
+    },
+  },
+
+  unban_id: {
+    label: "Débannir (par ID)",
+    fields: [],
+    textFields: [{ key: "id", label: "Identifiant Discord du membre banni", max: 25 }],
+    ready: (v) => Boolean(v.text?.id),
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await handleUnban(client, msg, [v.text.id]);
+    },
+  },
+
+  addrole_member: {
+    label: "Ajouter un rôle à un membre",
+    fields: ["user", "role"],
+    ready: (v) => Boolean(v.userId && v.roleId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!member || !role) return interaction.followUp({ content: "Membre ou rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member, role });
+      await moderationHandlers.addrole(client, msg, []);
+    },
+  },
+
+  delrole_member: {
+    label: "Retirer un rôle à un membre",
+    fields: ["user", "role"],
+    ready: (v) => Boolean(v.userId && v.roleId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!member || !role) return interaction.followUp({ content: "Membre ou rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member, role });
+      await moderationHandlers.delrole(client, msg, []);
+    },
+  },
+
+  lock_channel: {
+    label: "Verrouiller un salon",
+    fields: ["channel"],
+    ready: (v) => Boolean(v.channelId),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channel });
+      await channelHandlers.lock(client, msg);
+    },
+  },
+
+  unlock_channel: {
+    label: "Déverrouiller un salon",
+    fields: ["channel"],
+    ready: (v) => Boolean(v.channelId),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channel });
+      await channelHandlers.unlock(client, msg);
+    },
+  },
+
+  slowmode_channel: {
+    label: "Régler le mode lent d'un salon",
+    fields: ["channel"],
+    textFields: [{ key: "duration", label: "Durée (ex : 5s, 1m, off)", max: 10 }],
+    ready: (v) => Boolean(v.channelId && v.text?.duration),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channel });
+      await moderationHandlers.slowmode(client, msg, [v.text.duration]);
+    },
+  },
+
+  mute_member: {
+    label: "Mute un membre",
+    fields: ["user"],
+    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      // utils/moderationExtra.js lit la cible directement depuis args[0]
+      // (mention ou ID littéral), pas depuis message.mentions — voir sa
+      // propre parseTarget(), volontairement plus stricte (fix &clear).
+      await moderationExtra.mute(client, msg, [member.id, ...(v.text?.reason ? [v.text.reason] : [])]);
+    },
+  },
+
+  derank_member: {
+    label: "Derank un membre (retire tous ses rôles)",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.derank(client, msg, [member.id]);
     },
   },
 };

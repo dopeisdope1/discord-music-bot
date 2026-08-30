@@ -33,15 +33,32 @@ async function cas(nom, fn) {
 
 const TARGET_ID = "999888777000111222";
 
+const TEST_ROLE_ID = "role-111111111111111";
+
 function makeInteraction() {
+  const rolesCache = new Collection([[TEST_ROLE_ID, { id: TEST_ROLE_ID, name: "Testeur", position: 2 }]]);
   const targetMember = {
     id: TARGET_ID,
     user: { id: TARGET_ID, tag: "cible#0001" },
-    roles: { cache: new Collection(), highest: { position: 1 } },
+    roles: {
+      cache: new Collection(),
+      highest: { position: 1 },
+      add: async function (roleOrColl, reason) {
+        this._added = this._added || [];
+        this._added.push(roleOrColl.id || [...roleOrColl.keys?.() || []]);
+      },
+      remove: async function (roleOrColl, reason) {
+        this._removed = this._removed || [];
+        this._removed.push(roleOrColl.id || [...roleOrColl.keys?.() || []]);
+      },
+    },
     moderatable: true,
     communicationDisabledUntil: null,
     kick: async function (reason) {
       this._kicked = reason;
+    },
+    ban: async function (opts) {
+      this._banned = opts;
     },
     timeout: async function (ms, reason) {
       this._timedOut = { ms, reason };
@@ -51,10 +68,14 @@ function makeInteraction() {
   const channel = {
     id: "c1",
     type: ChannelType.GuildText,
+    permissionOverwrites: { cache: new Collection(), edit: async () => {} },
     send: async (payload) => {
       channel._sent = channel._sent || [];
       channel._sent.push(payload);
       return { id: "msg1", edit: async () => {} };
+    },
+    setRateLimitPerUser: async (seconds) => {
+      channel._rateLimit = seconds;
     },
   };
   const guild = {
@@ -68,11 +89,17 @@ function makeInteraction() {
       },
     },
     roles: {
-      cache: new Collection(),
+      cache: rolesCache,
       everyone: { id: "g1" },
       create: async (opts) => {
         guild._createdRole = opts;
         return { id: "newrole", name: opts.name };
+      },
+    },
+    bans: {
+      fetch: async (id) => (guild._banList?.has(id) ? { user: { id } } : null),
+      remove: async (id) => {
+        guild._unbanned = id;
       },
     },
     members: {
@@ -81,6 +108,7 @@ function makeInteraction() {
       cache: membersCache,
     },
   };
+  guild._banList = new Set([TARGET_ID]);
   return {
     user: { id: "staff-1", tag: "staff#0001" },
     member: {
@@ -142,6 +170,74 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     const interaction = makeInteraction();
     await commandForms.FORMS.role_create.run(client, interaction, { text: { name: "Testeur" } });
     assert.strictEqual(interaction.guild._createdRole?.name, "Testeur");
+  });
+
+  await cas("ban_member réutilise le VRAI &ban, donc demande confirmation (comportement voulu, pas de ban immédiat)", async () => {
+    const interaction = makeInteraction();
+    const followUps = [];
+    interaction.followUp = async (p) => {
+      followUps.push(p);
+      return {};
+    };
+    await commandForms.FORMS.ban_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "raid" } });
+    assert.strictEqual(interaction._targetMember._banned, undefined, "&ban ne bannit jamais sans confirmation explicite, même depuis le panel");
+    assert.ok(followUps.length > 0, "un panneau de confirmation aurait dû être renvoyé");
+  });
+
+  await cas("softban_member bannit avec deleteMessageSeconds (purge) puis prévoit le débannissement", async () => {
+    const interaction = makeInteraction();
+    await commandForms.FORMS.softban_member.run(client, interaction, { userId: TARGET_ID, text: {} });
+    assert.strictEqual(interaction._targetMember._banned?.deleteMessageSeconds, 86400);
+  });
+
+  await cas("unban_id débannit l'identifiant fourni", async () => {
+    const interaction = makeInteraction();
+    await commandForms.FORMS.unban_id.run(client, interaction, { text: { id: TARGET_ID } });
+    assert.strictEqual(interaction.guild._unbanned, TARGET_ID);
+  });
+
+  await cas("addrole_member ajoute bien le rôle choisi", async () => {
+    const interaction = makeInteraction();
+    await commandForms.FORMS.addrole_member.run(client, interaction, { userId: TARGET_ID, roleId: TEST_ROLE_ID });
+    assert.ok(interaction._targetMember.roles._added?.some((r) => r === TEST_ROLE_ID));
+  });
+
+  await cas("delrole_member retire bien le rôle choisi", async () => {
+    const interaction = makeInteraction();
+    interaction._targetMember.roles.cache.set(TEST_ROLE_ID, { id: TEST_ROLE_ID, position: 2 });
+    await commandForms.FORMS.delrole_member.run(client, interaction, { userId: TARGET_ID, roleId: TEST_ROLE_ID });
+    assert.ok(interaction._targetMember.roles._removed?.some((r) => r === TEST_ROLE_ID));
+  });
+
+  await cas("lock_channel verrouille le salon choisi", async () => {
+    const interaction = makeInteraction();
+    let edited = null;
+    interaction._channel.permissionOverwrites.edit = async (role, perms) => {
+      edited = perms;
+    };
+    await commandForms.FORMS.lock_channel.run(client, interaction, { channelId: "c1" });
+    assert.strictEqual(edited?.SendMessages, false);
+  });
+
+  await cas("slowmode_channel applique la bonne durée en secondes", async () => {
+    const interaction = makeInteraction();
+    await commandForms.FORMS.slowmode_channel.run(client, interaction, { channelId: "c1", text: { duration: "30s" } });
+    assert.strictEqual(interaction._channel._rateLimit, 30);
+  });
+
+  await cas("mute_member ajoute le rôle de mute configuré", async () => {
+    const muteStore = require("../utils/muteStore");
+    muteStore.setMuteRoleId("g1", TEST_ROLE_ID);
+    const interaction = makeInteraction();
+    await commandForms.FORMS.mute_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "spam" } });
+    assert.ok(interaction._targetMember.roles._added?.some((r) => r === TEST_ROLE_ID));
+  });
+
+  await cas("derank_member retire tous les rôles retirables de la cible", async () => {
+    const interaction = makeInteraction();
+    interaction._targetMember.roles.cache.set(TEST_ROLE_ID, { id: TEST_ROLE_ID, position: 2 });
+    await commandForms.FORMS.derank_member.run(client, interaction, { userId: TARGET_ID });
+    assert.ok(interaction._targetMember.roles._removed?.length > 0);
   });
 
   console.log("\nÉtat de formulaire (par utilisateur) :");
