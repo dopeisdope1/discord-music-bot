@@ -26,12 +26,11 @@ LAVALINK_HOST=...
 LAVALINK_PORT=...
 LAVALINK_PASSWORD=...
 LAVALINK_SECURE=true
-GIPHY_API_KEY=...   # optionnel — clé publique de démo utilisée sinon (`.gif`)
-DATA_DIR=...         # optionnel — voir "Rendre data/ permanent sur Railway" plus bas
+DATA_DIR=...         # optionnel — voir "Persistance des données" en section 6ter
 MUSIC_SEARCH_ENGINE=soundcloud  # optionnel — source de recherche (soundcloud par
                                 # défaut : YouTube refuse les requêtes venant d'un
                                 # hébergeur, "Sign in to confirm you're not a bot")
-BOT_OWNER_IDS=...    # optionnel — voir section 7quater (anti-nuke : `=owner`/`=antifast`/`=wl`)
+BOT_OWNER_IDS=...    # optionnel — statut prioritaire du bot (rang "owner"), voir section 6ter
 ```
 
 ## 2bis. Nœud Lavalink
@@ -138,14 +137,17 @@ casser une lecture en cours).
 Sur le portail développeur Discord, dans l'onglet **Bot** :
 - ✅ SERVER MEMBERS INTENT — nécessaire pour `!join` (lit la présence des membres)
 - ✅ PRESENCE INTENT — nécessaire pour `!join` (détecte l'activité "écoute Spotify")
-- ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`!play`, `.clear`...)
+- ✅ MESSAGE CONTENT INTENT — nécessaire pour les commandes textuelles (`?play`, `&clear`...)
+- Rien à activer pour **GUILD_MODERATION** (journal de logs, section 6ter) :
+  non privilégié, coché automatiquement par le code, aucune action manuelle.
 
 Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - `bot`, `applications.commands`
-- Connect, Speak, Send Messages, Embed Links, Use Slash Commands, Manage Roles,
-  Manage Channels, Manage Messages (pour les commandes de modération), View
-  Audit Log (pour attribuer les changements de rôle manuels dans "Logs rôles"),
-  Manage Expressions (pour `.create`)
+- Connect, Speak, Send Messages, Embed Links, Use Slash Commands
+- Modération (section 6ter) : Kick Members, Ban Members, Moderate Members
+  (timeout), Manage Nicknames, Manage Roles, Manage Channels, Manage Messages
+- View Audit Log — pour le journal de modération (section 6ter) et pour
+  attribuer les débannissements à qui de droit
 
 ## 4. Déployer les commandes slash
 
@@ -177,163 +179,170 @@ nouveau morceau, avec des boutons interactifs : ⏸️/▶️ ⏭️ ⏹️ 🔁
 
 ## 6bis. Commandes textuelles (sans slash)
 
-En plus des commandes slash, le bot répond aussi aux préfixes classiques :
+En plus des commandes slash musique, le bot répond aux préfixes texte
+(configurables par serveur via `&panel` > Préfixes) :
 
-- **`!`** : préfixe principal, pour toutes les commandes musique
-  (`!play`, `!join`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!volume 80`, `!loop queue`, `!help`)
-- **`.`** : préfixe pour les commandes membres et de modération
-  - Ouvertes à tout le monde par défaut : `.pic [@membre]` / `.avatar` (photo de
-    profil), `.snipe` (dernier message supprimé du salon), `.gif <recherche>`
-    (envoie un gif aléatoire via Giphy)
-  - Admin, ou rôle autorisé pour une catégorie de permission qui inclut la
-    commande (voir "Page Permissions" ci-dessous) : `.clear`, `.renew`,
-    `.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`,
-    `.delrole`, `.panel`, `.create <nom> <url>` (crée un emoji), `.helpall`
-    (liste les commandes par catégorie), `.perms` (liste les rôles par
-    catégorie), `.niv` (qui n'est pas en vocal parmi un rôle), `.dero`
-    (rôle auto-appliqué aux nouveaux salons), `.counter` (salon-compteur de
-    membres, voir section 7quinquies)
-  - Admin, permission Discord **Bannir des membres**, ou rôle autorisé (même
-    système) : `.ban`, `.unban`, `.unbanall` (débannit tout le monde, avec
-    confirmation)
-  - **Propriétaire du serveur/du bot, ou owner anti-nuke délégué avec
-    autorisation** (même l'Administrateur natif ne suffit pas, jamais
-    assignable à une catégorie de permission) : `.banall` (bannit tous les
-    membres humains du serveur sauf toi, avec confirmation — action
-    irréversible) — voir détail juste en dessous. Toute autre tentative est
-    simplement refusée (aucun retrait de rôle : peu fiable de toute façon si
-    le rôle du responsable est au même niveau ou au-dessus de celui du bot,
-    voir section 7quater pour la vraie détection anti-nuke générale)
-  - **Owners anti-nuke uniquement** (jamais l'Administrateur natif ni une
-    catégorie de permission, voir section 7quater) : `=antifast`, `=owner`,
-    `=wl`, `=allbots` — préfixe fixe `=`, pas `!`/`.` (non configurable via
-    `.panel`)
-  - `.help` → panel interactif : un écran d'accueil résume chaque catégorie
-    (noms des commandes), un menu déroulant permet ensuite de naviguer dedans
-    pour voir le détail sans tout afficher d'un coup. La liste "Commandes
-    autorisées" est calculée **commande par commande** pour toi précisément
-    (pas par groupe fixe) : si tu n'as accès qu'à `.helpall`/`.perms` via une
-    catégorie de `.panel` > Permissions, c'est tout ce qui s'affiche — pas le
-    reste de la modération
+- **`?`** (préfixe musique par défaut) : `?play`, `?join`, `?skip`, `?stop`,
+  `?pause`, `?resume`, `?queue`, `?volume 80`, `?loop queue`, `?help`.
+- **`&`** (préfixe des commandes, par défaut — **partagé avec le CrowBot du
+  serveur** : le bot reste muet sur tout ce qu'il ne connaît pas, pour ne
+  jamais répondre à sa place) :
+  - **Publiques**, sans permission : `&pic`/`&avatar [@membre]`,
+    `&banner [@membre]`, `&server`/`&serverinfo`, `&userinfo [@membre]`,
+    `&snipe`.
+  - **Modération**, chacune sa propre clé de permission (voir section 6ter
+    ci-dessous) : `&clear`/`&purge`, `&kick`, `&ban`, `&unban`, `&softban`,
+    `&timeout`, `&untimeout`, `&banall`, `&modlogs`.
+  - **Salons** : `&lock`/`&unlock [#salon]`, `&slowmode <durée|off>
+    [#salon]`, `&hide`/`&unhide`/`&renew`, `&lockdown`/`&panic`,
+    `&unlockdown`.
+  - **Membres** : `&nick @membre <pseudo>`, `&resetnick @membre`,
+    `&role add|remove @membre @rôle`.
+  - **Admin** : `&panel` (rubriques visibles selon tes droits — voir
+    section 6ter), `&sources` (diagnostic audio, rang sys uniquement).
+  - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
+    clear` / `yanis clear` — efface les messages de son PROPRE auteur
+    uniquement, sans rapport avec `&clear` (voir `utils/selfClear.js`).
 
-`.panel` (réservé aux administrateurs, ou aux membres avec un rôle autorisé —
-voir "Page Permissions" ci-dessous) ouvre un panel à **quatre pages**
-navigables via les boutons du bas : **Préfixes**, **Logs**, **Permissions** et
-**Rôles**.
+`&help` n'affiche que ce que tu as réellement le droit d'utiliser — même
+moteur de permissions que les commandes et que `&panel`, jamais une liste
+séparée qui pourrait diverger (voir section 6ter).
 
-**Page Préfixes** — les deux préfixes ci-dessus (`!` et `.`) sont configurables
-par serveur : deux boutons ouvrent chacun une fenêtre pour saisir un nouveau
-préfixe, sans avoir à toucher au code.
+Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien
+activé sur le portail développeur (voir section 3).
 
-### Pourquoi la config ne se réinitialise plus après un redéploiement
+### Persistance des données (`DATA_DIR`)
 
-Le disque du container Railway est **réinitialisé à chaque redéploiement**
-(donc à chaque push sur `main`, vu l'auto-déploiement) : tout ce qui n'est
-écrit que dans `data/` y disparaîtrait à chaque mise à jour du bot.
+Tout ce que `&panel` change (permissions par rôle, préfixes, salons de logs,
+accès, historique de modération, config anti-spam) est écrit en fichiers
+JSON plats dans `data/` — aucune vraie base de données. Le disque du
+container Railway étant **réinitialisé à chaque redéploiement**, pointe
+`DATA_DIR` (variable d'env) vers un **Volume Railway** monté si tu veux que
+ça survive aux mises à jour du bot ; sans ça, tout repart de zéro à chaque
+push.
 
-Pour éviter ça sans configuration manuelle sur Railway, chaque changement fait
-via `.panel` (préfixe, salon de logs ou rôle autorisé) est aussi sauvegardé
-dans un salon Discord caché appelé **`zinki-config`** (créé automatiquement, masqué à
-@everyone) — voir `utils/configChannel.js`. Au démarrage du bot, la config y
-est relue et rechargée en mémoire **avant** de toucher au disque local :
-Discord, contrairement au container Railway, n'est jamais réinitialisé, donc
-rien de ce qui est déjà configuré n'est jamais perdu ni remis à zéro.
-**Ne supprime pas le salon `zinki-config`** — c'est là que tout est stocké.
+## 6ter. Permissions, rôles, logs et panel
 
-`data/` (et la variable d'env `DATA_DIR`, pour la pointer vers un Volume
-Railway si tu en montes un) reste utilisé comme cache local rapide en plus de
-ça, mais n'est plus la seule copie de la config.
+Refonte du 30/08/2026 : un moteur de permissions **central**, par rôle et par
+serveur, remplace le champ ad hoc qui gatait chaque commande individuellement.
+Une seule vérité, utilisée partout — commandes, `&help`, `&panel`,
+boutons — jamais deux listes qui pourraient se contredire.
 
-**Page Logs** — un menu déroulant par catégorie (**Logs modération** =
-`.clear`/`.ban`/`.unban`, **Logs salon** = `.renew`/`.hide`/`.unhide`/
-`.lock`/`.unlock`, **Logs rôles** = `.massrole` ET tout ajout/retrait de rôle
-fait à la main sur le profil d'un membre, **Logs sécurité** = alertes
-anti-nuke, voir section 7quater) où tu choisis, en tapant pour rechercher, le
-salon où le bot doit poster un message. Laisser une catégorie vide désactive
-simplement ses logs. Pour "Logs rôles", un changement fait via
-`.massrole`/le panel donne un seul message résumé (nombre de membres
-touchés) ; un changement fait à la main donne un message par membre avec le
-nom de la personne qui a fait le changement (nécessite la permission
-**View Audit Log**, voir section 3).
+### Le principe
 
-**Page Permissions** (modifiable uniquement par de vrais administrateurs,
-même si un rôle autorisé permet d'ouvrir `.panel` — pour éviter qu'un rôle
-autorisé s'auto-accorde plus de droits) — un système de **catégories
-numérotées et indépendantes** ("Permission 1", "Permission 2"... chacune sa
-propre liste de commandes et de rôles, sans héritage automatique entre
-elles, contrairement à l'exemple à deux groupes fixes "mod"/"ban" d'avant) :
+Chaque commande de modération exige une **clé de permission** (ex :
+`moderation.clear`, `moderation.ban`, `channels.lock` — liste complète dans
+`utils/permissions/catalog.js`). Une clé s'accorde à un **rôle Discord**
+(l'octroi normal, depuis `&panel` > Permissions) ou, plus rarement, à un
+utilisateur précis. `&help` et `&panel` filtrent tous deux sur cette même
+clé : ce que tu vois, tu peux réellement l'utiliser.
 
-- Bouton "➕ Créer une catégorie" → crée une "Permission N" vide (N ne se
-  réutilise jamais, même après suppression d'une catégorie).
-- Menu déroulant "Gérer une catégorie" → ouvre le détail d'une catégorie
-  existante, avec un menu multi-sélection listant toutes les commandes
-  assignables (coche celles que tu veux inclure) et un menu de rôles
-  (`RoleSelectMenu`, choisis qui a accès), plus un bouton pour la supprimer.
+**Statut prioritaire inchangé** : le propriétaire du bot (`BOT_OWNER_IDS`) et
+le rang sys (accordé via `&panel` > Rang sys, comme avant cette refonte) ont
+toujours accès à tout, sans configuration — c'est le système historique de
+`utils/accessStore.js`, volontairement conservé tel quel. `&banall` reste un
+cas à part : jamais accordable par rôle ni hérité du rang sys, uniquement un
+par un via `&panel` > Ban de masse.
 
-Les commandes assignables : `.helpall`, `.perms`, `.panel`, `.renew`,
-`.hide`, `.unhide`, `.lock`, `.unlock`, `.massrole`, `.addrole`, `.delrole`,
-`.create`, `.ban`, `.unban`, `.unbanall`, `.clear`, `.niv`, `.dero`,
-`.counter` (`.banall` en est volontairement exclue).
-Ça s'ajoute aux permissions Discord natives (Administrateur toujours, plus
-Bannir des membres pour `.ban`/`.unban`/`.unbanall` spécifiquement), qui
-continuent de fonctionner normalement — les catégories ne font qu'ajouter
-des accès, jamais en retirer. `.helpall` liste les catégories avec leurs
-commandes (équivalent texte de cette page) ; `.perms` liste les catégories
-avec leurs rôles. Persisté dans `data/permissionCategories.json` (+ salon
-`zinki-config`, voir plus bas), comme les préfixes et les logs.
+**Aucune notion de "session" à gérer** : le panel reste un panneau Discord
+natif (Components V2), pas un site web — il n'y a donc rien à connecter ni
+de session à révoquer. Chaque clic revérifie les droits **en direct** contre
+les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
+immédiatement, en redonner un le restaure, sans redémarrage ni action
+manuelle.
 
-Le bouton **"Gérer les rôles en masse"** sur la page Permissions fait la même
-chose que `.massrole add|remove @role` (ajouter/retirer un rôle à tous les
-membres non-bot du serveur), mais via deux menus déroulants de rôles au lieu
-de taper la commande.
+### `&panel` — rubriques
 
-**Page Rôles** — un bouton "➕ Créer un rôle" ouvre une fenêtre pour saisir un
-nom (texte libre, obligatoirement une modale — aucun menu déroulant ne permet
-de taper du texte), puis un menu déroulant "Choisir une couleur" propose une
-liste de couleurs prédéfinies (ou "Par défaut", ou "Annuler la création") ; un
-menu déroulant natif Discord "🗑️ Choisir un rôle à supprimer" liste les rôles
-du serveur — en sélectionner un affiche une confirmation (nom du rôle +
-nombre de membres concernés) avant suppression réelle, puisque l'action est
-irréversible ; un troisième menu "↕️ Choisir un rôle à réorganiser" affiche
-sa position actuelle (ex: "3 / 12") avec des boutons ⬆️ Monter / ⬇️ Descendre
-pour le déplacer d'un cran à la fois, et un bouton "🎯 Aller à un rang précis"
-qui ouvre une fenêtre pour taper directement le rang voulu (Discord ne
-propose aucun composant "glisser-déposer" côté API bot — impossible de
-réordonner à la souris comme dans les paramètres natifs du serveur, ce
-bouton est l'équivalent le plus proche : un saut direct plutôt qu'un
-cran à la fois). Le rôle @everyone et les rôles gérés par une intégration
-(bot, boost serveur...) ne peuvent être ni supprimés ni déplacés depuis ce
-panel ; un rôle ne peut pas non plus être monté au-dessus du rôle le plus
-haut du bot (limite de hiérarchie Discord). Pour attribuer/retirer un rôle à
-un membre précis (plutôt qu'à tout le monde ou dans la hiérarchie), voir
-`.addrole`/`.delrole` ci-dessous.
+Chaque rubrique n'apparaît que si tu y as droit :
 
-**`.addrole` / `.delrole`** — commandes autonomes (pas dans `.panel`) pour
-ajouter/retirer un rôle à un seul membre, à trois niveaux :
-- Sans argument (`.addrole`) : panel "Ajout de rôle" avec un menu déroulant
-  natif Discord pour choisir le membre, puis un second menu pour choisir le
-  rôle.
-- Avec juste le membre (`.addrole @membre` ou `.addrole <id>`) : saute
-  directement à l'écran "Ajout de rôle" avec un champ **Cible** affichant le
-  membre déjà choisi, et un menu déroulant pour choisir le rôle.
-- Avec les deux (`.addrole @membre @role`, mentions ou ID) : appliqué tout de
-  suite, sans aucun panel.
+- **Permissions** — choisis un rôle, puis coche les permissions à lui
+  accorder dans un menu (remplace l'ensemble actuel en un envoi).
+- **Profils** — applique un profil prédéfini (**Helper**, **Modérateur**,
+  **Admin** — `utils/permissions/profiles.js`) à un rôle en un clic ; c'est
+  un octroi en masse ponctuel, pas un lien permanent — le résultat reste
+  éditable ensuite permission par permission depuis la rubrique
+  Permissions.
+- **Rôles** — nom, ID, couleur, position, nombre de membres, permissions
+  Discord notables et permissions de modération accordées, pour n'importe
+  quel rôle du serveur.
+- **Logs** — un salon par catégorie (**Modération**, **Membres**,
+  **Serveur**, **Bots**) plutôt qu'un seul pour tout ; voir plus bas.
+- **Historique** — 5 dernières actions en aperçu, plus un bouton
+  "Rechercher" (fenêtre modale : cible / modérateur / type / ID) ; ou en
+  texte via `&modlogs [@membre|id]`.
+- **Protection** — active/désactive l'anti-spam et gère sa whitelist (voir
+  section 6quater).
+- **Accès panel** — qui a un accès individuel (rang sys, ban de masse,
+  octrois précis), statut membre/parti, et un bouton pour nettoyer les
+  accès obsolètes (voir plus bas).
+- **Rang sys** / **Ban de masse** — réservées au propriétaire du bot,
+  inchangées.
 
-Contrairement à "Gérer les rôles en masse" (page Permissions), ça ne touche
-qu'un seul membre. Mêmes restrictions que `.massrole` (rôle @everyone,
-rôles gérés par une intégration, et hiérarchie du bot).
+### Nettoyage des accès obsolètes
 
-**Raccourci sans préfixe** : réponds au message de quelqu'un (ou mentionne-le)
-en tapant `add <nom du rôle>` ou `del <nom du rôle>` (ex: quelqu'un demande
-"ajoute-moi la perm image", tu réponds à son message par `add image`) — ça
-ajoute/retire directement le rôle dont le nom correspond exactement (pas
-sensible à la casse). Nécessite la même permission que `.addrole`/`.delrole` ;
-si la cible, le nom de rôle ou la permission ne collent pas, rien ne se passe
-(pour ne pas réagir à une phrase normale commençant par "add"/"del" par
-hasard).
+Quand quelqu'un quitte le serveur, ses octrois individuels et ses portées
+historiques (rang sys, ban de masse, dispense de nettoyage) sont retirés
+**automatiquement** (`guildMemberRemove`, voir `index.js` et
+`utils/permissions/cleanup.js`) — sauf s'il est encore membre d'un autre
+serveur où tourne le bot, pour ne pas couper un accès encore légitime
+ailleurs. S'il revient, son accès se **recalcule** sur ses rôles actuels :
+les octrois par rôle n'ont jamais rien eu à "restaurer", ils suivent le rôle,
+pas la personne. Le bouton "Nettoyer les accès obsolètes" de `&panel` >
+Accès panel ne sert qu'à rattraper un cas resté en place avant l'existence
+de ce mécanisme. **L'historique de modération n'est jamais touché** par ce
+nettoyage : on retire l'accès, pas les traces.
 
-Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien activé sur
-le portail développeur (voir section 3).
+### Journal de modération et historique
+
+Le salon de logs (par catégorie, voir plus haut) reçoit un message
+**permanent** (il ne s'efface jamais, contrairement aux confirmations
+ailleurs dans le bot) pour : bannissement, débannissement, expulsion,
+softban, timeout, rôles ajoutés/retirés, pseudo modifié, mode lent,
+salon/rôle créé ou supprimé, webhook créé, nettoyage en masse, bot ajouté,
+déconnexion vocale forcée.
+
+Deux sources, sans doublon :
+- les commandes de **ce bot** (`&kick`, `&ban`, `&timeout`...) journalisent
+  directement, avec le VRAI modérateur (`utils/moderation/actions.js`) ;
+- tout le reste — **CrowBot**, ou n'importe quel modérateur humain via le
+  client Discord natif — est capté par le **journal d'audit natif de
+  Discord** (`guildAuditLogEntryCreate`, intent **GUILD_MODERATION**, non
+  privilégié, aucune activation manuelle requise), qui retient l'exécuteur
+  réel de chaque action.
+
+**Point d'attention Discord, pas un bug** : quand CE bot agit, Discord
+journalise l'action sous le compte du bot lui-même, jamais sous celui de la
+personne qui a tapé la commande — c'est pour ça que les deux sources
+existent séparément (le relais d'audit ignore explicitement ses propres
+actions, déjà couvertes par la première voie avec la bonne attribution).
+
+`&modlogs [@membre|id]` et `&panel` > Historique interrogent le même
+historique centralisé (`utils/moderationHistoryStore.js`), consultable par
+cible, par modérateur, par type ou par ID — recherche indépendante du
+journal d'audit Discord (qui, lui, ne garde que ~45 jours et n'offre pas de
+recherche structurée depuis un bot).
+
+Nécessite la permission **View Audit Log** sur le bot (voir section 3).
+
+## 6quater. Protection légère et lockdown
+
+CrowBot couvrant déjà l'anti-nuke (bans/kicks/salons/rôles en masse,
+webhooks, bots non autorisés, afflux de joins) et l'essentiel de l'automod
+(liens, `@everyone`), ce bot n'ajoute volontairement **que** ce qui manque,
+pour ne pas devenir une copie :
+
+- **Anti-spam/anti-flood** (`utils/automod/antiSpam.js`) — désactivé par
+  défaut, par serveur ; met en timeout un membre qui envoie trop de
+  messages trop vite (seuils réglables uniquement dans le code pour
+  l'instant, la bascule marche/arrêt et la whitelist sont dans `&panel` >
+  Protection).
+- **`&lockdown` / `&panic`** — verrouille l'écriture (`SendMessages`) sur
+  tous les salons textuels que le bot peut gérer ; `&unlockdown` inverse.
+  Simplification assumée : pas de liste de salons à configurer séparément,
+  c'est un vrai bouton de panique qui verrouille tout d'un coup.
+
+Aucun anti-raid/anti-nuke complet n'est reconstruit ici — c'est le rôle du
+CrowBot du serveur, et le dupliquer n'apporterait rien.
 
 ## 7. Notes sur le support Spotify
 
@@ -380,231 +389,47 @@ Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'im
 qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
 la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
 
-## 7ter. `.ban` / `.unban` — modération
+## 7ter. `&ban` / `&unban` / `&banall` — bannissement
 
-Réservés aux administrateurs (ou aux membres avec la permission Discord
-**Bannir des membres**). Deux façons d'y accéder :
+- `&ban [@membre] [raison]` — clé `moderation.ban`. Sans cible : panneau
+  **Zinki Assassini** avec un menu de sélection des membres. Avec une cible
+  (mention ou ID) : saut direct à la confirmation. Vérifie la hiérarchie
+  (rôle du modérateur, rôle du bot, protections propriétaire/rang sys) avant
+  d'afficher le panneau ET juste avant l'action — la situation peut changer
+  entre les deux.
+- `&unban [id]` — clé `moderation.unban`. Sans identifiant : menu déroulant
+  des membres actuellement bannis. Aucune confirmation : l'action se défait
+  d'elle-même en rebannissant.
+- `&banall [raison]` — clé spéciale `moderation.banall`, **jamais**
+  accordable par rôle ni héritée du rang sys (voir section 6ter) : seul le
+  propriétaire du serveur ou un octroi individuel via `&panel` > Ban de
+  masse y donne accès. Bannit tout le serveur d'un coup (API de masse
+  Discord si la permission **Gérer le serveur** est accordée, sinon un par
+  un avec anti-rate-limit), avec confirmation obligatoire.
 
-- `.ban` (texte) — panel **Zinki Assassini** avec un bouton
-  "🔍 Chercher un membre" qui ouvre une fenêtre modale (champ texte) : rien ne
-  s'affiche tant que tu n'as pas tapé et validé une recherche parmi les
-  membres du serveur, seuls les résultats correspondants apparaissent
-  ensuite dans un menu déroulant. Contrairement à un menu déroulant natif
-  Discord cliqué directement (qui affiche toujours une liste par défaut,
-  comportement du client impossible à désactiver via l'API), ce bouton +
-  modale ne montre jamais rien avant une recherche explicite — au prix d'un
-  clic en plus et d'un filtrage "après validation" plutôt que lettre par
-  lettre en direct.
-- `.unban` (texte, sans argument) — panel **Zinki Assassini** avec un menu
-  déroulant natif Discord affiché directement (liste des membres
-  actuellement bannis, généralement courte), chaque entrée précisant qui a
-  fait le bannissement (lu depuis les logs d'audit Discord — nécessite la
-  permission **View Audit Log**, voir section 3 ; absent si le ban est trop
-  ancien pour figurer encore dans les logs) ; taper un pseudo filtre la
-  liste en direct, mais Discord affiche quand même une liste par défaut
-  avant de taper quoi que ce soit — comportement du client, pas du bot,
-  impossible à masquer via l'API.
-- `/ban` / `/unban` (slash) — même résultat, mais avec une **vraie recherche
-  en direct** : le champ est vide tant que tu n'as rien tapé, et affiche des
-  suggestions filtrées au fur et à mesure, sans validation nécessaire
-  (autocomplétion Discord, backée par l'API de recherche de membres pour
-  `/ban` et par la liste des bannis pour `/unban`).
+Aucune commande slash `/ban`/`/unban` : ces commandes sont volontairement
+restées en texte, cohérentes avec le reste de la modération.
 
-`.unban` débannit aussi directement si tu lui donnes un ID (`.unban <id>`).
+Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir
+section 3) — sans ça, `member.presence` est toujours vide côté Discord.js et
+`!join` répondra systématiquement "n'écoute rien sur Spotify", même si c'est
+faux.
 
-**`/ban` et `/unban` sont de nouvelles commandes slash : lance `npm run
-deploy` une fois (avec `.env` rempli) pour qu'elles apparaissent sur
-Discord — un simple `git push`/redéploiement Railway ne suffit pas, il faut
-explicitement redéployer les commandes slash auprès de l'API Discord.**
+## 7quater. Ce que ce bot ne fait pas (par choix, pas par limitation)
 
-Nécessite les intents **SERVER MEMBERS** et **PRESENCE** activés (voir section 3) —
-sans ça, `member.presence` est toujours vide côté Discord.js et `!join` répondra
-systématiquement "n'écoute rien sur Spotify", même si c'est faux.
+Pas d'anti-nuke complet (détection de rafales destructrices avec neutralisation
+automatique), pas de blacklist réseau, pas de captcha anti-raid, pas de salons
+vocaux temporaires, pas de système de warns (explicitement exclu). **Ce n'est
+pas une limitation technique** : le CrowBot déjà présent sur le serveur
+(dépôt séparé `discord-bot-2`) couvre tout ça en détail — bans/kicks/salons/
+rôles/webhooks en masse avec restauration, bots non autorisés, afflux de
+joins, blacklist globale. Le reconstruire ici serait une pure copie, ce que
+la refonte du 30/08/2026 a explicitement évité (voir section 6quater pour ce
+qui a été ajouté à la place, en complément).
 
-## 7ter bis. Journal de modération (`&panel` > Logs)
-
-Rubrique **Logs** de `&panel` : choisis un salon texte, et chaque action de
-modération y est journalisée en permanence (le message ne s'efface pas tout
-seul, contrairement aux confirmations "Nettoyage en cours…" ailleurs dans le
-bot). Aucun salon choisi par défaut — rien n'est journalisé tant que la
-rubrique n'a pas été configurée.
-
-Couvre bannissement, débannissement, expulsion, timeout, rôles ajoutés/
-retirés, salon/rôle créé ou supprimé, webhook créé, nettoyage en masse, bot
-ajouté, déconnexion vocale forcée. Le journal repose entièrement sur le
-**journal d'audit natif de Discord** (`guildAuditLogEntryCreate`, nécessite
-l'intent **GUILD_MODERATION** — non privilégié, aucune activation manuelle
-requise) : chaque entrée retient l'exécuteur réel de l'action, quel qu'il
-soit. Ce mécanisme couvre donc sans code spécifique :
-
-- les commandes de modération de ce bot (`&ban`/`&unban`/`&banall`) ;
-- celles du **CrowBot** du serveur (bot séparé, anti-nuke/modération) ;
-- celles de n'importe quel modérateur humain.
-
-Nécessite la permission **View Audit Log** sur le bot (voir section 3).
-
-## 7quater. Anti-nuke ("antifast")
-
-Protection automatique contre les nukes (destruction rapide du serveur),
-activée par défaut — voir `utils/antiNuke.js`. Détecte les rafales d'actions
-destructrices faites **à la main via Discord** (pas par le bot lui-même,
-voir plus bas) par le même membre, module par module (voir
-`utils/antiNukeModules.js` pour la liste canonique) :
-
-| Catégorie | Modules |
-|---|---|
-| Salons | Création, suppression, modification, modification des permissions |
-| Catégories | Création, suppression, modification, modification des permissions |
-| Rôles | Création, suppression, modification, **Administrateur donné à un rôle** |
-| Threads | Création, suppression, modification |
-| Événements | Création, modification, suppression |
-| Membres | Kick, ban, timeout, changement de pseudo, déconnexion vocale forcée, déplacement vocal forcé, mute/sourdine serveur, **retrait de rôle en masse** (5+ membres distincts touchés) |
-| Serveur | Modification générale, **désactivation de la barre de boost** |
-| Webhooks / bots | Création de webhook, **ajout d'un bot** |
-
-Chaque module a son propre seuil (3 à 8 occurrences en 10s selon la gravité) ;
-les plus dangereux (Administrateur sur un rôle, ajout d'un bot, désactivation
-des boosts) se déclenchent dès la 1ère fois, pas besoin de répétition. Un
-simple **réordonnancement de rôles/salons** (glisser-déposer dans la
-hiérarchie/la liste) est explicitement ignoré — ça décale la position de
-plein d'autres éléments d'un coup sans rien changer de dangereux, ce n'est
-pas un signal de nuke.
-
-Dès qu'un seuil est franchi, le responsable est neutralisé : **tous ses
-rôles lui sont retirés** (hors @everyone et rôles gérés par une intégration).
-C'est réversible (un admin peut les redonner ensuite), volontairement moins
-radical qu'un kick/ban. Une alerte est envoyée dans "Logs sécurité" (voir
-"Page Logs" ci-dessus) avec qui a été neutralisé, pour quel module et
-pourquoi.
-
-Seul le **propriétaire du serveur** est exempté par défaut (ainsi que le bot
-lui-même) — volontairement aucune liste d'admins de confiance automatique :
-un compte staff compromis est justement le scénario que ça doit couvrir.
-Ça veut dire qu'un admin qui crée légitimement plusieurs rôles/salons d'un
-coup en configurant le serveur peut se faire neutraliser par erreur — c'est
-le compromis de tout système anti-nuke (mêmes seuils que la plupart des bots
-équivalents). D'où les commandes `=owner`/`=wl` ci-dessous, pour élargir
-volontairement le cercle des gens exemptés, module par module si besoin.
-
-**Les commandes du bot lui-même ne se déclenchent jamais entre elles** :
-`.massrole`, `.banall`/`.unbanall`, la création/suppression de rôles via
-`.panel`, etc. exécutent l'action avec le compte du bot, donc les logs
-d'audit Discord attribuent l'action au bot — explicitement ignoré par
-l'anti-nuke (`executor.bot`). Seules les actions faites directement par un
-humain via l'interface Discord native (ou par un autre bot compromis) sont
-concernées.
-
-Nécessite la permission **View Audit Log** pour identifier qui a fait quoi
-(voir section 3) — sans elle, l'anti-nuke ne peut rien détecter.
-
-**Commandes de config (`utils/antiNukeCommands.js`), sur un préfixe fixe `=`
-séparé de tes préfixes configurables (pas `!`/`.`, voir `SECURITY_PREFIX`
-dans `utils/textCommands.js`) et délibérément à l'écart du système
-`.panel` > Permissions / Administrateur natif — jamais délégables via une
-catégorie de permission, pour qu'un admin compromis ne puisse pas juste se
-donner accès :**
-
-- `=antifast` — ouvre un panel interactif (Components V2) : statut, bouton
-  Activer/Désactiver, et un menu déroulant natif Discord par action
-  (ajouter/retirer un owner, ajouter/retirer un whitelisté — **exemption
-  totale**, voir `=wl` pour une exemption module par module). `=antifast on` /
-  `=antifast off` restent des raccourcis texte rapides qui ne passent pas par
-  le panel. Réservé aux **owners anti-nuke** (voir `=owner`) pour voir/ouvrir
-  le panel ; les deux menus "owner" restent en plus réservés au propriétaire
-  réel du serveur ou du bot, même depuis le panel.
-- `=owner add @membre` / `=owner remove @membre` / `=owner list` (liste
-  paginée, ◀️/▶️) — gère qui, en plus du vrai propriétaire Discord du
-  serveur, peut configurer l'anti-nuke (`=antifast`, `=wl`). **Réservé au
-  propriétaire réel du serveur** (`guild.ownerId`) **ou à un propriétaire du
-  bot** (voir `BOT_OWNER_IDS` ci-dessous) — même un owner anti-nuke ajouté
-  via cette commande ne peut pas en ajouter d'autres, pour éviter qu'un owner
-  compromis étende la liste.
-- `=wl add @membre [module|catégorie|all]` / `=wl remove @membre [...]` /
-  `=wl list` (liste paginée) — exempte un membre des déclencheurs anti-nuke,
-  **module par module** plutôt qu'en bloc : `all` (ou l'argument omis)
-  exempte tout, le nom d'une catégorie (`salons`, `categories`, `roles`,
-  `threads`, `evenements`, `membres`, `serveur`, `webhooksEtBots`) exempte
-  tous ses modules, le nom exact d'un module (ex: `roleCreate`) n'exempte que
-  lui. Gérée par les owners anti-nuke (contrairement à `=owner`, réservée au
-  propriétaire).
-- `=allbots` — liste paginée de tous les bots présents sur le serveur (nom,
-  ID), pour repérer un bot ajouté sans autorisation — le module "Ajout d'un
-  bot" de l'anti-nuke le détecte aussi en direct.
-
-Toute action sur `=antifast`/`=owner`/`=wl` (activer/désactiver, ajout/retrait
-d'un owner ou d'un whitelisté), ainsi que chaque étape d'une demande
-`.banall` (demande envoyée, autorisée ou refusée — voir plus bas), est
-loguée dans "Logs sécurité".
-
-**`BOT_OWNER_IDS`** (variable d'env, IDs Discord séparés par des virgules,
-ex: `BOT_OWNER_IDS=123456789012345678,987654321098765432`) — pour toi, en
-tant que propriétaire **du bot** (pas forcément du serveur Discord où il
-tourne) : quiconque est dans cette liste compte comme "owner anti-nuke" sur
-**tous** les serveurs, même ceux dont tu n'es pas le propriétaire Discord.
-Utile si tu gères le bot pour le compte d'autres serveurs sans en être le
-propriétaire officiel dessus. Pour trouver ton ID Discord : Paramètres
-utilisateur > Avancés > activer le **Mode développeur**, puis clic droit sur
-ton pseudo > "Copier l'ID".
-
-**`.banall` et les owners délégués** — `.banall` (bannir tout le monde,
-section 6bis) a son propre système à trois niveaux, distinct du reste de
-l'anti-nuke :
-
-- **Propriétaire réel du serveur ou propriétaire du bot** (`BOT_OWNER_IDS`) :
-  exécute directement, avec la confirmation habituelle
-  ("Bannir tout le monde" / "Annuler").
-- **Owner anti-nuke délégué** (ajouté via `=owner add`, donc PAS le
-  propriétaire réel ni un propriétaire du bot) : ne bannit **jamais**
-  directement. Le bot ping le propriétaire réel du serveur ET tous les
-  propriétaires du bot avec un message "**{tag}** veut exécuter `.banall`.
-  Autorises-tu ?" et deux boutons Autoriser/Refuser (2 minutes pour
-  répondre). Seul le propriétaire réel ou un propriétaire du bot peut
-  cliquer ; un clic sur "Autoriser" fait office de confirmation et lance le
-  bannissement immédiatement, sans autre étape.
-- **N'importe qui d'autre** : refusé, tout simplement. Pas de rétorsion
-  (retrait de rôles) — voir plus haut, c'est de toute façon peu fiable
-  quand le rôle du responsable est au même niveau ou au-dessus de celui du
-  bot (limite de hiérarchie Discord, aucun code ne peut la contourner).
-
-**Panel `=antifast` > "⚙️ Avancé"** (bouton du panel principal, réservé aux
-owners anti-nuke) — réglages fins en plus des owners/whitelist :
-
-- **Rôles bypass** (menu de rôles, remplace la liste entière à chaque
-  sélection) : quiconque a un de ces rôles est exempté de **tous** les
-  modules, en plus du propriétaire/des owners/de la whitelist.
-- **Catégories bypass** (menu de salons, filtré aux catégories) : les
-  salons/threads de ces catégories n'alimentent plus les modules
-  salons/catégories/threads — utile pour une catégorie où la création/
-  suppression de salons est normale (ex: tickets).
-- **⏱️ Réactivation auto** : au lieu d'un retrait de rôles permanent, choisis
-  un délai (en minutes, 0 = désactivée) après lequel les rôles retirés sont
-  automatiquement redonnés. Persisté (pas un simple minuteur en mémoire) —
-  survit à un redémarrage du bot, vérifié toutes les minutes.
-- **🎯 Configurer un module** : choisis une catégorie puis un module (les 30
-  listés en haut de cette section) pour le mettre en pause (⏸️, il n'est
-  alors plus du tout vérifié) et/ou changer son seuil (nombre d'actions +
-  délai en secondes) par rapport à la valeur par défaut — "↩️ Défaut" repart
-  du réglage d'origine.
-
-## 7quinquies. `.niv` / `.dero` / `.counter` — outils serveur
-
-Trois commandes indépendantes de l'anti-nuke, sur le préfixe `.` classique
-(délégables via `.panel` > Permissions comme le reste des commandes admin) :
-
-- **`.niv`** — panel avec un menu de rôles : choisis un rôle, puis
-  "🔄 Envoyer la liste" affiche qui a ce rôle mais n'est actuellement dans
-  **aucun** salon vocal (pratique pour repérer un staff de garde absent).
-  Lecture seule, aucune action destructrice.
-- **`.dero set @role`** / **`.dero off`** — un rôle qui reçoit
-  automatiquement l'accès (Voir le salon, Envoyer des messages, Se
-  connecter) sur **chaque nouveau salon créé** sur le serveur, sans action
-  manuelle. `.dero` seul affiche le rôle actuellement configuré.
-- **`.counter set #salon [modèle]`** / **`.counter off`** — renomme
-  périodiquement un salon (vocal ou textuel) pour y afficher le nombre de
-  membres du serveur ; `{count}` dans le modèle est remplacé par le nombre
-  (modèle par défaut : `Membres: {count}`). Mis à jour **toutes les 10
-  minutes** — Discord limite fortement la fréquence des renommages de
-  salon, une mise à jour plus rapide échouerait silencieusement.
+Aucune commande sur un préfixe caché ou un mécanisme parallèle au système de
+permissions décrit en section 6ter : tout, y compris `&banall`, passe par le
+même moteur central.
 
 ## 8. Notes sur Components V2
 

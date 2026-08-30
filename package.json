@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "deploy:musique": "node deploy-commands.js musique",
-    "test": "node scripts/test-deadtrack.js && node scripts/test-sources.js"
+    "test": "node scripts/test-deadtrack.js && node scripts/test-sources.js && node scripts/test-permissions.js && node scripts/test-moderation.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

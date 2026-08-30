@@ -9,6 +9,7 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   UserSelectMenuBuilder,
+  RoleSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   ChannelType,
   ModalBuilder,
@@ -18,48 +19,90 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const accessStore = require("./accessStore");
-const { getLogChannelId, setLogChannelId } = require("./modLogStore");
+const { can } = require("./permissions/engine");
+const permCatalog = require("./permissions/catalog");
+const permStore = require("./permissions/store");
+const { PROFILES, getProfile } = require("./permissions/profiles");
+const { sweepGuild } = require("./permissions/cleanup");
+const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
+const historyStore = require("./moderationHistoryStore");
+const automod = require("./automod/antiSpam");
 
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
 
-// `ownerOnly` : rubrique réservée au propriétaire, invisible pour un sys.
-// Le rang sys en fait partie — un sys qui pourrait en nommer d'autres rendrait
-// l'accès irrévocable depuis l'intérieur.
+// Chaque rubrique déclare comment décider si elle est visible : `ownerOnly`
+// (uniquement le propriétaire), `permission` (une clé du catalogue,
+// résolue via engine.can — "sys" y compris, qui n'est jamais une clé
+// octroyable et ne laisse donc passer QUE owner/sys, par construction de
+// engine.can), ou `visible(member)` pour un besoin plus fin (ex : lecture
+// OU écriture suffisent). Rien = toujours visible (page d'accueil).
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
-  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes" },
-  { key: "moderation", label: "Modération", description: "Qui échappe au quota et qui gère les salons" },
-  { key: "logs", label: "Logs", description: "Salon où atterrit le journal de toute la modération" },
+  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
+  { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage, ancien accès aux salons", permission: "sys" },
+  { key: "permissions", label: "🔐 Permissions", description: "Permissions de modération par rôle", permission: "panel.permissions.manage" },
+  { key: "profiles", label: "🔐 Profils", description: "Appliquer un profil prédéfini (Helper/Modérateur/Admin) à un rôle", permission: "panel.permissions.manage" },
+  { key: "roles", label: "👥 Rôles", description: "Nom, couleur, position, membres, permissions notables", permission: "panel.roles.manage" },
+  {
+    key: "logs",
+    label: "📜 Logs",
+    description: "Salon de logs par catégorie (modération/membres/serveur/bots)",
+    visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
+  },
+  { key: "history", label: "📜 Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
+  { key: "protection", label: "🛡️ Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
+  { key: "access", label: "🔐 Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
 ];
 
-const sectionsFor = (isOwner) => SECTIONS.filter((s) => isOwner || !s.ownerOnly);
+function sectionVisible(section, member, isOwner) {
+  if (section.key === "home") return true;
+  if (section.ownerOnly) return isOwner;
+  if (section.visible) return section.visible(member);
+  return can(member, section.permission);
+}
 
-// Rubrique à rouvrir après avoir modifié une portée : les portées "clear" et
-// "salon" sont toutes deux gérées depuis Modération.
+const sectionsFor = (member, isOwner) => SECTIONS.filter((s) => sectionVisible(s, member, isOwner));
+
+/** Vrai si la personne a accès à AU MOINS une rubrique au-delà de l'accueil — condition d'entrée de &panel. */
+function hasAnyPanelAccess(member) {
+  const isOwner = accessStore.isOwner(member.id);
+  return sectionsFor(member, isOwner).some((s) => s.key !== "home");
+}
+
+// Rubrique à rouvrir après avoir modifié une portée legacy (accessStore) :
+// "clear" et "salon" vivent toutes deux sous "moderation" ici.
 const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys", banall: "banall" };
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
-function buildNav(current, isOwner) {
+function buildNav(current, member, isOwner) {
   return new StringSelectMenuBuilder()
     .setCustomId(`${ID}:nav`)
     .setPlaceholder("Choisis une rubrique à configurer")
     .addOptions(
-      sectionsFor(isOwner).map((s) =>
+      sectionsFor(member, isOwner).map((s) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(s.label)
-          .setDescription(s.description)
+          .setDescription(s.description.slice(0, 100))
           .setValue(s.key)
           .setDefault(s.key === current)
       )
     );
 }
 
-function sectionBody(section, guildId) {
+function permissionRows() {
+  return permCatalog.byCategory().flatMap((group) => [
+    `**${group.label}**`,
+    ...group.permissions.map((p) => `> \`${p.key}\` — ${p.label}`),
+  ]);
+}
+
+function sectionBody(section, guild, member, state) {
+  const guildId = guild.id;
   const prefixes = getPrefixes(guildId);
   const owners = accessStore.ownerIds();
 
@@ -78,21 +121,132 @@ function sectionBody(section, guildId) {
       `> **Dispensés du quota de nettoyage** : ${mentions(accessStore.list("clear"))}`,
       "Ces membres utilisent `uo clear` sans limite ; les autres sont plafonnés à 2 usages par 25 minutes.",
       "",
-      `> **Accès aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
-      "Ces membres peuvent utiliser `lock`, `unlock`, `hide`, `unhide` et `renew`.",
+      `> **Accès legacy aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
+      "Conservé pour rétrocompatibilité — la voie normale désormais est la rubrique **Permissions** " +
+        "(clés `channels.lock` / `channels.manage`), octroyable par rôle.",
+    ].join("\n");
+  }
+
+  if (section === "permissions") {
+    const roleId = state.permissionsRoleId;
+    if (!roleId) {
+      return [
+        "Choisis un rôle ci-dessous pour voir et modifier ses permissions de modération.",
+        "",
+        ...permissionRows(),
+      ].join("\n");
+    }
+    const role = guild.roles.cache.get(roleId);
+    if (!role) return "Ce rôle n'existe plus sur le serveur.";
+    const granted = new Set(permStore.getRoleGrants(guildId, roleId));
+    return [
+      `**Rôle : ${role.toString()}**`,
+      "",
+      ...permCatalog.byCategory().map((group) => {
+        const lines = group.permissions.map((p) => `${granted.has(p.key) ? "☑" : "☐"} ${p.label}`);
+        return `**${group.label}**\n${lines.join("\n")}`;
+      }),
+      "",
+      "Sélectionne les permissions à accorder dans le menu ci-dessous — la sélection **remplace** l'ensemble actuel.",
+    ].join("\n");
+  }
+
+  if (section === "profiles") {
+    const roleId = state.profilesRoleId;
+    const lines = PROFILES.map((p) => `> **${p.label}** — ${p.description}\n> ${p.permissions.map((k) => `\`${k}\``).join(", ")}`);
+    if (!roleId) {
+      return ["Choisis un rôle, puis un profil à lui appliquer (octroi en masse, éditable ensuite dans Permissions).", "", ...lines].join("\n");
+    }
+    const role = guild.roles.cache.get(roleId);
+    if (!role) return "Ce rôle n'existe plus sur le serveur.";
+    return [`**Rôle : ${role.toString()}**`, "", "Choisis le profil à lui appliquer :", "", ...lines].join("\n");
+  }
+
+  if (section === "roles") {
+    const roleId = state.rolesRoleId;
+    if (!roleId) return "Choisis un rôle ci-dessous pour voir ses informations.";
+    const role = guild.roles.cache.get(roleId);
+    if (!role) return "Ce rôle n'existe plus sur le serveur.";
+    const notable = role.permissions.toArray().filter((p) =>
+      ["Administrator", "BanMembers", "KickMembers", "ModerateMembers", "ManageRoles", "ManageChannels", "ManageGuild", "ManageMessages"].includes(p)
+    );
+    return [
+      `**Nom** : ${role.name}`,
+      `**ID** : \`${role.id}\``,
+      `**Couleur** : ${role.hexColor}`,
+      `**Position** : ${role.position} / ${guild.roles.cache.size}`,
+      `**Membres** : ${role.members.size}`,
+      `**Mentionnable** : ${role.mentionable ? "oui" : "non"}`,
+      `**Permissions Discord notables** : ${notable.length ? notable.join(", ") : "*aucune*"}`,
+      `**Permissions de modération accordées** : ${permStore.getRoleGrants(guildId, role.id).length}`,
     ].join("\n");
   }
 
   if (section === "logs") {
-    const channelId = getLogChannelId(guildId);
+    const channels = getAllLogChannels(guildId);
+    const manage = can(member, "logs.manage");
+    const lines = Object.entries(channels).map(
+      ([cat, chId]) => `> **${LOG_CATEGORY_LABELS[cat]}** : ${chId ? `<#${chId}>` : "*aucun — désactivé*"}`
+    );
     return [
-      `> **Salon de logs** : ${channelId ? `<#${channelId}>` : "*aucun — désactivé*"}`,
+      ...lines,
       "",
-      "Chaque bannissement, expulsion, timeout, salon/rôle supprimé, etc. y est journalisé en permanence " +
-        "(le message ne s'efface pas tout seul, contrairement aux confirmations ailleurs dans le bot).",
-      "Couvre les actions de ce bot (`&ban`/`&unban`/`&banall`), celles du CrowBot du serveur, et celles de " +
-        "n'importe quel modérateur humain — Discord retient l'exécuteur réel de chaque action, quel que soit " +
-        "qui l'a lancée.",
+      manage
+        ? "Chaque catégorie peut avoir son propre salon (ou le même). Sélectionne, ou valide sans rien choisir pour désactiver."
+        : "Tu peux consulter cette configuration mais pas la modifier (droit `logs.manage` requis).",
+      "Les messages postés ici ne s'effacent jamais, contrairement aux confirmations ailleurs dans le bot.",
+    ].join("\n");
+  }
+
+  if (section === "history") {
+    const recent = historyStore.search(guildId, { limit: 5 });
+    const lines = recent.map((e) => {
+      const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
+      return `> \`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}`;
+    });
+    return [
+      "**5 dernières actions :**",
+      lines.length ? lines.join("\n") : "*Aucune entrée pour l'instant.*",
+      "",
+      "Utilise `&modlogs [@membre|id]` ou le bouton ci-dessous pour une recherche plus précise.",
+    ].join("\n");
+  }
+
+  if (section === "protection") {
+    const config = automod.getConfig(guildId);
+    const whitelist = automod.getWhitelist(guildId);
+    return [
+      `> **Anti-spam/anti-flood** : ${config.enabled ? "✅ activé" : "⛔ désactivé"}`,
+      `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
+      "",
+      `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
+      "",
+      "Seul l'anti-spam est couvert ici : anti-lien, anti-@everyone et l'essentiel de l'anti-raid sont déjà " +
+        "gérés par le CrowBot du serveur — les dupliquer n'apporterait rien.",
+    ].join("\n");
+  }
+
+  if (section === "access") {
+    const rows = [];
+    for (const userId of accessStore.list("sys")) rows.push([userId, "rang sys"]);
+    for (const userId of accessStore.list("banall")) rows.push([userId, "ban de masse"]);
+    for (const [userId, keys] of permStore.listUserGrants(guildId)) rows.push([userId, `octroi individuel (${keys.length})`]);
+
+    const seen = new Set();
+    const lines = rows
+      .filter(([userId]) => (seen.has(userId) ? false : seen.add(userId)))
+      .map(([userId]) => {
+        const present = guild.members.cache.has(userId);
+        return `> <@${userId}> — ${present ? "✅ membre" : "⚠️ absent du serveur"}`;
+      });
+
+    return [
+      lines.length ? lines.join("\n") : "*Personne n'a d'accès individuel enregistré sur ce serveur.*",
+      "",
+      "Les octrois **par rôle** ne figurent pas ici : ils se recalculent automatiquement sur les rôles actuels " +
+        "de chacun, rien à nettoyer de ce côté.",
+      "Un départ du serveur révoque déjà l'accès automatiquement. Le bouton ci-dessous ne sert qu'à rattraper " +
+        "un cas resté en place avant que ce nettoyage n'existe.",
     ].join("\n");
   }
 
@@ -100,7 +254,7 @@ function sectionBody(section, guildId) {
     return [
       `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
       "",
-      "Le rang sys donne accès à **tout le bot** : commandes de salon, dispenses, et ce panneau.",
+      "Le rang sys donne accès à **tout le bot** : toutes les permissions de modération, ce panneau, les dispenses.",
       "Un sys ne peut pas en nommer d'autres — cette rubrique n'est visible que par toi.",
     ].join("\n");
   }
@@ -111,7 +265,7 @@ function sectionBody(section, guildId) {
       "",
       "Ces membres peuvent lancer `banall`, qui bannit tout le serveur d'un coup.",
       "Le propriétaire du serveur y a toujours droit, sans figurer ici.",
-      "Le rang sys ne suffit **pas** : cet accès s'accorde un par un, et seulement par toi.",
+      "Le rang sys ne suffit **pas**, ni aucun rôle : cet accès s'accorde un par un, et seulement par toi.",
     ].join("\n");
   }
 
@@ -120,18 +274,13 @@ function sectionBody(section, guildId) {
     `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
-    `> **Dispensés du quota de nettoyage** : ${accessStore.list("clear").length}`,
-    `> **Autorisés sur les commandes de salon** : ${accessStore.list("salon").length}`,
+    `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
     "",
-    "Sélectionne une rubrique ci-dessous pour la modifier.",
+    "Sélectionne une rubrique ci-dessous pour la modifier — seules celles auxquelles tu as droit apparaissent.",
   ].join("\n");
 }
 
-/**
- * Menus d'ajout/retrait pour une portée. Le libellé précise à quoi sert la
- * portée : la rubrique Modération en affiche deux paires à la suite, sans
- * quoi on ne saurait plus quel menu agit sur quoi.
- */
+/** Menus d'ajout/retrait pour une portée legacy (accessStore). */
 function accessRows(scope, label) {
   return [
     new ActionRowBuilder().addComponents(
@@ -146,9 +295,14 @@ function accessRows(scope, label) {
 /**
  * Panneau de configuration. Components V2 sans setAccentColor : pas de barre
  * de couleur sur le côté.
+ * @param {import('discord.js').Guild} guild
+ * @param {string} current
+ * @param {import('discord.js').GuildMember} member qui consulte/modifie le panneau
+ * @param {{ permissionsRoleId?: string, profilesRoleId?: string, rolesRoleId?: string }} [state]
  */
-function buildConfigPanel(guildId, current = "home", isOwner = false) {
-  const available = sectionsFor(isOwner);
+function buildConfigPanel(guild, current = "home", member, state = {}) {
+  const isOwner = accessStore.isOwner(member.id);
+  const available = sectionsFor(member, isOwner);
   const meta = available.find((s) => s.key === current) || available[0];
   const container = new ContainerBuilder();
 
@@ -156,9 +310,9 @@ function buildConfigPanel(guildId, current = "home", isOwner = false) {
     new TextDisplayBuilder().setContent(`## Configuration\n### ${meta.label}`)
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guildId)));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, isOwner)));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
 
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
@@ -168,26 +322,114 @@ function buildConfigPanel(guildId, current = "home", isOwner = false) {
       )
     );
   } else if (meta.key === "moderation") {
-    // Deux paires de menus (4 lignes) + la navigation = 5, soit le maximum
-    // autorisé par Discord dans un message.
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
-    for (const row of accessRows("salon", "accès aux salons")) container.addActionRowComponents(row);
-  } else if (meta.key === "logs") {
+    for (const row of accessRows("salon", "accès legacy aux salons")) container.addActionRowComponents(row);
+  } else if (meta.key === "permissions") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId(`${ID}:logchannel`)
-          .setPlaceholder("Choisir le salon de logs")
-          .addChannelTypes(ChannelType.GuildText)
+        new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
       )
     );
-    if (getLogChannelId(guildId)) {
+    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
+      const granted = permStore.getRoleGrants(guild.id, state.permissionsRoleId);
+      const options = permCatalog.PERMISSIONS.filter((p) => p.roleGrantable !== false).map((p) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(p.label.slice(0, 100))
+          .setDescription(p.key)
+          .setValue(p.key)
+          .setDefault(granted.includes(p.key))
+      );
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:logchannel:clear`).setLabel("Désactiver les logs").setStyle(ButtonStyle.Danger)
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:permkeys:${state.permissionsRoleId}`)
+            .setPlaceholder("Permissions accordées à ce rôle")
+            .setMinValues(0)
+            .setMaxValues(options.length)
+            .addOptions(options)
         )
       );
     }
+  } else if (meta.key === "profiles") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId(`${ID}:profilerole`).setPlaceholder("Choisir un rôle")
+      )
+    );
+    if (state.profilesRoleId && guild.roles.cache.has(state.profilesRoleId)) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:profileapply:${state.profilesRoleId}`)
+            .setPlaceholder("Appliquer un profil à ce rôle")
+            .addOptions(
+              PROFILES.map((p) => new StringSelectMenuOptionBuilder().setLabel(p.label).setDescription(p.description).setValue(p.key))
+            )
+        )
+      );
+    }
+  } else if (meta.key === "roles") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId(`${ID}:roleinfo`).setPlaceholder("Choisir un rôle")
+      )
+    );
+    if (state.rolesRoleId && guild.roles.cache.has(state.rolesRoleId)) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:jumpperm:${state.rolesRoleId}`)
+            .setLabel("Voir/modifier ses permissions")
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
+  } else if (meta.key === "logs") {
+    if (can(member, "logs.manage")) {
+      const channels = getAllLogChannels(guild.id);
+      for (const category of Object.keys(LOG_CATEGORY_LABELS)) {
+        const select = new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:logchannel:${category}`)
+          .setPlaceholder(`${LOG_CATEGORY_LABELS[category]} — choisir un salon`)
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(0)
+          .setMaxValues(1);
+        if (channels[category]) select.setDefaultChannels(channels[category]);
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(select));
+      }
+    }
+  } else if (meta.key === "history") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:history:search`).setLabel("Rechercher").setStyle(ButtonStyle.Secondary)
+      )
+    );
+  } else if (meta.key === "protection") {
+    const config = automod.getConfig(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:automod:toggle`)
+          .setLabel(config.enabled ? "Désactiver l'anti-spam" : "Activer l'anti-spam")
+          .setStyle(config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      )
+    );
+    if (can(member, "protection.whitelist")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new UserSelectMenuBuilder().setCustomId(`${ID}:wladd`).setPlaceholder("Ajouter à la whitelist anti-spam")
+        ),
+        new ActionRowBuilder().addComponents(
+          new UserSelectMenuBuilder().setCustomId(`${ID}:wldel`).setPlaceholder("Retirer de la whitelist anti-spam")
+        )
+      );
+    }
+  } else if (meta.key === "access") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:access:sweep`).setLabel("Nettoyer les accès obsolètes").setStyle(ButtonStyle.Danger)
+      )
+    );
   } else if (meta.key === "sys") {
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   } else if (meta.key === "banall") {
@@ -203,38 +445,144 @@ const PREFIX_FIELDS = {
 };
 
 /**
- * Traite toutes les interactions du panneau (identifiants en "cfg:").
- * Le rang est re-vérifié à CHAQUE clic : le message du panneau reste visible
- * dans le salon après l'envoi, n'importe qui pourrait cliquer dessus.
- * La rubrique du rang sys n'est accessible qu'au propriétaire : un sys qui
- * pourrait en nommer d'autres rendrait l'accès irrévocable depuis l'intérieur.
+ * Résultats de recherche d'historique, formatés pour une réponse éphémère
+ * (pas de mutation du panneau partagé : c'est une consultation personnelle).
+ */
+function formatHistoryResults(results) {
+  if (!results.length) return "Aucune entrée ne correspond à cette recherche.";
+  return results
+    .map((e) => {
+      const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:f>`;
+      return [
+        `\`${e.action}\` — ${when}`,
+        e.targetTag ? `Cible : **${e.targetTag}** (${e.targetId})` : null,
+        `Modérateur : ${e.moderatorTag || e.moderatorId}`,
+        e.reason ? `Raison : ${e.reason}` : null,
+        `ID : \`${e.id}\``,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
+/**
+ * Traite toutes les interactions du panneau (identifiants en "cfg:"). Les
+ * droits sont re-vérifiés à CHAQUE clic — le message reste visible dans le
+ * salon après l'envoi, n'importe qui pourrait cliquer dessus.
  */
 async function handleConfigInteraction(interaction) {
   const [, action, extra] = interaction.customId.split(":");
+  const member = interaction.member;
 
-  if (!accessStore.isAllowed("sys", interaction.user.id)) {
+  if (!hasAnyPanelAccess(member)) {
     return interaction.reply({ content: "Tu n'as pas accès à ce panneau.", flags: MessageFlags.Ephemeral });
   }
 
-  const guildId = interaction.guild.id;
-  const isOwner = accessStore.isOwner(interaction.user.id);
+  const guild = interaction.guild;
+  const guildId = guild.id;
+  const isOwner = accessStore.isOwner(member.id);
+
+  const goto = (section, state) => interaction.update(buildConfigPanel(guild, section, member, state));
 
   if (action === "nav") {
-    return interaction.update(buildConfigPanel(guildId, interaction.values[0], isOwner));
+    return goto(interaction.values[0]);
+  }
+
+  if (action === "permrole") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
+  if (action === "permkeys") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    permStore.setRoleGrants(guildId, extra, interaction.values);
+    return goto("permissions", { permissionsRoleId: extra });
+  }
+
+  if (action === "profilerole") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("profiles", { profilesRoleId: interaction.values[0] });
+  }
+
+  if (action === "profileapply") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const profile = getProfile(interaction.values[0]);
+    if (!profile) return interaction.reply({ content: "Profil inconnu.", flags: MessageFlags.Ephemeral });
+    // Octroi en masse ADDITIF : n'écrase pas ce qui était déjà accordé, un
+    // profil est un point de départ, pas un remplacement (section 8).
+    const current = new Set(permStore.getRoleGrants(guildId, extra));
+    for (const key of profile.permissions) current.add(key);
+    permStore.setRoleGrants(guildId, extra, [...current]);
+    return goto("profiles", { profilesRoleId: extra });
+  }
+
+  if (action === "roleinfo") {
+    if (!can(member, "panel.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("roles", { rolesRoleId: interaction.values[0] });
+  }
+
+  if (action === "jumpperm") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", { permissionsRoleId: extra });
   }
 
   if (action === "logchannel") {
-    if (extra === "clear") {
-      setLogChannelId(guildId, null);
-    } else {
-      setLogChannelId(guildId, interaction.values[0]);
-    }
-    return interaction.update(buildConfigPanel(guildId, "logs", isOwner));
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    setLogChannelId(guildId, extra, interaction.values[0] || null);
+    return goto("logs");
+  }
+
+  if (action === "history" && extra === "search") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) return handleHistorySearchModal(interaction);
+    const modal = new ModalBuilder().setCustomId(`${ID}:history:search`).setTitle("Rechercher dans l'historique");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("target").setLabel("Cible (ID ou mention)").setStyle(TextInputStyle.Short).setRequired(false)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("moderator").setLabel("Modérateur (ID ou mention)").setStyle(TextInputStyle.Short).setRequired(false)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("action")
+          .setLabel("Type (ban, kick, timeout, clear...)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("id").setLabel("ID d'entrée précis").setStyle(TextInputStyle.Short).setRequired(false)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "automod" && extra === "toggle") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    automod.setEnabled(guildId, !automod.getConfig(guildId).enabled);
+    return goto("protection");
+  }
+
+  if (action === "wladd" || action === "wldel") {
+    if (!can(member, "protection.whitelist")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const userId = interaction.values[0];
+    if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
+    else automod.removeFromWhitelist(guildId, "users", userId);
+    return goto("protection");
+  }
+
+  if (action === "access" && extra === "sweep") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const revoked = sweepGuild(interaction.client, guild);
+    await interaction.reply({
+      content: revoked.length ? `${revoked.length} accès obsolète(s) révoqué(s).` : "Rien à nettoyer, tout est à jour.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return goto("access");
   }
 
   if (action === "add" || action === "del") {
-    // Garde-fou : le rang sys ne se distribue que par le propriétaire, même
-    // si quelqu'un forgeait l'interaction sans passer par le menu.
     if (extra === "sys" && !isOwner) {
       return interaction.reply({
         content: "Seul le propriétaire du bot peut accorder le rang sys.",
@@ -256,10 +604,7 @@ async function handleConfigInteraction(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     }
-    // Le panneau est réaffiché avec la liste à jour, sur la rubrique qui
-    // contient cette portée — "clear" et "salon" vivent tous deux sous
-    // Modération, leur nom n'est donc pas celui d'une rubrique.
-    return interaction.update(buildConfigPanel(guildId, SECTION_OF_SCOPE[extra] || "home", isOwner));
+    return goto(SECTION_OF_SCOPE[extra] || "home");
   }
 
   if (action === "prefix") {
@@ -268,15 +613,12 @@ async function handleConfigInteraction(interaction) {
       if (!value) {
         return interaction.reply({ content: "Préfixe vide, rien n'a été changé.", flags: MessageFlags.Ephemeral });
       }
-      // Écrit dans DATA_DIR, monté sur un Volume Railway : la valeur survit
-      // aux redéploiements sans qu'aucun salon Discord ne soit nécessaire.
       setPrefix(guildId, extra, value);
       await interaction.reply({
         content: `**${PREFIX_FIELDS[extra].label}** réglé sur \`${value}\`.`,
         flags: MessageFlags.Ephemeral,
       });
-      // interaction.message existe quand la modale vient d'un bouton du panneau.
-      return interaction.message?.edit(buildConfigPanel(guildId, "prefixes", isOwner)).catch(() => {});
+      return interaction.message?.edit(buildConfigPanel(guild, "prefixes", member)).catch(() => {});
     }
 
     const field = PREFIX_FIELDS[extra];
@@ -295,4 +637,30 @@ async function handleConfigInteraction(interaction) {
   }
 }
 
-module.exports = { buildConfigPanel, handleConfigInteraction, ID, SECTIONS };
+/** Traite la soumission de la modale de recherche d'historique (voir index.js). */
+async function handleHistorySearchModal(interaction) {
+  if (!can(interaction.member, "logs.view")) {
+    return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+  }
+  const targetRaw = interaction.fields.getTextInputValue("target").trim();
+  const moderatorRaw = interaction.fields.getTextInputValue("moderator").trim();
+  const actionRaw = interaction.fields.getTextInputValue("action").trim();
+  const idRaw = interaction.fields.getTextInputValue("id").trim();
+
+  const extractId = (s) => s.match(/\d{15,25}/)?.[0] || null;
+
+  const results = historyStore.search(interaction.guild.id, {
+    targetId: extractId(targetRaw) || undefined,
+    moderatorId: extractId(moderatorRaw) || undefined,
+    action: actionRaw || undefined,
+    id: idRaw || undefined,
+    limit: 10,
+  });
+
+  await interaction.reply({
+    embeds: [{ title: "Résultats de recherche", description: formatHistoryResults(results).slice(0, 4000) }],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+module.exports = { buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };

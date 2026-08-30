@@ -9,26 +9,12 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
-const accessStore = require("./accessStore");
+const { can } = require("./permissions/engine");
 const { categoriesFor } = require("./commandCatalog");
 
 const SELECT_ID = "help_nav";
 const HOME = "__home__";
 const MAX_BODY = 3500;
-
-/**
- * Ce que la personne peut utiliser, selon la portée exigée par la commande.
- * `guildOwnerId` est nécessaire pour "banall" : le propriétaire du serveur y
- * a droit sans figurer dans aucune liste (voir utils/banAll.js).
- */
-function accessChecker(userId, guildOwnerId) {
-  return (scope) => {
-    if (!scope) return true;
-    if (scope === "owner") return accessStore.isOwner(userId);
-    if (scope === "banall" && userId === guildOwnerId) return true;
-    return accessStore.isAllowed(scope, userId);
-  };
-}
 
 function formatCommand(cmd, prefixes) {
   // Les entrées sans préfixe (boutons, déclencheurs sans préfixe) sont
@@ -44,28 +30,16 @@ function formatCommand(cmd, prefixes) {
 const shortName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
 
 function homeBody(categories, prefixes) {
-  const all = categories.flatMap((c) => c.commands);
-
-  // Regroupé par niveau d'accès plutôt que par thème : c'est ce qui répond à
-  // « qu'est-ce que j'ai le droit de faire », la question posée par l'aide.
-  const groups = [
-    ["Commandes publiques", all.filter((c) => !c.scope)],
-    ["Commandes modération", all.filter((c) => c.scope === "salon")],
-    // "banall" a sa propre portée mais reste un droit élevé : il s'affiche
-    // avec les commandes sys plutôt que dans une ligne à lui tout seul.
-    ["Commandes Sys", all.filter((c) => ["sys", "owner", "banall"].includes(c.scope))],
-  ];
-
-  const lines = groups
-    .filter(([, cmds]) => cmds.length)
-    .map(([label, cmds]) => {
-      const names = [...new Set(cmds.map(shortName))];
-      return `**${label} (${names.length}) :** ${names.join(", ")}`;
-    });
+  const lines = categories.map((c) => {
+    const names = [...new Set(c.commands.map(shortName))];
+    return `**${c.label} (${names.length}) :** ${names.join(", ")}`;
+  });
 
   return [
     "Bienvenue sur le **panel d'aide** du bot",
     "Sélectionne une **catégorie** via le menu ci-dessous pour découvrir tes commandes disponibles",
+    "Cette liste dépend de TES droits réels — le même système que le panel de configuration " +
+      "(voir `&panel` > Permissions) : ce que tu vois ici, tu peux réellement l'utiliser.",
     "Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**",
     "",
     ...lines,
@@ -110,12 +84,18 @@ function buildSelect(categories, current) {
 }
 
 /**
- * Panneau d'aide filtré sur les droits réels de la personne. Components V2
- * sans setAccentColor : pas de barre de couleur sur le côté.
+ * Panneau d'aide filtré sur les droits RÉELS de la personne — même moteur
+ * que les commandes et le panel (utils/permissions/engine.js), pas une
+ * liste séparée qui pourrait diverger (section 10/35 du cahier des
+ * charges). Components V2 sans setAccentColor : pas de barre de couleur
+ * sur le côté.
+ * @param {string} guildId
+ * @param {import('discord.js').GuildMember} member qui consulte l'aide
+ * @param {string} [current]
  */
-function buildHelpPanel(guildId, userId, current = HOME, guildOwnerId = null) {
+function buildHelpPanel(guildId, member, current = HOME) {
   const prefixes = getPrefixes(guildId);
-  const categories = categoriesFor(accessChecker(userId, guildOwnerId));
+  const categories = categoriesFor((permission) => can(member, permission));
   const category = categories.find((c) => c.key === current);
 
   const container = new ContainerBuilder();

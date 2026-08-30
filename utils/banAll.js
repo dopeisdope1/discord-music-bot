@@ -1,6 +1,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, MessageFlags } = require("discord.js");
-const accessStore = require("./accessStore");
+const { can } = require("./permissions/engine");
 const { refusalReason, card } = require("./banPanel");
+const { report } = require("./moderation/actions");
 
 const ID = "banall";
 
@@ -41,10 +42,12 @@ const chunk = (list, size) =>
 /**
  * Qui a le droit de lancer un ban de masse : le propriétaire du bot, le
  * propriétaire du serveur, et les membres explicitement autorisés. Le rang
- * sys ne suffit PAS (voir NO_SYS_INHERIT dans utils/accessStore.js).
+ * sys ne suffit PAS (voir NO_SYS_INHERIT dans utils/accessStore.js et
+ * "moderation.banall" dans utils/permissions/catalog.js, jamais octroyable
+ * par rôle — engine.can() applique cette règle telle quelle).
  */
-function canBanAll(guild, userId) {
-  return userId === guild.ownerId || accessStore.isAllowed("banall", userId);
+function canBanAll(guild, member) {
+  return member.id === guild.ownerId || can(member, "moderation.banall");
 }
 
 function rememberRequest(data) {
@@ -65,7 +68,7 @@ function bannableMembers(guild, actorId) {
 }
 
 async function handleBanAll(client, message, args) {
-  if (!canBanAll(message.guild, message.author.id)) return;
+  if (!canBanAll(message.guild, message.member)) return;
 
   const reason = args.join(" ").trim();
 
@@ -119,7 +122,7 @@ async function handleBanAll(client, message, args) {
 async function handleBanAllInteraction(interaction) {
   const [, action, token] = interaction.customId.split(":");
 
-  if (!canBanAll(interaction.guild, interaction.user.id)) {
+  if (!canBanAll(interaction.guild, interaction.member)) {
     return interaction.reply({ content: "Tu n'as pas accès à cette commande.", flags: MessageFlags.Ephemeral });
   }
 
@@ -195,6 +198,26 @@ async function handleBanAllInteraction(interaction) {
   }
 
   console.log(`[banall] ${done} banni(s), ${failed} échec(s) par ${interaction.user.tag} sur "${guild.name}"`);
+
+  // Une seule entrée récapitulative plutôt que ${done} entrées individuelles :
+  // une recherche "historique de modération" par cible n'a pas de sens pour
+  // un ban de masse, et ${done} lignes identiques n'aideraient personne.
+  if (done > 0) {
+    await report(interaction.client, {
+      guildId: guild.id,
+      category: "moderation",
+      color: 0xed4245,
+      description: `🔨 **Ban de masse** — **${done}** membre(s) banni(s)${failed ? `, ${failed} échec(s)` : ""}${reason ? `\n> Raison : ${reason}` : ""}`,
+      action: "banall",
+      targetId: null,
+      targetTag: `${done} membre(s)`,
+      moderator: interaction.user,
+      reason,
+      channelId: interaction.channelId,
+      extra: { done, failed },
+    });
+  }
+
   await interaction.message
     .edit(
       card(

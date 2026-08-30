@@ -8,12 +8,14 @@ const { getPrefixes } = require("./prefixStore");
 const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
+const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
 const { buildHelpPanel } = require("./helpPanel");
-const { buildConfigPanel } = require("./configPanel");
+const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
+const { moderationHandlers } = require("./moderationCommands");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
@@ -249,11 +251,25 @@ function requireScope(scope, handler) {
   };
 }
 
+/**
+ * Même chose via le moteur de permissions central (utils/permissions/engine.js) :
+ * un pont de rétrocompatibilité y garde l'ancienne portée "salon" valide
+ * pour "channels.lock"/"channels.manage", donc migrer ces commandes ici ne
+ * casse aucun accès déjà accordé, tout en les rendant octroyables par rôle
+ * depuis le panel (section 6/7 du cahier des charges).
+ */
+function requirePermission(key, handler) {
+  return async (client, message, args) => {
+    if (!can(message.member, key)) return;
+    return handler(client, message, args);
+  };
+}
+
 const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
   // de la personne (voir utils/helpPanel.js).
   async help(client, message) {
-    await message.reply(buildHelpPanel(message.guild.id, message.author.id, undefined, message.guild.ownerId));
+    await message.reply(buildHelpPanel(message.guild.id, message.member));
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne
@@ -264,8 +280,8 @@ const modHandlers = {
   snipe: publicHandlers.snipe,
 
   async panel(client, message) {
-    if (!accessStore.isAllowed("sys", message.author.id)) return;
-    await message.reply(buildConfigPanel(message.guild.id, "home", accessStore.isOwner(message.author.id)));
+    if (!hasAnyPanelAccess(message.member)) return;
+    await message.reply(buildConfigPanel(message.guild, "home", message.member));
   },
 
   // Dit d'où le son peut encore venir (voir utils/sourcesDiagnostic.js) : la
@@ -276,18 +292,42 @@ const modHandlers = {
     await handleSourcesDiagnostic(client, message, args);
   },
 
-  // Ces trois-là vérifient leurs propres droits à l'intérieur : banall inclut
+  // Ces commandes vérifient leurs propres droits à l'intérieur (moteur de
+  // permissions central, voir utils/permissions/engine.js) : banall inclut
   // le propriétaire du serveur, ce que requireScope ne sait pas exprimer, et
-  // ban/unban restent muets pour les non-autorisés.
+  // toutes restent muettes pour les non-autorisés plutôt que de répondre à
+  // la place du CrowBot sur ce préfixe partagé.
   banall: handleBanAll,
   ban: handleBan,
   unban: handleUnban,
 
-  renew: requireScope("salon", channelHandlers.renew),
-  hide: requireScope("salon", channelHandlers.hide),
-  unhide: requireScope("salon", channelHandlers.unhide),
-  lock: requireScope("salon", channelHandlers.lock),
-  unlock: requireScope("salon", channelHandlers.unlock),
+  renew: requirePermission("channels.manage", channelHandlers.renew),
+  hide: requirePermission("channels.manage", channelHandlers.hide),
+  unhide: requirePermission("channels.manage", channelHandlers.unhide),
+  lock: requirePermission("channels.lock", channelHandlers.lock),
+  unlock: requirePermission("channels.lock", channelHandlers.unlock),
+
+  // Nouvelles commandes de modération (refonte permissions/rôles/logs/panel) —
+  // chacune vérifie sa propre clé de permission via utils/permissions/engine.js.
+  kick: moderationHandlers.kick,
+  softban: moderationHandlers.softban,
+  timeout: moderationHandlers.timeout,
+  untimeout: moderationHandlers.untimeout,
+  slowmode: moderationHandlers.slowmode,
+  nick: moderationHandlers.nick,
+  resetnick: moderationHandlers.resetnick,
+  role: moderationHandlers.role,
+  modlogs: moderationHandlers.modlogs,
+  clear: moderationHandlers.clear,
+  purge: moderationHandlers.purge,
+  lockdown: moderationHandlers.lockdown,
+  panic: moderationHandlers.panic,
+  unlockdown: moderationHandlers.unlockdown,
+
+  // Publiques, sans vérification de droits — même famille que pic/banner/server.
+  userinfo: moderationHandlers.userinfo,
+  avatar: moderationHandlers.avatar,
+  serverinfo: moderationHandlers.serverinfo,
 };
 
 /**

@@ -12,7 +12,8 @@ const {
   PermissionFlagsBits,
   MessageFlags,
 } = require("discord.js");
-const accessStore = require("./accessStore");
+const { can } = require("./permissions/engine");
+const { botAndRankRefusal, checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 
 const ID = "ban";
 
@@ -37,23 +38,19 @@ function rememberRequest(data) {
 
 /**
  * Raisons de refus, vérifiées AVANT d'afficher le panneau comme avant de
- * bannir : la situation peut changer entre les deux.
+ * bannir : la situation peut changer entre les deux. Délègue les règles
+ * communes (permissions du bot mises à part) à
+ * utils/moderation/actions.js::botAndRankRefusal — pas de duplication entre
+ * ce fichier et le nouveau système (banAll.js applique ceci en masse, sans
+ * "acteur" précis, d'où l'absence de vérification de hiérarchie MODÉRATEUR
+ * ici ; &ban/&unban l'ajoutent séparément via checkHierarchy, voir plus bas).
  * @returns {string|null} le motif du refus, ou null si le bannissement est possible
  */
 function refusalReason(guild, target) {
-  const me = guild.members.me;
-
-  if (!me.permissions.has(PermissionFlagsBits.BanMembers)) {
+  if (!guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
     return "Il me manque la permission **Bannir des membres**.";
   }
-  if (target.id === guild.ownerId) return "Impossible de bannir le propriétaire du serveur.";
-  if (target.id === me.id) return "Je ne peux pas me bannir moi-même.";
-  if (accessStore.isOwner(target.id)) return "Ce membre est propriétaire du bot.";
-  if (accessStore.isAllowed("sys", target.id)) return "Ce membre a le rang sys, retire-le lui d'abord.";
-  if (me.roles.highest.position <= target.roles.highest.position) {
-    return "Mon rôle est trop bas pour bannir ce membre — place-le plus haut dans la liste des rôles.";
-  }
-  return null;
+  return botAndRankRefusal(guild, target);
 }
 
 function card(title, body, rows = []) {
@@ -121,12 +118,14 @@ function parseTarget(message, args) {
 }
 
 /**
- * &ban [@membre | id] [raison] — réservé au rang sys, silence complet pour
- * les autres. Sans cible, affiche un menu de sélection ; avec une cible,
- * saute directement à la confirmation.
+ * &ban [@membre | id] [raison] — accordée par le rang sys ou par la clé de
+ * permission "moderation.ban" (rôle ou octroi individuel, voir
+ * utils/permissions/engine.js), silence complet pour les autres. Sans
+ * cible, affiche un menu de sélection ; avec une cible, saute directement à
+ * la confirmation.
  */
 async function handleBan(client, message, args) {
-  if (!accessStore.isAllowed("sys", message.author.id)) return;
+  if (!can(message.member, "moderation.ban")) return;
 
   const { targetId, reason } = parseTarget(message, args);
 
@@ -139,7 +138,9 @@ async function handleBan(client, message, args) {
     return message.reply(card("Membre introuvable", "Ce membre n'est pas sur le serveur."));
   }
 
-  const refusal = refusalReason(message.guild, target);
+  const refusal =
+    checkBotPermission(message.guild, PermissionFlagsBits.BanMembers, "BanMembers") ||
+    checkHierarchy(message.guild, message.member, target);
   if (refusal) return message.reply(card("Bannissement impossible", refusal));
 
   return message.reply(buildConfirmPanel(target, message.author.id, reason));
@@ -151,7 +152,7 @@ async function handleBan(client, message, args) {
  * en rebannissant.
  */
 async function handleUnban(client, message, args) {
-  if (!accessStore.isAllowed("sys", message.author.id)) return;
+  if (!can(message.member, "moderation.unban")) return;
 
   if (!message.guild.members.me.permissions.has(PermissionFlagsBits.BanMembers)) {
     return message.reply(card("Action impossible", "Il me manque la permission **Bannir des membres**."));
@@ -166,6 +167,17 @@ async function handleUnban(client, message, args) {
     }
     try {
       await message.guild.bans.remove(explicitId, `Débannissement par ${message.author.tag}`);
+      await report(client, {
+        guildId: message.guild.id,
+        category: "moderation",
+        color: 0x57f287,
+        description: `♻️ **Débannissement** — **${existing.user.tag}** (${existing.user.id})`,
+        action: "unban",
+        targetId: existing.user.id,
+        targetTag: existing.user.tag,
+        moderator: message.author,
+        channelId: message.channel.id,
+      });
       return message.reply(card("Membre débanni", `**${existing.user.tag}** peut de nouveau rejoindre le serveur.`));
     } catch (err) {
       console.error("[unban] échec :", err);
@@ -205,15 +217,13 @@ async function handleUnban(client, message, args) {
 async function handleBanInteraction(interaction) {
   const [, action, token] = interaction.customId.split(":");
 
-  // Le panneau reste cliquable dans le salon : le rang ET l'identité de
-  // l'auteur sont revérifiés à chaque clic.
-  if (!accessStore.isAllowed("sys", interaction.user.id)) {
-    return interaction.reply({ content: "Tu n'as pas accès à cette commande.", flags: MessageFlags.Ephemeral });
-  }
-
-  // Le menu de débannissement ne passe pas par un jeton : il n'a ni raison ni
-  // cible à mémoriser, le troisième segment est directement l'auteur.
+  // Le panneau reste cliquable dans le salon : les droits ET l'identité de
+  // l'auteur sont revérifiés à CHAQUE clic — ban et unban ont chacun leur
+  // propre clé, le menu de débannissement est donc vérifié séparément.
   if (action === "un") {
+    if (!can(interaction.member, "moderation.unban")) {
+      return interaction.reply({ content: "Tu n'as pas accès à cette commande.", flags: MessageFlags.Ephemeral });
+    }
     if (interaction.user.id !== token) {
       return interaction.reply({ content: "Ce panneau n'est pas le tien.", flags: MessageFlags.Ephemeral });
     }
@@ -221,6 +231,17 @@ async function handleBanInteraction(interaction) {
     try {
       const banned = await interaction.guild.bans.fetch(userId).catch(() => null);
       await interaction.guild.bans.remove(userId, `Débannissement par ${interaction.user.tag}`);
+      await report(interaction.client, {
+        guildId: interaction.guild.id,
+        category: "moderation",
+        color: 0x57f287,
+        description: `♻️ **Débannissement** — **${banned?.user.tag || userId}** (${userId})`,
+        action: "unban",
+        targetId: userId,
+        targetTag: banned?.user.tag || null,
+        moderator: interaction.user,
+        channelId: interaction.channelId,
+      });
       return interaction.update(
         card("Membre débanni", `**${banned?.user.tag || userId}** peut de nouveau rejoindre le serveur.`)
       );
@@ -228,6 +249,10 @@ async function handleBanInteraction(interaction) {
       console.error("[unban] échec :", err);
       return interaction.update(card("Action impossible", `Discord a refusé : ${err.message}`));
     }
+  }
+
+  if (!can(interaction.member, "moderation.ban")) {
+    return interaction.reply({ content: "Tu n'as pas accès à cette commande.", flags: MessageFlags.Ephemeral });
   }
 
   const request = pending.get(token);
@@ -247,7 +272,9 @@ async function handleBanInteraction(interaction) {
     const target = await interaction.guild.members.fetch(interaction.values[0]).catch(() => null);
     if (!target) return interaction.update(card("Membre introuvable", "Ce membre n'est plus sur le serveur."));
 
-    const refusal = refusalReason(interaction.guild, target);
+    const refusal =
+      checkBotPermission(interaction.guild, PermissionFlagsBits.BanMembers, "BanMembers") ||
+      checkHierarchy(interaction.guild, interaction.member, target);
     if (refusal) return interaction.update(card("Bannissement impossible", refusal));
 
     pending.delete(token);
@@ -260,7 +287,9 @@ async function handleBanInteraction(interaction) {
 
     // Revérifié juste avant l'action : le membre a pu changer de rôle depuis
     // l'affichage du panneau.
-    const refusal = refusalReason(interaction.guild, target);
+    const refusal =
+      checkBotPermission(interaction.guild, PermissionFlagsBits.BanMembers, "BanMembers") ||
+      checkHierarchy(interaction.guild, interaction.member, target);
     if (refusal) return interaction.update(card("Bannissement impossible", refusal));
 
     // Consommé avant l'appel : le jeton ne doit pas pouvoir servir deux fois,
@@ -272,6 +301,18 @@ async function handleBanInteraction(interaction) {
     try {
       await target.ban({ reason: reason || `zinki assasini — par ${interaction.user.tag}` });
       console.log(`[assasini] ${tag} banni par ${interaction.user.tag} sur "${interaction.guild.name}"`);
+      await report(interaction.client, {
+        guildId: interaction.guild.id,
+        category: "moderation",
+        color: 0xed4245,
+        description: `🔨 **Bannissement** — **${tag}** (${target.id})${reason ? `\n> Raison : ${reason}` : ""}`,
+        action: "ban",
+        targetId: target.id,
+        targetTag: tag,
+        moderator: interaction.user,
+        reason,
+        channelId: interaction.channelId,
+      });
       return interaction.update(
         card("Membre banni", `**${tag}** a été banni.${reason ? `\nRaison : ${reason}` : ""}`)
       );

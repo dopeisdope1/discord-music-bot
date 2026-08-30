@@ -7,10 +7,9 @@ const ShoukakuState = ShoukakuConstants.State;
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
-// Seul reliquat de modération : les déclencheurs sans préfixe "uo clear" &
-// consorts (voir utils/selfClear.js). La modération à proprement parler est
-// assurée par le CrowBot du serveur, d'où le retrait de &clear qui faisait
-// doublon avec lui.
+// Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
+// utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
+// les messages de son propre auteur, sans permission requise.
 const { handleSelfClear } = require("./utils/selfClear");
 const {
   startNowPlayingTracking,
@@ -25,6 +24,8 @@ const { getPrefixes } = require("./utils/prefixStore");
 const { handleConfigInteraction } = require("./utils/configPanel");
 const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
+const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
+const { revokeIfGone } = require("./utils/permissions/cleanup");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -386,7 +387,7 @@ client.on("interactionCreate", async (interaction) => {
   // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
   // même liste de commandes.
   if (interaction.isStringSelectMenu?.() && interaction.customId === HELP_SELECT_ID) {
-    const panel = buildHelpPanel(interaction.guild.id, interaction.user.id, interaction.values[0], interaction.guild.ownerId);
+    const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0]);
     return interaction
       .reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral })
       .catch(() => {});
@@ -606,6 +607,9 @@ client.on("messageCreate", (message) => {
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
+  // Anti-spam léger, désactivé par défaut par serveur (voir &panel > Protection
+  // et utils/automod/antiSpam.js) — ne fait rien tant que personne ne l'active.
+  checkAntiSpam(client, message).catch((err) => console.error("[antiSpam]", err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
@@ -721,6 +725,20 @@ client.on("guildCreate", (guild) => {
   guild.members.fetch({ withPresences: true }).catch((err) => {
     console.warn(`⚠️ Impossible de récupérer les présences du serveur "${guild.name}":`, err.message);
   });
+});
+
+// Nettoyage des accès obsolètes (section 2 du cahier des charges) : quand
+// quelqu'un quitte, ses octrois individuels et ses portées globales (sys/
+// banall/clear/salon) sont révoqués — SAUF s'il est encore membre d'un autre
+// serveur partagé avec le bot (voir utils/permissions/cleanup.js). Les
+// octrois PAR RÔLE n'ont rien à nettoyer : ils se recalculent tout seuls sur
+// les rôles actuels si la personne revient. L'historique de modération
+// n'est jamais touché ici.
+client.on("guildMemberRemove", (member) => {
+  const changes = revokeIfGone(client, member.guild.id, member.id);
+  if (changes.length) {
+    console.log(`[accès] ${member.user.tag} a quitté "${member.guild.name}" : ${changes.join(", ")}`);
+  }
 });
 
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée
