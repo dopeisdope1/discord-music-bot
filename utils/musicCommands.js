@@ -16,6 +16,7 @@ const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { moderationHandlers } = require("./moderationCommands");
+const serverAdmin = require("./serverAdminCommands");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
@@ -316,13 +317,29 @@ const modHandlers = {
   slowmode: moderationHandlers.slowmode,
   nick: moderationHandlers.nick,
   resetnick: moderationHandlers.resetnick,
-  role: moderationHandlers.role,
+  // "role create/delete/rename/color/admin" gère le rôle lui-même (voir
+  // utils/serverAdminCommands.js) ; tout le reste ("role add/remove @membre
+  // @rôle") gère l'appartenance d'un membre (utils/moderationCommands.js) —
+  // une seule commande "&role" pour l'utilisateur, deux fichiers derrière.
+  role: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (serverAdmin.ROLE_ADMIN_SUBCOMMANDS.has(sub)) return serverAdmin.roleAdmin(client, message, args);
+    return moderationHandlers.role(client, message, args);
+  },
   modlogs: moderationHandlers.modlogs,
   clear: moderationHandlers.clear,
   purge: moderationHandlers.purge,
   lockdown: moderationHandlers.lockdown,
   panic: moderationHandlers.panic,
   unlockdown: moderationHandlers.unlockdown,
+
+  // Administration du serveur (rôles/salons créés de zéro, owners, whitelist,
+  // liste des bots, dero automatique) — voir utils/serverAdminCommands.js.
+  channel: serverAdmin.channelAdmin,
+  owners: serverAdmin.owners,
+  whitelist: serverAdmin.whitelist,
+  allbots: serverAdmin.allbots,
+  dero: serverAdmin.dero,
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,

@@ -40,7 +40,20 @@ const PERMISSIONS = [
 
   // --- Protection ---
   { key: "protection.automod", category: "protection", label: "Configurer l'anti-spam (panel)" },
-  { key: "protection.whitelist", category: "protection", label: "Gérer la whitelist anti-spam (panel)" },
+  { key: "protection.whitelist", category: "protection", label: "Gérer la whitelist anti-spam (&whitelist, panel)" },
+
+  // --- Serveur --- (structure du serveur, distinct de "channels" qui reste
+  // limité au salon courant — création/suppression touchent tout le serveur)
+  { key: "server.roles.manage", category: "server", label: "Créer/supprimer/modifier un rôle (&role create/delete/rename/color)" },
+  {
+    key: "server.roles.admin_grant",
+    category: "server",
+    label: "Donner/retirer Administrateur à un rôle (&role admin)",
+    roleGrantable: false, // jamais délégable — voir checkAdminGrant dans utils/serverAdminCommands.js
+  },
+  { key: "server.channels.manage", category: "server", label: "Créer/supprimer/renommer un salon (&channel create/delete/rename/topic)" },
+  { key: "server.dero.manage", category: "server", label: "Permissions automatiques sur les nouveaux salons (&dero)" },
+  { key: "server.welcome.manage", category: "server", label: "Configurer le message de bienvenue (panel)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));
@@ -52,6 +65,7 @@ const CATEGORY_LABELS = {
   logs: "Logs",
   panel: "Panel",
   protection: "Protection",
+  server: "Serveur",
 };
 
 /** Vrai si `key` existe dans le catalogue et peut être accordée à un rôle. */

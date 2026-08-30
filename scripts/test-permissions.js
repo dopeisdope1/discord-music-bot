@@ -95,6 +95,20 @@ cas("moderation.banall n'est jamais octroyable par rôle", () => {
   assert.strictEqual(can(member, "moderation.banall"), false);
 });
 
+cas("server.roles.admin_grant n'est jamais octroyable par rôle (le point de sécurité le plus important)", () => {
+  const guild = fakeGuild();
+  permStore.setRoleGrants(GUILD_ID, "role-tries-admin", ["server.roles.admin_grant"]);
+  const member = fakeMember({ id: "u4b", guild, roleIds: ["role-tries-admin"] });
+  assert.strictEqual(can(member, "server.roles.admin_grant"), false, "un rôle ne doit JAMAIS donner accès à server.roles.admin_grant");
+});
+
+cas("server.roles.admin_grant reste accessible au rang sys (voulu, contrairement à banall)", () => {
+  accessStore.add("sys", "u-sys-admin");
+  const guild = fakeGuild();
+  const member = fakeMember({ id: "u-sys-admin", guild });
+  assert.strictEqual(can(member, "server.roles.admin_grant"), true);
+});
+
 cas("le propriétaire du serveur a toujours accès à banall", () => {
   const guild = fakeGuild();
   assert.strictEqual(can(fakeMember({ id: "owner-server", guild }), "moderation.banall"), true);

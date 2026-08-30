@@ -29,6 +29,7 @@ const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
 const automod = require("./automod/antiSpam");
+const welcomeStore = require("./welcomeStore");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -40,6 +41,15 @@ const LOG_CHANNEL_NAMES = {
   bots: "logs-bots",
   messages: "logs-messages",
 };
+
+// Préréglages pour la rubrique Bienvenue — 0 = jamais supprimé.
+const WELCOME_DELETE_OPTIONS = [
+  { label: "10 secondes", seconds: 10 },
+  { label: "30 secondes", seconds: 30 },
+  { label: "1 minute", seconds: 60 },
+  { label: "5 minutes", seconds: 300 },
+  { label: "Jamais", seconds: 0 },
+];
 
 /**
  * Crée un salon par catégorie de logs qui n'en a pas encore (ou dont le
@@ -114,6 +124,7 @@ const SECTIONS = [
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
+  { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
@@ -294,6 +305,20 @@ function sectionBody(section, guild, member, state) {
       "",
       "Seul l'anti-spam est couvert ici : anti-lien, anti-@everyone et l'essentiel de l'anti-raid sont déjà " +
         "gérés par le CrowBot du serveur — les dupliquer n'apporterait rien.",
+    ].join("\n");
+  }
+
+  if (section === "welcome") {
+    const config = welcomeStore.getConfig(guildId);
+    const lines = config.messages.length
+      ? config.messages.map((m, i) => `${i + 1}. *${m}*`).join("\n")
+      : "*Aucun message configuré — le message de bienvenue reste désactivé tant qu'il n'y en a pas au moins un.*";
+    return [
+      `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
+      `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "jamais"}`,
+      "",
+      "**Messages** (un est tiré au hasard à chaque arrivée) :",
+      lines,
     ].join("\n");
   }
 
@@ -515,6 +540,48 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         )
       );
     }
+  } else if (meta.key === "welcome") {
+    const config = welcomeStore.getConfig(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:welcomechannel`)
+          .setPlaceholder("Envoyer le message de bienvenue à ce salon")
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(0)
+          .setMaxValues(1)
+          .setDefaultChannels(config.channelId ? [config.channelId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:welcomedelete`)
+          .setPlaceholder("Suppression automatique")
+          .addOptions(
+            WELCOME_DELETE_OPTIONS.map((opt) =>
+              new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(String(opt.seconds)).setDefault(config.autoDeleteSeconds === opt.seconds)
+            )
+          )
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:welcomeadd`).setLabel("Ajouter un message").setStyle(ButtonStyle.Secondary)
+      )
+    );
+    if (config.messages.length) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:welcomedel`)
+            .setPlaceholder("Retirer un message")
+            .addOptions(
+              config.messages.map((m, i) => new StringSelectMenuOptionBuilder().setLabel(`${i + 1}. ${m}`.slice(0, 100)).setValue(String(i)))
+            )
+        )
+      );
+    }
   } else if (meta.key === "access") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -681,6 +748,47 @@ async function handleConfigInteraction(interaction) {
     if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
     else automod.removeFromWhitelist(guildId, "users", userId);
     return goto("protection");
+  }
+
+  if (action === "welcomechannel") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    welcomeStore.setChannel(guildId, interaction.values[0] || null);
+    return goto("welcome");
+  }
+
+  if (action === "welcomedelete") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    welcomeStore.setAutoDelete(guildId, parseInt(interaction.values[0], 10) || 0);
+    return goto("welcome");
+  }
+
+  if (action === "welcomedel") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    welcomeStore.removeMessage(guildId, parseInt(interaction.values[0], 10));
+    return goto("welcome");
+  }
+
+  if (action === "welcomeadd") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const text = interaction.fields.getTextInputValue("value").trim();
+      if (!text) return interaction.reply({ content: "Message vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
+      welcomeStore.addMessage(guildId, text);
+      await interaction.reply({ content: "Message de bienvenue ajouté.", flags: MessageFlags.Ephemeral });
+      return interaction.message?.edit(buildConfigPanel(guild, "welcome", member)).catch(() => {});
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:welcomeadd`).setTitle("Ajouter un message de bienvenue");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel("Message (un est tiré au hasard à chaque arrivée)")
+          .setStyle(TextInputStyle.Paragraph)
+          .setMaxLength(1000)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "access" && extra === "sweep") {

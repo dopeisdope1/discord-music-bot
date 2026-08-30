@@ -360,6 +360,58 @@ pour ne pas devenir une copie :
 Aucun anti-raid/anti-nuke complet n'est reconstruit ici — c'est le rôle du
 CrowBot du serveur, et le dupliquer n'apporterait rien.
 
+## 6quinquies. Administration du serveur et bienvenue
+
+Outils de structure du serveur (créer/supprimer/modifier rôles et salons),
+distincts de la détection anti-nuke (qui reste chez CrowBot, voir
+7quater) : ici, pas de surveillance, juste des commandes directes,
+chacune avec sa propre clé de permission (catégorie **Serveur** dans
+`&panel` > Permissions).
+
+- **`&role create <nom>`** / **`&role rename @rôle <nom>`** /
+  **`&role color @rôle <hex>`** — clé `server.roles.manage`.
+- **`&role delete @rôle`** — même clé, **confirmation obligatoire**
+  (irréversible).
+- **`&role admin @rôle`** — donne ou retire la permission Discord
+  **Administrateur** au rôle. Clé à part, `server.roles.admin_grant`,
+  **jamais octroyable par rôle** (comme `&banall`) — seuls le rang sys et
+  le propriétaire du bot y ont accès, jamais un octroi délégué. C'est la
+  commande la plus sensible du bot : Administrateur passe outre toutes
+  les restrictions de salon, donner ce rôle à la mauvaise personne donne
+  un contrôle total du serveur. Confirmation obligatoire à chaque usage.
+- **`&channel create <nom> [vocal]`** / **`&channel rename [#salon]
+  <nom>`** / **`&channel topic [#salon] <texte>`** — clé
+  `server.channels.manage`.
+- **`&channel delete [#salon]`** — même clé, **confirmation obligatoire**.
+- **`&owners`** — liste paginée du rang sys (équivalent dédié à `&panel` >
+  Rang sys) ; ajout/retrait réservés au propriétaire du bot, comme partout
+  ailleurs dans le bot.
+- **`&whitelist`** — liste paginée des membres exemptés de l'anti-spam
+  (clé `protection.whitelist`, équivalent dédié à `&panel` > Protection).
+- **`&allbots`** — liste paginée de tous les comptes bot présents sur le
+  serveur (rang sys, lecture seule).
+- **`&dero role @rôle`** / **`&dero off`** — un rôle qui reçoit
+  automatiquement Voir le salon/Envoyer des messages/Se connecter sur
+  **chaque nouveau salon créé** sur le serveur, sans action manuelle
+  (clé `server.dero.manage`).
+
+Toute suppression (rôle, salon) et le don d'Administrateur passent par un
+panneau de confirmation dédié — jamais d'action irréversible sur un seul
+clic. Les autres commandes de cette section (renommer, changer une
+couleur, créer) s'exécutent directement, comme `&clear`/`&renew` : leur
+effet est mineur ou facilement corrigé, une confirmation n'apporterait
+que de la friction.
+
+### Bienvenue (`&panel` > Bienvenue)
+
+Message envoyé au salon configuré à l'arrivée d'un membre, tiré au hasard
+parmi une liste (clé `server.welcome.manage`) : salon cible, délai de
+suppression automatique (10s/30s/1min/5min/jamais), messages ajoutés via
+une fenêtre de saisie et retirés depuis un menu. `{user}` dans un message
+est remplacé par une mention du nouvel arrivant (avec notification,
+contrairement au reste du bot qui ne ping jamais). Désactivé tant qu'aucun
+salon ou aucun message n'est configuré.
+
 ## 7. Notes sur le support Spotify
 
 `!play <nom>` cherche directement sur Spotify (API officielle, via

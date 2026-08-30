@@ -89,6 +89,32 @@ const CATEGORIES = [
     ],
   },
   {
+    key: "server",
+    label: "Serveur",
+    commands: [
+      { name: "role create <nom>", prefix: "mod", permission: "server.roles.manage", description: "Crée un nouveau rôle" },
+      { name: "role delete @rôle", prefix: "mod", permission: "server.roles.manage", description: "Supprime un rôle (confirmation obligatoire)" },
+      { name: "role rename @rôle <nom>", prefix: "mod", permission: "server.roles.manage", description: "Renomme un rôle" },
+      { name: "role color @rôle <hex>", prefix: "mod", permission: "server.roles.manage", description: "Change la couleur d'un rôle (ex : `#ff0000`)" },
+      {
+        name: "role admin @rôle",
+        prefix: "mod",
+        permission: "server.roles.admin_grant",
+        description: "Donne/retire Administrateur à un rôle — jamais délégable par rôle, confirmation obligatoire",
+      },
+      { name: "channel create <nom> [vocal]", prefix: "mod", permission: "server.channels.manage", description: "Crée un nouveau salon" },
+      { name: "channel delete [#salon]", prefix: "mod", permission: "server.channels.manage", description: "Supprime un salon (confirmation obligatoire)" },
+      { name: "channel rename [#salon] <nom>", prefix: "mod", permission: "server.channels.manage", description: "Renomme un salon" },
+      { name: "channel topic [#salon] <texte>", prefix: "mod", permission: "server.channels.manage", description: "Change le topic d'un salon" },
+      {
+        name: "dero [role @rôle|off]",
+        prefix: "mod",
+        permission: "server.dero.manage",
+        description: "Applique automatiquement des permissions aux rôles configurés sur chaque nouveau salon",
+      },
+    ],
+  },
+  {
     key: "admin",
     label: "Administration",
     commands: [
@@ -105,6 +131,14 @@ const CATEGORIES = [
         permission: "sys",
         description: "Dit d'où le son peut encore venir quand un morceau refuse de se lire",
       },
+      {
+        name: "owners",
+        prefix: "mod",
+        permission: "sys",
+        description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
+      },
+      { name: "whitelist", prefix: "mod", permission: "protection.whitelist", description: "Liste paginée des exemptés de l'anti-spam" },
+      { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
     ],
   },
 ];

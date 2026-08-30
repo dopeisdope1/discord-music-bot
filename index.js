@@ -26,6 +26,8 @@ const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
 const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
+const { handleServerAdminInteraction, handleConfirmInteraction, applyDeroToNewChannel } = require("./utils/serverAdminCommands");
+const welcomeStore = require("./utils/welcomeStore");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -380,6 +382,17 @@ client.on("interactionCreate", async (interaction) => {
   // commence pas par "ban:".
   if (interaction.customId?.startsWith("banall:")) {
     await handleBanAllInteraction(interaction).catch((err) => console.error("[banAll]", err));
+    return;
+  }
+
+  // Administration serveur : listes paginées (owners/whitelist, "srv:page|
+  // add|del:...") et confirmations d'actions sensibles (suppression de
+  // rôle/salon, don d'Administrateur — "srv:confirm:go|no:...") — voir
+  // utils/serverAdminCommands.js.
+  if (interaction.customId?.startsWith("srv:")) {
+    const isConfirm = interaction.customId.startsWith("srv:confirm:");
+    const handler = isConfirm ? handleConfirmInteraction : handleServerAdminInteraction;
+    await handler(interaction).catch((err) => console.error("[serverAdminCommands]", err));
     return;
   }
 
@@ -744,6 +757,37 @@ client.on("guildMemberRemove", (member) => {
   const changes = revokeIfGone(client, member.guild.id, member.id);
   if (changes.length) {
     console.log(`[accès] ${member.user.tag} a quitté "${member.guild.name}" : ${changes.join(", ")}`);
+  }
+});
+
+// Dero automatique (voir &dero, utils/serverAdminCommands.js) : applique les
+// permissions configurées aux rôles concernés sur chaque nouveau salon créé,
+// sans action manuelle. Ne fait rien si aucun rôle n'est configuré.
+client.on("channelCreate", (channel) => {
+  applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
+});
+
+// Message de bienvenue (voir &panel > Bienvenue, utils/welcomeStore.js) : un
+// message est tiré au hasard parmi ceux configurés, "{user}" y est remplacé
+// par une mention du nouvel arrivant. Ne fait rien tant qu'aucun salon ou
+// aucun message n'est configuré.
+client.on("guildMemberAdd", async (member) => {
+  const config = welcomeStore.getConfig(member.guild.id);
+  if (!config.channelId) return;
+  const text = welcomeStore.pickRandomMessage(member.guild.id);
+  if (!text) return;
+
+  const channel = member.guild.channels.cache.get(config.channelId);
+  if (!channel?.isTextBased()) return;
+
+  const sent = await channel
+    .send({ content: text.replace(/\{user\}/g, `<@${member.id}>`), allowedMentions: { users: [member.id] } })
+    .catch((err) => {
+      console.error("[welcome] échec d'envoi :", err.message);
+      return null;
+    });
+  if (sent && config.autoDeleteSeconds > 0) {
+    setTimeout(() => sent.delete().catch(() => {}), config.autoDeleteSeconds * 1000);
   }
 });
 
