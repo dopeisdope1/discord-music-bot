@@ -1,6 +1,6 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, MessageFlags } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, MessageFlags, ChannelType } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors, Constants: ShoukakuConstants } = require("shoukaku");
 const ShoukakuState = ShoukakuConstants.State;
@@ -28,6 +28,7 @@ const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const { handleServerAdminInteraction, handleConfirmInteraction, applyDeroToNewChannel } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
+const voiceChannels = require("./utils/voiceChannels");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -684,6 +685,41 @@ client.on("voiceStateUpdate", (oldState, newState) => {
       textChannel.send({
         embeds: [buildStatusEmbed("info", "Tout le monde a quitté le salon vocal, je me déconnecte.")],
       });
+    }
+  }
+});
+
+// ---- Salons vocaux temporaires (&voicehub, &vc, voir utils/voiceChannels.js)
+// — listener séparé du nettoyage du player musique ci-dessus, aucun rapport
+// entre les deux. ----
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  // Rejoint le salon générateur -> crée un salon personnel et y déplace le membre.
+  const hubId = voiceChannels.getHub(newState.guild.id);
+  if (hubId && newState.channelId === hubId && oldState.channelId !== hubId) {
+    const hub = newState.channel;
+    const created = await newState.guild.channels
+      .create({
+        name: `Salon de ${newState.member.displayName}`.slice(0, 100),
+        type: ChannelType.GuildVoice,
+        parent: hub?.parentId || null,
+        reason: `Salon vocal temporaire pour ${newState.member.user.tag}`,
+      })
+      .catch((err) => {
+        console.error("[voiceChannels] échec de création :", err.message);
+        return null;
+      });
+    if (created) {
+      voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id);
+      await newState.member.voice.setChannel(created).catch(() => {});
+    }
+  }
+
+  // Quitte un salon temporaire -> le supprime une fois vide.
+  if (oldState.channelId && oldState.channelId !== newState.channelId) {
+    const info = voiceChannels.getChannelInfo(oldState.channelId);
+    if (info && oldState.channel && oldState.channel.members.size === 0) {
+      await oldState.channel.delete("Salon vocal temporaire vidé").catch(() => {});
+      voiceChannels.unregisterChannel(oldState.channelId);
     }
   }
 });

@@ -341,6 +341,8 @@ const modHandlers = {
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,
   antinuke: serverAdmin.antinuke,
+  voicehub: serverAdmin.voicehub,
+  vc: serverAdmin.vc,
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,

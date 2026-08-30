@@ -54,6 +54,7 @@ const PERMISSIONS = [
   },
   { key: "server.channels.manage", category: "server", label: "Créer/supprimer/renommer un salon (&channel create/delete/rename/topic)" },
   { key: "server.dero.manage", category: "server", label: "Permissions automatiques sur les nouveaux salons (&dero)" },
+  { key: "server.voice.manage", category: "server", label: "Configurer le salon générateur de vocaux temporaires (&voicehub)" },
   { key: "server.welcome.manage", category: "server", label: "Configurer le message de bienvenue (panel)" },
 ];
 

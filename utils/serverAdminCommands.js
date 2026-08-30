@@ -21,6 +21,7 @@ const automod = require("./automod/antiSpam");
 const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
 const deroStore = require("./deroStore");
+const voiceChannels = require("./voiceChannels");
 const { checkBotPermission, report } = require("./moderation/actions");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
@@ -640,6 +641,73 @@ async function antinuke(client, message, args) {
   });
 }
 
+// --- Salons vocaux temporaires (&voicehub, &vc) ---
+
+async function voicehub(client, message, args) {
+  if (!can(message.member, "server.voice.manage")) return;
+  const channel = message.mentions.channels?.first();
+  if (!channel || channel.type !== ChannelType.GuildVoice) {
+    if ((args[0] || "").toLowerCase() === "off") {
+      voiceChannels.setHub(message.guild.id, null);
+      return reply(message, "success", "Salon générateur désactivé.");
+    }
+    return reply(message, "error", "Indique un salon vocal : `voicehub #salon-vocal`, ou `voicehub off`.");
+  }
+  voiceChannels.setHub(message.guild.id, channel.id);
+  return reply(message, "success", `Rejoindre <#${channel.id}> crée désormais un salon vocal personnel.`);
+}
+
+/** Vrai si `member` peut gérer `channel` : propriétaire du salon temporaire, sys, ou owner. */
+function canManageVoiceChannel(member, channel) {
+  if (accessStore.isOwner(member.id) || accessStore.isAllowed("sys", member.id)) return true;
+  const info = voiceChannels.getChannelInfo(channel.id);
+  return info?.ownerId === member.id;
+}
+
+async function vc(client, message, args) {
+  const channel = message.member.voice.channel;
+  if (!channel) return reply(message, "error", "Tu dois être dans un salon vocal temporaire.");
+  const info = voiceChannels.getChannelInfo(channel.id);
+  if (!info) return reply(message, "error", "Ce salon vocal n'est pas un salon temporaire géré par le bot.");
+  if (!canManageVoiceChannel(message.member, channel)) {
+    return reply(message, "error", "Seul le propriétaire de ce salon peut le gérer.");
+  }
+
+  const sub = (args[0] || "").toLowerCase();
+  const everyone = message.guild.roles.everyone;
+
+  if (sub === "lock" || sub === "unlock") {
+    await channel.permissionOverwrites
+      .edit(everyone, { Connect: sub === "lock" ? false : null }, { reason: `Salon vocal ${sub === "lock" ? "verrouillé" : "déverrouillé"} par ${message.author.tag}` })
+      .catch(() => {});
+    return reply(message, "success", sub === "lock" ? "Salon verrouillé." : "Salon déverrouillé.");
+  }
+
+  if (sub === "limit") {
+    const n = parseInt(args[1], 10);
+    if (isNaN(n) || n < 0 || n > 99) return reply(message, "error", "Indique une limite entre 0 (illimité) et 99 : `vc limit <n>`.");
+    await channel.setUserLimit(n, `Limite changée par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", n === 0 ? "Limite retirée." : `Limite réglée sur **${n}**.`);
+  }
+
+  if (sub === "rename") {
+    const name = args.slice(1).join(" ").trim();
+    if (!name) return reply(message, "error", "Indique un nom : `vc rename <nom>`.");
+    await channel.setName(name, `Renommé par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", `Salon renommé **${name}**.`);
+  }
+
+  if (sub === "kick") {
+    const target = message.mentions.members?.first();
+    if (!target) return reply(message, "error", "Indique un membre : `vc kick @membre`.");
+    if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre n'est pas dans ton salon.");
+    await target.voice.disconnect(`Expulsé du salon vocal par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", `**${target.user.tag}** expulsé du salon.`);
+  }
+
+  return reply(message, "error", "Utilise `vc lock|unlock|limit <n>|rename <nom>|kick @membre`.");
+}
+
 module.exports = {
   owners,
   antinuke,
@@ -650,6 +718,8 @@ module.exports = {
   channelAdmin,
   dero,
   applyDeroToNewChannel,
+  voicehub,
+  vc,
   handleConfirmInteraction,
   ROLE_ADMIN_SUBCOMMANDS,
   ID,

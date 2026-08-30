@@ -19,6 +19,12 @@ const CATEGORIES = [
       { name: "serverinfo", prefix: "mod", permission: null, description: "Alias de `server`, plus détaillé" },
       { name: "userinfo [@membre]", prefix: "mod", permission: null, description: "Informations sur un membre (rôles, arrivée, timeout en cours)" },
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
+      {
+        name: "vc lock|unlock|limit <n>|rename <nom>|kick @membre",
+        prefix: "mod",
+        permission: null,
+        description: "Gère TON salon vocal temporaire (voir &voicehub) — ouvert à tous, réservé au propriétaire du salon",
+      },
     ],
   },
   {
@@ -111,6 +117,12 @@ const CATEGORIES = [
         prefix: "mod",
         permission: "server.dero.manage",
         description: "Applique automatiquement des permissions aux rôles configurés sur chaque nouveau salon",
+      },
+      {
+        name: "voicehub #salon-vocal|off",
+        prefix: "mod",
+        permission: "server.voice.manage",
+        description: "Rejoindre ce salon crée un salon vocal personnel temporaire",
       },
     ],
   },

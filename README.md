@@ -146,8 +146,10 @@ Permissions à cocher lors de l'invitation du bot (OAuth2 URL Generator) :
 - Connect, Speak, Send Messages, Embed Links, Use Slash Commands
 - Modération (section 6ter) : Kick Members, Ban Members, Moderate Members
   (timeout), Manage Nicknames, Manage Roles, Manage Channels, Manage Messages
-- View Audit Log — pour le journal de modération (section 6ter) et pour
-  attribuer les débannissements à qui de droit
+- Move Members — pour déplacer un membre dans son salon vocal temporaire
+  fraîchement créé (section 6septies)
+- View Audit Log — pour le journal de modération (section 6ter), l'anti-nuke
+  (section 6sexies) et pour attribuer les débannissements à qui de droit
 
 ## 4. Déployer les commandes slash
 
@@ -457,6 +459,23 @@ anti-nuke, par exemple) peut être vue comme suspecte ici et annulée par
 erreur — les deux bots agissant chacun de leur côté sur le même serveur,
 sans se coordonner.
 
+## 6septies. Salons vocaux temporaires (`&voicehub`, `&vc`)
+
+`&voicehub #salon-vocal` (clé `server.voice.manage`) désigne un salon
+"générateur" : le rejoindre crée aussitôt un salon vocal personnel
+("Salon de {pseudo}", dans la même catégorie) et y déplace le membre.
+Supprimé automatiquement dès qu'il se vide — pas de nettoyage manuel à
+faire. `&voicehub off` désactive.
+
+Dans son propre salon temporaire, le membre qui l'a créé (ou le rang
+sys/le propriétaire du bot) peut le gérer sans permission particulière —
+c'est une question de propriété, pas de rôle :
+
+- `&vc lock` / `&vc unlock` — autorise/interdit `@everyone` à s'y connecter.
+- `&vc limit <n>` — limite de places (0 = illimité).
+- `&vc rename <nom>` — renomme le salon.
+- `&vc kick @membre` — déconnecte quelqu'un de CE salon précisément.
+
 ## 7. Notes sur le support Spotify
 
 `!play <nom>` cherche directement sur Spotify (API officielle, via
@@ -532,11 +551,12 @@ faux.
 
 Demande explicite du 30/08/2026, revenant sur le choix initial de rester
 complémentaire au CrowBot du serveur (dépôt séparé `discord-bot-2`) :
-l'anti-nuke est maintenant construit ici aussi (section 6sexies). Restent
+l'anti-nuke (section 6sexies) et les salons vocaux temporaires
+(section 6septies) sont maintenant construits ici aussi. Restent
 volontairement absents — vraie limitation de temps/complexité, pas une
 question de principe cette fois : blacklist réseau multi-serveurs, captcha
-anti-raid, salons vocaux temporaires, système de warns (explicitement
-exclu, celui-là reste un choix). Le CrowBot continue de les couvrir.
+anti-raid, système de warns (explicitement exclu, celui-là reste un choix).
+Le CrowBot continue de les couvrir.
 
 Aucune commande sur un préfixe caché ou un mécanisme parallèle au système de
 permissions décrit en section 6ter : tout, y compris `&banall` et l'anti-nuke,
