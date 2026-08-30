@@ -148,19 +148,44 @@ client.kazagumo.shoukaku.on("disconnect", (name) =>
 // restait alors muet jusqu'à un redémarrage manuel, alors que le nœud était
 // revenu. On revérifie donc périodiquement, et on relance la connexion nous-
 // mêmes tant qu'aucun nœud n'est branché.
-const NODE_WATCHDOG_MS = 60_000;
+const NODE_WATCHDOG_MS = 30_000;
+
+/**
+ * `shoukaku.nodes` est une Map dans les versions récentes, mais l'a déjà été
+ * sous d'autres formes : on accepte Map comme tableau, sinon la boucle reste
+ * vide sans rien dire — c'est ce qui a rendu une première version de ce
+ * garde-fou totalement inopérante, et silencieuse avec.
+ */
+function listNodes() {
+  const raw = client.kazagumo.shoukaku?.nodes;
+  if (!raw) return [];
+  if (typeof raw.values === "function") return [...raw.values()];
+  if (Array.isArray(raw)) return raw;
+  return Object.values(raw);
+}
+
 setInterval(() => {
-  const nodes = [...(client.kazagumo.shoukaku.nodes?.values() || [])];
-  for (const node of nodes) {
-    if (node.state === ShoukakuState.CONNECTED) continue;
-    console.warn(`[lavalink] nœud "${node.name}" hors ligne, nouvelle tentative de connexion.`);
+  const nodes = listNodes();
+
+  if (!nodes.length) {
+    console.warn("[lavalink] garde-fou : aucun nœud visible, rien à surveiller.");
+    return;
+  }
+
+  const offline = nodes.filter((n) => n.state !== ShoukakuState.CONNECTED);
+  if (!offline.length) return;
+
+  for (const node of offline) {
+    console.warn(`[lavalink] nœud "${node.name}" hors ligne (état ${node.state}), tentative de reconnexion.`);
     try {
       node.connect();
     } catch (err) {
       console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message);
     }
   }
-}, NODE_WATCHDOG_MS).unref?.();
+}, NODE_WATCHDOG_MS);
+
+console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDOG_MS / 1000}s.`);
 
 // Stocke le dernier message "panel" par serveur pour pouvoir l'éditer
 client.nowPlayingMessages = new Collection();

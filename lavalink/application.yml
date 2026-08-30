@@ -21,8 +21,11 @@ lavalink:
       vimeo: true
       http: true
       local: false
+    # Tampons volontairement modestes : chaque lecteur en alloue, et le
+    # conteneur a été tué pour dépassement mémoire avec des valeurs plus
+    # généreuses (redémarrages en pleine lecture, sans trace côté Java).
     bufferDurationMs: 400
-    frameBufferDurationMs: 5000
+    frameBufferDurationMs: 2000
     opusEncodingQuality: 10
     resamplingQuality: LOW
     trackStuckThresholdMs: 10000
