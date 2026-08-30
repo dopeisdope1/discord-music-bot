@@ -218,11 +218,21 @@ client.kazagumo
   .on("playerException", (player, error) => {
     console.error(error);
     const textChannel = client.channels.cache.get(player.textId);
-    if (textChannel) {
-      textChannel.send({
-        embeds: [buildStatusEmbed("error", String(error?.message ?? error).slice(0, 1800))],
-      });
-    }
+    if (!textChannel) return;
+
+    // Lavalink range le détail dans `exception`, pas à la racine : sans ça,
+    // String(error) donnait un inutile "[object Object]" dans le salon.
+    const detail = error?.exception?.message || error?.message;
+    const cause = error?.exception?.cause || "";
+
+    // Cas le plus fréquent : YouTube a changé le chiffrement de son lecteur et
+    // l'extension du nœud est en retard. Ça n'a rien d'un souci de réseau,
+    // autant le dire clairement plutôt que de renvoyer une trace Java.
+    const message = /sig function|ScriptExtraction|cipher/i.test(cause)
+      ? "YouTube a changé son lecteur et le serveur audio doit être mis à jour. Préviens-moi si ça persiste."
+      : detail || "La lecture a échoué.";
+
+    textChannel.send({ embeds: [buildStatusEmbed("error", String(message).slice(0, 1800))] });
   });
 
 const MUSIC_BUTTON_IDS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop", "music_queue"]);

@@ -33,12 +33,15 @@ lavalink:
     soundcloudSearchEnabled: true
 
   plugins:
-    # Lecture YouTube.
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.13.5"
+    # Lecture YouTube. Cette version doit être tenue à jour : YouTube modifie
+    # régulièrement le chiffrement des signatures de son lecteur, et une
+    # version en retard échoue avec "Must find sig function from script" —
+    # le titre est trouvé mais le flux audio refuse de s'ouvrir.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       snapshot: false
     # Résolution des liens Spotify (titres, albums, playlists publiques).
     # Sans elle, coller une URL Spotify ne donne rien.
-    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.7.3"
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
       snapshot: false
 
 plugins:
