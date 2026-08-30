@@ -59,6 +59,7 @@ const PERMISSIONS = [
   { key: "server.polls.manage", category: "server", label: "Créer des sondages (&poll)" },
   { key: "server.giveaways.manage", category: "server", label: "Lancer/retirer un giveaway (&giveaway)" },
   { key: "server.welcome.manage", category: "server", label: "Configurer le message de bienvenue (panel)" },
+  { key: "server.levels.manage", category: "server", label: "Configurer les niveaux/XP (;settings level, panel)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

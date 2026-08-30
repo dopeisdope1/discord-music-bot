@@ -36,6 +36,8 @@ const welcomeStore = require("./welcomeStore");
 const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
 const { DEFINITIONS: GUARD_DEFINITIONS } = require("./guard/definitions");
+const commandCatalog = require("./commandCatalog");
+const toolsCatalog = require("./toolsCatalog");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -109,6 +111,25 @@ async function createLogChannelsAutomatically(guild) {
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
 
+// Rubriques de documentation ("Commandes"/"Tools", voir plus bas) : visibles
+// à quiconque a DÉJÀ accès à au moins une rubrique "réelle" du panel — ni
+// plus restrictif (elles n'agissent sur rien, pure référence), ni ouvert à
+// absolument tout le monde (le panel reste un outil staff). Liste figée sur
+// les clés qui existaient AVANT cette extension, pour ne rien élargir.
+const CORE_PERMISSION_KEYS = [
+  "sys",
+  "panel.permissions.manage",
+  "panel.roles.manage",
+  "panel.access.manage",
+  "logs.view",
+  "logs.manage",
+  "protection.automod",
+  "protection.whitelist",
+  "protection.guard.manage",
+  "server.welcome.manage",
+];
+const hasCoreAccess = (member) => CORE_PERMISSION_KEYS.some((k) => can(member, k));
+
 // Chaque rubrique déclare comment décider si elle est visible : `ownerOnly`
 // (uniquement le propriétaire), `permission` (une clé du catalogue,
 // résolue via engine.can — "sys" y compris, qui n'est jamais une clé
@@ -135,6 +156,18 @@ const SECTIONS = [
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
+  {
+    key: "commands",
+    label: "Commandes",
+    description: "Référence complète des commandes du bot (préfixe &), par catégorie",
+    visible: hasCoreAccess,
+  },
+  {
+    key: "tools",
+    label: "Tools",
+    description: "Référence complète du système Tools (préfixe ;), par catégorie",
+    visible: hasCoreAccess,
+  },
 ];
 
 function sectionVisible(section, member, isOwner) {
@@ -173,6 +206,21 @@ function buildNav(current, member, isOwner) {
     );
 }
 
+// Pagination pour les rubriques "Commandes"/"Tools" : certaines catégories
+// dépassent largement ce qui tient dans un seul TextDisplay (limite Discord)
+// — pages fixes plutôt qu'une troncature qui masquerait des commandes
+// (demande explicite : "je dois retrouver TOUTES les commandes").
+const DOC_PAGE_SIZE = 8;
+
+const formatDocCommand = (cmd, prefixSymbol) => (cmd.prefix ? `\`${prefixSymbol}${cmd.name}\`` : `**${cmd.name}**`) + ` — ${cmd.description}`;
+
+function docCategoryPage(commands, prefixSymbol, page) {
+  const totalPages = Math.max(1, Math.ceil(commands.length / DOC_PAGE_SIZE));
+  const clamped = Math.min(Math.max(page, 0), totalPages - 1);
+  const slice = commands.slice(clamped * DOC_PAGE_SIZE, clamped * DOC_PAGE_SIZE + DOC_PAGE_SIZE);
+  return { body: slice.map((c) => formatDocCommand(c, prefixSymbol)).join("\n"), page: clamped, totalPages };
+}
+
 function permissionRows() {
   return permCatalog.byCategory().flatMap((group) => [
     `**${group.label}**`,
@@ -189,9 +237,11 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Préfixe musique** : \`${prefixes.main}\``,
       `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
+      `> **Préfixe Tools** : \`${prefixes.tools}\``,
       "",
       "Le préfixe des commandes est partagé avec les autres bots du serveur : " +
-        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste.",
+        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste. Le préfixe Tools est un système à " +
+        "part, jamais mélangé avec les commandes principales (voir la rubrique Tools).",
     ].join("\n");
   }
 
@@ -398,6 +448,40 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
+  if (section === "commands") {
+    const categories = commandCatalog.CATEGORIES;
+    if (!state.docCategory) {
+      return [
+        "Référence complète des commandes du bot — implémentées ou non, pour documentation.",
+        "",
+        ...categories.map((c) => `> **${c.label}** (${c.commands.length})`),
+        "",
+        "Choisis une catégorie ci-dessous.",
+      ].join("\n");
+    }
+    const category = categories.find((c) => c.key === state.docCategory);
+    if (!category) return "Catégorie inconnue.";
+    const { body, page, totalPages } = docCategoryPage(category.commands, prefixes.musicMod, state.docPage || 0);
+    return [`**${category.label}** — page ${page + 1}/${totalPages}`, "", body].join("\n");
+  }
+
+  if (section === "tools") {
+    const categories = toolsCatalog.CATEGORIES;
+    if (!state.toolsCategory) {
+      return [
+        "Référence complète du système Tools (préfixe `;`, distinct du préfixe principal `&`).",
+        "",
+        ...categories.map((c) => `> **${c.label}** (${c.commands.length})`),
+        "",
+        "Choisis une catégorie ci-dessous.",
+      ].join("\n");
+    }
+    const category = categories.find((c) => c.key === state.toolsCategory);
+    if (!category) return "Catégorie inconnue.";
+    const { body, page, totalPages } = docCategoryPage(category.commands, prefixes.tools, state.toolsPage || 0);
+    return [`**${category.label}** — page ${page + 1}/${totalPages}`, "", body].join("\n");
+  }
+
   if (section === "banall") {
     return [
       `> **Autorisés** : ${mentions(accessStore.list("banall"))}`,
@@ -457,7 +541,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${ID}:prefix:main`).setLabel("Préfixe musique").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:prefix:tools`).setLabel("Préfixe Tools").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
@@ -725,6 +810,72 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   } else if (meta.key === "banall") {
     for (const row of accessRows("banall", "ban de masse")) container.addActionRowComponents(row);
+  } else if (meta.key === "commands") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:doccat`)
+          .setPlaceholder("Choisir une catégorie de commandes")
+          .addOptions(
+            commandCatalog.CATEGORIES.map((c) =>
+              new StringSelectMenuOptionBuilder().setLabel(c.label).setDescription(`${c.commands.length} commande(s)`).setValue(c.key).setDefault(state.docCategory === c.key)
+            )
+          )
+      )
+    );
+    if (state.docCategory) {
+      const category = commandCatalog.CATEGORIES.find((c) => c.key === state.docCategory);
+      if (category) {
+        const { totalPages, page } = docCategoryPage(category.commands, "&", state.docPage || 0);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${ID}:docprev:${state.docCategory}:${page}`)
+              .setLabel("◀ Page précédente")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(page <= 0),
+            new ButtonBuilder()
+              .setCustomId(`${ID}:docnext:${state.docCategory}:${page}`)
+              .setLabel("Page suivante ▶")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(page >= totalPages - 1)
+          )
+        );
+      }
+    }
+  } else if (meta.key === "tools") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:toolscat`)
+          .setPlaceholder("Choisir une catégorie Tools")
+          .addOptions(
+            toolsCatalog.CATEGORIES.map((c) =>
+              new StringSelectMenuOptionBuilder().setLabel(c.label).setDescription(`${c.commands.length} commande(s)`).setValue(c.key).setDefault(state.toolsCategory === c.key)
+            )
+          )
+      )
+    );
+    if (state.toolsCategory) {
+      const category = toolsCatalog.CATEGORIES.find((c) => c.key === state.toolsCategory);
+      if (category) {
+        const { totalPages, page } = docCategoryPage(category.commands, ";", state.toolsPage || 0);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${ID}:toolsprev:${state.toolsCategory}:${page}`)
+              .setLabel("◀ Page précédente")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(page <= 0),
+            new ButtonBuilder()
+              .setCustomId(`${ID}:toolsnext:${state.toolsCategory}:${page}`)
+              .setLabel("Page suivante ▶")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(page >= totalPages - 1)
+          )
+        );
+      }
+    }
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -733,6 +884,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
 const PREFIX_FIELDS = {
   main: { label: "Préfixe musique", max: 5 },
   musicMod: { label: "Préfixe des commandes", max: 5 },
+  tools: { label: "Préfixe Tools", max: 5 },
 };
 
 /**
@@ -1054,6 +1206,31 @@ async function handleConfigInteraction(interaction) {
       });
     }
     return goto(SECTION_OF_SCOPE[extra] || "home");
+  }
+
+  if (action === "doccat") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("commands", { docCategory: interaction.values[0], docPage: 0 });
+  }
+
+  // customId : cfg:docnext:<catégorie>:<page-courante> / cfg:docprev:<...> —
+  // la page voyage dans le customId (même principe que cfg:permkeys:<roleId>:
+  // <catégorie>), pas besoin de relire le message précédent.
+  if (action === "docnext" || action === "docprev") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const currentPage = parseInt(extra2, 10) || 0;
+    return goto("commands", { docCategory: extra, docPage: currentPage + (action === "docnext" ? 1 : -1) });
+  }
+
+  if (action === "toolscat") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("tools", { toolsCategory: interaction.values[0], toolsPage: 0 });
+  }
+
+  if (action === "toolsnext" || action === "toolsprev") {
+    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const currentPage = parseInt(extra2, 10) || 0;
+    return goto("tools", { toolsCategory: extra, toolsPage: currentPage + (action === "toolsnext" ? 1 : -1) });
   }
 
   if (action === "prefix") {
