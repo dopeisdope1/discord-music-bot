@@ -73,7 +73,8 @@ Le bot ne reste plus muet en attendant une intervention :
 - il surveille l'état du nœud toutes les 30 s et relance la connexion lui-même
   quand la bibliothèque a cessé de retenter ;
 - si c'est le WebSocket du bot qui saute, Lavalink garde les lecteurs en vie
-  pendant 60 s (`resume`) et la lecture n'est même pas interrompue ;
+  pendant 30 s (`resume`) et la lecture n'est même pas interrompue — un arrêt
+  volontaire du bot, lui, ferme les lecteurs au lieu de les laisser en plan ;
 - si c'est le nœud qui est mort, le bot recrée les lecteurs et **relance chaque
   piste à la position où elle en était** (`resumeByLibrary`) dès qu'il est revenu ;
 - une piste bloquée ou en échec ne fige plus la file : elle est abandonnée et le

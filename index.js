@@ -132,7 +132,7 @@ client.kazagumo = new Kazagumo(
     //     perdue avec lui. Le bot recrée alors les lecteurs et relance chaque
     //     piste là où elle en était.
     resume: true,
-    resumeTimeout: 60,
+    resumeTimeout: 30,
     resumeByLibrary: true,
     // Le rythme de reconnexion dépend du type de nœud :
     //   - nœud privé : il est à nous, personne à ménager. On retente vite et
@@ -770,6 +770,16 @@ async function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`[shutdown] Signal ${signal} reçu, arrêt dans 3s...`);
+
+  // Les lecteurs sont détruits explicitement. Depuis que la reprise est
+  // activée, Lavalink garde en vie les lecteurs d'un client qui s'en va, le
+  // temps qu'il revienne : sans ce nettoyage, un redéploiement laisserait le
+  // nœud jouer tout seul dans le vide pendant resumeTimeout, et le morceau
+  // relancé juste après par quelqu'un se serait superposé au fantôme.
+  const players = [...client.kazagumo.players.values()];
+  if (players.length) console.log(`[shutdown] ${players.length} lecteur(s) à fermer.`);
+  await Promise.allSettled(players.map((player) => player.destroy()));
+
   await new Promise((resolve) => setTimeout(resolve, 3000));
   client.destroy();
   process.exit(0);
