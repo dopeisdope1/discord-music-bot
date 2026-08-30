@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "deploy:musique": "node deploy-commands.js musique"
+    "deploy:musique": "node deploy-commands.js musique",
+    "test": "node scripts/test-deadtrack.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

@@ -66,6 +66,21 @@ plugins:
       - TV
       - MUSIC
 
+    # Porte de sortie au blocage de YouTube. Tant que l'hébergeur n'a pas de
+    # compte à présenter, YouTube refuse tout ("Sign in to confirm you're not a
+    # bot") et le son ne peut venir que de SoundCloud — ce qui n'y est pas est
+    # donc injouable, quel que soit le bot.
+    #
+    # Désactivé par défaut : rien ne change tant que YOUTUBE_OAUTH n'est pas
+    # mis à "true" sur le service. La marche à suivre (une seule fois, avec un
+    # compte Google jetable) est décrite dans le README, section "2bis".
+    oauth:
+      enabled: ${YOUTUBE_OAUTH:false}
+      # Vide au premier démarrage : l'extension affiche alors un lien
+      # d'autorisation dans les journaux, puis y écrit le jeton à recopier ici
+      # via la variable. Une chaîne vide est traitée comme absente.
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
+
   lavasrc:
     sources:
       spotify: true
@@ -92,3 +107,7 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+    # Sans cette ligne, le lien d'autorisation YouTube et le jeton qui suit
+    # ne s'affichent nulle part : l'inscription OAuth est alors impossible à
+    # mener à bien, faute de voir ce qu'il faut recopier.
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO

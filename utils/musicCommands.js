@@ -15,6 +15,7 @@ const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
+const { noteManualSkip } = require("./deadTrack");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -142,6 +143,7 @@ const handlers = {
     if (!player.queue.current) {
       return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
     }
+    noteManualSkip(message.guildId);
     player.skip();
     await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
   },

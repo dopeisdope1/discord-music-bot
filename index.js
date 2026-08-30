@@ -31,6 +31,7 @@ const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
+const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
 
 const client = new Client({
   intents: [
@@ -227,29 +228,11 @@ client.playerAllowed = new Collection();
 // survivre à un redémarrage.
 client.snipes = new Collection();
 
-/**
- * Abandonne la piste en cours et enchaîne sur la suivante.
- *
- * Kazagumo laisse le lecteur en plan quand une piste se bloque ou échoue :
- * `queue.current` reste la piste morte, si bien qu'un player.play() nu la
- * rejouerait en boucle. On la retire donc explicitement avant de relancer.
- */
-async function skipDeadTrack(player, notice) {
-  const textChannel = client.channels.cache.get(player.textId);
-  if (textChannel && notice)
-    textChannel.send({ embeds: [buildStatusEmbed("warning", notice)] }).catch(() => {});
+// Délai laissé à Kazagumo pour enchaîner tout seul avant qu'on s'en mêle.
+const DEAD_TRACK_GRACE_MS = 2_500;
 
-  player.queue.current = null;
-
-  if (!player.queue.size) {
-    stopNowPlayingTracking(client, player.guildId);
-    return;
-  }
-
-  await player
-    .play()
-    .catch((err) => console.error("[musique] impossible d'enchaîner :", err.message));
-}
+// Reprise des morceaux qui refusent de se lire — voir utils/deadTrack.js.
+const { handleDeadTrack, closeNowPlayingPanel } = createDeadTrackRecovery(client);
 
 // ---- Événements Kazagumo ----
 client.kazagumo
@@ -293,12 +276,13 @@ client.kazagumo
     // trackStuckThresholdMs). Kazagumo n'en fait rien : sans ce handler, le
     // lecteur restait muet sur cette piste indéfiniment, sans message et sans
     // passer à la suivante.
-    console.warn(`[musique] piste bloquée sur le serveur ${player.guildId}, passage à la suivante.`);
-    skipDeadTrack(player, "La piste s'est bloquée, passage à la suivante.");
+    const dead = player.queue.current;
+    console.warn(`[musique] piste bloquée sur le serveur ${player.guildId}.`);
+    handleDeadTrack(player, dead, `${dead?.title ? `**${dead.title}**` : "Ce morceau"} s'est bloqué en cours de lecture.`);
   })
   .on("playerEmpty", (player) => {
     const textChannel = client.channels.cache.get(player.textId);
-    stopNowPlayingTracking(client, player.guildId);
+    closeNowPlayingPanel(player.guildId);
     if (textChannel) {
       textChannel.send({
         embeds: [buildStatusEmbed("info", "File d'attente terminée.")],
@@ -306,47 +290,32 @@ client.kazagumo
     }
   })
   .on("playerException", (player, error) => {
-    console.error(error);
-    const textChannel = client.channels.cache.get(player.textId);
-    if (!textChannel) return;
-
     // Lavalink range le détail dans `exception`, pas à la racine : sans ça,
-    // String(error) donnait un inutile "[object Object]" dans le salon.
-    const detail = error?.exception?.message || error?.message;
-    const cause = error?.exception?.cause || "";
+    // le journal ne gardait qu'un inutile "[object Object]".
+    console.error(`[musique] échec de lecture sur le serveur ${player.guildId} :`, error?.exception || error);
 
-    // Cas le plus fréquent : YouTube a changé le chiffrement de son lecteur et
-    // l'extension du nœud est en retard. Ça n'a rien d'un souci de réseau,
-    // autant le dire clairement plutôt que de renvoyer une trace Java.
-    const message = /sig function|ScriptExtraction|cipher/i.test(cause)
-      ? "YouTube a changé son lecteur et le serveur audio doit être mis à jour. Préviens-moi si ça persiste."
-      : detail || "La lecture a échoué.";
+    const dead = player.queue.current;
+    if (!dead) return;
 
-    textChannel.send({ embeds: [buildStatusEmbed("error", String(message).slice(0, 1800))] });
+    // Rien n'est annoncé tout de suite : Lavalink fait normalement suivre
+    // l'échec d'un événement de fin, que Kazagumo traite de son côté. On
+    // laisse donc passer ce court délai avant de décider — sinon on doublerait
+    // son travail, en sautant un morceau qu'il vient déjà d'enchaîner.
+    setTimeout(() => {
+      if (client.kazagumo.players.get(player.guildId) !== player) return; // lecteur détruit entre-temps
+      if (player.playing || player.paused) return; // quelque chose joue déjà, rien à réparer
+
+      // Deux situations à reprendre : la file est restée bloquée sur la piste
+      // morte, ou elle s'est vidée à cause d'elle — c'est le cas quand le
+      // morceau demandé était le seul, et le lecteur se retrouve muet.
+      const bloquee = player.queue.current === dead;
+      const fileMorte = !player.queue.current && !player.queue.size;
+      if (!bloquee && !fileMorte) return;
+
+      handleDeadTrack(player, dead, playbackFailureMessage(dead, error));
+    }, DEAD_TRACK_GRACE_MS);
   });
 
-// Filet de secours sur les pistes en échec. Lavalink fait normalement suivre
-// l'échec d'un événement de fin, que Kazagumo traite en passant au morceau
-// suivant ; quand cet événement n'arrive pas, la file restait bloquée sur la
-// piste morte, lecteur muet, alors que la suite était prête à jouer.
-// On ne double pas le passage pour autant : on ne bouge que si, quelques
-// secondes plus tard, c'est toujours la même piste qui est en cours et que
-// rien ne joue — sinon c'est que Kazagumo a déjà fait le travail.
-const DEAD_TRACK_GRACE_MS = 4_000;
-
-client.kazagumo.on("playerException", (player) => {
-  const stalled = player.queue.current;
-  if (!stalled) return;
-
-  setTimeout(() => {
-    if (client.kazagumo.players.get(player.guildId) !== player) return;
-    if (player.playing || player.paused) return;
-    if (player.queue.current !== stalled) return;
-
-    console.warn(`[musique] piste en échec sur le serveur ${player.guildId}, passage à la suivante.`);
-    skipDeadTrack(player, null);
-  }, DEAD_TRACK_GRACE_MS);
-});
 
 const MUSIC_BUTTON_IDS = new Set(["music_pauseresume", "music_skip", "music_stop", "music_loop", "music_queue"]);
 // "music_queue" est en lecture seule, pas besoin de la permission de contrôle.
@@ -524,6 +493,7 @@ client.on("interactionCreate", async (interaction) => {
             ephemeral: true,
           });
         }
+        noteManualSkip(interaction.guildId);
         player.skip();
         break;
       case "music_stop":

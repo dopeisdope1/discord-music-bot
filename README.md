@@ -66,6 +66,40 @@ Si le service gagne un jour en mémoire, ces valeurs se relèvent en définissan
 `_JAVA_OPTIONS` dans les variables du service Lavalink : la variable de
 l'hébergeur l'emporte sur celle de l'image, sans toucher au code.
 
+### Pourquoi certains morceaux refusent de se lire
+
+YouTube répond « Sign in to confirm you're not a bot » à toute requête venant
+d'un hébergeur : le son ne peut donc venir que de **SoundCloud**. Conséquence
+directe, **un titre absent de SoundCloud est injouable**, même s'il se trouve
+sur Spotify ou YouTube — le bot retrouve son nom et sa pochette (métadonnées
+Spotify), mais aucun flux audio derrière.
+
+Dans ce cas, le bot tente d'abord de relancer le morceau par une recherche
+« titre + artiste » sur SoundCloud, puis explique clairement qu'il est
+introuvable au lieu d'afficher le message anglais de Lavalink.
+
+Pour lever la limite, il faut donner un compte à YouTube (procédure ci-dessous).
+
+### Rendre YouTube à nouveau lisible (une seule fois)
+
+L'extension YouTube sait s'authentifier avec un compte Google. **Utilise un
+compte jetable, jamais ton compte principal** : cet usage est contraire aux
+conditions de YouTube et le compte peut être fermé.
+
+1. Sur le service **Lavalink**, ajoute la variable `YOUTUBE_OAUTH=true`, puis
+   redéploie.
+2. Dans ses journaux, l'extension affiche un lien vers `google.com/device` et
+   un code. Ouvre le lien, saisis le code, connecte-toi avec le compte jetable.
+3. Les journaux affichent ensuite un **refresh token**. Recopie-le dans une
+   variable `YOUTUBE_REFRESH_TOKEN` du même service : l'autorisation devient
+   permanente, plus aucune manipulation ensuite.
+4. Une fois YouTube fonctionnel, tu peux repasser la recherche dessus en
+   mettant `MUSIC_SEARCH_ENGINE=youtube` sur le service du **bot** — SoundCloud
+   reste le choix par défaut tant que tu ne fais rien.
+
+Tant que `YOUTUBE_OAUTH` n'est pas défini, rien de tout cela ne s'active : le
+bot fonctionne exactement comme aujourd'hui.
+
 ### Ce qui se passe si le nœud tombe quand même
 
 Le bot ne reste plus muet en attendant une intervention :
@@ -77,8 +111,15 @@ Le bot ne reste plus muet en attendant une intervention :
   volontaire du bot, lui, ferme les lecteurs au lieu de les laisser en plan ;
 - si c'est le nœud qui est mort, le bot recrée les lecteurs et **relance chaque
   piste à la position où elle en était** (`resumeByLibrary`) dès qu'il est revenu ;
-- une piste bloquée ou en échec ne fige plus la file : elle est abandonnée et le
-  morceau suivant démarre.
+- une piste bloquée ou en échec ne fige plus la file : le bot la relance une
+  fois par une recherche « titre + artiste », puis enchaîne sur le morceau
+  suivant en expliquant ce qui n'a pas marché ;
+- le panel « En cours de lecture » ne reste plus figé à 0:00 sur un morceau
+  mort : il passe à « Lecture arrêtée » quand il n'y a plus rien à jouer.
+
+Ce chemin de reprise est couvert par `node scripts/test-deadtrack.js` (il ne se
+déclenche qu'en cas de panne réelle, impossible à provoquer à la main sans
+casser une lecture en cours).
 
 ## 3. Intents & permissions à activer
 
