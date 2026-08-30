@@ -266,7 +266,11 @@ Chaque rubrique n'apparaît que si tu y as droit :
   Discord notables et permissions de modération accordées, pour n'importe
   quel rôle du serveur.
 - **Logs** — un salon par catégorie (**Modération**, **Membres**,
-  **Serveur**, **Bots**) plutôt qu'un seul pour tout ; voir plus bas.
+  **Serveur**, **Bots**) plutôt qu'un seul pour tout ; voir plus bas. Bouton
+  "Créer les salons automatiquement" : crée les salons manquants (regroupés
+  dans une catégorie "Logs"), masqués à `@everyone` — seuls les membres avec
+  la permission Discord **Administrateur** les voient, celle-ci passant
+  outre toute restriction de salon, rien d'autre à faire.
 - **Historique** — 5 dernières actions en aperçu, plus un bouton
   "Rechercher" (fenêtre modale : cible / modérateur / type / ID) ; ou en
   texte via `&modlogs [@membre|id]`.

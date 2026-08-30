@@ -12,6 +12,7 @@ const {
   RoleSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   ChannelType,
+  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -24,9 +25,68 @@ const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
 const { PROFILES, getProfile } = require("./permissions/profiles");
 const { sweepGuild } = require("./permissions/cleanup");
+const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
 const automod = require("./automod/antiSpam");
+
+// Noms donnés aux salons créés par le bouton "Créer les salons
+// automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
+// tout souci d'encodage sur un nom de salon.
+const LOG_CHANNEL_NAMES = {
+  moderation: "logs-moderation",
+  members: "logs-membres",
+  server: "logs-serveur",
+  bots: "logs-bots",
+};
+
+/**
+ * Crée un salon par catégorie de logs qui n'en a pas encore (ou dont le
+ * salon configuré a été supprimé) — regroupés dans une catégorie "Logs"
+ * (réutilisée si elle existe déjà). Chaque salon est masqué à @everyone :
+ * la permission Discord Administrateur passe outre les restrictions de
+ * salon, donc seuls les administrateurs le voient, sans rien à configurer
+ * de plus. Idempotent : ne recrée jamais un salon pour une catégorie déjà
+ * configurée avec un salon qui existe encore.
+ * @param {import('discord.js').Guild} guild
+ * @returns {Promise<{ created: { category: string, channel: import('discord.js').TextChannel }[] }>}
+ */
+async function createLogChannelsAutomatically(guild) {
+  const everyone = guild.roles.everyone;
+  const existing = getAllLogChannels(guild.id);
+
+  const missing = Object.keys(LOG_CHANNEL_NAMES).filter((category) => {
+    const channelId = existing[category];
+    return !channelId || !guild.channels.cache.has(channelId);
+  });
+  if (!missing.length) return { created: [] };
+
+  const hiddenFromEveryone = [{ id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] }];
+
+  let parent = guild.channels.cache.find((c) => c.type === ChannelType.GuildCategory && c.name === "Logs");
+  if (!parent) {
+    parent = await guild.channels.create({
+      name: "Logs",
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: hiddenFromEveryone,
+      reason: "Création automatique des salons de logs (&panel > Logs)",
+    });
+  }
+
+  const created = [];
+  for (const category of missing) {
+    const channel = await guild.channels.create({
+      name: LOG_CHANNEL_NAMES[category],
+      type: ChannelType.GuildText,
+      parent: parent.id,
+      permissionOverwrites: hiddenFromEveryone,
+      reason: "Création automatique des salons de logs (&panel > Logs)",
+    });
+    setLogChannelId(guild.id, category, channel.id);
+    created.push({ category, channel });
+  }
+  return { created };
+}
 
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
 // qui permet à index.js de les router sans les énumérer un par un.
@@ -188,14 +248,24 @@ function sectionBody(section, guild, member, state) {
     const lines = Object.entries(channels).map(
       ([cat, chId]) => `> **${LOG_CATEGORY_LABELS[cat]}** : ${chId ? `<#${chId}>` : "*aucun — désactivé*"}`
     );
+    const catLabel = state.logsCategory ? LOG_CATEGORY_LABELS[state.logsCategory] : null;
     return [
       ...lines,
       "",
       manage
-        ? "Chaque catégorie peut avoir son propre salon (ou le même). Sélectionne, ou valide sans rien choisir pour désactiver."
+        ? "Bouton \"Créer les salons automatiquement\" : crée un salon par catégorie manquante (visibles des " +
+          "seuls membres avec la permission Discord Administrateur — elle passe outre les restrictions de " +
+          "salon, rien d'autre à configurer)."
         : "Tu peux consulter cette configuration mais pas la modifier (droit `logs.manage` requis).",
+      manage
+        ? catLabel
+          ? `Choisis le salon pour **${catLabel}** ci-dessous (valide sans rien choisir pour désactiver), ou choisis une autre catégorie dans le menu.`
+          : "Ou choisis une catégorie dans le menu pour lui assigner un salon existant manuellement."
+        : null,
       "Les messages postés ici ne s'effacent jamais, contrairement aux confirmations ailleurs dans le bot.",
-    ].join("\n");
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
   }
 
   if (section === "history") {
@@ -386,17 +456,37 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     }
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
-      const channels = getAllLogChannels(guild.id);
-      for (const category of Object.keys(LOG_CATEGORY_LABELS)) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:logcat`)
+            .setPlaceholder("Configurer un salon manuellement — choisir une catégorie")
+            .addOptions(
+              Object.entries(LOG_CATEGORY_LABELS).map(([key, label]) =>
+                new StringSelectMenuOptionBuilder().setLabel(label).setValue(key).setDefault(state.logsCategory === key)
+              )
+            )
+        )
+      );
+      if (state.logsCategory && LOG_CATEGORY_LABELS[state.logsCategory]) {
+        const channels = getAllLogChannels(guild.id);
         const select = new ChannelSelectMenuBuilder()
-          .setCustomId(`${ID}:logchannel:${category}`)
-          .setPlaceholder(`${LOG_CATEGORY_LABELS[category]} — choisir un salon`)
+          .setCustomId(`${ID}:logchannel:${state.logsCategory}`)
+          .setPlaceholder(`Salon pour ${LOG_CATEGORY_LABELS[state.logsCategory]}`)
           .addChannelTypes(ChannelType.GuildText)
           .setMinValues(0)
           .setMaxValues(1);
-        if (channels[category]) select.setDefaultChannels(channels[category]);
+        if (channels[state.logsCategory]) select.setDefaultChannels(channels[state.logsCategory]);
         container.addActionRowComponents(new ActionRowBuilder().addComponents(select));
       }
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:logauto`)
+            .setLabel("Créer les salons automatiquement")
+            .setStyle(ButtonStyle.Success)
+        )
+      );
     }
   } else if (meta.key === "history") {
     container.addActionRowComponents(
@@ -527,9 +617,29 @@ async function handleConfigInteraction(interaction) {
     return goto("permissions", { permissionsRoleId: extra });
   }
 
+  if (action === "logcat") {
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("logs", { logsCategory: interaction.values[0] });
+  }
+
   if (action === "logchannel") {
     if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     setLogChannelId(guildId, extra, interaction.values[0] || null);
+    return goto("logs", { logsCategory: extra });
+  }
+
+  if (action === "logauto") {
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const botPerm = checkBotPermission(guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
+    if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
+
+    const { created } = await createLogChannelsAutomatically(guild);
+    await interaction.reply({
+      content: created.length
+        ? `${created.length} salon(s) créé(s) : ${created.map((c) => `<#${c.channel.id}>`).join(", ")}.`
+        : "Toutes les catégories ont déjà un salon configuré, rien à créer.",
+      flags: MessageFlags.Ephemeral,
+    });
     return goto("logs");
   }
 
