@@ -1,4 +1,4 @@
-const { EmbedBuilder, AuditLogEvent } = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, AuditLogEvent } = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
 
@@ -227,16 +227,21 @@ async function postModerationEntry(client, guildId, category, { color, descripti
   const channel = guild?.channels.cache.get(channelId) ?? (await guild?.channels.fetch(channelId).catch(() => null));
   if (!channel?.isTextBased()) return;
 
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setDescription(description)
-    .setFooter({ text: moderatorTag ? `Par ${moderatorTag}` : "Exécuteur inconnu" })
-    .setTimestamp();
+  // Components V2, comme le reste du bot (panels, confirmations) — pas
+  // l'embed classique à barre colorée utilisé auparavant ici.
+  const container = new ContainerBuilder().setAccentColor(color);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(description));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `-# ${moderatorTag ? `Par ${moderatorTag}` : "Exécuteur inconnu"} • <t:${Math.floor(Date.now() / 1000)}:f>`
+    )
+  );
 
   // Message permanent, volontairement pas de suppression automatique : c'est
   // tout l'intérêt de ce salon face aux confirmations qui s'effacent d'elles-
   // mêmes ailleurs dans le bot.
-  await channel.send({ embeds: [embed] }).catch((err) => {
+  await channel.send({ flags: MessageFlags.IsComponentsV2, components: [container] }).catch((err) => {
     console.error(`[moderationLog] échec d'envoi dans le salon de logs (${channelId}) :`, err.message);
   });
 }
