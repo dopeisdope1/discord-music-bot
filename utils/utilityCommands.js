@@ -7,13 +7,14 @@ const { can } = require("./permissions/engine");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
 
-// Commandes utilitaires en LECTURE SEULE : la plupart n'écrivent rien sur
-// le serveur, donc n'exigent aucune permission (`permission: null` dans
-// utils/commandCatalog.js), comme &pic/&server/&userinfo. Exception :
-// &vc/&stats exposent l'activité du serveur (qui est connecté, en vocal...)
-// et exigent `server.stats.view` — demande explicite, un rôle sans cette
-// permission ne doit pas pouvoir les taper, contrairement aux fiches
-// d'info individuelles.
+// Commandes utilitaires en LECTURE SEULE : les fiches d'info individuelles
+// (&pic/&server/&userinfo...) n'exigent aucune permission (`permission:
+// null` dans utils/commandCatalog.js). Exceptions, demandées explicitement,
+// pour ce qui expose l'activité ou la structure du serveur plutôt qu'une
+// fiche ciblée :
+//  - &vc/&stats -> `server.stats.view`
+//  - &alladmins/&botadmins/&boosters/&rolemembers -> `server.members.list`
+//  - &vocinfo/&user/&emoji -> `server.info.view`
 //
 // Contrairement aux commandes de modération, celles-ci RÉPONDENT en cas de
 // mauvais usage au lieu de rester muettes : le silence sur le préfixe "&"
@@ -73,18 +74,22 @@ const handlers = {
   // --- Listes paginées (voir utils/readOnlyLists.js) ---
 
   async alladmins(client, message) {
+    if (!can(message.member, "server.members.list")) return;
     await postList(message, "alladmins");
   },
 
   async botadmins(client, message) {
+    if (!can(message.member, "server.members.list")) return;
     await postList(message, "botadmins");
   },
 
   async boosters(client, message) {
+    if (!can(message.member, "server.members.list")) return;
     await postList(message, "boosters");
   },
 
   async rolemembers(client, message, args) {
+    if (!can(message.member, "server.members.list")) return;
     const role = resolveRole(message, args);
     if (!role) return reply(message, "error", "Indique un rôle (mention, ID ou nom) : `rolemembers @rôle`.");
     await postList(message, "rolemembers", role.id);
@@ -98,6 +103,7 @@ const handlers = {
    * &member/&userinfo qui décrivent l'appartenance au serveur.
    */
   async user(client, message, args) {
+    if (!can(message.member, "server.info.view")) return;
     const user = await resolveUser(message, args);
     if (!user) return reply(message, "error", "Utilisateur introuvable : donne une mention ou un ID valide.");
 
@@ -166,6 +172,7 @@ const handlers = {
 
   /** &vocinfo — état vocal du serveur, salon par salon. */
   async vocinfo(client, message) {
+    if (!can(message.member, "server.info.view")) return;
     const voiceChannels = [...message.guild.channels.cache.values()]
       .filter((c) => c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice)
       .sort((a, b) => b.members.size - a.members.size || a.rawPosition - b.rawPosition);
@@ -198,6 +205,7 @@ const handlers = {
    * récupérer : il est rendu par la police du client, pas par Discord.
    */
   async emoji(client, message, args) {
+    if (!can(message.member, "server.info.view")) return;
     const raw = args.join(" ").trim();
     if (!raw) return reply(message, "error", "Indique un émoji : `emoji <:nom:id>`, son nom ou son ID.");
 

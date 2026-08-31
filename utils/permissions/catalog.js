@@ -61,6 +61,12 @@ const PERMISSIONS = [
   { key: "server.welcome.manage", category: "server", label: "Configurer le message de bienvenue (panel)" },
   { key: "server.stats.view", category: "server", label: "Voir les statistiques du serveur (&vc, &stats)" },
   { key: "server.levels.manage", category: "server", label: "Configurer les niveaux/XP (;settings level, panel)" },
+  {
+    key: "server.members.list",
+    category: "server",
+    label: "Voir les listes de membres par statut (&alladmins, &botadmins, &boosters, &rolemembers)",
+  },
+  { key: "server.info.view", category: "server", label: "Voir les fiches d'info détaillées (&vocinfo, &user, &emoji)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

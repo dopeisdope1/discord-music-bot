@@ -142,6 +142,18 @@ function commandsText(member = owner, tier) {
     assert.ok(!body.includes("Commandes Sys"), body);
   });
 
+  await cas("un membre sans server.members.list/server.info.view ne voit ni les listes de membres ni les fiches d'info", () => {
+    const body = commandsText(plain, "public");
+    for (const nom of ["alladmins", "botadmins", "boosters", "rolemembers", "vocinfo", "user", "emoji"]) {
+      assert.ok(!body.includes(`**${nom}**`), `"${nom}" ne devrait plus être public sans permission dédiée`);
+    }
+  });
+
+  await cas("&panel n'apparaît (dans le palier configurable) que pour qui a vraiment accès au panel", () => {
+    assert.ok(commandsText(owner, "configurable").includes("**panel**"), "le propriétaire a accès au panel, la commande doit apparaître");
+    assert.ok(!fullText(plain).includes("panel"), "un membre sans aucun droit ne doit voir &panel dans aucun palier");
+  });
+
   console.log("\nUn palier choisi : chaque commande en détail (nom, description, syntaxe) :");
 
   await cas("chaque commande affiche son nom en gras, sa description, et la vraie syntaxe à taper", () => {

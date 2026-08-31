@@ -353,6 +353,52 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     assert.strictEqual(msg._replies.length, 1);
   });
 
+  await cas("&alladmins/&botadmins/&boosters/&rolemembers exigent server.members.list", async () => {
+    const g = fakeGuild({ roles: [fakeRole("role-x", "Rôle X")] });
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-x", fakeRole("role-x", "Rôle X")]]) } });
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    await utilityHandlers.alladmins(null, msg);
+    await utilityHandlers.botadmins(null, msg);
+    await utilityHandlers.boosters(null, msg);
+    await utilityHandlers.rolemembers(null, msg, msg._args);
+    assert.strictEqual(msg._replies.length, 0, "aucune des quatre ne doit répondre sans server.members.list");
+  });
+
+  await cas("un rôle qui a UNIQUEMENT server.members.list débloque &alladmins/&botadmins/&boosters/&rolemembers", async () => {
+    const roleTarget = fakeRole("role-x", "Rôle X");
+    const g = fakeGuild({ roles: [roleTarget] });
+    const roleId = "role-members-list-only";
+    permStore.setRoleGrants(g.id, roleId, ["server.members.list"]);
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-x", roleTarget]]) } });
+    msg.member = { id: "membre-avec-le-role", guild: g, roles: { cache: new Collection([[roleId, { id: roleId }]]) } };
+    await utilityHandlers.alladmins(null, msg);
+    await utilityHandlers.botadmins(null, msg);
+    await utilityHandlers.boosters(null, msg);
+    await utilityHandlers.rolemembers(null, msg, msg._args);
+    assert.strictEqual(msg._replies.length, 4);
+  });
+
+  await cas("&vocinfo/&user/&emoji exigent server.info.view", async () => {
+    const g = fakeGuild({ channels: [] });
+    const msg = fakeMessage(g, { args: ["😀"] });
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    await utilityHandlers.vocinfo(null, msg);
+    await utilityHandlers.user(null, msg, []);
+    await utilityHandlers.emoji(null, msg, ["😀"]);
+    assert.strictEqual(msg._replies.length, 0, "aucune des trois ne doit répondre sans server.info.view");
+  });
+
+  await cas("un rôle qui a UNIQUEMENT server.info.view débloque &vocinfo/&user/&emoji", async () => {
+    const g = fakeGuild({ channels: [] });
+    const roleId = "role-info-only";
+    permStore.setRoleGrants(g.id, roleId, ["server.info.view"]);
+    const msg = fakeMessage(g);
+    msg.member = { id: "membre-avec-le-role", guild: g, roles: { cache: new Collection([[roleId, { id: roleId }]]) } };
+    await utilityHandlers.vocinfo(null, msg);
+    await utilityHandlers.user(null, msg, []);
+    assert.strictEqual(msg._replies.length, 2);
+  });
+
   await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {
     const msg = fakeMessage(fakeGuild({}));
     await utilityHandlers.emoji(null, msg, ["<a:danse:123456789012345678>"]);

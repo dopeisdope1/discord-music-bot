@@ -93,6 +93,16 @@ function chunkBlocks(blocks, maxLen = 3800) {
   return chunks;
 }
 
+// Différé, pas en tête de fichier : utils/configPanel.js require
+// utils/permsCommands.js qui require ici — un require en tête fermerait la
+// boucle et renverrait un module vide (même piège que celui documenté dans
+// utils/implementedCommands.js pour musicCommands.js).
+let hasAnyPanelAccessCache = null;
+function hasAnyPanelAccessLazy(member) {
+  if (!hasAnyPanelAccessCache) hasAnyPanelAccessCache = require("./configPanel").hasAnyPanelAccess;
+  return hasAnyPanelAccessCache(member);
+}
+
 /**
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a
  * accès, groupées par PALIER uniquement — toutes catégories du catalogue
@@ -105,7 +115,17 @@ function groupByTier(member) {
   const groups = { public: [], configurable: [], sys: [] };
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
-      if (!isImplemented(cmd) || !canUse(cmd.permission)) continue;
+      if (!isImplemented(cmd)) continue;
+      // &panel n'est gardée par AUCUNE clé unique du catalogue — la vraie
+      // commande vérifie hasAnyPanelAccess (n'importe quelle permission de
+      // rubrique du panel). Sans ce cas particulier, &help l'annonçait
+      // "publique" même à un membre sans aucun droit, pour qui la commande
+      // ne fait pourtant rien.
+      if (identityOf(cmd) === "panel") {
+        if (hasAnyPanelAccessLazy(member)) groups.configurable.push(cmd);
+        continue;
+      }
+      if (!canUse(cmd.permission)) continue;
       groups[tierOf(cmd)].push(cmd);
     }
   }
