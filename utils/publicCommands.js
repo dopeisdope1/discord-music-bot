@@ -42,6 +42,10 @@ const handlers = {
     });
   },
 
+  // Sert aussi &serverinfo, qui avait sa propre version en lignes de texte :
+  // deux rendus des mêmes informations, dont un seul pouvait être le bon. Ce
+  // rendu-ci l'emporte (champs structurés, vignette, nombre de bots) et a
+  // récupéré ce que l'autre avait en plus — l'identifiant et le palier de boost.
   async server(client, message) {
     const guild = message.guild;
     const owner = await guild.fetchOwner().catch(() => null);
@@ -53,12 +57,13 @@ const handlers = {
           title: guild.name,
           thumbnail: guild.iconURL({ size: 256 }) || undefined,
           fields: [
+            { name: "Identifiant", value: guild.id, inline: true },
             { name: "Propriétaire", value: owner ? `<@${owner.id}>` : "inconnu", inline: true },
             { name: "Membres", value: String(guild.memberCount), inline: true },
             { name: "Bots", value: String(bots), inline: true },
             { name: "Salons", value: String(guild.channels.cache.size), inline: true },
             { name: "Rôles", value: String(guild.roles.cache.size), inline: true },
-            { name: "Boosts", value: String(guild.premiumSubscriptionCount ?? 0), inline: true },
+            { name: "Boosts", value: `${guild.premiumSubscriptionCount ?? 0} (palier ${guild.premiumTier})`, inline: true },
             { name: "Créé le", value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>` },
           ],
         }),

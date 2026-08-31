@@ -113,5 +113,64 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
     }
   });
 
+  console.log("\nAbsence de doublons dans le catalogue :");
+
+  await cas("aucune entrée n'est listée deux fois", () => {
+    const seen = new Map();
+    for (const c of CATEGORIES) {
+      for (const cmd of c.commands) {
+        const k = cmd.name.trim().toLowerCase();
+        seen.set(k, [...(seen.get(k) || []), c.label]);
+      }
+    }
+    const dups = [...seen].filter(([, cats]) => cats.length > 1);
+    assert.deepStrictEqual(dups, [], `entrées en double : ${dups.map(([n, c]) => `"${n}" (${c.join(" + ")})`).join(", ")}`);
+  });
+
+  await cas("un alias n'a pas d'entrée séparée, il est replié dans sa commande", () => {
+    const noms = new Set(CATEGORIES.flatMap((c) => c.commands).map((cmd) => cmd.name.trim().split(/\s+/)[0].toLowerCase()));
+    for (const alias of ["avatar", "serverinfo", "member", "cmute", "tempcmute", "uncmute", "purge", "panic", "unlockall"]) {
+      assert.ok(!noms.has(alias), `${alias} est un alias : il ne doit pas occuper sa propre ligne dans &help`);
+    }
+  });
+
+  await cas("les alias restent visibles, collés à leur commande", () => {
+    const body = bodyOf("utilitaire");
+    assert.ok(body.includes("pic/avatar"), body);
+    assert.ok(body.includes("server/serverinfo"));
+    assert.ok(body.includes("userinfo/member"));
+  });
+
+  await cas("chaque alias déclaré répond réellement", () => {
+    const { MOD_COMMAND_NAMES } = require("../utils/musicCommands");
+    const handlers = new Set(MOD_COMMAND_NAMES);
+    for (const cmd of CATEGORIES.flatMap((c) => c.commands)) {
+      for (const alias of cmd.aliases || []) {
+        assert.ok(handlers.has(alias), `${alias} est annoncé comme alias de ${cmd.name} sans handler`);
+      }
+    }
+  });
+
+  await cas("une commande n'apparaît jamais dans deux paliers à la fois", () => {
+    for (const view of CATEGORIES.map((c) => c.key)) {
+      const body = bodyOf(view);
+      const listes = [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].map((m) => m[1].split(", "));
+      const vus = new Set();
+      for (const liste of listes) {
+        for (const nom of liste) {
+          assert.ok(!vus.has(nom), `${nom} listé deux fois dans la catégorie ${view}`);
+          vus.add(nom);
+        }
+      }
+    }
+  });
+
+  await cas("une sous-commande ne fait pas réapparaître son dispatcher", () => {
+    // "server", "server pic", "server banner" -> un seul "server/serverinfo".
+    const body = bodyOf("utilitaire");
+    const noms = body.split("**Commandes publiques")[1].split("\n")[0].split(", ");
+    assert.strictEqual(noms.filter((n) => n.startsWith("server")).length, 1, noms.join(" | "));
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

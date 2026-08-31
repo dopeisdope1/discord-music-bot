@@ -250,6 +250,23 @@ liste tenue à la main : une commande qui gagne un backend quitte
 automatiquement la liste des inactives, et `scripts/test-help-honesty.js`
 échoue si les deux se contredisent.
 
+Enfin, `&help` liste **un nom de commande par ligne**, jamais le même deux
+fois :
+
+- les **alias** sont collés à leur commande (`pic/avatar`,
+  `server/serverinfo`, `userinfo/member`, `mute/cmute`) au lieu d'occuper
+  leur propre entrée — découvrables, sans laisser croire à deux
+  fonctionnalités distinctes ;
+- les **sous-commandes** d'un même dispatcher (`server`, `server pic`,
+  `server banner`) se replient sur leur nom de commande ;
+- une commande dont les sous-commandes ont des permissions différentes
+  (`&clear`, `&role`) n'apparaît que dans le palier le plus ouvert, celui
+  qui décrit ce qu'on peut réellement lancer.
+
+Le test échoue aussi si un alias est annoncé sans avoir de handler — c'est
+ce qui a révélé que `lockall`/`unlockall`, documentés comme alias de
+`&lockdown`/`&unlockdown`, n'avaient jamais été câblés.
+
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien
 activé sur le portail développeur (voir section 3).
 
