@@ -25,6 +25,7 @@ const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
 const { guardHandlers } = require("./guardCommands");
+const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -347,6 +348,8 @@ const modHandlers = {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
     if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
+    if (sub === "perms") return configHandlers.clearPerms(client, message, args.slice(1));
+    if (sub === "limit") return configHandlers.clearLimit(client, message, args.slice(1));
     return moderationHandlers.clear(client, message, args);
   },
   purge: moderationHandlers.purge,
@@ -368,7 +371,9 @@ const modHandlers = {
   // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
   // utils/giveaways.js.
   ticket: (client, message, args) => {
-    if ((args[0] || "").toLowerCase() === "setup") return setupTickets(client, message, args.slice(1));
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "setup") return setupTickets(client, message, args.slice(1));
+    if (sub === "settings") return configHandlers.ticketSettings(client, message, args.slice(1));
   },
   poll: createPoll,
   giveaway: (client, message, args) => {
@@ -392,6 +397,11 @@ const modHandlers = {
   // Automod léger (anti-lien/anti-mass-mention/mots interdits) — voir
   // utils/automodCommands.js, permission "protection.automod" (même que
   // l'anti-spam, configurable aussi depuis &panel > Protection).
+  prefix: configHandlers.prefix,
+  tempvoc: configHandlers.tempvoc,
+  join: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "settings") return configHandlers.joinSettings(client, message, args.slice(1));
+  },
   antispam: automodHandlers.antispam,
   spam: automodHandlers.spam,
   antilink: automodHandlers.antilink,
@@ -404,7 +414,9 @@ const modHandlers = {
   // "set muterole" gère le rôle de mute (utils/moderationExtra.js) ; le
   // reste (name/pic/banner) reste le profil du bot (utils/botProfileCommands.js).
   set: (client, message, args) => {
-    if ((args[0] || "").toLowerCase() === "muterole") return moderationExtra.setMuteRole(client, message, args.slice(1));
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "muterole") return moderationExtra.setMuteRole(client, message, args.slice(1));
+    if (sub === "perm") return configHandlers.setPerm(client, message, args.slice(1));
     return botProfileHandlers.set(client, message, args);
   },
   playto: botProfileHandlers.playto,
@@ -432,7 +444,9 @@ const modHandlers = {
   unmuteall: moderationExtra.unmuteall,
   sanctions: moderationExtra.sanctions,
   del: (client, message, args) => {
-    if ((args[0] || "").toLowerCase() === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));
+    if (sub === "perm") return configHandlers.delPerm(client, message, args.slice(1));
   },
   tempban: moderationExtra.tempban,
   banlist: moderationExtra.banlist,
@@ -589,10 +603,10 @@ async function handleMusicTextCommand(client, message) {
 const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
-  set: ["name", "pic", "banner", "muterole"],
-  clear: ["sanctions", "all"],
-  del: ["sanction"],
-  ticket: ["setup"],
+  set: ["name", "pic", "banner", "muterole", "perm"],
+  clear: ["sanctions", "all", "perms", "limit"],
+  del: ["sanction", "perm"],
+  ticket: ["setup", "settings"],
   giveaway: ["start", "reroll"],
   end: ["giveaway"],
   search: ["wiki"],
@@ -623,6 +637,7 @@ const MOD_SUBCOMMANDS = {
   punition: ["all"],
   antispam: ["on", "off"],
   spam: ["allow", "deny", "reset"],
+  join: ["settings"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond

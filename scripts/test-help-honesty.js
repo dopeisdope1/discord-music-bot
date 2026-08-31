@@ -66,13 +66,13 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
     // "set" et "clear" existent, mais leurs dispatchers ne connaissent pas ces
     // sous-mots : les taper ne fait rien. C'est le faux positif que la table
     // MOD_SUBCOMMANDS supprime.
-    for (const name of ["set modlogs", "set boostembed", "clear owners", "clear customs", "ticket settings", "server pic"]) {
+    for (const name of ["set modlogs", "set boostembed", "clear owners", "clear customs", "server pic", "server list"]) {
       assert.strictEqual(isImplemented({ name, prefix: "mod" }), false, `${name} n'est routée nulle part`);
     }
   });
 
   await cas("une sous-commande réellement routée reste comptée active", () => {
-    for (const name of ["set muterole <rôle>", "clear all sanctions", "role create <nom>", "giveaway start <durée> <lot>", "modlog on [salon]"]) {
+    for (const name of ["set muterole <rôle>", "clear all sanctions", "role create <nom>", "giveaway start <durée> <lot>", "modlog on [salon]", "ticket settings", "set perm <permission/commande> <rôle/membre>", "clear perms"]) {
       assert.strictEqual(isImplemented({ name, prefix: "mod" }), true, `${name} est bien routée`);
     }
   });

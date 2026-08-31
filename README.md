@@ -310,6 +310,22 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
+Ses seize rubriques sont regroupées en **six familles** : le menu principal
+propose les familles, un second menu n'apparaît que pour choisir à l'intérieur
+d'une famille qui en contient plusieurs. Les écrans, eux, ne sont **pas**
+fusionnés — chacun garde ses contrôles et ses avertissements. « Rang sys » et
+« Ban de masse » voisinent dans la même famille sans jamais partager le même
+écran : l'un donne accès à tout le bot, l'autre bannit le serveur entier.
+
+| Famille | Rubriques |
+|---|---|
+| Accueil | Vue d'ensemble |
+| Permissions et accès | Permissions, Rôles, Accès panel, Rang sys, Ban de masse |
+| Protection | Protection, Anti-nuke, Mute |
+| Logs et historique | Logs, Historique |
+| Communauté | Bienvenue, Tickets, Vocaux |
+| Réglages du bot | Préfixes, Dispenses |
+
 `&panel` est un **poste de commande**, pas une documentation : chaque
 rubrique affiche l'état courant (une ligne `> **Réglage** : valeur` par
 réglage) et les contrôles qui le modifient — menus déroulants, sélecteurs de
@@ -347,6 +363,26 @@ qui ferait disparaître les logs en silence.
 `&settings` résume les huit catégories, et `&autoconfiglog` crée les salons
 manquants — la même fonction que le bouton du panel
 (`utils/logChannels.js`), pas une seconde version.
+
+#### Configuration en commandes texte
+
+Les rubriques qui n'avaient pas d'équivalent tapable en ont un :
+
+| Commande | Rubrique | Clé |
+|---|---|---|
+| `&prefix <préfixe>` | Préfixes | `sys` |
+| `&set perm <clé> <@rôle\|@membre>` | Permissions | `panel.permissions.manage` |
+| `&del perm <clé> <@rôle\|@membre>` | Permissions | idem |
+| `&clear perms <@rôle\|@membre>` | Permissions | idem |
+| `&join settings` | Bienvenue | `server.welcome.manage` |
+| `&ticket settings` | Tickets | `server.tickets.manage` |
+| `&tempvoc` | Vocaux | `server.voice.manage` |
+| `&clear limit` | Dispenses | `sys` |
+
+`&set perm` accorde en une ligne ce que le panel demande en trois menus, et
+une clé inconnue renvoie la liste des clés valides plutôt qu'un refus sec. Un
+préfixe de plus de 3 caractères, ou contenant une espace, est refusé : il
+rendrait toutes les commandes intapables.
 
 ### `&panel` — rubriques
 
