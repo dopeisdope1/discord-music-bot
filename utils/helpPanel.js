@@ -113,17 +113,15 @@ function groupByTier(member) {
 }
 
 function buildSelect(availableTiers, current) {
-  return new StringSelectMenuBuilder()
-    .setCustomId(SELECT_ID)
-    .setPlaceholder("Choisir un palier")
-    .addOptions(
-      availableTiers.map((tier) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(TIER_LABELS[tier])
-          .setValue(tier)
-          .setDefault(tier === current)
-      )
-    );
+  // "Accueil" toujours présent dans le même menu : une fois entré dans un
+  // palier, il donne le chemin retour sans avoir à retaper &help.
+  const options = [
+    new StringSelectMenuOptionBuilder().setLabel("Accueil").setValue("home").setDefault(current === null),
+    ...availableTiers.map((tier) =>
+      new StringSelectMenuOptionBuilder().setLabel(TIER_LABELS[tier]).setValue(tier).setDefault(tier === current)
+    ),
+  ];
+  return new StringSelectMenuBuilder().setCustomId(SELECT_ID).setPlaceholder("Choisir un palier").addOptions(options);
 }
 
 /**

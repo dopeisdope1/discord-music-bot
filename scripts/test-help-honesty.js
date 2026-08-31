@@ -178,6 +178,36 @@ function commandsText(member = owner, tier) {
     assert.ok(!body.includes("role create"), "le palier configurable ne doit plus apparaître");
   });
 
+  await cas("le menu garde toujours une option \"Accueil\" — le chemin retour sans retaper &help", () => {
+    const menu = buildHelpPanel("g1", owner, "public")
+      .components[0].toJSON()
+      .components.find((c) => c.type === 1).components[0];
+    const accueil = menu.options.find((o) => o.value === "home");
+    assert.ok(accueil, "l'option Accueil doit toujours être présente dans le menu");
+    assert.strictEqual(accueil.default, false, "sur un palier actif, Accueil n'est pas l'option sélectionnée par défaut");
+  });
+
+  await cas("choisir \"Accueil\" depuis un palier revient bien à la vue compacte", async () => {
+    const interaction = {
+      guild: { id: "g1" },
+      member: owner,
+      values: ["home"],
+      message: { flags: { has: (f) => f === MessageFlags.Ephemeral } },
+      reply: () => {
+        throw new Error("ne devrait pas être appelé");
+      },
+      updated: null,
+      update(p) {
+        this.updated = p;
+        return Promise.resolve(p);
+      },
+    };
+    await handleHelpInteraction(interaction);
+    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(/\*\*Commandes publiques\*\* — \d+ commande\(s\)/.test(body), body);
+    assert.ok(!body.includes("Usage :"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
+  });
+
   console.log("\nÉphémère vs message public (deux personnes, deux droits différents) :");
 
   await cas("premier clic sur le message PUBLIC -> nouvelle réponse éphémère", async () => {
