@@ -20,6 +20,7 @@ const { automodHandlers } = require("./automodCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
 const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
+const commandForms = require("./commandForms");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -460,7 +461,22 @@ async function handleMusicTextCommand(client, message) {
   // pour tout le reste, qui appartient à l'autre bot.
   if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
     const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
-    const handler = modHandlers[(modCmd || "").toLowerCase()];
+    const cmdLower = (modCmd || "").toLowerCase();
+
+    // Tapée SANS argument, une commande qui a un formulaire dédié ouvre sa
+    // carte interactive dans le salon plutôt que d'échouer sur "indique un
+    // membre..." — voir utils/commandForms.js (BARE_COMMAND_FORMS). Avec
+    // des arguments, l'exécution directe reste inchangée (habitudes des
+    // utilisateurs qui connaissent déjà la syntaxe, pas cassées).
+    const formKey = commandForms.BARE_COMMAND_FORMS[cmdLower];
+    if (formKey && modArgs.length === 0) {
+      const form = commandForms.FORMS[formKey];
+      if (form && (form.permission == null || can(message.member, form.permission))) {
+        return message.reply(commandForms.buildFormCard(formKey, message.member));
+      }
+    }
+
+    const handler = modHandlers[cmdLower];
     if (handler) return handler(client, message, modArgs);
     return;
   }

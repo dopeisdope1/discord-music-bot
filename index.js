@@ -38,6 +38,7 @@ const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveawa
 const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
+const commandForms = require("./utils/commandForms");
 const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
@@ -417,6 +418,13 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId === "srvextra:embed") {
     await handleEmbedModal(interaction).catch((err) => console.error("[serverExtra]", err));
+    return;
+  }
+
+  // Cartes interactives autonomes postées quand une commande avec
+  // formulaire est tapée sans arguments (voir utils/commandForms.js).
+  if (interaction.customId?.startsWith(`${commandForms.CARD_ID}:`)) {
+    await commandForms.handleFormCardInteraction(interaction).catch((err) => console.error("[commandForms]", err));
     return;
   }
 

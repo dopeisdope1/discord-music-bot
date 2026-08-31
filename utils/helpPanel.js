@@ -14,15 +14,6 @@ const { categoriesFor } = require("./commandCatalog");
 
 const SELECT_ID = "help_nav";
 const HOME = "__home__";
-const MAX_BODY = 3500;
-
-function formatCommand(cmd, prefixes) {
-  // Les entrées sans préfixe (boutons, déclencheurs sans préfixe) sont
-  // affichées telles quelles, sans back-tick trompeur devant.
-  const prefix = cmd.prefix === "main" ? prefixes.main : cmd.prefix === "mod" ? prefixes.musicMod : "";
-  const label = cmd.prefix ? `\`${prefix}${cmd.name}\`` : `**${cmd.name}**`;
-  return `${label} — ${cmd.description}`;
-}
 
 // Nom court affiché dans les listes en ligne : sans les arguments pour une
 // commande préfixée ("play <titre>" -> "play"), mais intégral pour les
@@ -48,19 +39,31 @@ function homeBody(categories, prefixes) {
   ].join("\n");
 }
 
-function categoryBody(category, prefixes) {
-  let body = "";
-  let skipped = 0;
-  for (const cmd of category.commands) {
-    const line = `${formatCommand(cmd, prefixes)}\n`;
-    if (body.length + line.length > MAX_BODY) {
-      skipped += 1;
-      continue;
-    }
-    body += line;
-  }
-  if (skipped) body += `\n*… et ${skipped} autre(s).*`;
-  return body;
+// Groupe par palier d'accès plutôt que de détailler chaque commande (syntaxe
+// + description) : liste compacte de noms, comme la référence CrowBot —
+// beaucoup plus court une fois le catalogue élargi à des dizaines de
+// commandes par catégorie. Le détail (syntaxe précise) reste disponible en
+// tapant `&aide <commande>` (voir plus bas) plutôt que d'alourdir cette vue.
+function tierOf(cmd) {
+  if (cmd.permission === "sys") return "sys";
+  if (cmd.permission == null) return "public";
+  return "configurable";
+}
+
+const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes configurables", sys: "Commandes Sys" };
+
+function categoryBody(category) {
+  const groups = { public: [], configurable: [], sys: [] };
+  for (const cmd of category.commands) groups[tierOf(cmd)].push(shortName(cmd));
+
+  const lines = ["public", "configurable", "sys"]
+    .filter((tier) => groups[tier].length)
+    .map((tier) => {
+      const names = [...new Set(groups[tier])];
+      return `**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`;
+    });
+
+  return lines.join("\n");
 }
 
 function buildSelect(categories, current) {
@@ -107,7 +110,7 @@ function buildHelpPanel(guildId, member, current = HOME) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      category ? categoryBody(category, prefixes) : homeBody(categories, prefixes)
+      category ? categoryBody(category) : homeBody(categories, prefixes)
     )
   );
 

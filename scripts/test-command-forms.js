@@ -240,18 +240,26 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(interaction._targetMember.roles._removed?.length > 0);
   });
 
-  console.log("\nÉtat de formulaire (par utilisateur) :");
+  console.log("\nÉtat de formulaire (par personne ET par commande) :");
 
   await cas("setFormState fusionne sans écraser les autres champs texte", () => {
-    commandForms.setFormState("u1", { formKey: "giveaway_start", text: { duration: "1h" } });
-    commandForms.setFormState("u1", { text: { prize: "Nitro" } });
-    const state = commandForms.getFormState("u1");
+    commandForms.setFormState("u1", "giveaway_start", { text: { duration: "1h" } });
+    commandForms.setFormState("u1", "giveaway_start", { text: { prize: "Nitro" } });
+    const state = commandForms.getFormState("u1", "giveaway_start");
     assert.deepStrictEqual(state.text, { duration: "1h", prize: "Nitro" });
   });
 
-  await cas("clearFormState efface bien l'état", () => {
-    commandForms.clearFormState("u1");
-    assert.strictEqual(commandForms.getFormState("u1"), null);
+  await cas("deux commandes différentes n'interfèrent pas entre elles pour la même personne", () => {
+    commandForms.setFormState("u1", "giveaway_start", { channelId: "c-giveaway" });
+    commandForms.setFormState("u1", "kick_member", { userId: "target-1" });
+    assert.strictEqual(commandForms.getFormState("u1", "giveaway_start").channelId, "c-giveaway");
+    assert.strictEqual(commandForms.getFormState("u1", "kick_member").userId, "target-1");
+  });
+
+  await cas("clearFormState efface uniquement l'état de la commande visée", () => {
+    commandForms.clearFormState("u1", "giveaway_start");
+    assert.strictEqual(commandForms.getFormState("u1", "giveaway_start"), null);
+    assert.strictEqual(commandForms.getFormState("u1", "kick_member").userId, "target-1");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

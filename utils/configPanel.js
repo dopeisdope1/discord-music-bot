@@ -36,9 +36,6 @@ const welcomeStore = require("./welcomeStore");
 const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
 const { ALL_GUARDS } = require("./guard/definitions");
-const commandCatalog = require("./commandCatalog");
-const toolsCatalog = require("./toolsCatalog");
-const commandForms = require("./commandForms");
 const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
@@ -115,25 +112,6 @@ async function createLogChannelsAutomatically(guild) {
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
 
-// Rubriques de documentation ("Commandes"/"Tools", voir plus bas) : visibles
-// à quiconque a DÉJÀ accès à au moins une rubrique "réelle" du panel — ni
-// plus restrictif (elles n'agissent sur rien, pure référence), ni ouvert à
-// absolument tout le monde (le panel reste un outil staff). Liste figée sur
-// les clés qui existaient AVANT cette extension, pour ne rien élargir.
-const CORE_PERMISSION_KEYS = [
-  "sys",
-  "panel.permissions.manage",
-  "panel.roles.manage",
-  "panel.access.manage",
-  "logs.view",
-  "logs.manage",
-  "protection.automod",
-  "protection.whitelist",
-  "protection.guard.manage",
-  "server.welcome.manage",
-];
-const hasCoreAccess = (member) => CORE_PERMISSION_KEYS.some((k) => can(member, k));
-
 // Chaque rubrique déclare comment décider si elle est visible : `ownerOnly`
 // (uniquement le propriétaire), `permission` (une clé du catalogue,
 // résolue via engine.can — "sys" y compris, qui n'est jamais une clé
@@ -163,24 +141,6 @@ const SECTIONS = [
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
-  {
-    key: "run",
-    label: "Exécuter",
-    description: "Lance une commande directement depuis le panel (salon/rôle/membre/texte)",
-    visible: hasCoreAccess,
-  },
-  {
-    key: "commands",
-    label: "Commandes",
-    description: "Référence complète des commandes du bot (préfixe &), par catégorie",
-    visible: hasCoreAccess,
-  },
-  {
-    key: "tools",
-    label: "Tools",
-    description: "Référence complète du système Tools (préfixe ;), par catégorie",
-    visible: hasCoreAccess,
-  },
 ];
 
 function sectionVisible(section, member, isOwner) {
@@ -217,23 +177,6 @@ function buildNav(current, member, isOwner) {
           .setDefault(s.key === current)
       )
     );
-}
-
-// Pagination pour les rubriques "Commandes"/"Tools" : certaines catégories
-// dépassent largement ce qui tient dans un seul TextDisplay (limite Discord)
-// — pages fixes plutôt qu'une troncature qui masquerait des commandes
-// (demande explicite : "je dois retrouver TOUTES les commandes").
-const DOC_PAGE_SIZE = 8;
-
-// Même convention que la rubrique Anti-nuke (`> \`clé\` — label (règle)`) :
-// une barre de citation continue pour toute la liste, pas un bloc par ligne.
-const formatDocCommand = (cmd, prefixSymbol) => `> ${cmd.prefix ? `\`${prefixSymbol}${cmd.name}\`` : `**${cmd.name}**`} — ${cmd.description}`;
-
-function docCategoryPage(commands, prefixSymbol, page) {
-  const totalPages = Math.max(1, Math.ceil(commands.length / DOC_PAGE_SIZE));
-  const clamped = Math.min(Math.max(page, 0), totalPages - 1);
-  const slice = commands.slice(clamped * DOC_PAGE_SIZE, clamped * DOC_PAGE_SIZE + DOC_PAGE_SIZE);
-  return { body: slice.map((c) => formatDocCommand(c, prefixSymbol)).join("\n"), page: clamped, totalPages };
 }
 
 function permissionRows() {
@@ -493,66 +436,6 @@ function sectionBody(section, guild, member, state) {
       "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. " +
         "Contrôle en jeu : &vc lock/unlock/limit/rename/kick (voir &help > Utilitaire).",
     ].join("\n");
-  }
-
-  if (section === "run") {
-    const active = commandForms.getFormState(member.id);
-    if (!active?.formKey) {
-      return [
-        "Exécute une commande directement depuis le panel — les mêmes vérifications qu'en tapant la commande " +
-          "s'appliquent (permissions, hiérarchie...), et la même fonction est appelée.",
-        "",
-        ...Object.values(commandForms.FORMS).map((f) => `> **${f.label}**`),
-        "",
-        "Choisis une commande ci-dessous.",
-      ].join("\n");
-    }
-    const form = commandForms.FORMS[active.formKey];
-    if (!form) return "Commande inconnue.";
-    const lines = [`**${form.label}**`, ""];
-    if (form.fields.includes("channel")) lines.push(`> **Salon** : ${active.channelId ? `<#${active.channelId}>` : "*non choisi*"}`);
-    if (form.fields.includes("role")) lines.push(`> **Rôle** : ${active.roleId ? `<@&${active.roleId}>` : "*non choisi (optionnel)*"}`);
-    if (form.fields.includes("user")) lines.push(`> **Membre** : ${active.userId ? `<@${active.userId}>` : "*non choisi*"}`);
-    for (const tf of form.textFields || []) {
-      const value = active.text?.[tf.key];
-      lines.push(`> **${tf.label}** : ${value ? `\`${value}\`` : tf.required === false ? "*non rempli (optionnel)*" : "*non rempli*"}`);
-    }
-    lines.push("", form.ready(active) ? "**Prêt à lancer.**" : "Complète les champs manquants avant de lancer.");
-    return lines.join("\n");
-  }
-
-  if (section === "commands") {
-    const categories = commandCatalog.CATEGORIES;
-    if (!state.docCategory) {
-      return [
-        "Référence complète des commandes du bot — implémentées ou non, pour documentation.",
-        "",
-        ...categories.map((c) => `> **${c.label}** (${c.commands.length})`),
-        "",
-        "Choisis une catégorie ci-dessous.",
-      ].join("\n");
-    }
-    const category = categories.find((c) => c.key === state.docCategory);
-    if (!category) return "Catégorie inconnue.";
-    const { body, page, totalPages } = docCategoryPage(category.commands, prefixes.musicMod, state.docPage || 0);
-    return [`**${category.label}** — page ${page + 1}/${totalPages}`, "", body].join("\n");
-  }
-
-  if (section === "tools") {
-    const categories = toolsCatalog.CATEGORIES;
-    if (!state.toolsCategory) {
-      return [
-        "Référence complète du système Tools (préfixe `;`, distinct du préfixe principal `&`).",
-        "",
-        ...categories.map((c) => `> **${c.label}** (${c.commands.length})`),
-        "",
-        "Choisis une catégorie ci-dessous.",
-      ].join("\n");
-    }
-    const category = categories.find((c) => c.key === state.toolsCategory);
-    if (!category) return "Catégorie inconnue.";
-    const { body, page, totalPages } = docCategoryPage(category.commands, prefixes.tools, state.toolsPage || 0);
-    return [`**${category.label}** — page ${page + 1}/${totalPages}`, "", body].join("\n");
   }
 
   if (section === "banall") {
@@ -946,119 +829,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           .setDefaultChannels(hubId && guild.channels.cache.has(hubId) ? [hubId] : [])
       )
     );
-  } else if (meta.key === "run") {
-    const active = commandForms.getFormState(member.id);
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:runpick`)
-          .setPlaceholder("Choisir une commande à exécuter")
-          .addOptions(
-            Object.entries(commandForms.FORMS).map(([key, f]) =>
-              new StringSelectMenuOptionBuilder().setLabel(f.label).setValue(key).setDefault(active?.formKey === key)
-            )
-          )
-      )
-    );
-    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
-    if (form) {
-      if (form.fields.includes("channel")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ChannelSelectMenuBuilder()
-              .setCustomId(`${ID}:runchannel`)
-              .setPlaceholder("Choisir un salon")
-              .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-              .setMinValues(0)
-              .setMaxValues(1)
-          )
-        );
-      }
-      if (form.fields.includes("role")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:runrole`).setPlaceholder("Choisir un rôle"))
-        );
-      }
-      if (form.fields.includes("user")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:runuser`).setPlaceholder("Choisir un membre"))
-        );
-      }
-      const buttons = [];
-      if (form.textFields?.length) {
-        buttons.push(new ButtonBuilder().setCustomId(`${ID}:runtextopen`).setLabel("Remplir le texte").setStyle(ButtonStyle.Secondary));
-      }
-      buttons.push(
-        new ButtonBuilder().setCustomId(`${ID}:runlaunch`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active || {}))
-      );
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons));
-    }
-  } else if (meta.key === "commands") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:doccat`)
-          .setPlaceholder("Choisir une catégorie de commandes")
-          .addOptions(
-            commandCatalog.CATEGORIES.map((c) =>
-              new StringSelectMenuOptionBuilder().setLabel(c.label).setDescription(`${c.commands.length} commande(s)`).setValue(c.key).setDefault(state.docCategory === c.key)
-            )
-          )
-      )
-    );
-    if (state.docCategory) {
-      const category = commandCatalog.CATEGORIES.find((c) => c.key === state.docCategory);
-      if (category) {
-        const { totalPages, page } = docCategoryPage(category.commands, "&", state.docPage || 0);
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`${ID}:docprev:${state.docCategory}:${page}`)
-              .setLabel("◀ Page précédente")
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(page <= 0),
-            new ButtonBuilder()
-              .setCustomId(`${ID}:docnext:${state.docCategory}:${page}`)
-              .setLabel("Page suivante ▶")
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(page >= totalPages - 1)
-          )
-        );
-      }
-    }
-  } else if (meta.key === "tools") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:toolscat`)
-          .setPlaceholder("Choisir une catégorie Tools")
-          .addOptions(
-            toolsCatalog.CATEGORIES.map((c) =>
-              new StringSelectMenuOptionBuilder().setLabel(c.label).setDescription(`${c.commands.length} commande(s)`).setValue(c.key).setDefault(state.toolsCategory === c.key)
-            )
-          )
-      )
-    );
-    if (state.toolsCategory) {
-      const category = toolsCatalog.CATEGORIES.find((c) => c.key === state.toolsCategory);
-      if (category) {
-        const { totalPages, page } = docCategoryPage(category.commands, ";", state.toolsPage || 0);
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`${ID}:toolsprev:${state.toolsCategory}:${page}`)
-              .setLabel("◀ Page précédente")
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(page <= 0),
-            new ButtonBuilder()
-              .setCustomId(`${ID}:toolsnext:${state.toolsCategory}:${page}`)
-              .setLabel("Page suivante ▶")
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(page >= totalPages - 1)
-          )
-        );
-      }
-    }
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -1418,107 +1188,6 @@ async function handleConfigInteraction(interaction) {
     if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     voiceChannels.setHub(guildId, interaction.values[0] || null);
     return goto("voice");
-  }
-
-  if (action === "runpick") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    commandForms.setFormState(member.id, { formKey: interaction.values[0], channelId: null, roleId: null, userId: null, text: {} });
-    return goto("run");
-  }
-
-  if (action === "runchannel") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    commandForms.setFormState(member.id, { channelId: interaction.values[0] || null });
-    return goto("run");
-  }
-
-  if (action === "runrole") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    commandForms.setFormState(member.id, { roleId: interaction.values[0] || null });
-    return goto("run");
-  }
-
-  if (action === "runuser") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    commandForms.setFormState(member.id, { userId: interaction.values[0] || null });
-    return goto("run");
-  }
-
-  if (action === "runtextopen") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const active = commandForms.getFormState(member.id);
-    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
-    if (!form) return interaction.reply({ content: "Choisis d'abord une commande.", flags: MessageFlags.Ephemeral });
-    const modal = new ModalBuilder().setCustomId(`${ID}:runtext`).setTitle(form.label.slice(0, 45));
-    for (const tf of form.textFields) {
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId(tf.key)
-            .setLabel(tf.label.slice(0, 45))
-            .setStyle(TextInputStyle.Short)
-            .setMaxLength(tf.max || 200)
-            .setRequired(tf.required !== false)
-            .setValue(active.text?.[tf.key] || "")
-        )
-      );
-    }
-    return interaction.showModal(modal);
-  }
-
-  if (action === "runtext") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const active = commandForms.getFormState(member.id);
-    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
-    if (!form) return interaction.reply({ content: "Formulaire expiré, recommence.", flags: MessageFlags.Ephemeral });
-    const text = {};
-    for (const tf of form.textFields) text[tf.key] = interaction.fields.getTextInputValue(tf.key).trim();
-    commandForms.setFormState(member.id, { text });
-    await interaction.reply({ content: "Champs enregistrés.", flags: MessageFlags.Ephemeral });
-    return interaction.message?.edit(buildConfigPanel(guild, "run", member)).catch(() => {});
-  }
-
-  if (action === "runlaunch") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const active = commandForms.getFormState(member.id);
-    const form = active?.formKey ? commandForms.FORMS[active.formKey] : null;
-    if (!form) return interaction.reply({ content: "Choisis d'abord une commande.", flags: MessageFlags.Ephemeral });
-    if (!form.ready(active)) return interaction.reply({ content: "Des champs obligatoires manquent encore.", flags: MessageFlags.Ephemeral });
-
-    await interaction.deferUpdate();
-    try {
-      await form.run(interaction.client, interaction, active);
-    } catch (err) {
-      console.error("[commandForms]", err);
-      await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
-    }
-    commandForms.clearFormState(member.id);
-    return interaction.message?.edit(buildConfigPanel(guild, "run", member)).catch(() => {});
-  }
-
-  if (action === "doccat") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    return goto("commands", { docCategory: interaction.values[0], docPage: 0 });
-  }
-
-  // customId : cfg:docnext:<catégorie>:<page-courante> / cfg:docprev:<...> —
-  // la page voyage dans le customId (même principe que cfg:permkeys:<roleId>:
-  // <catégorie>), pas besoin de relire le message précédent.
-  if (action === "docnext" || action === "docprev") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const currentPage = parseInt(extra2, 10) || 0;
-    return goto("commands", { docCategory: extra, docPage: currentPage + (action === "docnext" ? 1 : -1) });
-  }
-
-  if (action === "toolscat") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    return goto("tools", { toolsCategory: interaction.values[0], toolsPage: 0 });
-  }
-
-  if (action === "toolsnext" || action === "toolsprev") {
-    if (!hasCoreAccess(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const currentPage = parseInt(extra2, 10) || 0;
-    return goto("tools", { toolsCategory: extra, toolsPage: currentPage + (action === "toolsnext" ? 1 : -1) });
   }
 
   if (action === "prefix") {

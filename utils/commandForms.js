@@ -1,5 +1,23 @@
-const { Collection, MessageFlags } = require("discord.js");
-const { startGiveaway } = require("./giveaways");
+const {
+  Collection,
+  MessageFlags,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelSelectMenuBuilder,
+  RoleSelectMenuBuilder,
+  UserSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ChannelType,
+} = require("discord.js");
+const { can } = require("./permissions/engine");
+const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
 const { moderationHandlers } = require("./moderationCommands");
@@ -7,6 +25,8 @@ const moderationExtra = require("./moderationExtra");
 const { channelHandlers } = require("./channelCommands");
 const { handleBan, handleUnban } = require("./banPanel");
 const serverAdmin = require("./serverAdminCommands");
+const serverExtra = require("./serverExtra");
+const botProfileCommands = require("./botProfileCommands");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -23,17 +43,20 @@ const serverAdmin = require("./serverAdminCommands");
 
 /**
  * @param {import('discord.js').Interaction} interaction
- * @param {{ channel?, user?, role?, text?: string }} [opts]
+ * @param {{ channel?, channels?, user?, role?, roles?, text?: string }} [opts]
  */
-function fakeMessage(interaction, { channel, user, role, text = "" } = {}) {
+function fakeMessage(interaction, { channel, channels, user, role, roles: roleList, text = "" } = {}) {
   const users = new Collection();
   const members = new Collection();
   const roles = new Collection();
+  const channelsColl = new Collection();
   if (user) {
     users.set(user.id, user.user || user);
     if (user.roles) members.set(user.id, user); // un GuildMember complet (a .roles.cache) alimente aussi mentions.members
   }
   if (role) roles.set(role.id, role);
+  for (const r of roleList || []) roles.set(r.id, r);
+  for (const c of channels || []) channelsColl.set(c.id, c); // ordre d'insertion préservé, important pour &voicemove (from -> to)
 
   return {
     author: interaction.user,
@@ -42,14 +65,24 @@ function fakeMessage(interaction, { channel, user, role, text = "" } = {}) {
     channel: channel || interaction.channel,
     content: text,
     attachments: { first: () => null },
-    mentions: { users, members, roles, everyone: false },
+    mentions: { users, members, roles, channels: channelsColl, everyone: false },
     reply: (payload) => interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral }).catch(() => {}),
   };
 }
 
+const CATEGORIES = {
+  moderation: "Modération",
+  channels: "Salons",
+  server: "Gestion du serveur",
+  voice: "Vocal",
+  botcontrol: "Contrôle du bot",
+};
+
 const FORMS = {
   giveaway_start: {
     label: "Lancer un giveaway",
+    category: "server",
+    permission: "server.giveaways.manage",
     fields: ["channel"],
     textFields: [
       { key: "duration", label: "Durée (ex : 1h, 30m, 1d)", max: 20 },
@@ -65,6 +98,8 @@ const FORMS = {
 
   poll_create: {
     label: "Créer un sondage",
+    category: "server",
+    permission: "server.polls.manage",
     fields: ["channel"],
     textFields: [
       { key: "question", label: "Question", max: 200 },
@@ -84,6 +119,8 @@ const FORMS = {
 
   ticket_setup: {
     label: "Configurer les tickets",
+    category: "server",
+    permission: "server.tickets.manage",
     fields: ["channel", "role"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {
@@ -96,6 +133,8 @@ const FORMS = {
 
   kick_member: {
     label: "Expulser un membre",
+    category: "moderation",
+    permission: "moderation.kick",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -109,6 +148,8 @@ const FORMS = {
 
   timeout_member: {
     label: "Timeout un membre",
+    category: "moderation",
+    permission: "moderation.timeout",
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
@@ -126,6 +167,8 @@ const FORMS = {
 
   role_create: {
     label: "Créer un rôle",
+    category: "server",
+    permission: "server.roles.manage",
     fields: [],
     textFields: [{ key: "name", label: "Nom du rôle", max: 100 }],
     ready: (v) => Boolean(v.text?.name),
@@ -137,6 +180,8 @@ const FORMS = {
 
   ban_member: {
     label: "Bannir un membre",
+    category: "moderation",
+    permission: "moderation.ban",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -150,6 +195,8 @@ const FORMS = {
 
   softban_member: {
     label: "Softban un membre",
+    category: "moderation",
+    permission: "moderation.softban",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -163,6 +210,8 @@ const FORMS = {
 
   unban_id: {
     label: "Débannir (par ID)",
+    category: "moderation",
+    permission: "moderation.unban",
     fields: [],
     textFields: [{ key: "id", label: "Identifiant Discord du membre banni", max: 25 }],
     ready: (v) => Boolean(v.text?.id),
@@ -174,6 +223,8 @@ const FORMS = {
 
   addrole_member: {
     label: "Ajouter un rôle à un membre",
+    category: "moderation",
+    permission: "members.role",
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {
@@ -187,6 +238,8 @@ const FORMS = {
 
   delrole_member: {
     label: "Retirer un rôle à un membre",
+    category: "moderation",
+    permission: "members.role",
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {
@@ -200,6 +253,8 @@ const FORMS = {
 
   lock_channel: {
     label: "Verrouiller un salon",
+    category: "channels",
+    permission: "channels.lock",
     fields: ["channel"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {
@@ -212,6 +267,8 @@ const FORMS = {
 
   unlock_channel: {
     label: "Déverrouiller un salon",
+    category: "channels",
+    permission: "channels.lock",
     fields: ["channel"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {
@@ -224,6 +281,8 @@ const FORMS = {
 
   slowmode_channel: {
     label: "Régler le mode lent d'un salon",
+    category: "channels",
+    permission: "channels.slowmode",
     fields: ["channel"],
     textFields: [{ key: "duration", label: "Durée (ex : 5s, 1m, off)", max: 10 }],
     ready: (v) => Boolean(v.channelId && v.text?.duration),
@@ -237,6 +296,8 @@ const FORMS = {
 
   mute_member: {
     label: "Mute un membre",
+    category: "moderation",
+    permission: "moderation.timeout",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -253,6 +314,8 @@ const FORMS = {
 
   derank_member: {
     label: "Derank un membre (retire tous ses rôles)",
+    category: "moderation",
+    permission: "members.role",
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -262,25 +325,683 @@ const FORMS = {
       await moderationExtra.derank(client, msg, [member.id]);
     },
   },
+
+  untimeout_member: {
+    label: "Lever un timeout",
+    category: "moderation",
+    permission: "moderation.timeout",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationHandlers.untimeout(client, msg, []);
+    },
+  },
+
+  unmute_member: {
+    label: "Lever un mute",
+    category: "moderation",
+    permission: "moderation.timeout",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.unmute(client, msg, [member.id]);
+    },
+  },
+
+  tempmute_member: {
+    label: "Tempmute un membre",
+    category: "moderation",
+    permission: "moderation.timeout",
+    fields: ["user"],
+    textFields: [
+      { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
+      { key: "reason", label: "Raison (optionnel)", max: 200, required: false },
+    ],
+    ready: (v) => Boolean(v.userId && v.text?.duration),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.tempmute(client, msg, [member.id, v.text.duration, ...(v.text.reason ? [v.text.reason] : [])]);
+    },
+  },
+
+  tempban_member: {
+    label: "Tempban un membre",
+    category: "moderation",
+    permission: "moderation.ban",
+    fields: ["user"],
+    textFields: [
+      { key: "duration", label: "Durée (ex : 1d, 12h, 1w)", max: 20 },
+      { key: "reason", label: "Raison (optionnel)", max: 200, required: false },
+    ],
+    ready: (v) => Boolean(v.userId && v.text?.duration),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.tempban(client, msg, [member.id, v.text.duration, ...(v.text.reason ? [v.text.reason] : [])]);
+    },
+  },
+
+  mutelist_view: {
+    label: "Voir la liste des membres mute",
+    category: "moderation",
+    permission: "moderation.timeout",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.mutelist(client, msg);
+    },
+  },
+
+  unmuteall_action: {
+    label: "Démute tout le monde",
+    category: "moderation",
+    permission: "moderation.timeout",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.unmuteall(client, msg);
+    },
+  },
+
+  banlist_view: {
+    label: "Voir la liste des bannis",
+    category: "moderation",
+    permission: "moderation.unban",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.banlist(client, msg);
+    },
+  },
+
+  sanctions_view: {
+    label: "Voir les sanctions d'un membre",
+    category: "moderation",
+    permission: "logs.view",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.sanctions(client, msg, [member.id]);
+    },
+  },
+
+  clear_sanctions_member: {
+    label: "Supprimer les sanctions d'un membre",
+    category: "moderation",
+    permission: "logs.manage",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.clearSanctions(client, msg, [member.id]);
+    },
+  },
+
+  hideall_action: {
+    label: "Masquer tous les salons",
+    category: "moderation",
+    permission: "channels.manage",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.hideall(client, msg);
+    },
+  },
+
+  unhideall_action: {
+    label: "Réafficher tous les salons",
+    category: "moderation",
+    permission: "channels.manage",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.unhideall(client, msg);
+    },
+  },
+
+  channel_delete: {
+    label: "Supprimer un salon",
+    category: "channels",
+    permission: "server.channels.manage",
+    fields: ["channel"],
+    ready: (v) => Boolean(v.channelId),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverAdmin.channelAdmin(client, msg, ["delete"]);
+    },
+  },
+
+  channel_rename: {
+    label: "Renommer un salon",
+    category: "channels",
+    permission: "server.channels.manage",
+    fields: ["channel"],
+    textFields: [{ key: "name", label: "Nouveau nom", max: 100 }],
+    ready: (v) => Boolean(v.channelId && v.text?.name),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverAdmin.channelAdmin(client, msg, ["rename", ...v.text.name.split(/\s+/)]);
+    },
+  },
+
+  channel_topic: {
+    label: "Changer le topic d'un salon",
+    category: "channels",
+    permission: "server.channels.manage",
+    fields: ["channel"],
+    textFields: [{ key: "topic", label: "Nouveau topic", max: 200 }],
+    ready: (v) => Boolean(v.channelId && v.text?.topic),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverAdmin.channelAdmin(client, msg, ["topic", ...v.text.topic.split(/\s+/)]);
+    },
+  },
+
+  role_delete: {
+    label: "Supprimer un rôle",
+    category: "server",
+    permission: "server.roles.manage",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.roleAdmin(client, msg, ["delete"]);
+    },
+  },
+
+  role_rename: {
+    label: "Renommer un rôle",
+    category: "server",
+    permission: "server.roles.manage",
+    fields: ["role"],
+    textFields: [{ key: "name", label: "Nouveau nom", max: 100 }],
+    ready: (v) => Boolean(v.roleId && v.text?.name),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.roleAdmin(client, msg, ["rename", ...v.text.name.split(/\s+/)]);
+    },
+  },
+
+  role_color: {
+    label: "Changer la couleur d'un rôle",
+    category: "server",
+    permission: "server.roles.manage",
+    fields: ["role"],
+    textFields: [{ key: "hex", label: "Couleur hex (ex : #5865F2)", max: 7 }],
+    ready: (v) => Boolean(v.roleId && v.text?.hex),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.roleAdmin(client, msg, ["color", v.text.hex]);
+    },
+  },
+
+  dero_role: {
+    label: "Ajouter/retirer un rôle du dero automatique",
+    category: "server",
+    permission: "server.dero.manage",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.dero(client, msg, ["role"]);
+    },
+  },
+
+  giveaway_reroll: {
+    label: "Retirer un gagnant (reroll)",
+    category: "server",
+    permission: "server.giveaways.manage",
+    fields: [],
+    textFields: [{ key: "id", label: "ID du giveaway (optionnel, sinon le dernier)", max: 30, required: false }],
+    ready: () => true,
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await rerollGiveaway(client, msg, v.text?.id ? [v.text.id] : []);
+    },
+  },
+
+  giveaway_end: {
+    label: "Terminer un giveaway maintenant",
+    category: "server",
+    permission: "server.giveaways.manage",
+    fields: [],
+    textFields: [{ key: "id", label: "ID du giveaway (optionnel, sinon le dernier)", max: 30, required: false }],
+    ready: () => true,
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await endGiveaway(client, msg, v.text?.id ? [v.text.id] : []);
+    },
+  },
+
+  choose_random: {
+    label: "Choisir au hasard",
+    category: "server",
+    permission: null,
+    fields: [],
+    textFields: [{ key: "options", label: "Options séparées par ,,", max: 200 }],
+    ready: (v) => Boolean(v.text?.options),
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await serverExtra.choose(client, msg, [v.text.options]);
+    },
+  },
+
+  create_emoji: {
+    label: "Créer un émoji",
+    category: "server",
+    permission: "server.channels.manage",
+    fields: [],
+    textFields: [
+      { key: "url", label: "Lien de l'image", max: 300 },
+      { key: "name", label: "Nom de l'émoji", max: 32 },
+    ],
+    ready: (v) => Boolean(v.text?.url && v.text?.name),
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await serverExtra.createEmoji(client, msg, [v.text.url, v.text.name]);
+    },
+  },
+
+  massiverole_action: {
+    label: "Ajouter un rôle à tous les membres",
+    category: "server",
+    permission: "server.roles.manage",
+    fields: ["roles"],
+    ready: (v) => Boolean(v.roleIds?.length),
+    run: async (client, interaction, v) => {
+      const roles = v.roleIds.map((id) => interaction.guild.roles.cache.get(id)).filter(Boolean);
+      if (!roles.length) return interaction.followUp({ content: "Rôle(s) introuvable(s).", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { roles });
+      await serverExtra.massiverole(client, msg);
+    },
+  },
+
+  unmassiverole_action: {
+    label: "Retirer un rôle à tous les membres",
+    category: "server",
+    permission: "server.roles.manage",
+    fields: ["roles"],
+    ready: (v) => Boolean(v.roleIds?.length),
+    run: async (client, interaction, v) => {
+      const roles = v.roleIds.map((id) => interaction.guild.roles.cache.get(id)).filter(Boolean);
+      if (!roles.length) return interaction.followUp({ content: "Rôle(s) introuvable(s).", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { roles });
+      await serverExtra.unmassiverole(client, msg);
+    },
+  },
+
+  voicemove_action: {
+    label: "Déplacer tout un salon vocal",
+    category: "voice",
+    permission: "server.voice.manage",
+    fields: ["channel", "channel2"],
+    ready: (v) => Boolean(v.channelId && v.channelId2),
+    run: async (client, interaction, v) => {
+      const from = interaction.guild.channels.cache.get(v.channelId);
+      const to = interaction.guild.channels.cache.get(v.channelId2);
+      if (!from || !to) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [from, to] });
+      await serverExtra.voicemove(client, msg);
+    },
+  },
+
+  voicekick_action: {
+    label: "Expulser un membre du vocal",
+    category: "voice",
+    permission: "server.voice.manage",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await serverExtra.voicekick(client, msg, [member.id]);
+    },
+  },
+
+  bringall_action: {
+    label: "Rassembler tout le monde en vocal",
+    category: "voice",
+    permission: "server.voice.manage",
+    fields: ["channel"],
+    ready: (v) => Boolean(v.channelId),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverExtra.bringall(client, msg);
+    },
+  },
+
+  temprole_action: {
+    label: "Donner un rôle temporaire",
+    category: "voice",
+    permission: "members.role",
+    fields: ["user", "role"],
+    textFields: [{ key: "duration", label: "Durée (ex : 1d, 12h)", max: 20 }],
+    ready: (v) => Boolean(v.userId && v.roleId && v.text?.duration),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!member || !role) return interaction.followUp({ content: "Membre ou rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member, role });
+      await serverExtra.temprole(client, msg, [member.id, v.text.duration]);
+    },
+  },
+
+  untemprole_action: {
+    label: "Retirer un rôle temporaire",
+    category: "voice",
+    permission: "members.role",
+    fields: ["user", "role"],
+    ready: (v) => Boolean(v.userId && v.roleId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!member || !role) return interaction.followUp({ content: "Membre ou rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member, role });
+      await serverExtra.untemprole(client, msg, [member.id]);
+    },
+  },
+
+  online_action: {
+    label: "Statut du bot : En ligne",
+    category: "botcontrol",
+    permission: "sys",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await botProfileCommands.botProfileHandlers.online(client, msg);
+    },
+  },
+
+  idle_action: {
+    label: "Statut du bot : Inactif",
+    category: "botcontrol",
+    permission: "sys",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await botProfileCommands.botProfileHandlers.idle(client, msg);
+    },
+  },
+
+  dnd_action: {
+    label: "Statut du bot : Ne pas déranger",
+    category: "botcontrol",
+    permission: "sys",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await botProfileCommands.botProfileHandlers.dnd(client, msg);
+    },
+  },
+
+  invisible_action: {
+    label: "Statut du bot : Invisible",
+    category: "botcontrol",
+    permission: "sys",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await botProfileCommands.botProfileHandlers.invisible(client, msg);
+    },
+  },
+
+  remove_activity_action: {
+    label: "Supprimer l'activité du bot",
+    category: "botcontrol",
+    permission: "sys",
+    fields: [],
+    ready: () => true,
+    run: async (client, interaction) => {
+      const msg = fakeMessage(interaction, {});
+      await botProfileCommands.botProfileHandlers.remove(client, msg, ["activity"]);
+    },
+  },
 };
 
-// État en mémoire du formulaire EN COURS par personne (une seule commande à
-// la fois par utilisateur, largement suffisant pour cet usage) — permet de
-// faire survivre les choix (salon/rôle/membre/texte) d'une interaction à
-// l'autre sans les faire voyager dans chaque customId.
+// État en mémoire du formulaire EN COURS, par (personne, commande) — une
+// personne peut avoir plusieurs cartes différentes ouvertes en même temps
+// (une par commande tapée), donc la clé doit inclure la commande, pas
+// seulement qui interagit.
 const formState = new Map();
+const stateKey = (userId, formKey) => `${userId}:${formKey}`;
 
-function getFormState(userId) {
-  return formState.get(userId) || null;
+function getFormState(userId, formKey) {
+  return formState.get(stateKey(userId, formKey)) || null;
 }
-function setFormState(userId, patch) {
-  const current = formState.get(userId) || { text: {} };
+function setFormState(userId, formKey, patch) {
+  const key = stateKey(userId, formKey);
+  const current = formState.get(key) || { text: {} };
   const next = { ...current, ...patch, text: { ...current.text, ...(patch.text || {}) } };
-  formState.set(userId, next);
+  formState.set(key, next);
   return next;
 }
-function clearFormState(userId) {
-  formState.delete(userId);
+function clearFormState(userId, formKey) {
+  formState.delete(stateKey(userId, formKey));
 }
 
-module.exports = { FORMS, getFormState, setFormState, clearFormState };
+// --- Carte autonome, postée directement dans le salon quand une commande
+// avec formulaire est tapée sans ses arguments (voir BARE_COMMAND_FORMS et
+// utils/musicCommands.js) — même mécanisme que &panel > Exécuter avait,
+// mais en carte indépendante plutôt que nichée dans la navigation du panel
+// (ce dernier ne garde plus que les vraies rubriques de configuration).
+const CARD_ID = "cmdrun";
+
+function buildFormCard(formKey, member) {
+  const form = FORMS[formKey];
+  if (!form) return null;
+  const active = getFormState(member.id, formKey) || {};
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${form.label}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  const lines = [];
+  if (form.fields.includes("channel")) lines.push(`> **Salon** : ${active.channelId ? `<#${active.channelId}>` : "*non choisi*"}`);
+  if (form.fields.includes("channel2")) lines.push(`> **Salon (destination)** : ${active.channelId2 ? `<#${active.channelId2}>` : "*non choisi*"}`);
+  if (form.fields.includes("role")) lines.push(`> **Rôle** : ${active.roleId ? `<@&${active.roleId}>` : "*non choisi*"}`);
+  if (form.fields.includes("roles")) {
+    lines.push(`> **Rôle(s)** : ${active.roleIds?.length ? active.roleIds.map((id) => `<@&${id}>`).join(", ") : "*non choisis*"}`);
+  }
+  if (form.fields.includes("user")) lines.push(`> **Membre** : ${active.userId ? `<@${active.userId}>` : "*non choisi*"}`);
+  for (const tf of form.textFields || []) {
+    const value = active.text?.[tf.key];
+    lines.push(`> **${tf.label}** : ${value ? `\`${value}\`` : tf.required === false ? "*non rempli (optionnel)*" : "*non rempli*"}`);
+  }
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.length ? lines.join("\n") : "Aucun paramètre nécessaire."));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  if (form.fields.includes("channel")) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${CARD_ID}:channel:${formKey}`)
+          .setPlaceholder("Choisir un salon")
+          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice)
+          .setMinValues(0)
+          .setMaxValues(1)
+      )
+    );
+  }
+  if (form.fields.includes("channel2")) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${CARD_ID}:channel2:${formKey}`)
+          .setPlaceholder("Choisir le salon de destination")
+          .addChannelTypes(ChannelType.GuildVoice)
+          .setMinValues(0)
+          .setMaxValues(1)
+      )
+    );
+  }
+  if (form.fields.includes("role")) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:role:${formKey}`).setPlaceholder("Choisir un rôle"))
+    );
+  }
+  if (form.fields.includes("roles")) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:roles:${formKey}`).setPlaceholder("Choisir un ou plusieurs rôles").setMinValues(1).setMaxValues(10)
+      )
+    );
+  }
+  if (form.fields.includes("user")) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CARD_ID}:user:${formKey}`).setPlaceholder("Choisir un membre"))
+    );
+  }
+
+  const buttons = [];
+  if (form.textFields?.length) {
+    buttons.push(new ButtonBuilder().setCustomId(`${CARD_ID}:textopen:${formKey}`).setLabel("Remplir le texte").setStyle(ButtonStyle.Secondary));
+  }
+  buttons.push(
+    new ButtonBuilder().setCustomId(`${CARD_ID}:launch:${formKey}`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active))
+  );
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons));
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/** Toutes les interactions "cmdrun:" (voir index.js). */
+async function handleFormCardInteraction(interaction) {
+  const [, action, formKey] = interaction.customId.split(":");
+  const form = FORMS[formKey];
+  if (!form) return;
+  if (form.permission !== undefined && !can(interaction.member, form.permission)) {
+    return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+  }
+
+  if (["channel", "channel2", "role", "roles", "user"].includes(action)) {
+    const patch =
+      action === "channel"
+        ? { channelId: interaction.values[0] || null }
+        : action === "channel2"
+        ? { channelId2: interaction.values[0] || null }
+        : action === "role"
+        ? { roleId: interaction.values[0] || null }
+        : action === "roles"
+        ? { roleIds: interaction.values }
+        : { userId: interaction.values[0] || null };
+    setFormState(interaction.user.id, formKey, patch);
+    return interaction.update(buildFormCard(formKey, interaction.member));
+  }
+
+  if (action === "textopen") {
+    const active = getFormState(interaction.user.id, formKey) || {};
+    const modal = new ModalBuilder().setCustomId(`${CARD_ID}:text:${formKey}`).setTitle(form.label.slice(0, 45));
+    for (const tf of form.textFields) {
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId(tf.key)
+            .setLabel(tf.label.slice(0, 45))
+            .setStyle(TextInputStyle.Short)
+            .setMaxLength(tf.max || 200)
+            .setRequired(tf.required !== false)
+            .setValue(active.text?.[tf.key] || "")
+        )
+      );
+    }
+    return interaction.showModal(modal);
+  }
+
+  if (action === "text") {
+    const text = {};
+    for (const tf of form.textFields) text[tf.key] = interaction.fields.getTextInputValue(tf.key).trim();
+    setFormState(interaction.user.id, formKey, { text });
+    await interaction.reply({ content: "Champs enregistrés.", flags: MessageFlags.Ephemeral });
+    return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+  }
+
+  if (action === "launch") {
+    const active = getFormState(interaction.user.id, formKey) || {};
+    if (!form.ready(active)) return interaction.reply({ content: "Des champs obligatoires manquent encore.", flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    try {
+      await form.run(interaction.client, interaction, active);
+    } catch (err) {
+      console.error("[commandForms]", err);
+      await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+    clearFormState(interaction.user.id, formKey);
+    return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+  }
+}
+
+// Commande tapée (sans ses arguments) -> formulaire ouvert directement dans
+// le salon. Périmètre volontairement progressif : les commandes les plus
+// utilisées d'abord (voir utils/musicCommands.js pour le branchement).
+const BARE_COMMAND_FORMS = {
+  giveaway: "giveaway_start",
+  addrole: "addrole_member",
+  delrole: "delrole_member",
+  kick: "kick_member",
+  ban: "ban_member",
+  softban: "softban_member",
+  unban: "unban_id",
+  timeout: "timeout_member",
+  untimeout: "untimeout_member",
+  mute: "mute_member",
+  unmute: "unmute_member",
+  tempmute: "tempmute_member",
+  tempban: "tempban_member",
+  derank: "derank_member",
+  poll: "poll_create",
+  lock: "lock_channel",
+  unlock: "unlock_channel",
+  slowmode: "slowmode_channel",
+};
+
+module.exports = {
+  FORMS,
+  CATEGORIES,
+  BARE_COMMAND_FORMS,
+  getFormState,
+  setFormState,
+  clearFormState,
+  buildFormCard,
+  handleFormCardInteraction,
+  CARD_ID,
+};
