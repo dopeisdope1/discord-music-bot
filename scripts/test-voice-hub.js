@@ -48,7 +48,7 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     const carte = buildVoiceControlCard();
     for (const c of carte.components) c.toJSON();
     const texte = contenu(carte);
-    assert.ok(texte.includes("Rejoins ton salon vocal"), texte);
+    assert.ok(texte.includes("où tu es connecté au moment du clic"), texte);
     const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components.map((b) => b.custom_id));
     for (const attendu of ["vcpanel:lock", "vcpanel:unlock", "vcpanel:rename", "vcpanel:add", "vcpanel:remove", "vcpanel:transfer", "vcpanel:kick"]) {
       assert.ok(boutons.includes(attendu), `${attendu} manque`);
@@ -62,32 +62,24 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
   console.log("\nAccueil du salon vocal :");
 
   await cas("mentionne réellement le propriétaire", () => {
-    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "Salon de uo" }, PROPRIO, PANEL);
+    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "Salon de uo" }, PROPRIO);
     assert.ok(contenu(carte).includes(`<@${PROPRIO}>`), "la mention doit être dans le texte");
     // Le client Discord.js du bot désactive toutes les mentions par défaut
     // (index.js) : sans cet override, le ping n'en serait pas un.
     assert.deepStrictEqual(carte.allowedMentions, { users: [PROPRIO] });
   });
 
-  await cas("liste les commandes texte équivalentes", () => {
-    const texte = contenu(buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO, PANEL));
-    for (const commande of ["&vc lock", "&vc add @membre", "&vc kick @membre", "&vc rename <nom>", "&vc limit <n>", "&vc transfer @membre"]) {
-      assert.ok(texte.includes(commande), `${commande} manque`);
-    }
-  });
-
-  await cas("porte un bouton-LIEN vers le salon-panneau (impossible de \"sauter\" de salon autrement)", () => {
-    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO, PANEL);
+  await cas("porte les boutons de contrôle DIRECTEMENT — jamais de bouton-lien vers un autre salon", () => {
+    // Cliquer un lien vers un autre salon depuis la vue d'appel vocal peut en
+    // sortir côté client Discord (hors de contrôle du bot) — signalé comme
+    // gênant. Les boutons agissent ici même, sans naviguer nulle part.
+    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO);
     const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const lien = boutons.find((b) => b.style === 5); // ButtonStyle.Link
-    assert.ok(lien, "aucun bouton-lien trouvé");
-    assert.strictEqual(lien.url, `https://discord.com/channels/${GUILD_ID}/${PANEL}`);
-  });
-
-  await cas("sans salon-panneau configuré, pas de bouton du tout", () => {
-    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO, null);
-    const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1);
-    assert.strictEqual(boutons.length, 0, JSON.stringify(boutons));
+    assert.ok(!boutons.some((b) => b.style === 5), "aucun bouton-lien ne doit plus être présent"); // ButtonStyle.Link
+    const ids = boutons.map((b) => b.custom_id);
+    for (const attendu of ["vcpanel:lock", "vcpanel:unlock", "vcpanel:rename", "vcpanel:add", "vcpanel:remove", "vcpanel:transfer", "vcpanel:kick"]) {
+      assert.ok(ids.includes(attendu), `${attendu} manque`);
+    }
   });
 
   console.log("\nLes boutons agissent sur le salon vocal COURANT de la personne qui clique :");

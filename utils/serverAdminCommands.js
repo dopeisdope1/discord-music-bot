@@ -725,19 +725,9 @@ async function vc(client, message, args) {
 // panneau "Voice Create" classique : mêmes vérifications que la commande
 // texte (canManageVoiceChannel), rien de plus permissif.
 
-/** Panneau de contrôle STATIQUE, posté une seule fois dans le salon-panneau partagé. */
-function buildVoiceControlCard() {
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Panel de contrôle"));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "Rejoins ton salon vocal puis utilise les boutons ci-dessous pour le gérer.\n" +
-        "Équivalent en texte : `&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
-    )
-  );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(
+/** Les mêmes boutons, réutilisés par le panneau partagé ET l'accueil du salon (voir plus bas). */
+function voiceControlButtonRows() {
+  return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Ouvrir").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Fermer").setStyle(ButtonStyle.Secondary),
@@ -748,52 +738,49 @@ function buildVoiceControlCard() {
       new ButtonBuilder().setCustomId("vcpanel:rename").setLabel("Renommer").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:transfer").setLabel("Transférer").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:kick").setLabel("Expulser").setStyle(ButtonStyle.Danger)
+    ),
+  ];
+}
+
+/** Panneau de contrôle STATIQUE, posté une seule fois dans le salon-panneau partagé. */
+function buildVoiceControlCard() {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🎛️ Centre de contrôle vocal"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "Un seul panneau pour tout le monde : les boutons agissent toujours sur **ton** salon vocal temporaire, " +
+        "celui où tu es connecté au moment du clic — peu importe d'où tu cliques.\n" +
+        "Toujours accessible en texte, où que tu sois : `&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
     )
   );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(...voiceControlButtonRows());
   return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { parse: [] } };
 }
 
 /**
  * Message posté dans le chat du salon VOCAL lui-même à sa création : il
  * mentionne le propriétaire (d'où allowedMentions, sans quoi le client
- * Discord.js n'envoie aucune notification — voir index.js), récapitule ce
- * qu'il peut taper, et pointe vers le salon-panneau partagé via un bouton-
- * lien (impossible de "sauter" vers un salon autrement qu'avec un vrai lien).
+ * Discord.js n'envoie aucune notification — voir index.js) et porte les
+ * MÊMES boutons que le panneau partagé, directement ici. Volontairement PAS
+ * un bouton-lien vers le salon-panneau : Discord peut sortir de la vue
+ * d'appel vocal en cliquant un lien vers un autre salon (comportement du
+ * client, hors de contrôle du bot) — inutile d'y exposer qui que ce soit
+ * puisque les boutons marchent identiquement ici, sans naviguer nulle part.
  */
-function buildVoiceWelcomeCard(channel, ownerId, panelChannelId) {
+function buildVoiceWelcomeCard(channel, ownerId) {
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 👋 Bienvenue <@${ownerId}>`));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 <@${ownerId}>, ton salon est prêt`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      [
-        "Voici un aperçu des commandes de ton salon.",
-        "",
-        "**Accès**",
-        "> `&vc unlock` · `&vc lock` — Ouvrir ou verrouiller",
-        "> `&vc add @membre` · `&vc remove @membre` — Autoriser / retirer",
-        "> `&vc kick @membre` — Déconnecter du salon",
-        "",
-        "**Salon**",
-        "> `&vc rename <nom>` — Renommer",
-        "> `&vc limit <n>` — Limiter les places",
-        "> `&vc transfer @membre` — Céder la propriété",
-      ].join("\n")
+      "Verrouille-le, invite du monde, cède-le à quelqu'un — les boutons ci-dessous s'appliquent directement à ce salon, pas besoin d'aller ailleurs."
     )
   );
-  const payload = { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { users: [ownerId] } };
-  if (panelChannelId) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setStyle(ButtonStyle.Link)
-          .setLabel("Gérer mon salon")
-          .setURL(`https://discord.com/channels/${channel.guildId}/${panelChannelId}`)
-      )
-    );
-  }
-  return payload;
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(...voiceControlButtonRows());
+  return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { users: [ownerId] } };
 }
 
 async function handleVoiceControlInteraction(interaction) {

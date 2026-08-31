@@ -837,7 +837,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       // voir &panel > Communauté > Vocaux — plus de salon compagnon créé
       // puis détruit à chaque salon vocal).
       await created
-        .send(buildVoiceWelcomeCard(created, newState.member.id, hubConfig.panelChannelId))
+        .send(buildVoiceWelcomeCard(created, newState.member.id))
         .catch((err) => console.error("[voiceChannels] message d'accueil :", err.message));
     }
   }
