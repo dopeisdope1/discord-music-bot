@@ -23,7 +23,6 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
-const { PROFILES, getProfile } = require("./permissions/profiles");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
@@ -147,7 +146,6 @@ const SECTIONS = [
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage, ancien accès aux salons", permission: "sys" },
   { key: "permissions", label: "Permissions", description: "Permissions de modération par rôle", permission: "panel.permissions.manage" },
-  { key: "profiles", label: "Profils", description: "Appliquer un profil prédéfini (Helper/Modérateur/Admin) à un rôle", permission: "panel.permissions.manage" },
   { key: "roles", label: "Rôles", description: "Nom, couleur, position, membres, permissions notables", permission: "panel.roles.manage" },
   {
     key: "logs",
@@ -260,17 +258,6 @@ function sectionBody(section, guild, member, state) {
       "",
       "Sélectionne les permissions à accorder dans le menu ci-dessous — la sélection **remplace** l'ensemble actuel.",
     ].join("\n");
-  }
-
-  if (section === "profiles") {
-    const roleId = state.profilesRoleId;
-    const lines = PROFILES.map((p) => `> **${p.label}** — ${p.description}\n> ${p.permissions.map((k) => `\`${k}\``).join(", ")}`);
-    if (!roleId) {
-      return ["Choisis un rôle, puis un profil à lui appliquer (octroi en masse, éditable ensuite dans Permissions).", "", ...lines].join("\n");
-    }
-    const role = guild.roles.cache.get(roleId);
-    if (!role) return "Ce rôle n'existe plus sur le serveur.";
-    return [`**Rôle : ${role.toString()}**`, "", "Choisis le profil à lui appliquer :", "", ...lines].join("\n");
   }
 
   if (section === "roles") {
@@ -504,7 +491,7 @@ function accessRows(scope, label) {
  * @param {import('discord.js').Guild} guild
  * @param {string} current
  * @param {import('discord.js').GuildMember} member qui consulte/modifie le panneau
- * @param {{ permissionsRoleId?: string, profilesRoleId?: string, rolesRoleId?: string }} [state]
+ * @param {{ permissionsRoleId?: string, rolesRoleId?: string }} [state]
  */
 function buildConfigPanel(guild, current = "home", member, state = {}) {
   const isOwner = accessStore.isOwner(member.id);
@@ -580,24 +567,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           );
         }
       }
-    }
-  } else if (meta.key === "profiles") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId(`${ID}:profilerole`).setPlaceholder("Choisir un rôle")
-      )
-    );
-    if (state.profilesRoleId && guild.roles.cache.has(state.profilesRoleId)) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:profileapply:${state.profilesRoleId}`)
-            .setPlaceholder("Appliquer un profil à ce rôle")
-            .addOptions(
-              PROFILES.map((p) => new StringSelectMenuOptionBuilder().setLabel(p.label).setDescription(p.description).setValue(p.key))
-            )
-        )
-      );
     }
   } else if (meta.key === "roles") {
     container.addActionRowComponents(
@@ -940,23 +909,6 @@ async function handleConfigInteraction(interaction) {
     const current = permStore.getRoleGrants(guildId, extra).filter((k) => !categoryKeys.has(k));
     permStore.setRoleGrants(guildId, extra, [...current, ...interaction.values]);
     return goto("permissions", { permissionsRoleId: extra, permissionsCategory: extra2 });
-  }
-
-  if (action === "profilerole") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    return goto("profiles", { profilesRoleId: interaction.values[0] });
-  }
-
-  if (action === "profileapply") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    const profile = getProfile(interaction.values[0]);
-    if (!profile) return interaction.reply({ content: "Profil inconnu.", flags: MessageFlags.Ephemeral });
-    // Octroi en masse ADDITIF : n'écrase pas ce qui était déjà accordé, un
-    // profil est un point de départ, pas un remplacement (section 8).
-    const current = new Set(permStore.getRoleGrants(guildId, extra));
-    for (const key of profile.permissions) current.add(key);
-    permStore.setRoleGrants(guildId, extra, [...current]);
-    return goto("profiles", { profilesRoleId: extra });
   }
 
   if (action === "roleinfo") {
