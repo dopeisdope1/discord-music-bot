@@ -17,6 +17,29 @@ const WINDOW_MS = 25 * 60_000;
 const limiter = createRateLimiter(MAX_USES, WINDOW_MS);
 
 /**
+ * Messages à effacer : ceux de la personne, PLUS les réponses que le bot lui a
+ * faites — sinon nettoyer sa conversation laisse en place la moitié bot du
+ * dialogue.
+ *
+ * Volontairement limité aux messages du bot qui RÉPONDENT à l'un des siens.
+ * Ce déclencheur est ouvert à tout le monde, sans permission : effacer tous
+ * les messages du bot laisserait n'importe qui supprimer une carte de
+ * giveaway, un panneau de tickets ou le lecteur de musique d'un autre.
+ *
+ * @param {import('discord.js').Message[]} messages lot récupéré dans le salon
+ * @param {string} authorId la personne qui a tapé le déclencheur
+ * @param {string|undefined} botId le bot lui-même
+ */
+function collectOwnConversation(messages, authorId, botId) {
+  const siens = new Set(messages.filter((m) => m.author.id === authorId).map((m) => m.id));
+  return messages.filter((m) => {
+    if (m.author.id === authorId) return true;
+    if (!botId || m.author.id !== botId) return false;
+    return Boolean(m.reference?.messageId && siens.has(m.reference.messageId));
+  });
+}
+
+/**
  * À appeler dans messageCreate, avant/indépendamment des dispatchers
  * préfixés — ces déclencheurs n'ont pas de préfixe.
  * @returns {Promise<boolean>} true si le message était un déclencheur (géré ou rate-limité)
@@ -60,7 +83,7 @@ async function handleSelfClear(client, message) {
   if (tempMessage) setTimeout(() => tempMessage.delete().catch(() => {}), 15_000);
 
   const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-  const toDelete = messages ? [...messages.values()].filter((m) => m.author.id === message.author.id) : [];
+  const toDelete = messages ? collectOwnConversation([...messages.values()], message.author.id, client?.user?.id) : [];
   const count = toDelete.length ? await deleteMessages(channel, toDelete) : 0;
 
   tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** message(s) supprimé(s).`)] }).catch(() => {});
@@ -68,4 +91,4 @@ async function handleSelfClear(client, message) {
   return true;
 }
 
-module.exports = { handleSelfClear, TRIGGERS };
+module.exports = { handleSelfClear, collectOwnConversation, TRIGGERS };

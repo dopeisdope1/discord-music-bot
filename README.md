@@ -229,8 +229,9 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
   - **Public** (dans ton propre salon vocal temporaire) : `&vc lock|unlock|
     limit|rename|kick` (voir section 6septies).
   - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
-    clear` / `yanis clear` — efface les messages de son PROPRE auteur
-    uniquement, sans rapport avec `&clear` (voir `utils/selfClear.js`).
+    clear` / `yanis clear` — efface les messages de son PROPRE auteur, plus
+    les réponses que le bot lui a faites, sans rapport avec `&clear` (voir
+    `utils/selfClear.js`).
 
 `&help` n'affiche que ce que tu as réellement le droit d'utiliser — même
 moteur de permissions que les commandes et que `&panel`, jamais une liste
@@ -279,6 +280,22 @@ container Railway étant **réinitialisé à chaque redéploiement**, pointe
 `DATA_DIR` (variable d'env) vers un **Volume Railway** monté si tu veux que
 ça survive aux mises à jour du bot ; sans ça, tout repart de zéro à chaque
 push.
+
+### Le ménage ne laisse pas ses propres traces
+
+`&clear` supprime aussi **le message de commande** : laisser `&clear @membre
+50` au milieu d'un salon qu'on vient de nettoyer annule une partie du ménage.
+Sa confirmation s'efface aussitôt envoyée — le salon de logs garde la trace
+permanente.
+
+`uo clear` emporte les messages de la personne **et les réponses que le bot
+lui a faites**, sinon nettoyer sa conversation laisse en place la moitié bot
+du dialogue.
+
+Volontairement limité aux messages du bot qui **répondent** à l'un des siens :
+ce déclencheur est ouvert à tout le monde, sans aucune permission. S'il
+effaçait tous les messages du bot, n'importe qui pourrait supprimer une carte
+de giveaway, un panneau de tickets ou le lecteur de musique d'un autre membre.
 
 ## 6ter. Permissions, rôles, logs et panel
 
