@@ -878,8 +878,28 @@ client.on("presenceUpdate", async (oldPresence, newPresence) => {
   }
 });
 
+/**
+ * Dit QUEL code tourne réellement, au démarrage. Railway expose le commit
+ * déployé quand le service est branché sur le dépôt GitHub (variables
+ * RAILWAY_GIT_*) : sans cette ligne, la seule façon de savoir si un
+ * déploiement est bien parti est de deviner d'après le comportement du bot —
+ * exactement ce qui a coûté une heure le 31/08.
+ */
+function describeRunningVersion() {
+  const sha = process.env.RAILWAY_GIT_COMMIT_SHA;
+  if (!sha) {
+    // Déploiement hors GitHub (`railway up` depuis un poste, exécution locale) :
+    // il n'y a aucun commit à nommer, autant le dire franchement.
+    return "commit inconnu (déploiement hors GitHub) — impossible de vérifier ce qui tourne";
+  }
+  const branch = process.env.RAILWAY_GIT_BRANCH || "?";
+  const message = (process.env.RAILWAY_GIT_COMMIT_MESSAGE || "").split("\n")[0];
+  return `${sha.slice(0, 7)} sur ${branch}${message ? ` — ${message}` : ""}`;
+}
+
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+  console.log(`[version] ${describeRunningVersion()}`);
 
   // Réapplique le statut/activité configuré (&online/&idle/&dnd/&invisible,
   // &playto/&listen/&watch/&compet/&stream) — Discord ne le garde pas d'un
