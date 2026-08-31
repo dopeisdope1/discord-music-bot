@@ -259,7 +259,7 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     assert.ok(embedText(msg._replies[0]).includes("Aucun salon vocal occupé"));
   });
 
-  await cas("&vc (statistiques) compte membres/en ligne/en vocal/en stream/actifs/mute correctement", async () => {
+  await cas("&stats compte membres/en ligne/en vocal/en stream/actifs/mute correctement", async () => {
     const g = fakeGuild({
       members: [
         fakeMember({ id: "m1", tag: "en-ligne-actif#0001", presence: { status: "online", activities: [{ type: ActivityType.Playing }] } }),
@@ -283,12 +283,39 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     assert.strictEqual(val("Mute"), "1"); // m3, connecté ET mute
   });
 
-  await cas("&vc : quelqu'un mute mais PAS connecté ne compte pas dans Mute", async () => {
+  await cas("&stats : quelqu'un mute mais PAS connecté ne compte pas dans Mute", async () => {
     const g = fakeGuild({ members: [fakeMember({ id: "m1", tag: "mute-hors-vocal#0001", voice: { mute: true } })] });
     const msg = fakeMessage(g);
     await utilityHandlers.stats(null, msg);
     const fields = msg._replies[0].embeds[0].data.fields;
     assert.strictEqual(fields.find((f) => f.name === "Mute").value, "0");
+  });
+
+  await cas("&vc affiche un simple compte de personnes en vocal, rien d'autre", async () => {
+    const occupied = { id: "v1", type: ChannelType.GuildVoice, members: new Collection([["u1", {}], ["u2", {}]]) };
+    const empty = { id: "v2", type: ChannelType.GuildVoice, members: new Collection() };
+    const g = fakeGuild({ channels: [occupied, empty] });
+    const msg = fakeMessage(g);
+    utilityHandlers.vc(null, msg);
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("**2** personnes en vocal"), texte);
+  });
+
+  await cas("&vc accorde le pluriel correctement (0 et 1 personne, pas \"personnes\")", async () => {
+    const g0 = fakeGuild({ channels: [] });
+    const msg0 = fakeMessage(g0);
+    utilityHandlers.vc(null, msg0);
+    const texte0 = embedText(msg0._replies[0]);
+    assert.ok(texte0.includes("**0** personne en vocal"), texte0);
+    assert.ok(!texte0.includes("personnes"), texte0);
+
+    const single = { id: "v1", type: ChannelType.GuildVoice, members: new Collection([["u1", {}]]) };
+    const g1 = fakeGuild({ channels: [single] });
+    const msg1 = fakeMessage(g1);
+    utilityHandlers.vc(null, msg1);
+    const texte1 = embedText(msg1._replies[0]);
+    assert.ok(texte1.includes("**1** personne en vocal"), texte1);
+    assert.ok(!texte1.includes("personnes"), texte1);
   });
 
   await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {

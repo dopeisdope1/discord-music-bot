@@ -115,8 +115,16 @@ const handlers = {
    */
   member: (client, message, args) => moderationHandlers.userinfo(client, message, args),
 
+  /** &vc — un chiffre unique : combien de personnes sont en vocal maintenant. */
+  vc(client, message) {
+    const count = [...message.guild.channels.cache.values()]
+      .filter((c) => c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice)
+      .reduce((total, c) => total + c.members.size, 0);
+    return reply(message, "info", `🔊 Il y a **${count}** personne${count > 1 ? "s" : ""} en vocal actuellement.`);
+  },
+
   /**
-   * &vc — statistiques d'ensemble du serveur (membres, présence, vocal).
+   * &stats — statistiques d'ensemble du serveur (membres, présence, vocal).
    * "Actifs" = joue à un jeu/utilise une appli en ce moment (activité de
    * présence Discord hors statut personnalisé), pas une notion de messages
    * récents — rien de tel n'est suivi par ce bot.

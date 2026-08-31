@@ -367,7 +367,8 @@ const modHandlers = {
   antinuke: serverAdmin.antinuke,
   voicehub: serverAdmin.voicehub,
   voc: serverAdmin.vc,
-  vc: utilityHandlers.stats,
+  vc: utilityHandlers.vc,
+  stats: utilityHandlers.stats,
 
   // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
   // utils/giveaways.js.
