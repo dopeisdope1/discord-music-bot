@@ -61,13 +61,39 @@ async function createVoiceHubSetup(guild) {
   voiceChannels.setHub(guild.id, hubChannel.id);
   voiceChannels.setSpawnCategory(guild.id, spawnCategory.id);
   voiceChannels.setPanelChannel(guild.id, panelChannel.id);
-  await panelChannel.send(buildVoiceControlCard()).catch(() => {});
+  const posted = await panelChannel.send(buildVoiceControlCard()).catch(() => null);
+  if (posted) voiceChannels.setPanelMessage(guild.id, posted.id);
 
   return { hubCategory, spawnCategory, hubChannel, panelChannel };
 }
 
+/**
+ * Remet à jour la carte statique du salon-panneau — utile après un
+ * changement de libellé/contenu (ex : Ouvrir/Fermer inversés) qui ne
+ * touche sinon que les NOUVELLES cartes, jamais celle déjà postée. Édite le
+ * message existant si possible, sinon en poste un nouveau (message
+ * supprimé entre-temps, ou salon-panneau jamais initialisé côté message).
+ * @param {import('discord.js').Guild} guild
+ * @returns {Promise<boolean>} faux si aucun salon-panneau n'est configuré
+ */
+async function refreshPanelCard(guild) {
+  const { panelChannelId, panelMessageId } = voiceChannels.getHubConfig(guild.id);
+  const panelChannel = panelChannelId && guild.channels.cache.get(panelChannelId);
+  if (!panelChannel) return false;
+
+  const existing = panelMessageId ? await panelChannel.messages.fetch(panelMessageId).catch(() => null) : null;
+  if (existing) {
+    await existing.edit(buildVoiceControlCard()).catch(() => {});
+    return true;
+  }
+  const posted = await panelChannel.send(buildVoiceControlCard()).catch(() => null);
+  if (posted) voiceChannels.setPanelMessage(guild.id, posted.id);
+  return Boolean(posted);
+}
+
 module.exports = {
   createVoiceHubSetup,
+  refreshPanelCard,
   isAlreadyConfigured,
   HUB_CATEGORY_NAME,
   SPAWN_CATEGORY_NAME,

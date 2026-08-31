@@ -97,11 +97,22 @@ async function main() {
     assert.strictEqual(channel.name, undefined, "le salon n'aurait pas dû être renommé");
   });
 
-  await cas("le rang sys peut gérer n'importe quel salon temporaire", async () => {
+  await cas("même le rang sys/owner du bot NE PEUT PAS gérer un salon dont il n'est pas propriétaire (plus de bypass)", async () => {
+    // Demande explicite : owner/sys pouvait auparavant agir sur N'IMPORTE
+    // QUEL salon temporaire sans en être le créateur — retiré entièrement,
+    // aucune exception, ni ici ni depuis le panneau à boutons.
     accessStore.add("sys", "sys-user-1");
     const channel = fakeChannel({ id: "chan-4" });
     voiceChannels.registerChannel(channel.id, GUILD_ID, "someone-else");
     const message = fakeMessage({ authorId: "sys-user-1", voiceChannel: channel });
+    await serverAdmin.vc(null, message, ["limit", "5"]);
+    assert.strictEqual(channel.limit, undefined, "sys ne doit plus pouvoir gérer le salon de quelqu'un d'autre");
+  });
+
+  await cas("le propriétaire réel reste géré normalement (le retrait du bypass ne casse pas le cas courant)", async () => {
+    const channel = fakeChannel({ id: "chan-4b" });
+    voiceChannels.registerChannel(channel.id, GUILD_ID, "vrai-proprio");
+    const message = fakeMessage({ authorId: "vrai-proprio", voiceChannel: channel });
     await serverAdmin.vc(null, message, ["limit", "5"]);
     assert.strictEqual(channel.limit, 5);
   });

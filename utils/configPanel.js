@@ -780,7 +780,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           .setLabel("Créer la configuration")
           .setStyle(ButtonStyle.Success)
           .setDisabled(Boolean(hubId && guild.channels.cache.has(hubId))),
-        new ButtonBuilder().setCustomId(`${ID}:voicenames`).setLabel("Modifier les noms").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:voicenames`).setLabel("Modifier les noms").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:voicepanelrefresh`)
+          .setLabel("Actualiser le panneau")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!(hubConfig.panelChannelId && guild.channels.cache.has(hubConfig.panelChannelId)))
       )
     );
   }
@@ -1174,6 +1179,19 @@ async function handleConfigInteraction(interaction) {
       })
       .catch(() => {});
     return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
+  }
+
+  if (action === "voicepanelrefresh") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    const ok = await voiceHubSetup.refreshPanelCard(guild);
+    await interaction
+      .followUp({
+        content: ok ? "Panneau actualisé — les libellés/boutons repris sont ceux de la version actuelle du bot." : "Aucun salon-panneau configuré.",
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
+    return;
   }
 
   if (action === "voicenames") {

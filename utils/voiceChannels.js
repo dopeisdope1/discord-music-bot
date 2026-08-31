@@ -110,13 +110,14 @@ function saveConfig() {
 const DEFAULT_VOICE_NAME_TEMPLATE = "Salon de {pseudo}";
 
 /**
- * @returns {{ spawnCategoryId: string|null, panelChannelId: string|null, voiceNameTemplate: string }}
+ * @returns {{ spawnCategoryId: string|null, panelChannelId: string|null, panelMessageId: string|null, voiceNameTemplate: string }}
  */
 function getHubConfig(guildId) {
   const entry = loadConfig()[guildId] || {};
   return {
     spawnCategoryId: entry.spawnCategoryId || null,
     panelChannelId: entry.panelChannelId || null,
+    panelMessageId: entry.panelMessageId || null,
     voiceNameTemplate: entry.voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE,
   };
 }
@@ -142,6 +143,19 @@ function setPanelChannel(guildId, channelId) {
   saveConfig();
 }
 
+/**
+ * ID du message qui porte la carte statique (voir buildVoiceControlCard),
+ * pour pouvoir l'ÉDITER en place plutôt que d'en reposter un nouveau à
+ * chaque changement de contenu/boutons (voir "Actualiser le panneau",
+ * &panel > Communauté > Vocaux).
+ * @param {string|null} messageId
+ */
+function setPanelMessage(guildId, messageId) {
+  const data = loadConfig();
+  data[guildId] = { ...data[guildId], panelMessageId: messageId || null };
+  saveConfig();
+}
+
 function setNameTemplates(guildId, { voiceNameTemplate }) {
   const data = loadConfig();
   data[guildId] = { ...data[guildId], voiceNameTemplate: voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE };
@@ -163,6 +177,7 @@ module.exports = {
   getHubConfig,
   setSpawnCategory,
   setPanelChannel,
+  setPanelMessage,
   setNameTemplates,
   formatTemplate,
   DEFAULT_VOICE_NAME_TEMPLATE,

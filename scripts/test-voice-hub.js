@@ -176,6 +176,16 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     assert.ok(interaction._reponses[0]?.content.includes("Rejoins"), JSON.stringify(interaction._reponses));
   });
 
+  await cas("connecté à un salon RÉELLEMENT enregistré mais dont il n'est PAS propriétaire -> refusé, MÊME pour le propriétaire du bot", async () => {
+    // Second correctif demandé sur le même sujet : owner/sys ne doit plus
+    // avoir AUCUNE exception, y compris sur un vrai salon temporaire créé
+    // par quelqu'un d'autre — plus de bypass du tout, ni ici ni dans &vc.
+    const salonPanel = { id: PANEL, type: ChannelType.GuildText };
+    const interaction = interactionConnecteA(VOCAL, "owner-bot", salonPanel);
+    await handleVoiceControlInteraction(interaction);
+    assert.ok(interaction._reponses[0]?.content.includes("propriétaire"), JSON.stringify(interaction._reponses));
+  });
+
   await cas('le bouton "Gérer ton salon" (action "menu") ouvre les vrais contrôles en éphémère', async () => {
     const salonPanel = { id: PANEL, type: ChannelType.GuildText };
     const interaction = interactionConnecteA(VOCAL, PROPRIO, salonPanel);

@@ -54,7 +54,22 @@ function makeGuild(id) {
           name: opts.name,
           type: opts.type,
           parentId: opts.parent || null,
-          send: async () => ({}),
+          _messages: new Map(),
+          _nextMsgId: 1,
+          send: function (payload) {
+            const msg = {
+              id: `msg-${this._nextMsgId++}`,
+              content: payload,
+              edit: async (p) => {
+                msg.content = p;
+              },
+            };
+            this._messages.set(msg.id, msg);
+            return Promise.resolve(msg);
+          },
+        };
+        ch.messages = {
+          fetch: async (id) => ch._messages.get(id) || Promise.reject(new Error("Unknown Message")),
         };
         created.push(ch);
         channelsCache.set(ch.id, ch);
@@ -140,6 +155,43 @@ function makeMember(guild) {
     await voiceHubSetup.createVoiceHubSetup(guild);
     assert.ok(sent, "rien n'a été posté dans le salon-panneau");
     assert.ok(sent.flags !== undefined, "doit être une carte Components V2");
+  });
+
+  console.log("\nActualiser le panneau (message déjà posté vs. disparu) :");
+
+  await cas("enregistre l'ID du message posté, pour pouvoir l'éditer plus tard", async () => {
+    const guild = makeGuild("g-refresh1");
+    const { panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    const stored = voiceChannels.getHubConfig("g-refresh1").panelMessageId;
+    assert.ok(stored, "aucun panelMessageId enregistré");
+    assert.ok(panelChannel._messages.has(stored));
+  });
+
+  await cas("refreshPanelCard ÉDITE le message existant plutôt que d'en poster un nouveau", async () => {
+    const guild = makeGuild("g-refresh2");
+    const { panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    const avant = panelChannel._messages.size;
+    const ok = await voiceHubSetup.refreshPanelCard(guild);
+    assert.strictEqual(ok, true);
+    assert.strictEqual(panelChannel._messages.size, avant, "aucun nouveau message ne doit être créé");
+  });
+
+  await cas("si le message a été supprimé entre-temps, refreshPanelCard en poste un nouveau et met à jour l'ID", async () => {
+    const guild = makeGuild("g-refresh3");
+    const { panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    const ancienId = voiceChannels.getHubConfig("g-refresh3").panelMessageId;
+    panelChannel._messages.delete(ancienId);
+    const ok = await voiceHubSetup.refreshPanelCard(guild);
+    assert.strictEqual(ok, true);
+    const nouvelId = voiceChannels.getHubConfig("g-refresh3").panelMessageId;
+    assert.notStrictEqual(nouvelId, ancienId);
+    assert.ok(panelChannel._messages.has(nouvelId));
+  });
+
+  await cas("sans salon-panneau configuré du tout, refreshPanelCard renvoie faux sans planter", async () => {
+    const guild = makeGuild("g-refresh4");
+    const ok = await voiceHubSetup.refreshPanelCard(guild);
+    assert.strictEqual(ok, false);
   });
 
   await cas("isAlreadyConfigured est faux tant que rien n'existe, vrai une fois créé", async () => {

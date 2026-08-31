@@ -641,9 +641,13 @@ async function voicehub(client, message, args) {
   return reply(message, "success", `Rejoindre <#${channel.id}> crée désormais un salon vocal personnel.`);
 }
 
-/** Vrai si `member` peut gérer `channel` : propriétaire du salon temporaire, sys, ou owner. */
+/**
+ * Vrai si `member` est le propriétaire ACTUEL du salon temporaire —
+ * strictement, sans exception pour owner/sys (demande explicite : le rang
+ * owner/sys passait outre et pouvait gérer n'importe quel salon temporaire
+ * sans en être le créateur, via le panneau ET &vc — plus de bypass du tout).
+ */
 function canManageVoiceChannel(member, channel) {
-  if (accessStore.isOwner(member.id) || accessStore.isAllowed("sys", member.id)) return true;
   const info = voiceChannels.getChannelInfo(channel.id);
   return info?.ownerId === member.id;
 }
@@ -817,11 +821,9 @@ async function handleVoiceControlInteraction(interaction) {
   // Le panneau est PARTAGÉ (un seul salon pour tout le monde) : le salon
   // ciblé est celui où la personne qui clique est connectée EN VOCAL à cet
   // instant, pas celui où elle a cliqué. Doit être un salon TEMPORAIRE
-  // réellement enregistré (voiceChannels.getChannelInfo) — sans ce
-  // contrôle, le rang sys/owner passait outre canManageVoiceChannel et
-  // pouvait agir sur N'IMPORTE QUEL salon vocal où il se trouvait
-  // connecté (le générateur lui-même y compris), pas seulement les vrais
-  // salons temporaires. Même garde-fou que la commande texte &vc (ci-dessus).
+  // réellement enregistré (voiceChannels.getChannelInfo), sinon même le
+  // générateur lui-même serait manipulable. Même garde-fou que la commande
+  // texte &vc (ci-dessus).
   const voiceChannelId = interaction.member?.voice?.channelId;
   const channel = voiceChannelId ? interaction.guild.channels.cache.get(voiceChannelId) : null;
   const isTempChannel = channel?.type === ChannelType.GuildVoice && voiceChannels.getChannelInfo(channel.id);
