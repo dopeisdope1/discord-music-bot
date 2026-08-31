@@ -22,7 +22,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { buildConfigPanel, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { buildConfigPanel, handleConfigInteraction, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const permStore = require("../utils/permissions/store");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -51,8 +52,8 @@ const guild = {
   emojis: { cache: new Collection() },
 };
 
-function render(section) {
-  const json = buildConfigPanel(guild, section, member).components[0].toJSON();
+function render(section, state) {
+  const json = buildConfigPanel(guild, section, member, state).components[0].toJSON();
   return {
     texte: json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n"),
     rangees: json.components.filter((c) => c.type === 1).length,
@@ -96,6 +97,65 @@ function render(section) {
     const { texte } = render("permissions");
     assert.ok(texte.length < 300, `${texte.length} caractères — le catalogue est probablement recopié`);
     assert.ok(!texte.includes("moderation.kick"), "les clés de permission n'ont pas à être listées en texte");
+  });
+
+  console.log("\n« Voir les commandes débloquées » (permissions > rôle) :");
+
+  const roleId = "role-1";
+  guild.roles.cache.set(roleId, { id: roleId, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [] } });
+  permStore.setRoleGrants("g1", roleId, ["server.stats.view"]);
+
+  const fakeInteraction = (customId, extra = {}) => ({
+    customId: `${ID}:${customId}`,
+    member,
+    guild,
+    isModalSubmit: () => false,
+    reply: async () => {},
+    update: async () => {},
+    ...extra,
+  });
+
+  await cas("sans rôle choisi, aucun bouton \"voir les commandes débloquées\"", () => {
+    const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    assert.ok(!boutons.some((b) => b.custom_id?.includes("permshowcmds")), "le bouton ne devrait apparaître qu'une fois un rôle choisi");
+  });
+
+  await cas("un rôle choisi affiche le bouton \"Voir les commandes débloquées\"", () => {
+    const json = buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const bouton = boutons.find((b) => b.custom_id === `${ID}:permshowcmds:${roleId}`);
+    assert.ok(bouton, "le bouton \"voir les commandes débloquées\" est absent");
+    assert.strictEqual(bouton.label, "Voir les commandes débloquées");
+  });
+
+  await cas("le comptage par catégorie ne dit QUE le nombre, jamais les commandes elles-mêmes", () => {
+    const { texte } = render("permissions", { permissionsRoleId: roleId });
+    assert.ok(texte.includes("Permissions du bot accordées"), texte);
+    assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "sans avoir cliqué sur le bouton, la liste ne doit pas apparaître");
+    assert.ok(!texte.includes("`vc`"), "sans le bouton cliqué, aucune commande nommée ne doit apparaître");
+  });
+
+  await cas("cliquer sur le bouton révèle les VRAIES commandes débloquées, pas juste un compte", async () => {
+    let panel = null;
+    await handleConfigInteraction(
+      fakeInteraction(`permshowcmds:${roleId}`, { update: async (p) => { panel = p; } })
+    );
+    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("Commandes débloquées par ce rôle"), texte);
+    assert.ok(texte.includes("`vc`") || texte.includes("`stats`"), `attendu vc/stats (server.stats.view) : ${texte}`);
+  });
+
+  await cas("un second clic (déjà affiché) bascule vers \"Masquer\" et referme la liste", async () => {
+    let panel = null;
+    await handleConfigInteraction(
+      fakeInteraction(`permhidecmds:${roleId}`, { update: async (p) => { panel = p; } })
+    );
+    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "la liste devrait être repliée après un second clic");
+    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const bouton = boutons.find((b) => b.custom_id === `${ID}:permshowcmds:${roleId}`);
+    assert.ok(bouton, "le bouton doit repasser à \"Voir les commandes débloquées\" une fois replié");
   });
 
   console.log("\nNavigation regroupée par famille :");

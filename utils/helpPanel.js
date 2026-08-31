@@ -45,19 +45,52 @@ const TIER_ORDER = ["public", "configurable", "sys"];
 const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes configurables", sys: "Commandes Sys" };
 
 /**
- * Réduit une liste d'entrées du catalogue à des IDENTITÉS distinctes, alias
- * collés ("pic/avatar"). `identityOf` (pas le premier mot brut) garantit
- * que des sous-commandes différentes ("role create" / "role delete")
- * restent deux entrées séparées au lieu de se confondre sous "role".
+ * Réduit une liste d'entrées du catalogue à des IDENTITÉS distinctes, en
+ * gardant la commande représentative (syntaxe + description) et les alias
+ * de chacune. `identityOf` (pas le premier mot brut) garantit que des
+ * sous-commandes différentes ("role create" / "role delete") restent deux
+ * entrées séparées au lieu de se confondre sous "role".
+ * @returns {{ cmd: object, aliases: string[] }[]}
  */
-function namesWithAliases(commands) {
+function dedupeByIdentity(commands) {
   const byIdentity = new Map();
   for (const cmd of commands) {
     const id = identityOf(cmd);
-    if (!byIdentity.has(id)) byIdentity.set(id, new Set());
-    for (const a of cmd.aliases || []) byIdentity.get(id).add(a);
+    if (!byIdentity.has(id)) byIdentity.set(id, { cmd, aliases: new Set() });
+    for (const a of cmd.aliases || []) byIdentity.get(id).aliases.add(a);
   }
-  return [...byIdentity].map(([id, aliases]) => (aliases.size ? `${id}/${[...aliases].join("/")}` : id));
+  return [...byIdentity.values()].map(({ cmd, aliases }) => ({ cmd, aliases: [...aliases] }));
+}
+
+/** Une commande, en bloc : nom (+alias) en gras, description, puis la syntaxe réelle à taper. */
+function formatCommandBlock(entry, prefixSymbol) {
+  const heading = entry.aliases.length ? `${identityOf(entry.cmd)}/${entry.aliases.join("/")}` : identityOf(entry.cmd);
+  return `**${heading}** (${entry.cmd.description})\n└ Usage : \`${prefixSymbol}${entry.cmd.name}\``;
+}
+
+/**
+ * Répartit des blocs de texte sur plusieurs TextDisplay (chacun plafonné à
+ * 4000 caractères côté Discord) : un palier dense ("Commandes
+ * configurables", 100+ commandes une fois détaillées) dépasse largement
+ * cette limite en un seul bloc — la coupe se fait toujours ENTRE deux
+ * commandes, jamais au milieu de l'une d'elles.
+ */
+function chunkBlocks(blocks, maxLen = 3800) {
+  const chunks = [];
+  let current = [];
+  let currentLen = 0;
+  for (const block of blocks) {
+    const addedLen = block.length + 2; // +2 pour le "\n\n" de séparation
+    if (current.length && currentLen + addedLen > maxLen) {
+      chunks.push(current.join("\n\n"));
+      current = [];
+      currentLen = 0;
+    }
+    current.push(block);
+    currentLen += addedLen;
+  }
+  if (current.length) chunks.push(current.join("\n\n"));
+  return chunks;
 }
 
 /**
@@ -116,8 +149,15 @@ function buildHelpPanel(guildId, member, tier = null) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   if (activeTier) {
-    const names = namesWithAliases(groups[activeTier]);
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(names.join(", ")));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**")
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    const entries = dedupeByIdentity(groups[activeTier]);
+    const blocks = entries.map((e) => formatCommandBlock(e, prefixes.musicMod));
+    for (const chunk of chunkBlocks(blocks)) {
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
+    }
   } else {
     const lines = availableTiers.map((t) => `> **${TIER_LABELS[t]}** — ${groups[t].length} commande(s)`);
     container.addTextDisplayComponents(

@@ -23,6 +23,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
+const { commandsForKeys } = require("./permsCommands");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
@@ -237,13 +238,23 @@ function sectionBody(section, guild, member, state) {
       })
       .filter(Boolean);
 
-    return [
+    const lines = [
       `> **Rôle** : ${role.toString()} — \`${role.id}\``,
       `> **Membres** : ${role.members.size} · **position** : ${role.position}/${guild.roles.cache.size} · **couleur** : ${role.hexColor}`,
       `> **Permissions Discord notables** : ${notables.length ? notables.join(", ") : "*aucune*"}`,
       `> **Permissions du bot accordées** : ${granted.length}`,
       ...parCategorie,
-    ].join("\n");
+    ];
+
+    // Le nombre par catégorie ne dit pas QUELLES commandes ça débloque —
+    // bouton "Voir les commandes débloquées" plus bas pour l'afficher en clair.
+    if (state.permissionsShowCommands) {
+      const commands = commandsForKeys(granted);
+      lines.push("", `**Commandes débloquées par ce rôle (${commands.length})** :`);
+      lines.push(commands.length ? commands.map((c) => `\`${c}\``).join(", ") : "*aucune*");
+    }
+
+    return lines.join("\n");
   }
 
   if (section === "logs") {
@@ -465,6 +476,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
       )
     );
+    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
+      // Bascule encodée dans le customId lui-même (pas d'état côté serveur
+      // entre deux interactions) : le libellé/l'action reflètent ce que CE
+      // rendu affiche déjà, donc un clic fait toujours l'inverse.
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          state.permissionsShowCommands
+            ? new ButtonBuilder()
+                .setCustomId(`${ID}:permhidecmds:${state.permissionsRoleId}`)
+                .setLabel("Masquer les commandes débloquées")
+                .setStyle(ButtonStyle.Secondary)
+            : new ButtonBuilder()
+                .setCustomId(`${ID}:permshowcmds:${state.permissionsRoleId}`)
+                .setLabel("Voir les commandes débloquées")
+                .setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
     if (peutModifier && state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
       const categories = permCatalog.byCategory();
       container.addActionRowComponents(
@@ -854,6 +883,13 @@ async function handleConfigInteraction(interaction) {
   if (action === "permrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
+  if (action === "permshowcmds" || action === "permhidecmds") {
+    if (!can(member, "panel.permissions.manage") && !can(member, "panel.roles.manage")) {
+      return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    }
+    return goto("permissions", { permissionsRoleId: extra, permissionsShowCommands: action === "permshowcmds" });
   }
 
   if (action === "permcat") {

@@ -3,6 +3,8 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const commandCatalog = require("./commandCatalog");
+const { isImplemented } = require("./implementedCommands");
+const { identityOf } = require("./helpPanel");
 
 // &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
 // dans le même style "Permission 1, 2, 3..." qu'une référence montrée par
@@ -16,7 +18,6 @@ const commandCatalog = require("./commandCatalog");
 // gérer, entièrement calculé depuis utils/permissions/store.js.
 
 const ALL_COMMANDS = commandCatalog.CATEGORIES.flatMap((c) => c.commands);
-const shortName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
 
 /** @returns {{ index: number, keys: string[], roleIds: string[] }[]} */
 function computeTiers(guildId) {
@@ -34,7 +35,7 @@ function computeTiers(guildId) {
 
 function commandsForKeys(keys) {
   const set = new Set(keys);
-  const names = ALL_COMMANDS.filter((cmd) => cmd.permission && set.has(cmd.permission)).map(shortName);
+  const names = ALL_COMMANDS.filter((cmd) => cmd.permission && set.has(cmd.permission) && isImplemented(cmd)).map(identityOf);
   return [...new Set(names)];
 }
 
@@ -86,4 +87,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers };
+module.exports = { perms, helpall, computeTiers, commandsForKeys };
