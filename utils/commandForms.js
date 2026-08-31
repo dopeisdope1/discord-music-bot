@@ -11,9 +11,6 @@ const {
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
   UserSelectMenuBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   ChannelType,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
@@ -863,6 +860,11 @@ function structuralFieldsSatisfied(form, values) {
 const formState = new Map();
 const stateKey = (userId, formKey) => `${userId}:${formKey}`;
 
+// Saisie des champs texte EN COURS (voir collectTextFields) — empêche de
+// démarrer une deuxième collecte en double si on reclique pendant qu'une
+// réponse est attendue.
+const pendingTextCapture = new Set();
+
 function getFormState(userId, formKey) {
   return formState.get(stateKey(userId, formKey)) || null;
 }
@@ -952,7 +954,14 @@ function buildFormCard(formKey, member) {
 
   const buttons = [];
   if (form.textFields?.length) {
-    buttons.push(new ButtonBuilder().setCustomId(`${CARD_ID}:textopen:${formKey}`).setLabel("Remplir le texte").setStyle(ButtonStyle.Secondary));
+    const capturing = pendingTextCapture.has(stateKey(member.id, formKey));
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`${CARD_ID}:textopen:${formKey}`)
+        .setLabel(capturing ? "Réponse en attente dans le salon..." : "Remplir dans le salon")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(capturing)
+    );
   }
   buttons.push(
     new ButtonBuilder().setCustomId(`${CARD_ID}:launch:${formKey}`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active))
@@ -960,6 +969,65 @@ function buildFormCard(formKey, member) {
   container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons));
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+const TEXT_CAPTURE_TIMEOUT_MS = 2 * 60 * 1000;
+
+/**
+ * Remplace la modale native (popup gris, hors du style Components V2 utilisé
+ * partout ailleurs — demande explicite de ne plus l'utiliser) : demande
+ * chaque champ texte un par un directement dans le salon et attend la
+ * prochaine réponse de la personne. Champs optionnels : `-` pour passer.
+ */
+async function collectTextFields(interaction, form, formKey) {
+  const key = stateKey(interaction.user.id, formKey);
+  if (pendingTextCapture.has(key)) {
+    return interaction.reply({ content: "Une saisie est déjà en cours pour cette carte — réponds dans le salon.", flags: MessageFlags.Ephemeral });
+  }
+  pendingTextCapture.add(key);
+
+  const channel = interaction.channel;
+  await interaction.reply({
+    content: `Réponds dans ce salon, un message par champ (${TEXT_CAPTURE_TIMEOUT_MS / 1000}s par réponse).`,
+    flags: MessageFlags.Ephemeral,
+  });
+  await interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+
+  const text = { ...(getFormState(interaction.user.id, formKey)?.text || {}) };
+  for (const tf of form.textFields) {
+    // Un essai précédent a déjà rempli ce champ (reprise après un timeout,
+    // par exemple) — pas la peine de le redemander.
+    if (text[tf.key] !== undefined) continue;
+    const optionalHint = tf.required === false ? " *(optionnel — tape `-` pour passer)*" : "";
+    await channel.send(`<@${interaction.user.id}> **${tf.label}**${optionalHint} :`).catch(() => {});
+
+    let collected;
+    try {
+      collected = await channel.awaitMessages({
+        filter: (m) => m.author.id === interaction.user.id,
+        max: 1,
+        time: TEXT_CAPTURE_TIMEOUT_MS,
+        errors: ["time"],
+      });
+    } catch {
+      await channel.send(`<@${interaction.user.id}> Temps écoulé — ce qui a déjà été rempli est conservé, reclique sur "Remplir dans le salon" pour continuer.`).catch(() => {});
+      pendingTextCapture.delete(key);
+      setFormState(interaction.user.id, formKey, { text });
+      return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+    }
+
+    const raw = collected.first().content.trim();
+    if (tf.required === false && (raw === "-" || raw === "")) {
+      // champ optionnel passé
+    } else {
+      text[tf.key] = raw.slice(0, tf.max || 200);
+    }
+  }
+
+  pendingTextCapture.delete(key);
+  setFormState(interaction.user.id, formKey, { text });
+  await channel.send(`<@${interaction.user.id}> Champs enregistrés.`).catch(() => {});
+  return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
 }
 
 /** Toutes les interactions "cmdrun:" (voir index.js). */
@@ -987,30 +1055,7 @@ async function handleFormCardInteraction(interaction) {
   }
 
   if (action === "textopen") {
-    const active = getFormState(interaction.user.id, formKey) || {};
-    const modal = new ModalBuilder().setCustomId(`${CARD_ID}:text:${formKey}`).setTitle(form.label.slice(0, 45));
-    for (const tf of form.textFields) {
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId(tf.key)
-            .setLabel(tf.label.slice(0, 45))
-            .setStyle(TextInputStyle.Short)
-            .setMaxLength(tf.max || 200)
-            .setRequired(tf.required !== false)
-            .setValue(active.text?.[tf.key] || "")
-        )
-      );
-    }
-    return interaction.showModal(modal);
-  }
-
-  if (action === "text") {
-    const text = {};
-    for (const tf of form.textFields) text[tf.key] = interaction.fields.getTextInputValue(tf.key).trim();
-    setFormState(interaction.user.id, formKey, { text });
-    await interaction.reply({ content: "Champs enregistrés.", flags: MessageFlags.Ephemeral });
-    return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+    return collectTextFields(interaction, form, formKey);
   }
 
   if (action === "launch") {
