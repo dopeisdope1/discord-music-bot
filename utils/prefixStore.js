@@ -11,10 +11,8 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
 // Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
 // main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
-// avec le CrowBot du serveur (voir utils/musicCommands.js) ; tools = préfixe
-// du système Tools (niveaux/xp, voir utils/toolsCommands.js), volontairement
-// séparé pour ne jamais se mélanger avec le préfixe principal.
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&", tools: ";" };
+// avec le CrowBot du serveur (voir utils/musicCommands.js).
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&" };
 
 let cache = null;
 

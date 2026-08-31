@@ -217,11 +217,9 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Préfixe musique** : \`${prefixes.main}\``,
       `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
-      `> **Préfixe Tools** : \`${prefixes.tools}\``,
       "",
       "Le préfixe des commandes est partagé avec les autres bots du serveur : " +
-        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste. Le préfixe Tools est un système à " +
-        "part, jamais mélangé avec les commandes principales (voir la rubrique Tools).",
+        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste.",
     ].join("\n");
   }
 
@@ -511,8 +509,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${ID}:prefix:main`).setLabel("Préfixe musique").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:tools`).setLabel("Préfixe Tools").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
@@ -837,7 +834,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
 const PREFIX_FIELDS = {
   main: { label: "Préfixe musique", max: 5 },
   musicMod: { label: "Préfixe des commandes", max: 5 },
-  tools: { label: "Préfixe Tools", max: 5 },
 };
 
 /**
