@@ -45,7 +45,7 @@ const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
-const { buildHelpPanel, SELECT_ID: HELP_SELECT_ID } = require("./utils/helpPanel");
+const { handleHelpInteraction } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
@@ -481,21 +481,13 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Navigation dans l'aide : la réponse est recalculée pour QUI CLIQUE et
+  // Navigation dans l'aide (catégorie -> palier -> page, voir
+  // utils/helpPanel.js) : la réponse est recalculée pour QUI CLIQUE et
   // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
-  // même liste de commandes. Premier clic (sur le message public &help) :
-  // nouvelle réponse éphémère, on ne peut pas éditer le message public sans
-  // y montrer le contenu filtré d'une seule personne à tout le salon. Clics
-  // suivants (déjà sur SA carte éphémère à elle) : on édite en place plutôt
-  // que d'empiler une nouvelle carte à chaque catégorie choisie.
-  if (interaction.isStringSelectMenu?.() && interaction.customId === HELP_SELECT_ID) {
-    const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0]);
-    if (interaction.message.flags?.has(MessageFlags.Ephemeral)) {
-      return interaction.update(panel).catch(() => {});
-    }
-    return interaction
-      .reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral })
-      .catch(() => {});
+  // même liste de commandes.
+  if (interaction.isStringSelectMenu?.() && interaction.customId.startsWith("help_")) {
+    await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
+    return;
   }
 
   if (interaction.isButton()) {
