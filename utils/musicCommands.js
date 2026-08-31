@@ -24,6 +24,7 @@ const commandForms = require("./commandForms");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
+const { guardHandlers } = require("./guardCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -489,6 +490,25 @@ const modHandlers = {
   serverlog: logHandlers.serverlog,
   botlog: logHandlers.botlog,
   messagelog: logHandlers.messagelog,
+
+  // Antiraid : équivalents texte de &panel > Anti-nuke, même store et même
+  // whitelist — voir utils/guardCommands.js.
+  secur: guardHandlers.secur,
+  punition: guardHandlers.punition,
+  wl: guardHandlers.wl,
+  unwl: guardHandlers.unwl,
+  antibot: guardHandlers.antibot,
+  antiwebhook: guardHandlers.antiwebhook,
+  antiroleadmin: guardHandlers.antiroleadmin,
+  antichannel: guardHandlers.antichannel,
+  antichanneldelete: guardHandlers.antichanneldelete,
+  antirole: guardHandlers.antirole,
+  antiroledelete: guardHandlers.antiroledelete,
+  antikick: guardHandlers.antikick,
+  antiban: guardHandlers.antiban,
+  antiunban: guardHandlers.antiunban,
+  antieveryone: guardHandlers.antieveryone,
+  antijoin: guardHandlers.antijoin,
 };
 
 /**
@@ -585,6 +605,20 @@ const MOD_SUBCOMMANDS = {
   serverlog: ["on", "off"],
   botlog: ["on", "off"],
   messagelog: ["on", "off"],
+  secur: ["on", "off", "max"],
+  antibot: ["on", "off", "max"],
+  antiwebhook: ["on", "off", "max"],
+  antiroleadmin: ["on", "off", "max"],
+  antichannel: ["on", "off", "max"],
+  antichanneldelete: ["on", "off", "max"],
+  antirole: ["on", "off", "max"],
+  antiroledelete: ["on", "off", "max"],
+  antikick: ["on", "off", "max"],
+  antiban: ["on", "off", "max"],
+  antiunban: ["on", "off", "max"],
+  antieveryone: ["on", "off", "max"],
+  antijoin: ["on", "off", "max"],
+  punition: ["all"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond
