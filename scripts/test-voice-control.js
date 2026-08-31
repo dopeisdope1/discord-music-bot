@@ -107,6 +107,13 @@ async function cas(nom, fn) {
     for (const c of card.components) c.toJSON();
   });
 
+  await cas("la carte mentionne réellement le propriétaire (ping, pas juste du texte)", () => {
+    const card = serverAdmin.buildVoiceControlCard(channel, OWNER_ID);
+    const body = card.components[0].toJSON().components.map((c) => c.content).join("\n");
+    assert.ok(body.includes(`<@${OWNER_ID}>`));
+    assert.deepStrictEqual(card.allowedMentions, { users: [OWNER_ID] });
+  });
+
   await cas("un non-propriétaire est refusé", async () => {
     const i = fakeInteraction("vcpanel:lock", channel, guild, owner, { member: target });
     await serverAdmin.handleVoiceControlInteraction(i);

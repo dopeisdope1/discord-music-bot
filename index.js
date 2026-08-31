@@ -823,7 +823,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       // Chaque salon vocal a son propre chat textuel (fonctionnalité Discord
       // standard) — on y poste la carte de contrôle plutôt que de laisser le
       // propriétaire deviner la syntaxe de &vc.
-      await created.send(buildVoiceControlCard(created)).catch((err) => console.error("[voiceChannels] carte de contrôle :", err.message));
+      await created
+        .send(buildVoiceControlCard(created, newState.member.id))
+        .catch((err) => console.error("[voiceChannels] carte de contrôle :", err.message));
     }
   }
 

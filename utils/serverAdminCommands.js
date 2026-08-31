@@ -748,13 +748,13 @@ async function vc(client, message, args) {
 // propriétaire, plutôt que de devoir taper &vc ... — mêmes vérifications
 // que la commande texte (canManageVoiceChannel), rien de plus permissif.
 
-function buildVoiceControlCard(channel) {
+function buildVoiceControlCard(channel, ownerId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Salon vocal de ${channel.name}`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "Ce salon est à toi tant que tu y es connecté — utilise les boutons ci-dessous pour le gérer, ou tape " +
+      `${ownerId ? `<@${ownerId}> ` : ""}Ce salon est à toi tant que tu y es connecté — utilise les boutons ci-dessous pour le gérer, ou tape ` +
         "`&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
     )
   );
@@ -772,7 +772,11 @@ function buildVoiceControlCard(channel) {
       new ButtonBuilder().setCustomId("vcpanel:kick").setLabel("Expulser").setStyle(ButtonStyle.Danger)
     )
   );
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+    allowedMentions: ownerId ? { users: [ownerId] } : { parse: [] },
+  };
 }
 
 async function handleVoiceControlInteraction(interaction) {
