@@ -9,6 +9,12 @@
  * Lancement : node scripts/test-utility-commands.js
  */
 const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "utilitycmd-test-"));
+process.env.BOT_OWNER_IDS = "author-1";
 
 const { Collection, PermissionFlagsBits, ChannelType, ActivityType } = require("discord.js");
 const { utilityHandlers } = require("../utils/utilityCommands");
@@ -16,6 +22,7 @@ const readOnlyLists = require("../utils/readOnlyLists");
 const { DEFINITIONS } = readOnlyLists;
 const calc = require("../utils/calc");
 const wikipedia = require("../utils/wikipedia");
+const permStore = require("../utils/permissions/store");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -83,6 +90,10 @@ function fakeMessage(guild, { args = [], mentions = {} } = {}) {
   const replies = [];
   return {
     author: { id: "author-1", tag: "auteur#0001", createdTimestamp: 1600000000000, bot: false, displayAvatarURL: () => "https://avatar" },
+    // "author-1" est propriétaire du bot (process.env.BOT_OWNER_IDS) : passe
+    // toute vérification de permission sans avoir à accorder de rôle pour
+    // chaque test — seuls &vc/&stats en ont besoin (server.stats.view).
+    member: { id: "author-1", guild, roles: { cache: new Collection() } },
     guild,
     client: { users: { fetch: async () => null } },
     mentions: {
@@ -316,6 +327,30 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     const texte1 = embedText(msg1._replies[0]);
     assert.ok(texte1.includes("**1** personne en vocal"), texte1);
     assert.ok(!texte1.includes("personnes"), texte1);
+  });
+
+  await cas("&vc et &stats exigent server.stats.view — un membre sans cette permission reste sans réponse", async () => {
+    // Signalé : un membre n'ayant QUE la permission "giveaway" accordée sur
+    // son rôle pouvait quand même utiliser &vc, qui était public par
+    // défaut comme les autres commandes de consultation — changé pour
+    // exiger explicitement server.stats.view.
+    const g = fakeGuild({ channels: [] });
+    const msg = fakeMessage(g);
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    utilityHandlers.vc(null, msg);
+    assert.strictEqual(msg._replies.length, 0, "aucune réponse sans la permission");
+    await utilityHandlers.stats(null, msg);
+    assert.strictEqual(msg._replies.length, 0, "aucune réponse sans la permission");
+  });
+
+  await cas("un rôle qui a UNIQUEMENT server.stats.view (pas owner) débloque bien &vc/&stats", async () => {
+    const g = fakeGuild({ channels: [] });
+    const roleId = "role-stats-only";
+    permStore.setRoleGrants(g.id, roleId, ["server.stats.view"]);
+    const msg = fakeMessage(g);
+    msg.member = { id: "membre-avec-le-role", guild: g, roles: { cache: new Collection([[roleId, { id: roleId }]]) } };
+    utilityHandlers.vc(null, msg);
+    assert.strictEqual(msg._replies.length, 1);
   });
 
   await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {

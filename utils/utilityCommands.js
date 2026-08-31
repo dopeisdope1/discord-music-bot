@@ -3,17 +3,25 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { buildListCard } = require("./listCard");
 const readOnlyLists = require("./readOnlyLists");
 const { moderationHandlers } = require("./moderationCommands");
+const { can } = require("./permissions/engine");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
 
-// Commandes utilitaires en LECTURE SEULE : aucune n'écrit quoi que ce soit
-// sur le serveur, donc aucune ne demande de permission (`permission: null`
-// dans utils/commandCatalog.js), comme &pic/&server/&userinfo.
+// Commandes utilitaires en LECTURE SEULE : la plupart n'écrivent rien sur
+// le serveur, donc n'exigent aucune permission (`permission: null` dans
+// utils/commandCatalog.js), comme &pic/&server/&userinfo. Exception :
+// &vc/&stats exposent l'activité du serveur (qui est connecté, en vocal...)
+// et exigent `server.stats.view` — demande explicite, un rôle sans cette
+// permission ne doit pas pouvoir les taper, contrairement aux fiches
+// d'info individuelles.
 //
 // Contrairement aux commandes de modération, celles-ci RÉPONDENT en cas de
 // mauvais usage au lieu de rester muettes : le silence sur le préfixe "&"
 // sert à ne pas parler à la place du CrowBot, et aucun de ces noms ne lui
-// appartient — une faute de frappe mérite donc une explication.
+// appartient — une faute de frappe mérite donc une explication. Exception :
+// un refus de permission reste silencieux, comme partout ailleurs dans le
+// bot (voir &vc/&stats) — pas la peine d'annoncer qu'une commande existe à
+// qui n'a pas le droit de la lancer.
 
 const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
 
@@ -117,6 +125,7 @@ const handlers = {
 
   /** &vc — un chiffre unique : combien de personnes sont en vocal maintenant. */
   vc(client, message) {
+    if (!can(message.member, "server.stats.view")) return;
     const count = [...message.guild.channels.cache.values()]
       .filter((c) => c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice)
       .reduce((total, c) => total + c.members.size, 0);
@@ -130,6 +139,7 @@ const handlers = {
    * récents — rien de tel n'est suivi par ce bot.
    */
   async stats(client, message) {
+    if (!can(message.member, "server.stats.view")) return;
     const guild = message.guild;
     await readOnlyLists.ensureMembersCached(guild);
     const members = guild.members.cache;
