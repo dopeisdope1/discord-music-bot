@@ -897,15 +897,32 @@ function extractFormValues(form, message, args) {
   return values;
 }
 
-/** Vrai si tous les champs NON-texte (salon/rôle/membre) du formulaire sont déjà déterminés. */
+/**
+ * Vrai si tous les champs MEMBRE/RÔLE requis du formulaire sont déjà
+ * déterminés — sert de garde-fou avant d'intercepter une commande tapée
+ * avec ses arguments pour ouvrir la carte à sa place (voir
+ * utils/musicCommands.js, "directFormKey").
+ *
+ * "channel"/"channel2" sont volontairement EXCLUS de ce garde-fou : dans la
+ * syntaxe texte réelle, un salon n'est presque jamais donné en mention à un
+ * emplacement fixe (giveaway/poll/ticket/dero postent dans le salon COURANT,
+ * implicitement) — l'exiger bloquait purement et simplement l'exécution
+ * directe de commandes tapées avec tous leurs arguments : "&giveaway start
+ * 1h Nitro" ouvrait une carte vide au lieu de lancer le giveaway, faute
+ * d'une mention de salon que la syntaxe ne prévoit même pas. Les commandes
+ * qui prennent vraiment un salon en argument (bringall, voicemove...) sont
+ * déjà correctement gérées par leur VRAI handler texte, qui parse ses
+ * propres arguments sans dépendre de ce garde-fou.
+ *
+ * Un champ listé dans `form.optionalFields` n'est jamais requis non plus.
+ */
 function structuralFieldsSatisfied(form, values) {
+  const optional = new Set(form.optionalFields || []);
   return form.fields
-    .filter((f) => ["user", "role", "channel", "channel2", "roles"].includes(f))
+    .filter((f) => ["user", "role", "roles"].includes(f) && !optional.has(f))
     .every((f) => {
       if (f === "user") return Boolean(values.userId);
       if (f === "role") return Boolean(values.roleId);
-      if (f === "channel") return Boolean(values.channelId);
-      if (f === "channel2") return Boolean(values.channelId2);
       if (f === "roles") return Boolean(values.roleIds?.length);
       return true;
     });

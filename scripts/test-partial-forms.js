@@ -129,5 +129,30 @@ async function cas(nom, fn) {
     assert.ok(mentionedMember._kicked !== undefined);
   });
 
+  console.log("\nChamps \"salon\" implicites (jamais une mention dans la syntaxe réelle) :");
+
+  await cas('"&giveaway start 1h Nitro" (complet, salon implicite) lance réellement le giveaway, pas de carte vide', async () => {
+    // Bug réel trouvé en testant : "channel" faisait partie des champs
+    // STRUCTURELS requis par structuralFieldsSatisfied, alors que la
+    // syntaxe texte de &giveaway ne fournit JAMAIS de salon en mention (il
+    // poste toujours dans le salon courant) — la commande complète ouvrait
+    // donc une carte vide au lieu de s'exécuter.
+    const guild = makeGuild();
+    let posted = null;
+    const channel = {
+      id: "c1",
+      send: async (p) => {
+        posted = p;
+        return { id: "msg1", edit: async () => {} };
+      },
+    };
+    guild.channels.cache.set("c1", channel);
+    const msg = makeMessage(guild, "&giveaway start 1h Nitro");
+    msg.channel = channel;
+    await handleMusicTextCommand({}, msg);
+    assert.strictEqual(isCard(msg), false, "ne doit pas ouvrir de carte");
+    assert.ok(posted, "le giveaway doit être posté dans le salon");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();
