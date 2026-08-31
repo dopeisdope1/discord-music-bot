@@ -502,11 +502,32 @@ zéro — une activité ponctuelle et courte, pas une donnée à conserver.
 
 **Giveaways** (`&giveaway start <durée> <lot>`, clé
 `server.giveaways.manage`) — bouton "Participer" (rejoindre/quitter), tirage
-automatique au terme (vérifié toutes les 30s), annonce du gagnant dans le
-salon. **Persistés** (contrairement aux sondages) : un redéploiement pendant
-qu'un giveaway est en cours ne le fait pas disparaître. `&giveaway reroll
-[id]` retire un nouveau gagnant du dernier giveaway du salon (ou d'un
+automatique au terme (vérifié toutes les 30s), annonce du ou des gagnants
+dans le salon. **Persistés** (contrairement aux sondages) : un redéploiement
+pendant qu'un giveaway est en cours ne le fait pas disparaître. `&giveaway
+reroll [id]` retire un nouveau gagnant du dernier giveaway du salon (ou d'un
 giveaway précis par ID de message).
+
+Tapé sans tout son paramétrage, `&giveaway` ouvre sa **carte** (voir section
+6bis) : durée, lot et nombre de gagnants s'y choisissent dans des **menus
+déroulants** plutôt qu'en tapant du texte, chacun gardant une option
+**"Autre"** qui rebascule ce seul champ sur une réponse écrite dans le salon
+— les listes couvrent les cas courants sans jamais les imposer.
+
+- **Durée** : de `1m` à `7d`, ou une durée libre via "Autre".
+- **Lot** : quelques suggestions, ou n'importe quel texte via "Autre".
+- **Nombre de gagnants** : 1 à 10 dans la liste (jusqu'à 20 en écrivant le
+  nombre). Les gagnants sont tirés **distincts** — personne ne peut remporter
+  deux fois le même giveaway — et s'il y a moins de participants que de
+  gagnants demandés, tous gagnent.
+- **Rôle requis pour participer** *(facultatif)* : restreint le bouton
+  "Participer" aux membres ayant ce rôle. Le contrôle est refait à **chaque
+  clic**, donc quelqu'un qui perd le rôle entre-temps ne peut plus rejoindre.
+
+La commande **tapée** garde exactement sa syntaxe d'origine
+(`&giveaway start 1h Nitro` — un gagnant, ouvert à tous) : le nombre de
+gagnants et le rôle requis n'existent que sur la carte, plutôt que d'inventer
+des drapeaux texte que personne n'a demandés.
 
 ## 6nonies. Utilitaires de consultation
 

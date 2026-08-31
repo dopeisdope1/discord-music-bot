@@ -36,9 +36,11 @@ function save() {
  * @param {string} data.prize
  * @param {number} data.endsAt timestamp ms
  * @param {string} data.hostId
+ * @param {number} [data.winnersCount] nombre de gagnants à tirer (1 par défaut)
+ * @param {string|null} [data.requiredRoleId] rôle obligatoire pour participer
  */
 function create(data) {
-  load()[data.messageId] = { ...data, participants: [], winnerId: null, ended: false };
+  load()[data.messageId] = { ...data, participants: [], winnerIds: [], winnerId: null, ended: false };
   save();
 }
 
@@ -61,11 +63,18 @@ function toggleParticipant(messageId, userId) {
   return false;
 }
 
-function markEnded(messageId, winnerId) {
+/**
+ * `winnerIds` est la liste complète des gagnants ; `winnerId` reste écrit avec
+ * le premier d'entre eux pour que les giveaways enregistrés AVANT le
+ * multi-gagnant restent lisibles sans migration du fichier.
+ */
+function markEnded(messageId, winnerIds) {
   const entry = load()[messageId];
   if (!entry) return;
+  const list = Array.isArray(winnerIds) ? winnerIds : winnerIds ? [winnerIds] : [];
   entry.ended = true;
-  entry.winnerId = winnerId;
+  entry.winnerIds = list;
+  entry.winnerId = list[0] || null;
   save();
 }
 

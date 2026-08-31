@@ -1,11 +1,16 @@
 /**
  * Vérifie la saisie des champs texte des cartes de commande
- * (utils/commandForms.js::collectTextFields) : depuis "&giveaway" (et toute
+ * (utils/commandForms.js::collectTextFields) : depuis "&poll" (et toute
  * carte avec des champs texte), le bouton "Remplir dans le salon" ne doit
  * plus ouvrir de modale native Discord (popup gris, hors du style
  * Components V2 utilisé partout ailleurs — demande explicite de retirer ce
  * concept) mais demander chaque champ un par un dans le salon et attendre
  * la prochaine réponse de la personne.
+ *
+ * Les cartes dont TOUS les champs sont passés en menus déroulants (le
+ * giveaway, voir scripts/test-giveaway-options.js) n'ont plus de bouton
+ * "Remplir dans le salon" : leur saisie écrite se déclenche par l'option
+ * "Autre" d'un menu, testée là-bas.
  *
  * Lancement : node scripts/test-text-capture.js
  */
@@ -77,26 +82,33 @@ function makeInteraction(formKey, channel) {
 (async () => {
   console.log("Saisie des champs texte dans le salon (remplace la modale native) :");
 
-  await cas("collecte les deux champs dans l'ordre pour giveaway_start", async () => {
-    commandForms.clearFormState("owner-1", "giveaway_start");
-    const channel = makeChannel(["1h", "Nitro"]);
-    const interaction = makeInteraction("giveaway_start", channel);
+  await cas("collecte les champs dans l'ordre pour poll_create", async () => {
+    commandForms.clearFormState("owner-1", "poll_create");
+    const channel = makeChannel(["Meilleur jeu ?", "Valorant", "LoL", "-"]);
+    const interaction = makeInteraction("poll_create", channel);
     await commandForms.handleFormCardInteraction(interaction);
 
-    const state = commandForms.getFormState("owner-1", "giveaway_start");
-    assert.strictEqual(state.text.duration, "1h");
-    assert.strictEqual(state.text.prize, "Nitro");
-    assert.ok(channel._sent[0].includes("Durée"));
-    assert.ok(channel._sent[1].includes("Lot"));
+    const state = commandForms.getFormState("owner-1", "poll_create");
+    assert.strictEqual(state.text.question, "Meilleur jeu ?");
+    assert.strictEqual(state.text.option1, "Valorant");
+    assert.ok(channel._sent[0].includes("Question"));
+    assert.ok(channel._sent[1].includes("Option 1"));
   });
 
   await cas("aucune modale : la carte reste en Components V2, jamais de showModal", async () => {
-    commandForms.clearFormState("owner-1", "giveaway_start");
-    const channel = makeChannel(["30m", "Un rôle"]);
-    const interaction = makeInteraction("giveaway_start", channel);
+    commandForms.clearFormState("owner-1", "poll_create");
+    const channel = makeChannel(["Question ?", "A", "B", "-"]);
+    const interaction = makeInteraction("poll_create", channel);
     assert.strictEqual(interaction.showModal, undefined);
     await commandForms.handleFormCardInteraction(interaction);
     assert.ok(interaction._edited?.flags !== undefined);
+  });
+
+  await cas("une vieille carte sans champ texte le dit au lieu de planter", async () => {
+    const channel = makeChannel([]);
+    const interaction = makeInteraction("giveaway_start", channel);
+    await commandForms.handleFormCardInteraction(interaction);
+    assert.ok(interaction._replies[0].content.includes("relance la commande"));
   });
 
   await cas("champ optionnel passé avec '-'", async () => {
@@ -121,25 +133,25 @@ function makeInteraction(formKey, channel) {
   });
 
   await cas("un timeout conserve ce qui a déjà été rempli et libère la carte", async () => {
-    commandForms.clearFormState("owner-1", "giveaway_start");
-    const channel = makeChannel(["2h", "__TIMEOUT__"]);
-    const interaction = makeInteraction("giveaway_start", channel);
+    commandForms.clearFormState("owner-1", "poll_create");
+    const channel = makeChannel(["Question ?", "__TIMEOUT__"]);
+    const interaction = makeInteraction("poll_create", channel);
     await commandForms.handleFormCardInteraction(interaction);
 
-    const state = commandForms.getFormState("owner-1", "giveaway_start");
-    assert.strictEqual(state.text.duration, "2h");
-    assert.strictEqual(state.text.prize, undefined);
+    const state = commandForms.getFormState("owner-1", "poll_create");
+    assert.strictEqual(state.text.question, "Question ?");
+    assert.strictEqual(state.text.option1, undefined);
 
     // La carte doit être de nouveau cliquable après le timeout, pas bloquée.
-    const channel2 = makeChannel(["Nitro"]);
-    const interaction2 = makeInteraction("giveaway_start", channel2);
+    const channel2 = makeChannel(["Valorant", "LoL", "-"]);
+    const interaction2 = makeInteraction("poll_create", channel2);
     await commandForms.handleFormCardInteraction(interaction2);
     assert.strictEqual(interaction2._replies.length, 1);
     assert.ok(!interaction2._replies[0].content.includes("déjà en cours"));
   });
 
   await cas("un double-clic pendant une saisie en cours est refusé sans redémarrer la collecte", async () => {
-    commandForms.clearFormState("owner-1", "giveaway_start");
+    commandForms.clearFormState("owner-1", "poll_create");
     const slowChannel = {
       send: async () => ({}),
       awaitMessages: () => new Promise((resolve) => setTimeout(() => resolve(new Collection([["m1", { author: { id: "owner-1" }, content: "1h" }]])), 20)),
@@ -149,10 +161,10 @@ function makeInteraction(formKey, channel) {
       slowChannel._sent.push(c);
       return {};
     };
-    const interactionA = makeInteraction("giveaway_start", slowChannel);
+    const interactionA = makeInteraction("poll_create", slowChannel);
     const pending = commandForms.handleFormCardInteraction(interactionA);
 
-    const interactionB = makeInteraction("giveaway_start", slowChannel);
+    const interactionB = makeInteraction("poll_create", slowChannel);
     await commandForms.handleFormCardInteraction(interactionB);
     assert.ok(interactionB._replies[0].content.includes("déjà en cours"));
 

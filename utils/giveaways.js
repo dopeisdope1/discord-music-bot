@@ -26,30 +26,60 @@ function card(title, body, rows = []) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
+/** Gagnants d'un giveaway, en tolérant les entrées d'avant le multi-gagnant. */
+function winnersOf(giveaway) {
+  if (giveaway.winnerIds) return giveaway.winnerIds;
+  return giveaway.winnerId ? [giveaway.winnerId] : [];
+}
+
 function activeCard(giveaway) {
   const endsAtS = Math.floor(giveaway.endsAt / 1000);
+  const winnersCount = giveaway.winnersCount ?? 1;
   return card(
     "Giveaway",
     [
       `**Lot :** ${giveaway.prize}`,
       `**Se termine :** <t:${endsAtS}:R> (<t:${endsAtS}:f>)`,
+      winnersCount > 1 ? `**Gagnants tirés :** ${winnersCount}` : null,
+      giveaway.requiredRoleId ? `**Réservé au rôle :** <@&${giveaway.requiredRoleId}>` : null,
       `**Participants :** ${giveaway.participants.length}`,
       `**Organisé par :** <@${giveaway.hostId}>`,
-    ].join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
     [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:join`).setLabel("Participer").setStyle(ButtonStyle.Primary))]
   );
 }
 
-/** &giveaway start <durée> <lot> — ex: `giveaway start 1h Nitro`. */
-async function startGiveaway(client, message, args) {
+/**
+ * &giveaway start <durée> <lot> — ex: `giveaway start 1h Nitro`.
+ *
+ * `options` (nombre de gagnants, rôle requis) n'existe que pour la carte
+ * interactive (voir utils/commandForms.js) : la commande tapée garde
+ * exactement sa syntaxe d'origine — un gagnant, ouvert à tout le monde —
+ * plutôt que d'inventer des drapeaux texte que personne n'a demandés.
+ *
+ * @param {{ winnersCount?: number, requiredRoleId?: string|null }} [options]
+ */
+async function startGiveaway(client, message, args, options = {}) {
   if (!can(message.member, "server.giveaways.manage")) return;
   const ms = parseDuration(args[0]);
   if (!ms) return message.reply({ embeds: [buildStatusEmbed("error", "Indique une durée valide : `10m`, `1h`, `1d` (max 28 jours).")] });
   const prize = args.slice(1).join(" ").trim();
   if (!prize) return message.reply({ embeds: [buildStatusEmbed("error", "Indique le lot : `giveaway start 1h Nitro`.")] });
 
+  const winnersCount = Math.min(Math.max(1, parseInt(options.winnersCount, 10) || 1), MAX_WINNERS);
   const endsAt = Date.now() + ms;
-  const giveaway = { messageId: null, guildId: message.guild.id, channelId: message.channel.id, prize, endsAt, hostId: message.author.id };
+  const giveaway = {
+    messageId: null,
+    guildId: message.guild.id,
+    channelId: message.channel.id,
+    prize,
+    endsAt,
+    hostId: message.author.id,
+    winnersCount,
+    requiredRoleId: options.requiredRoleId || null,
+  };
   const sent = await message.channel.send(card("Giveaway", `**Lot :** ${prize}\n**Se termine :** <t:${Math.floor(endsAt / 1000)}:R>`)).catch(() => null);
   if (!sent) return;
   giveaway.messageId = sent.id;
@@ -66,40 +96,68 @@ async function handleGiveawayButton(interaction) {
     return interaction.reply({ content: "Ce giveaway est terminé.", flags: MessageFlags.Ephemeral });
   }
 
+  // Le filtre est vérifié à CHAQUE clic, pas seulement au premier : quelqu'un
+  // qui perd le rôle entre-temps ne doit plus pouvoir rejoindre.
+  if (giveaway.requiredRoleId && !interaction.member?.roles?.cache?.has(giveaway.requiredRoleId)) {
+    return interaction.reply({
+      content: `Ce giveaway est réservé aux membres ayant <@&${giveaway.requiredRoleId}>.`,
+      flags: MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
+    });
+  }
+
   const joined = giveawayStore.toggleParticipant(interaction.message.id, interaction.user.id);
   await interaction.reply({ content: joined ? "Tu participes !" : "Tu ne participes plus.", flags: MessageFlags.Ephemeral });
   await interaction.message.edit(activeCard(giveawayStore.get(interaction.message.id))).catch(() => {});
 }
 
-function pickWinner(participants) {
-  if (!participants.length) return null;
-  return participants[Math.floor(Math.random() * participants.length)];
+const MAX_WINNERS = 20;
+
+/**
+ * Tire `count` gagnants DISTINCTS au hasard — on retire chaque tiré du lot,
+ * sinon la même personne pourrait remporter deux fois le même giveaway. Moins
+ * de gagnants que demandé s'il n'y a pas assez de participants.
+ */
+function pickWinners(participants, count = 1) {
+  const pool = [...participants];
+  const winners = [];
+  const target = Math.min(Math.max(1, count), pool.length);
+  while (winners.length < target) winners.push(...pool.splice(Math.floor(Math.random() * pool.length), 1));
+  return winners;
 }
 
-/** Termine un giveaway (déjà marqué "ended" côté store), édite sa carte et annonce le gagnant. */
-async function finishGiveaway(client, giveaway, winnerId) {
+/** Termine un giveaway (déjà marqué "ended" côté store), édite sa carte et annonce le(s) gagnant(s). */
+async function finishGiveaway(client, giveaway, winnerIds) {
   const channel = client.channels.cache.get(giveaway.channelId);
   if (!channel?.isTextBased()) return;
+
+  const winners = Array.isArray(winnerIds) ? winnerIds : winnerIds ? [winnerIds] : [];
+  const mentions = winners.map((id) => `<@${id}>`).join(", ");
 
   const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
   if (message) {
     await message
       .edit(
-        card("Giveaway terminé", [`**Lot :** ${giveaway.prize}`, winnerId ? `**Gagnant :** <@${winnerId}>` : "**Aucun participant.**"].join("\n"))
+        card(
+          "Giveaway terminé",
+          [`**Lot :** ${giveaway.prize}`, winners.length ? `**Gagnant${winners.length > 1 ? "s" : ""} :** ${mentions}` : "**Aucun participant.**"].join("\n")
+        )
       )
       .catch(() => {});
   }
-  if (winnerId) {
-    await channel.send({ content: `<@${winnerId}> a gagné **${giveaway.prize}** !`, allowedMentions: { users: [winnerId] } }).catch(() => {});
+  if (winners.length) {
+    await channel
+      .send({ content: `${mentions} ${winners.length > 1 ? "ont gagné" : "a gagné"} **${giveaway.prize}** !`, allowedMentions: { users: winners } })
+      .catch(() => {});
   }
 }
 
 /** À appeler périodiquement (voir index.js) : termine les giveaways expirés et tire un gagnant. */
 async function checkExpiredGiveaways(client) {
   for (const giveaway of giveawayStore.getExpiredActive()) {
-    const winnerId = pickWinner(giveaway.participants);
-    giveawayStore.markEnded(giveaway.messageId, winnerId);
-    await finishGiveaway(client, giveaway, winnerId);
+    const winnerIds = pickWinners(giveaway.participants, giveaway.winnersCount ?? 1);
+    giveawayStore.markEnded(giveaway.messageId, winnerIds);
+    await finishGiveaway(client, giveaway, winnerIds);
   }
 }
 
@@ -110,9 +168,9 @@ async function endGiveaway(client, message, args) {
   if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé (indique son ID, visible dans `giveaway reroll`).")] });
   if (giveaway.ended) return message.reply({ embeds: [buildStatusEmbed("info", "Ce giveaway est déjà terminé.")] });
 
-  const winnerId = pickWinner(giveaway.participants);
-  giveawayStore.markEnded(giveaway.messageId, winnerId);
-  await finishGiveaway(client, giveaway, winnerId);
+  const winnerIds = pickWinners(giveaway.participants, giveaway.winnersCount ?? 1);
+  giveawayStore.markEnded(giveaway.messageId, winnerIds);
+  await finishGiveaway(client, giveaway, winnerIds);
 }
 
 /** &giveaway reroll [id du message] — retire un nouveau gagnant du dernier giveaway du salon. */
@@ -121,11 +179,15 @@ async function rerollGiveaway(client, message, args) {
   const giveaway = args[0] ? giveawayStore.get(args[0]) : giveawayStore.getLatestInChannel(message.channel.id);
   if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé dans ce salon.")] });
 
-  const winnerId = pickWinner(giveaway.participants);
-  giveawayStore.markEnded(giveaway.messageId, winnerId);
-  if (!winnerId) return message.reply({ embeds: [buildStatusEmbed("info", "Aucun participant, personne à tirer au sort.")] });
+  const winnerIds = pickWinners(giveaway.participants, giveaway.winnersCount ?? 1);
+  giveawayStore.markEnded(giveaway.messageId, winnerIds);
+  if (!winnerIds.length) return message.reply({ embeds: [buildStatusEmbed("info", "Aucun participant, personne à tirer au sort.")] });
 
-  await message.channel.send({ content: `Nouveau tirage : <@${winnerId}> remporte **${giveaway.prize}** !`, allowedMentions: { users: [winnerId] } });
+  const mentions = winnerIds.map((id) => `<@${id}>`).join(", ");
+  await message.channel.send({
+    content: `Nouveau tirage : ${mentions} ${winnerIds.length > 1 ? "remportent" : "remporte"} **${giveaway.prize}** !`,
+    allowedMentions: { users: winnerIds },
+  });
 }
 
-module.exports = { startGiveaway, handleGiveawayButton, checkExpiredGiveaways, rerollGiveaway, endGiveaway, ID };
+module.exports = { startGiveaway, handleGiveawayButton, checkExpiredGiveaways, rerollGiveaway, endGiveaway, pickWinners, winnersOf, MAX_WINNERS, ID };

@@ -11,10 +11,12 @@ const {
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
   UserSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   ChannelType,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
-const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
+const { startGiveaway, rerollGiveaway, endGiveaway, MAX_WINNERS } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
 const { moderationHandlers } = require("./moderationCommands");
@@ -80,16 +82,72 @@ const FORMS = {
     label: "Lancer un giveaway",
     category: "server",
     permission: "server.giveaways.manage",
-    fields: ["channel"],
-    textFields: [
-      { key: "duration", label: "Durée (ex : 1h, 30m, 1d)", max: 20 },
-      { key: "prize", label: "Lot", max: 200 },
+    fields: ["channel", "role"],
+    // Le rôle ne désigne pas la cible de l'action ici, mais qui a le DROIT de
+    // participer — et il reste facultatif.
+    fieldLabels: { role: "Rôle requis pour participer (optionnel)" },
+    optionalFields: ["role"],
+    choiceFields: [
+      {
+        key: "duration",
+        label: "Durée",
+        placeholder: "Choisir une durée",
+        customLabel: "Autre durée (à écrire)",
+        customPrompt: "Durée personnalisée (ex : 45m, 2h, 5d — max 28 jours)",
+        max: 20,
+        // Valeurs directement lisibles par parseDuration (utils/moderationCommands.js).
+        options: [
+          { label: "1 minute", value: "1m" },
+          { label: "5 minutes", value: "5m" },
+          { label: "15 minutes", value: "15m" },
+          { label: "30 minutes", value: "30m" },
+          { label: "1 heure", value: "1h" },
+          { label: "6 heures", value: "6h" },
+          { label: "12 heures", value: "12h" },
+          { label: "1 jour", value: "1d" },
+          { label: "3 jours", value: "3d" },
+          { label: "7 jours", value: "7d" },
+        ],
+      },
+      {
+        key: "prize",
+        label: "Lot",
+        placeholder: "Choisir un lot",
+        customLabel: "Autre lot (à écrire)",
+        customPrompt: "Lot personnalisé",
+        max: 200,
+        options: [
+          { label: "Nitro (1 mois)", value: "Nitro (1 mois)" },
+          { label: "Nitro Basic (1 mois)", value: "Nitro Basic (1 mois)" },
+          { label: "Un boost de serveur", value: "Un boost de serveur" },
+          { label: "Rôle personnalisé", value: "Rôle personnalisé" },
+          { label: "Carte cadeau", value: "Carte cadeau" },
+        ],
+      },
+      {
+        key: "winners",
+        label: "Nombre de gagnants",
+        placeholder: "Nombre de gagnants (1 par défaut)",
+        customLabel: "Autre nombre (à écrire)",
+        customPrompt: `Nombre de gagnants (1 à ${MAX_WINNERS})`,
+        max: 2,
+        required: false,
+        options: Array.from({ length: 10 }, (_, i) => ({
+          label: `${i + 1} gagnant${i ? "s" : ""}`,
+          value: String(i + 1),
+        })),
+      },
     ],
+    // Le nombre de gagnants et le rôle ont des valeurs par défaut utilisables :
+    // seuls le salon, la durée et le lot bloquent réellement le lancement.
     ready: (v) => Boolean(v.channelId && v.text?.duration && v.text?.prize),
     run: async (client, interaction, v) => {
       const channel = interaction.guild.channels.cache.get(v.channelId);
       const msg = fakeMessage(interaction, { channel });
-      await startGiveaway(client, msg, [v.text.duration, v.text.prize]);
+      await startGiveaway(client, msg, [v.text.duration, v.text.prize], {
+        winnersCount: parseInt(v.text.winners, 10) || 1,
+        requiredRoleId: v.roleId || null,
+      });
     },
   },
 
@@ -886,6 +944,16 @@ function clearFormState(userId, formKey) {
 // (ce dernier ne garde plus que les vraies rubriques de configuration).
 const CARD_ID = "cmdrun";
 
+// Valeur réservée de l'option "Autre" d'un menu déroulant : elle rebascule ce
+// SEUL champ sur la saisie écrite dans le salon. Les listes proposées couvrent
+// les cas courants sans jamais les imposer — demande explicite : "au choix ou
+// à l'écrit".
+const CUSTOM_CHOICE = "__autre__";
+
+// Limite dure de Discord pour les composants d'un Container : 10. On travaille
+// à 9 pour ne jamais s'y coller.
+const CONTAINER_BUDGET = 9;
+
 function buildFormCard(formKey, member) {
   const form = FORMS[formKey];
   if (!form) return null;
@@ -895,23 +963,38 @@ function buildFormCard(formKey, member) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${form.label}`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
+  // Un formulaire peut renommer un champ générique quand "Rôle" ou "Salon"
+  // tout court ne dit pas ce qu'il fait là (ex : le rôle d'un giveaway filtre
+  // qui a le droit de participer).
+  const labelFor = (key, fallback) => form.fieldLabels?.[key] || fallback;
+  const isOptional = (key) => form.optionalFields?.includes(key);
+
   const lines = [];
-  if (form.fields.includes("channel")) lines.push(`> **Salon** : ${active.channelId ? `<#${active.channelId}>` : "*non choisi*"}`);
+  if (form.fields.includes("channel")) lines.push(`> **${labelFor("channel", "Salon")}** : ${active.channelId ? `<#${active.channelId}>` : "*non choisi*"}`);
   if (form.fields.includes("channel2")) lines.push(`> **Salon (destination)** : ${active.channelId2 ? `<#${active.channelId2}>` : "*non choisi*"}`);
-  if (form.fields.includes("role")) lines.push(`> **Rôle** : ${active.roleId ? `<@&${active.roleId}>` : "*non choisi*"}`);
+  if (form.fields.includes("role")) {
+    lines.push(`> **${labelFor("role", "Rôle")}** : ${active.roleId ? `<@&${active.roleId}>` : isOptional("role") ? "*aucun (ouvert à tous)*" : "*non choisi*"}`);
+  }
   if (form.fields.includes("roles")) {
     lines.push(`> **Rôle(s)** : ${active.roleIds?.length ? active.roleIds.map((id) => `<@&${id}>`).join(", ") : "*non choisis*"}`);
   }
   if (form.fields.includes("user")) lines.push(`> **Membre** : ${active.userId ? `<@${active.userId}>` : "*non choisi*"}`);
+  for (const cf of form.choiceFields || []) {
+    const value = active.text?.[cf.key];
+    lines.push(`> **${cf.label}** : ${value ? `\`${value}\`` : cf.required === false ? "*non choisi (optionnel)*" : "*non choisi*"}`);
+  }
   for (const tf of form.textFields || []) {
     const value = active.text?.[tf.key];
     lines.push(`> **${tf.label}** : ${value ? `\`${value}\`` : tf.required === false ? "*non rempli (optionnel)*" : "*non rempli*"}`);
   }
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.length ? lines.join("\n") : "Aucun paramètre nécessaire."));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  // Les contrôles sont assemblés à part : c'est leur nombre qui décide, plus
+  // bas, si le séparateur décoratif tient encore dans le budget du container.
+  const rows = [];
 
   if (form.fields.includes("channel")) {
-    container.addActionRowComponents(
+    rows.push(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId(`${CARD_ID}:channel:${formKey}`)
@@ -923,7 +1006,7 @@ function buildFormCard(formKey, member) {
     );
   }
   if (form.fields.includes("channel2")) {
-    container.addActionRowComponents(
+    rows.push(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId(`${CARD_ID}:channel2:${formKey}`)
@@ -935,20 +1018,42 @@ function buildFormCard(formKey, member) {
     );
   }
   if (form.fields.includes("role")) {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:role:${formKey}`).setPlaceholder("Choisir un rôle"))
-    );
+    const roleSelect = new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:role:${formKey}`).setPlaceholder(labelFor("role", "Choisir un rôle"));
+    // Optionnel = on doit aussi pouvoir revenir en arrière et n'en choisir aucun.
+    if (isOptional("role")) roleSelect.setMinValues(0).setMaxValues(1);
+    rows.push(new ActionRowBuilder().addComponents(roleSelect));
   }
   if (form.fields.includes("roles")) {
-    container.addActionRowComponents(
+    rows.push(
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:roles:${formKey}`).setPlaceholder("Choisir un ou plusieurs rôles").setMinValues(1).setMaxValues(10)
       )
     );
   }
   if (form.fields.includes("user")) {
-    container.addActionRowComponents(
+    rows.push(
       new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CARD_ID}:user:${formKey}`).setPlaceholder("Choisir un membre"))
+    );
+  }
+
+  for (const cf of form.choiceFields || []) {
+    const current = active.text?.[cf.key];
+    const options = cf.options.map((o) =>
+      new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value).setDefault(current === o.value)
+    );
+    options.push(
+      new StringSelectMenuOptionBuilder()
+        .setLabel(cf.customLabel || "Autre…")
+        .setValue(CUSTOM_CHOICE)
+        .setDescription("Répondre à l'écrit dans le salon")
+    );
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${CARD_ID}:choice:${formKey}:${cf.key}`)
+          .setPlaceholder(cf.placeholder || cf.label)
+          .addOptions(options)
+      )
     );
   }
 
@@ -966,7 +1071,16 @@ function buildFormCard(formKey, member) {
   buttons.push(
     new ButtonBuilder().setCustomId(`${CARD_ID}:launch:${formKey}`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active))
   );
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons));
+  rows.push(new ActionRowBuilder().addComponents(...buttons));
+
+  // Un Container Components V2 accepte 10 composants au maximum, et on en garde
+  // volontairement un de libre. Quand un formulaire a beaucoup de menus (le
+  // giveaway et ses trois listes déroulantes), c'est le séparateur décoratif
+  // avant les contrôles qui saute — jamais un champ, et jamais un message
+  // refusé par Discord le jour où un champ de plus est ajouté.
+  const used = 3 + rows.length; // titre + séparateur + résumé
+  if (used + 1 <= CONTAINER_BUDGET) container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  for (const row of rows) container.addActionRowComponents(row);
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
@@ -979,7 +1093,18 @@ const TEXT_CAPTURE_TIMEOUT_MS = 2 * 60 * 1000;
  * chaque champ texte un par un directement dans le salon et attend la
  * prochaine réponse de la personne. Champs optionnels : `-` pour passer.
  */
-async function collectTextFields(interaction, form, formKey) {
+async function collectTextFields(interaction, form, formKey, fields = form.textFields) {
+  // Une carte affichée AVANT que le formulaire ne change (ses champs texte
+  // devenus des menus déroulants, par exemple) peut encore envoyer un
+  // "textopen" : on le dit au lieu de planter sur une liste inexistante.
+  const toCollect = fields || [];
+  if (!toCollect.length) {
+    return interaction.reply({
+      content: "Cette carte n'a plus de champ à remplir à l'écrit — relance la commande pour ouvrir la version à jour.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
   const key = stateKey(interaction.user.id, formKey);
   if (pendingTextCapture.has(key)) {
     return interaction.reply({ content: "Une saisie est déjà en cours pour cette carte — réponds dans le salon.", flags: MessageFlags.Ephemeral });
@@ -994,7 +1119,7 @@ async function collectTextFields(interaction, form, formKey) {
   await interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
 
   const text = { ...(getFormState(interaction.user.id, formKey)?.text || {}) };
-  for (const tf of form.textFields) {
+  for (const tf of toCollect) {
     // Un essai précédent a déjà rempli ce champ (reprise après un timeout,
     // par exemple) — pas la peine de le redemander.
     if (text[tf.key] !== undefined) continue;
@@ -1051,6 +1176,25 @@ async function handleFormCardInteraction(interaction) {
         ? { roleIds: interaction.values }
         : { userId: interaction.values[0] || null };
     setFormState(interaction.user.id, formKey, patch);
+    return interaction.update(buildFormCard(formKey, interaction.member));
+  }
+
+  if (action === "choice") {
+    const fieldKey = interaction.customId.split(":")[3];
+    const field = (form.choiceFields || []).find((f) => f.key === fieldKey);
+    if (!field) return;
+
+    if (interaction.values[0] === CUSTOM_CHOICE) {
+      // On remet la valeur à `undefined` (et non "on la laisse") pour que la
+      // collecte la redemande vraiment : sans ça, choisir "Autre" après avoir
+      // déjà choisi une option de la liste ne rouvrirait aucune question.
+      setFormState(interaction.user.id, formKey, { text: { [fieldKey]: undefined } });
+      return collectTextFields(interaction, form, formKey, [
+        { key: field.key, label: field.customPrompt || field.label, max: field.max || 200, required: field.required },
+      ]);
+    }
+
+    setFormState(interaction.user.id, formKey, { text: { [fieldKey]: interaction.values[0] } });
     return interaction.update(buildFormCard(formKey, interaction.member));
   }
 
