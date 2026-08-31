@@ -1031,9 +1031,17 @@ async function handleFormCardInteraction(interaction) {
 // Commande tapée (sans ses arguments, ou juste avec le mot de sous-commande
 // pour un dispatcher partagé comme "role create") -> formulaire ouvert
 // directement dans le salon au lieu de l'exécution texte classique — voir
-// utils/musicCommands.js pour le branchement. Couvre les 50 FORMS
-// existantes ; les commandes du catalogue sans backend réel (voir
-// utils/commandCatalog.js) n'ont pas d'entrée ici, il n'y a rien à exécuter.
+// utils/musicCommands.js pour le branchement.
+//
+// Volontairement PAS toutes les FORMS : demande explicite ("on a abusé") de
+// ne garder la carte que pour les commandes qui ont VRAIMENT plusieurs
+// paramètres à choisir. Exclus :
+//  - les commandes sans aucun paramètre (mutelist/unmuteall/banlist/
+//    hideall/unhideall/online/idle/dnd/invisible/remove activity) — une
+//    carte avec juste un bouton "Lancer" est plus lente qu'exécuter direct ;
+//  - lock/unlock — un seul salon possible dans l'immense majorité des cas
+//    (celui où on tape la commande), le sélecteur de salon n'apporte rien.
+// Ces commandes s'exécutent donc directement, comme avant.
 const BARE_COMMAND_FORMS = {
   giveaway: "giveaway_start",
   addrole: "addrole_member",
@@ -1050,16 +1058,9 @@ const BARE_COMMAND_FORMS = {
   tempban: "tempban_member",
   derank: "derank_member",
   poll: "poll_create",
-  lock: "lock_channel",
-  unlock: "unlock_channel",
   slowmode: "slowmode_channel",
   ticket: "ticket_setup",
-  mutelist: "mutelist_view",
-  unmuteall: "unmuteall_action",
-  banlist: "banlist_view",
   sanctions: "sanctions_view",
-  hideall: "hideall_action",
-  unhideall: "unhideall_action",
   dero: "dero_role",
   choose: "choose_random",
   create: "create_emoji",
@@ -1070,10 +1071,6 @@ const BARE_COMMAND_FORMS = {
   bringall: "bringall_action",
   temprole: "temprole_action",
   untemprole: "untemprole_action",
-  online: "online_action",
-  idle: "idle_action",
-  dnd: "dnd_action",
-  invisible: "invisible_action",
   end: "giveaway_end",
   // Clés à deux mots : commandes dont le premier mot est un dispatcher
   // partagé (&role/&channel/&clear gèrent plusieurs sous-commandes) —
@@ -1087,7 +1084,6 @@ const BARE_COMMAND_FORMS = {
   "channel topic": "channel_topic",
   "clear sanctions": "clear_sanctions_member",
   "giveaway reroll": "giveaway_reroll",
-  "remove activity": "remove_activity_action",
 };
 
 module.exports = {
