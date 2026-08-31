@@ -20,12 +20,40 @@ const HOME = "__home__";
 // entrées sans préfixe, dont le nom EST la formulation ("uo clear").
 const shortName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
 
-function homeBody(categories, prefixes) {
-  const lines = categories.map((c) => {
-    const names = [...new Set(c.commands.map(shortName))];
-    return `**${c.label} (${names.length}) :** ${names.join(", ")}`;
-  });
+// Groupe par palier d'accès plutôt que par catégorie ou en détaillant chaque
+// commande (syntaxe + description) : liste compacte de noms, comme la
+// référence CrowBot — beaucoup plus court une fois le catalogue élargi à des
+// dizaines de commandes par catégorie (repère : ~2500 caractères sur
+// l'accueil avant ce changement, contre quelques centaines maintenant). Le
+// détail (syntaxe précise) reste dans la rubrique de chaque catégorie
+// plutôt que d'alourdir cette vue.
+function tierOf(cmd) {
+  if (cmd.permission === "sys") return "sys";
+  if (cmd.permission == null) return "public";
+  return "configurable";
+}
 
+const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes configurables", sys: "Commandes Sys" };
+
+function tieredBody(commands) {
+  const groups = { public: [], configurable: [], sys: [] };
+  for (const cmd of commands) groups[tierOf(cmd)].push(shortName(cmd));
+
+  return ["public", "configurable", "sys"]
+    .filter((tier) => groups[tier].length)
+    .map((tier) => {
+      const names = [...new Set(groups[tier])];
+      return `**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`;
+    })
+    .join("\n");
+}
+
+function homeBody(categories, prefixes) {
+  // Un catalogue de cette taille (~190 commandes visibles pour le
+  // propriétaire) reste trop long même regroupé par palier sur une seule
+  // vue — la liste complète (aussi compacte que la référence) vit dans
+  // chaque catégorie (voir categoryBody), l'accueil ne fait que résumer.
+  const lines = categories.map((c) => `> **${c.label}** — ${c.commands.length} commande(s)`);
   return [
     "Bienvenue sur le **panel d'aide** du bot",
     "Sélectionne une **catégorie** via le menu ci-dessous pour découvrir tes commandes disponibles",
@@ -39,31 +67,8 @@ function homeBody(categories, prefixes) {
   ].join("\n");
 }
 
-// Groupe par palier d'accès plutôt que de détailler chaque commande (syntaxe
-// + description) : liste compacte de noms, comme la référence CrowBot —
-// beaucoup plus court une fois le catalogue élargi à des dizaines de
-// commandes par catégorie. Le détail (syntaxe précise) reste disponible en
-// tapant `&aide <commande>` (voir plus bas) plutôt que d'alourdir cette vue.
-function tierOf(cmd) {
-  if (cmd.permission === "sys") return "sys";
-  if (cmd.permission == null) return "public";
-  return "configurable";
-}
-
-const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes configurables", sys: "Commandes Sys" };
-
 function categoryBody(category) {
-  const groups = { public: [], configurable: [], sys: [] };
-  for (const cmd of category.commands) groups[tierOf(cmd)].push(shortName(cmd));
-
-  const lines = ["public", "configurable", "sys"]
-    .filter((tier) => groups[tier].length)
-    .map((tier) => {
-      const names = [...new Set(groups[tier])];
-      return `**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`;
-    });
-
-  return lines.join("\n");
+  return tieredBody(category.commands);
 }
 
 function buildSelect(categories, current) {

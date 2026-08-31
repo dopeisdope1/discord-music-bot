@@ -239,7 +239,11 @@ async function handleConfirmInteraction(interaction) {
 
 async function roleAdmin(client, message, args) {
   const sub = args[0].toLowerCase();
-  const role = message.mentions.roles?.first();
+  // Mention OU ID pour le rôle (règle du cahier des charges) : les IDs
+  // bruts après le mot de sous-commande sont résolus en cache si aucune
+  // mention n'a été donnée.
+  const roleIdArg = args.slice(1).find((a) => /^\d{15,25}$/.test(a));
+  const role = message.mentions.roles?.first() || (roleIdArg ? message.guild.roles.cache.get(roleIdArg) : null);
 
   if (sub === "create") {
     if (!can(message.member, "server.roles.manage")) return;
@@ -451,7 +455,10 @@ async function channelAdmin(client, message, args) {
     return reply(message, "success", `Salon **${created.name}** créé.`);
   }
 
-  const target = message.mentions.channels?.first() || message.channel;
+  // Mention, ID, ou salon courant par défaut (règle du cahier des charges :
+  // mention ou ID pour les paramètres de salon).
+  const channelIdArg = args.slice(1).find((a) => /^\d{15,25}$/.test(a));
+  const target = message.mentions.channels?.first() || (channelIdArg && message.guild.channels.cache.get(channelIdArg)) || message.channel;
 
   if (sub === "delete") {
     const name = target.name;
@@ -488,9 +495,9 @@ async function channelAdmin(client, message, args) {
   }
 
   if (sub === "rename") {
-    const rest = args.filter((a) => !a.startsWith("<#")).slice(1);
+    const rest = args.filter((a) => !a.startsWith("<#") && a !== channelIdArg).slice(1);
     const newName = rest.join(" ").trim();
-    if (!newName) return reply(message, "error", "Indique le nouveau nom : `channel rename [#salon] <nom>`.");
+    if (!newName) return reply(message, "error", "Indique le nouveau nom : `channel rename [#salon|id] <nom>`.");
     const oldName = target.name;
     try {
       await target.setName(newName, `Renommé par ${message.author.tag}`);
@@ -513,7 +520,7 @@ async function channelAdmin(client, message, args) {
 
   if (sub === "topic") {
     if (!("setTopic" in target)) return reply(message, "error", "Ce type de salon n'a pas de topic.");
-    const rest = args.filter((a) => !a.startsWith("<#")).slice(1);
+    const rest = args.filter((a) => !a.startsWith("<#") && a !== channelIdArg).slice(1);
     const topic = rest.join(" ").trim();
     try {
       await target.setTopic(topic || null, `Topic changé par ${message.author.tag}`);

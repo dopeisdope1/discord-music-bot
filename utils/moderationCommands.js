@@ -55,13 +55,45 @@ async function fetchTargetOrReply(message, targetId, { label = "membre" } = {}) 
   return target;
 }
 
+/**
+ * Résout un membre ET un rôle depuis les args de &addrole/&delrole — mention
+ * OU identifiant pour chacun (règle du cahier des charges : "les paramètres
+ * peuvent être des noms, des mentions, ou des IDs"). Les mentions
+ * s'identifient d'elles-mêmes (<@id> vs <@&id>) ; les IDs bruts restants
+ * sont résolus en tentant le rôle d'abord (lookup en cache, immédiat), puis
+ * le membre (fetch), pour ne jamais confondre les deux.
+ */
+async function resolveMemberAndRole(message, args) {
+  let member = message.mentions.members?.first() || null;
+  let role = message.mentions.roles?.first() || null;
+
+  const rawIds = args.filter((a) => /^\d{15,25}$/.test(a));
+  for (const id of rawIds) {
+    if (!role) {
+      const maybeRole = message.guild.roles.cache.get(id);
+      if (maybeRole) {
+        role = maybeRole;
+        continue;
+      }
+    }
+    if (!member) {
+      const maybeMember = await message.guild.members.fetch(id).catch(() => null);
+      if (maybeMember) member = maybeMember;
+    }
+  }
+  return { member, role };
+}
+
 /** Corps commun de &addrole/&delrole (voir plus bas) : `sub` vaut "add" ou "remove". */
 async function roleMembership(client, message, args, sub) {
   if (!can(message.member, "members.role")) return;
-  const mentionedMember = message.mentions.members?.first();
-  const mentionedRole = message.mentions.roles?.first();
+  const { member: mentionedMember, role: mentionedRole } = await resolveMemberAndRole(message, args);
   if (!mentionedMember || !mentionedRole) {
-    return reply(message, "error", `Indique un membre ET un rôle : \`${sub === "add" ? "addrole" : "delrole"} @membre @rôle\`.`);
+    return reply(
+      message,
+      "error",
+      `Indique un membre ET un rôle (mention ou ID) : \`${sub === "add" ? "addrole" : "delrole"} @membre|id @rôle|id\`.`
+    );
   }
 
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
