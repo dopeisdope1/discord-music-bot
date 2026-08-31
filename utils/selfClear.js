@@ -17,26 +17,24 @@ const WINDOW_MS = 25 * 60_000;
 const limiter = createRateLimiter(MAX_USES, WINDOW_MS);
 
 /**
- * Messages à effacer : ceux de la personne, PLUS les réponses que le bot lui a
- * faites — sinon nettoyer sa conversation laisse en place la moitié bot du
- * dialogue.
+ * Messages à effacer : ceux de la personne qui tape, PLUS tous ceux du bot
+ * présents dans le lot.
  *
- * Volontairement limité aux messages du bot qui RÉPONDENT à l'un des siens.
- * Ce déclencheur est ouvert à tout le monde, sans permission : effacer tous
- * les messages du bot laisserait n'importe qui supprimer une carte de
- * giveaway, un panneau de tickets ou le lecteur de musique d'un autre.
+ * Demande explicite, maintenue après avoir été discutée : "enlève tous les
+ * messages du bot". Ce déclencheur n'exige aucune permission, donc n'importe
+ * qui peut ainsi supprimer une carte de giveaway en cours, un panneau de
+ * tickets ou le lecteur de musique. C'est assumé — le quota (2 usages par
+ * 25 minutes, voir plus bas) est le seul garde-fou.
+ *
+ * Le message déclencheur lui-même part avec, puisqu'il appartient à la
+ * personne qui l'a tapé.
  *
  * @param {import('discord.js').Message[]} messages lot récupéré dans le salon
  * @param {string} authorId la personne qui a tapé le déclencheur
  * @param {string|undefined} botId le bot lui-même
  */
 function collectOwnConversation(messages, authorId, botId) {
-  const siens = new Set(messages.filter((m) => m.author.id === authorId).map((m) => m.id));
-  return messages.filter((m) => {
-    if (m.author.id === authorId) return true;
-    if (!botId || m.author.id !== botId) return false;
-    return Boolean(m.reference?.messageId && siens.has(m.reference.messageId));
-  });
+  return messages.filter((m) => m.author.id === authorId || (botId && m.author.id === botId));
 }
 
 /**

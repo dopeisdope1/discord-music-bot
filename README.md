@@ -229,9 +229,8 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
   - **Public** (dans ton propre salon vocal temporaire) : `&vc lock|unlock|
     limit|rename|kick` (voir section 6septies).
   - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
-    clear` / `yanis clear` — efface les messages de son PROPRE auteur, plus
-    les réponses que le bot lui a faites, sans rapport avec `&clear` (voir
-    `utils/selfClear.js`).
+    clear` / `yanis clear` — efface les messages de son PROPRE auteur et tous
+    ceux du bot, sans rapport avec `&clear` (voir `utils/selfClear.js`).
 
 `&help` n'affiche que ce que tu as réellement le droit d'utiliser — même
 moteur de permissions que les commandes et que `&panel`, jamais une liste
@@ -283,19 +282,31 @@ push.
 
 ### Le ménage ne laisse pas ses propres traces
 
-`&clear` supprime aussi **le message de commande** : laisser `&clear @membre
-50` au milieu d'un salon qu'on vient de nettoyer annule une partie du ménage.
-Sa confirmation s'efface aussitôt envoyée — le salon de logs garde la trace
-permanente.
+Il n'existe que **deux** commandes qui suppriment des messages, et aucune
+autre :
 
-`uo clear` emporte les messages de la personne **et les réponses que le bot
-lui a faites**, sinon nettoyer sa conversation laisse en place la moitié bot
-du dialogue.
+| Commande | Ce qu'elle efface | Qui peut |
+|---|---|---|
+| `uo clear` (ou `anas clear`, `yanis clear`) | Les messages de la personne qui tape **et tous ceux du bot** | tout le monde, 2 fois par 25 min |
+| `&clear <@membre\|id> [nombre]` (alias `&purge`) | Les messages du membre visé | clé `moderation.clear` |
 
-Volontairement limité aux messages du bot qui **répondent** à l'un des siens :
-ce déclencheur est ouvert à tout le monde, sans aucune permission. S'il
-effaçait tous les messages du bot, n'importe qui pourrait supprimer une carte
-de giveaway, un panneau de tickets ou le lecteur de musique d'un autre membre.
+Les autres sous-commandes de `&clear` (`clear perms`, `clear limit`,
+`clear sanctions`) ne touchent aucun message — elles portent le même mot mais
+agissent sur la configuration.
+
+**Les deux effacent la commande tapée.** Pour `&clear`, la suppression est
+explicite : laisser `&clear @membre 50` au milieu d'un salon qu'on vient de
+nettoyer annulerait une partie du ménage. Pour `uo clear`, le déclencheur
+appartient à la personne, il part donc avec le lot. Les confirmations du bot
+s'effacent aussi — le salon de logs garde la trace permanente.
+
+`uo clear` emporte **tous** les messages du bot présents dans le salon, pas
+seulement les réponses adressées à la personne. C'est une demande explicite,
+et la conséquence est assumée : comme ce déclencheur n'exige aucune
+permission, n'importe quel membre peut ainsi faire disparaître une carte de
+giveaway en cours, un panneau de tickets ou le lecteur de musique. Le quota
+(2 usages par 25 minutes, hors dispensés) est le seul garde-fou. Seuls les
+messages des **autres membres** sont préservés.
 
 ## 6ter. Permissions, rôles, logs et panel
 
