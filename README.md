@@ -310,6 +310,19 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
+`&panel` est un **poste de commande**, pas une documentation : chaque
+rubrique affiche l'état courant (une ligne `> **Réglage** : valeur` par
+réglage) et les contrôles qui le modifient — menus déroulants, sélecteurs de
+salon/rôle/membre, boutons. Le "pourquoi" et le "comment" sont ici, dans ce
+README, et dans `&help` : on peut les lire sans faire défiler un écran de
+contrôles.
+
+Deux exceptions assumées : la rubrique **Logs** dit quand on est en lecture
+seule (sinon les contrôles absents seraient inexplicables), et **Ban de
+masse** garde son avertissement — c'est le seul écran dont un mauvais clic
+bannit le serveur entier. `scripts/test-panel-controls.js` échoue si une
+rubrique se remet à expliquer au lieu de montrer.
+
 ### `&panel` — rubriques
 
 Chaque rubrique n'apparaît que si tu y as droit :

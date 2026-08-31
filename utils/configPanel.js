@@ -208,6 +208,11 @@ function permissionRows() {
   ]);
 }
 
+// Le corps d'une rubrique dit UNIQUEMENT ce qui est configuré en ce moment —
+// une ligne "> **Réglage** : valeur" par réglage. Aucune explication de
+// fonctionnement : le panel est un poste de commande, pas une documentation.
+// Le "pourquoi" et le "comment" vivent dans le README et dans &help, où on
+// peut les lire sans faire défiler un écran de contrôles.
 function sectionBody(section, guild, member, state) {
   const guildId = guild.id;
   const prefixes = getPrefixes(guildId);
@@ -217,45 +222,33 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Préfixe musique** : \`${prefixes.main}\``,
       `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
-      "",
-      "Le préfixe des commandes est partagé avec les autres bots du serveur : " +
-        "le bot ne répond qu'aux commandes qu'il connaît et ignore le reste.",
     ].join("\n");
   }
 
   if (section === "moderation") {
     return [
       `> **Dispensés du quota de nettoyage** : ${mentions(accessStore.list("clear"))}`,
-      "Ces membres utilisent `uo clear` sans limite ; les autres sont plafonnés à 2 usages par 25 minutes.",
-      "",
       `> **Accès legacy aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
-      "Conservé pour rétrocompatibilité — la voie normale désormais est la rubrique **Permissions** " +
-        "(clés `channels.lock` / `channels.manage`), octroyable par rôle.",
     ].join("\n");
   }
 
   if (section === "permissions") {
     const roleId = state.permissionsRoleId;
-    if (!roleId) {
-      return [
-        "Choisis un rôle ci-dessous pour voir et modifier ses permissions de modération.",
-        "",
-        ...permissionRows(),
-      ].join("\n");
-    }
+    // Le catalogue complet des permissions n'est plus recopié ici : le menu
+    // déroulant plus bas les liste déjà toutes, en cochant celles qui sont
+    // accordées. Deux fois la même information, dont une seule cliquable.
+    if (!roleId) return "> *Choisis un rôle dans le menu ci-dessous.*";
     const role = guild.roles.cache.get(roleId);
     if (!role) return "Ce rôle n'existe plus sur le serveur.";
-    const granted = new Set(permStore.getRoleGrants(guildId, roleId));
-    return [
-      `**Rôle : ${role.toString()}**`,
-      "",
-      ...permCatalog.byCategory().map((group) => {
-        const lines = group.permissions.map((p) => `[${granted.has(p.key) ? "x" : " "}] ${p.label}`);
-        return `**${group.label}**\n${lines.join("\n")}`;
-      }),
-      "",
-      "Sélectionne les permissions à accorder dans le menu ci-dessous — la sélection **remplace** l'ensemble actuel.",
-    ].join("\n");
+    const granted = permStore.getRoleGrants(guildId, roleId);
+    const parCategorie = permCatalog
+      .byCategory()
+      .map((group) => {
+        const n = group.permissions.filter((perm) => granted.includes(perm.key)).length;
+        return n ? `> **${group.label}** : ${n}` : null;
+      })
+      .filter(Boolean);
+    return [`> **Rôle** : ${role.toString()}`, `> **Permissions accordées** : ${granted.length}`, ...parCategorie].join("\n");
   }
 
   if (section === "roles") {
@@ -287,19 +280,11 @@ function sectionBody(section, guild, member, state) {
     const catLabel = state.logsCategory ? LOG_CATEGORY_LABELS[state.logsCategory] : null;
     return [
       ...lines,
-      "",
-      manage
-        ? "Bouton \"Créer les salons automatiquement\" : crée un salon par catégorie manquante (visibles des " +
-          "seuls membres avec la permission Discord Administrateur — elle passe outre les restrictions de " +
-          "salon, rien d'autre à configurer). \"Supprimer les salons de logs\" : supprime tous les salons " +
-          "configurés existants — reclique ensuite sur \"Créer\" pour tout recréer à neuf."
-        : "Tu peux consulter cette configuration mais pas la modifier (droit `logs.manage` requis).",
-      manage
-        ? catLabel
-          ? `Choisis le salon pour **${catLabel}** ci-dessous (valide sans rien choisir pour désactiver), ou choisis une autre catégorie dans le menu.`
-          : "Ou choisis une catégorie dans le menu pour lui assigner un salon existant manuellement."
-        : null,
-      "Les messages postés ici ne s'effacent jamais, contrairement aux confirmations ailleurs dans le bot.",
+      // Seules exceptions à la règle "pas de prose" : dire qu'on est en lecture
+      // seule, et nommer la catégorie en cours d'édition. Sans elles, les
+      // contrôles affichés en dessous n'ont pas de sens.
+      manage ? null : "> *Lecture seule — le droit `logs.manage` est requis pour modifier.*",
+      manage && catLabel ? `> *Catégorie en cours : **${catLabel}** — choisis son salon ci-dessous.*` : null,
     ]
       .filter((l) => l !== null)
       .join("\n");
@@ -314,8 +299,6 @@ function sectionBody(section, guild, member, state) {
     return [
       "**5 dernières actions :**",
       lines.length ? lines.join("\n") : "*Aucune entrée pour l'instant.*",
-      "",
-      "Utilise `&modlogs [@membre|id]` ou le bouton ci-dessous pour une recherche plus précise.",
     ].join("\n");
   }
 
@@ -339,9 +322,6 @@ function sectionBody(section, guild, member, state) {
       `> **Mots interdits** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`,
       "",
       `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
-      "",
-      "Cette whitelist exempte l'anti-spam, l'anti-lien, l'anti-mass-mention et les mots interdits. L'anti-@everyone " +
-        "et l'anti-nuke ont leur propre whitelist, voir la rubrique **Anti-nuke**.",
     ].join("\n");
   }
 
@@ -358,17 +338,7 @@ function sectionBody(section, guild, member, state) {
       `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
       `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
-      "**Guards** (actif seulement si l'interrupteur général l'est aussi) :",
       ...guardLines,
-      "",
-      "Choisis un guard ci-dessous pour l'activer/le désactiver individuellement.",
-      "",
-      "Owner, rang sys et whitelist sont entièrement exemptés (pas seulement de la sanction — leurs actions ne " +
-        "comptent même pas dans les seuils). Pas de restauration de salon/rôle supprimé en v1 (voir le README) : " +
-        "détection + sanction + log seulement, sauf ban/débannissement, simples à annuler.",
-      "",
-      "**Important** : ajoute le compte du CrowBot à cette whitelist pour éviter que ses propres actions " +
-        "anti-nuke (dé-bannir quelqu'un, par exemple) ne soient elles-mêmes annulées par erreur.",
     ].join("\n");
   }
 
@@ -402,20 +372,12 @@ function sectionBody(section, guild, member, state) {
 
     return [
       lines.length ? lines.join("\n") : "*Personne n'a d'accès individuel enregistré sur ce serveur.*",
-      "",
-      "Les octrois **par rôle** ne figurent pas ici : ils se recalculent automatiquement sur les rôles actuels " +
-        "de chacun, rien à nettoyer de ce côté.",
-      "Un départ du serveur révoque déjà l'accès automatiquement. Le bouton ci-dessous ne sert qu'à rattraper " +
-        "un cas resté en place avant que ce nettoyage n'existe.",
     ].join("\n");
   }
 
   if (section === "sys") {
     return [
       `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
-      "",
-      "Le rang sys donne accès à **tout le bot** : toutes les permissions de modération, ce panneau, les dispenses.",
-      "Un sys ne peut pas en nommer d'autres — cette rubrique n'est visible que par toi.",
     ].join("\n");
   }
 
@@ -423,9 +385,6 @@ function sectionBody(section, guild, member, state) {
     const roleId = muteStore.getMuteRoleId(guildId);
     return [
       `> **Rôle de mute** : ${roleId && guild.roles.cache.has(roleId) ? `<@&${roleId}>` : "*aucun — non configuré*"}`,
-      "",
-      "Ce rôle doit lui-même refuser Envoyer des messages/Parler sur tes salons (permissions Discord classiques) — " +
-        "le bot ne fait qu'attribuer/retirer ce rôle via &mute/&tempmute/&unmute (et les alias &cmute/&tempcmute/&uncmute).",
     ].join("\n");
   }
 
@@ -433,8 +392,6 @@ function sectionBody(section, guild, member, state) {
     const config = ticketStore.getConfig(guildId);
     return [
       `> **Rôle staff** : ${config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? `<@&${config.staffRoleId}>` : "*aucun*"}`,
-      "",
-      "Ajouté automatiquement à chaque ticket ouvert (voir &ticket setup pour poster le bouton \"Ouvrir un ticket\").",
     ].join("\n");
   }
 
@@ -442,21 +399,15 @@ function sectionBody(section, guild, member, state) {
     const hubId = voiceChannels.getHub(guildId);
     return [
       `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
-      "",
-      "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. Une " +
-        "carte de contrôle (boutons) est postée dans le chat du salon lui-même — verrouiller/déverrouiller, " +
-        "renommer, ajouter/retirer un membre, expulser, transférer la propriété. Équivalent en texte : &vc " +
-        "lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre.",
     ].join("\n");
   }
 
   if (section === "banall") {
     return [
       `> **Autorisés** : ${mentions(accessStore.list("banall"))}`,
-      "",
-      "Ces membres peuvent lancer `banall`, qui bannit tout le serveur d'un coup.",
-      "Le propriétaire du serveur y a toujours droit, sans figurer ici.",
-      "Le rang sys ne suffit **pas**, ni aucun rôle : cet accès s'accorde un par un, et seulement par toi.",
+      // Exception assumée à la règle "pas de prose" : c'est le seul écran du
+      // panel dont un mauvais clic bannit le serveur entier.
+      "> ⚠️ *`banall` bannit tout le serveur d'un coup. Le propriétaire y a toujours droit sans figurer ici.*",
     ].join("\n");
   }
 
@@ -466,8 +417,6 @@ function sectionBody(section, guild, member, state) {
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
-    "",
-    "Sélectionne une rubrique ci-dessous pour la modifier — seules celles auxquelles tu as droit apparaissent.",
   ].join("\n");
 }
 
