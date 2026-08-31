@@ -24,7 +24,7 @@ const { Collection } = require("discord.js");
 // musicCommands pour casser la boucle de dépendances. S'il était rompu, la
 // première ligne du test planterait.
 const { isImplemented } = require("../utils/implementedCommands");
-const { buildHelpPanel, groupByTier, identityOf } = require("../utils/helpPanel");
+const { buildHelpPanel } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
 
 let reussis = 0;
@@ -40,10 +40,13 @@ async function cas(nom, fn) {
 }
 
 const member = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
-// Navigation à trois niveaux désormais (catégorie -> palier -> page) : le
-// palier se choisit automatiquement s'il n'y en a qu'un, mais un test qui
-// veut un palier PRÉCIS (ex: "documented") doit le demander explicitement.
-const bodyOf = (view, tier, page) => buildHelpPanel("g1", member, view, tier, page).components[0].toJSON().components[2].content;
+const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON().components[2].content;
+
+/** Toutes les identités listées dans les paliers ACTIFS (pas la section "documentées"), à plat. */
+function activeIdentities(body) {
+  const [activesTxt] = body.split("Documentées, pas encore actives");
+  return [...activesTxt.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].flatMap((m) => m[1].split(", "));
+}
 
 (async () => {
   console.log("Distinction câblé / seulement documenté :");
@@ -103,24 +106,25 @@ const bodyOf = (view, tier, page) => buildHelpPanel("g1", member, view, tier, pa
 
   console.log("\nRendu de &help :");
 
-  await cas('les commandes muettes vivent dans leur PROPRE palier "documented", jamais mélangées', () => {
-    const groups = groupByTier(CATEGORIES.find((c) => c.key === "utilitaire").commands);
-    const documentedIds = groups.documented.map((c) => c.name);
-    assert.ok(documentedIds.some((n) => n.startsWith("changelogs")), "la référence complète reste accessible");
-    const body = bodyOf("utilitaire", "documented");
-    assert.ok(body.includes("changelogs"), body);
+  await cas("les commandes muettes sont annoncées comme telles, pas mélangées", () => {
+    const body = bodyOf("utilitaire");
+    assert.ok(body.includes("pas encore actives"), "une section dédiée doit exister");
+    assert.ok(body.includes("changelogs"), "la référence complète reste affichée");
   });
 
   await cas("aucune commande n'apparaît à la fois active et non active", () => {
-    const groups = groupByTier(CATEGORIES.find((c) => c.key === "utilitaire").commands);
-    const documentedNames = groups.documented.map((c) => c.name.split(/\s+/)[0]);
-    const activeNames = [...groups.public, ...groups.configurable, ...groups.sys].map((c) => c.name.split(/\s+/)[0]);
+    // Comparaison sur les identités RÉELLEMENT listées, pas une recherche de
+    // sous-chaîne brute (un nom comme "image" pourrait par coïncidence
+    // apparaître ailleurs dans le texte).
+    const body = bodyOf("utilitaire");
+    const identites = activeIdentities(body);
+    const [, documenteesTxt] = body.split("Documentées, pas encore actives");
     for (const name of ["changelogs", "image", "support"]) {
-      assert.ok(!activeNames.includes(name), `${name} ne doit pas figurer parmi les actives`);
-      assert.ok(documentedNames.includes(name), `${name} doit figurer parmi les documentées`);
+      assert.ok(!identites.some((id) => id === name || id.startsWith(`${name}/`)), `${name} ne doit pas figurer parmi les actives`);
+      assert.ok(documenteesTxt.includes(name));
     }
     for (const name of ["calc", "vocinfo", "boosters"]) {
-      assert.ok(activeNames.includes(name), `${name} doit figurer parmi les actives`);
+      assert.ok(identites.some((id) => id === name || id.startsWith(`${name}/`)), `${name} doit figurer parmi les actives`);
     }
   });
 
@@ -178,9 +182,9 @@ const bodyOf = (view, tier, page) => buildHelpPanel("g1", member, view, tier, pa
 
   await cas("les alias restent visibles, collés à leur commande", () => {
     const body = bodyOf("utilitaire");
-    assert.ok(body.includes("`pic [@membre]` *(alias : avatar)*"), body);
-    assert.ok(body.includes("*(alias : serverinfo)*"));
-    assert.ok(body.includes("*(alias : member)*"));
+    assert.ok(body.includes("pic/avatar"), body);
+    assert.ok(body.includes("server/serverinfo"));
+    assert.ok(body.includes("userinfo/member"));
   });
 
   await cas("chaque alias déclaré répond réellement", () => {
@@ -194,14 +198,14 @@ const bodyOf = (view, tier, page) => buildHelpPanel("g1", member, view, tier, pa
   });
 
   await cas("une commande n'apparaît jamais dans deux paliers à la fois", () => {
-    for (const category of CATEGORIES) {
-      const groups = groupByTier(category.commands);
+    for (const view of CATEGORIES.map((c) => c.key)) {
+      const body = bodyOf(view);
+      const listes = [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].map((m) => m[1].split(", "));
       const vus = new Set();
-      for (const tier of ["public", "configurable", "sys", "documented"]) {
-        for (const cmd of groups[tier]) {
-          const id = identityOf(cmd);
-          assert.ok(!vus.has(id), `${id} listé deux fois dans la catégorie ${category.key}`);
-          vus.add(id);
+      for (const liste of listes) {
+        for (const nom of liste) {
+          assert.ok(!vus.has(nom), `${nom} listé deux fois`);
+          vus.add(nom);
         }
       }
     }
@@ -209,47 +213,26 @@ const bodyOf = (view, tier, page) => buildHelpPanel("g1", member, view, tier, pa
 
   console.log("\nSous-commandes distinctes (le bug \"&help incompréhensible\") :");
 
-  await cas("role create/delete/rename/color/admin sont CINQ lignes distinctes, pas fusionnées sous \"role\"", () => {
-    // Palier "configurable" explicitement : role/channel n'y sont pas
-    // publics, le palier par défaut (le premier non vide) serait "public".
-    const groups = groupByTier(CATEGORIES.find((c) => c.key === "server").commands);
-    const totalPages = Math.max(1, Math.ceil(groups.configurable.length / 8));
-    const body = Array.from({ length: totalPages }, (_, p) => bodyOf("server", "configurable", p)).join("\n");
-    for (const sub of ["role create <nom>", "role delete @rôle", "role rename @rôle <nom>", "role color @rôle <hex>", "role admin @rôle"]) {
-      assert.ok(body.includes(`\`${sub}\``), `"${sub}" doit apparaître littéralement — trouvé :\n${body}`);
-    }
-    // Chacune garde sa propre description, preuve qu'aucune n'a été avalée par une autre.
-    assert.ok(body.includes("Crée un nouveau rôle"));
-    assert.ok(body.includes("Supprime un rôle"));
-    assert.ok(body.includes("Renomme un rôle"));
-  });
-
-  await cas("channel create/delete/rename/topic sont des lignes distinctes elles aussi", () => {
-    const groups = groupByTier(CATEGORIES.find((c) => c.key === "server").commands);
-    const totalPages = Math.max(1, Math.ceil(groups.configurable.length / 8));
-    const body = Array.from({ length: totalPages }, (_, p) => bodyOf("server", "configurable", p)).join("\n");
-    for (const sub of ["channel create <nom> [vocal]", "channel delete [#salon]", "channel rename [#salon] <nom>", "channel topic [#salon] <texte>"]) {
-      assert.ok(body.includes(`\`${sub}\``), `"${sub}" doit apparaître littéralement`);
+  await cas("role create/delete/rename/color/admin sont CINQ identités distinctes, pas fusionnées sous \"role\"", () => {
+    const identites = activeIdentities(bodyOf("server"));
+    for (const sub of ["role create", "role delete", "role rename", "role color", "role admin"]) {
+      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte — trouvé :\n${identites.join(", ")}`);
     }
   });
 
-  await cas("une catégorie dense se PAGINE au lieu de tout empiler sur un seul écran", () => {
-    // Signalé : même groupées par palier avec description, les listes
-    // restaient trop longues à lire (ex: 29 commandes "configurable" dans
-    // Gestion du serveur). Vérifie qu'une seule page reste courte, et que
-    // le sélecteur de page apparaît bien quand il y a plus d'une page.
-    const page0 = bodyOf("server", "configurable", 0);
-    assert.ok(page0.length < 1200, `une page ne doit pas dépasser ~8 commandes : ${page0.length} caractères`);
-    const panel = buildHelpPanel("g1", member, "server", "configurable", 0);
-    const hasPageSelect = panel.components[0].toJSON().components.some(
-      (c) => c.type === 1 && c.components[0]?.custom_id?.startsWith("help_page:")
-    );
-    assert.ok(hasPageSelect, "le sélecteur de page doit apparaître pour une liste de plus de 8 commandes");
+  await cas("channel create/delete/rename/topic sont des identités distinctes elles aussi", () => {
+    const identites = activeIdentities(bodyOf("server"));
+    for (const sub of ["channel create", "channel delete", "channel rename", "channel topic"]) {
+      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte`);
+    }
   });
 
-  await cas("chaque commande active affiche sa description, pas seulement son nom", () => {
-    const body = bodyOf("utilitaire");
-    assert.ok(body.includes("`banner [@membre]` — Affiche la bannière d'un membre"));
+  await cas("une catégorie dense reste compacte (liste de noms, pas le détail syntaxe/description)", () => {
+    // Signalé : la référence montrée tient tout sur un seul écran, sans
+    // pagination ni palier séparé — repose sur des identités compactes,
+    // comme &help d'origine, pas sur une fiche détaillée par commande.
+    const longest = Math.max(...CATEGORIES.map((c) => bodyOf(c.key).length));
+    assert.ok(longest < 2000, `une catégorie ne doit pas dépasser ~2000 caractères : ${longest}`);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
