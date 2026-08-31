@@ -4,8 +4,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
   UserSelectMenuBuilder,
   RoleSelectMenuBuilder,
   ContainerBuilder,
@@ -29,58 +27,10 @@ const { checkBotPermission, report } = require("./moderation/actions");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
-const ID = "srv";
-const PAGE_SIZE = 10;
-
-// --- Panneau générique liste paginée + ajout/retrait (owners, whitelist) ---
-// Mêmes deux UserSelectMenu qu'utils/configPanel.js::accessRows() — un pour
-// ajouter, un pour retirer — plutôt que le menu combiné du CrowBot : plus
-// simple à maintenir, un seul aller-retour par action.
-
-function card(title, body, rows = []) {
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(body || "*Aucune entrée.*"));
-  for (const row of rows) container.addActionRowComponents(row);
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-function paginate(items, page) {
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const clamped = Math.min(Math.max(0, page), totalPages - 1);
-  return { slice: items.slice(clamped * PAGE_SIZE, clamped * PAGE_SIZE + PAGE_SIZE), page: clamped, totalPages };
-}
-
-function buildListCard({ idKind, title, description, items, page, canEdit }) {
-  const { slice, page: clampedPage, totalPages } = paginate(items, page);
-  const lines = slice.map((item, i) => `${clampedPage * PAGE_SIZE + i + 1}. ${item}`);
-  const body = [description, `Nombre actuel : ${items.length}`, "", ...lines].join("\n");
-
-  const rows = [];
-  if (totalPages > 1) {
-    const options = [];
-    if (clampedPage > 0) options.push(new StringSelectMenuOptionBuilder().setLabel("Page précédente").setValue(String(clampedPage - 1)));
-    if (clampedPage < totalPages - 1) options.push(new StringSelectMenuOptionBuilder().setLabel("Page suivante").setValue(String(clampedPage + 1)));
-    rows.push(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:page:${idKind}`)
-          .setPlaceholder(`Page ${clampedPage + 1}/${totalPages}`)
-          .addOptions(options)
-      )
-    );
-  }
-  if (canEdit) {
-    rows.push(
-      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:add:${idKind}`).setPlaceholder("Ajouter"))
-    );
-    rows.push(
-      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:del:${idKind}`).setPlaceholder("Retirer"))
-    );
-  }
-  return card(title, body, rows);
-}
+// Rendu des cartes (générique + listes paginées) : utils/listCard.js, partagé
+// avec les listes en lecture seule d'utils/utilityCommands.js.
+const { ID, card, buildListCard } = require("./listCard");
+const readOnlyLists = require("./readOnlyLists");
 
 /** &owners — gestion du rang sys, vue dédiée et paginée (voir aussi &panel > Rang sys). */
 async function owners(client, message) {
@@ -117,14 +67,17 @@ async function whitelist(client, message) {
   );
 }
 
-/** &allbots — lecture seule, réservée au rang sys (comme &sources). */
+/**
+ * &allbots — lecture seule, réservée au rang sys (comme &sources). Le contenu
+ * vient d'utils/readOnlyLists.js, exactement comme la pagination de la carte :
+ * une seule définition, impossible que les deux se contredisent.
+ */
 async function allbots(client, message, args) {
   if (!can(message.member, "sys")) return;
-  const bots = [...message.guild.members.cache.filter((m) => m.user.bot).values()].map((m) => `<@${m.id}> (${m.user.tag}, ${m.id})`);
+  await readOnlyLists.ensureMembersCached(message.guild);
+  const { title, description, items } = readOnlyLists.DEFINITIONS.bots.build(message.guild);
   const page = parseInt(args[0], 10) - 1 || 0;
-  await message.reply(
-    buildListCard({ idKind: "bots", title: "Liste des bots", description: "Tous les comptes bot présents sur ce serveur.", items: bots, page, canEdit: false })
-  );
+  await message.reply(buildListCard({ idKind: "bots", title, description, items, page, canEdit: false }));
 }
 
 /** Traite les interactions du panneau générique liste paginée (customId "srv:page|add|del:..."). */
@@ -152,8 +105,29 @@ async function handleServerAdminInteraction(interaction) {
     },
   };
 
+  // Les listes en LECTURE SEULE (bots, admins, boosters, membres d'un rôle —
+  // voir utils/readOnlyLists.js) n'ont ni ajout ni retrait, mais elles
+  // doivent bien changer de page : sans ce branchement, leur sélecteur de
+  // page restait décoratif et le clic ne faisait rien.
+  const [readOnlyKind, readOnlyArg] = idKind.split("/");
+  const readOnly = readOnlyLists.DEFINITIONS[readOnlyKind];
+  if (readOnly) {
+    if (action !== "page") return;
+    if (readOnly.permission && !readOnly.permission(interaction.member)) {
+      return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    }
+    // Le cache peut être froid ici (redémarrage du bot depuis l'envoi de la
+    // carte) : sans ça, la page 2 d'une vieille carte serait tronquée.
+    await readOnlyLists.ensureMembersCached(interaction.guild);
+    const built = readOnly.build(interaction.guild, readOnlyArg);
+    if (!built) return interaction.reply({ content: "Cette liste n'existe plus.", flags: MessageFlags.Ephemeral });
+    return interaction.update(
+      buildListCard({ idKind, title: built.title, description: built.description, items: built.items, page: parseInt(interaction.values[0], 10) || 0, canEdit: false })
+    );
+  }
+
   const list = LISTS[idKind];
-  if (!list) return; // "bots" est en lecture seule, aucune interaction à traiter
+  if (!list) return;
   if (!list.permission()) {
     return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
   }

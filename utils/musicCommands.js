@@ -22,6 +22,7 @@ const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const permsCommands = require("./permsCommands");
+const { utilityHandlers } = require("./utilityCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -450,6 +451,26 @@ const modHandlers = {
   // Vue d'ensemble des permissions par palier — voir utils/permsCommands.js.
   perms: permsCommands.perms,
   helpall: permsCommands.helpall,
+
+  // Utilitaires en lecture seule (listes de membres, fiches, calculatrice,
+  // Wikipédia) — voir utils/utilityCommands.js. Aucune permission requise,
+  // même famille que &pic/&server/&userinfo.
+  alladmins: utilityHandlers.alladmins,
+  botadmins: utilityHandlers.botadmins,
+  boosters: utilityHandlers.boosters,
+  rolemembers: utilityHandlers.rolemembers,
+  user: utilityHandlers.user,
+  member: utilityHandlers.member,
+  vocinfo: utilityHandlers.vocinfo,
+  emoji: utilityHandlers.emoji,
+  calc: utilityHandlers.calc,
+  wiki: utilityHandlers.wiki,
+  // "search wiki <mot-clé>" est la seule sous-commande de "search" : tout
+  // autre mot reste sans réponse, comme n'importe quelle commande inconnue
+  // sur ce préfixe partagé avec le CrowBot.
+  search: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "wiki") return utilityHandlers.searchWiki(client, message, args.slice(1));
+  },
 };
 
 /**
