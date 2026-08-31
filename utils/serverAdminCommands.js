@@ -625,7 +625,7 @@ async function antinuke(client, message, args) {
   });
 }
 
-// --- Salons vocaux temporaires (&voicehub, &vc) ---
+// --- Salons vocaux temporaires (&voicehub, &voc) ---
 
 async function voicehub(client, message, args) {
   if (!can(message.member, "server.voice.manage")) return;
@@ -645,7 +645,7 @@ async function voicehub(client, message, args) {
  * Vrai si `member` est le propriétaire ACTUEL du salon temporaire —
  * strictement, sans exception pour owner/sys (demande explicite : le rang
  * owner/sys passait outre et pouvait gérer n'importe quel salon temporaire
- * sans en être le créateur, via le panneau ET &vc — plus de bypass du tout).
+ * sans en être le créateur, via le panneau ET &voc — plus de bypass du tout).
  */
 function canManageVoiceChannel(member, channel) {
   const info = voiceChannels.getChannelInfo(channel.id);
@@ -658,7 +658,7 @@ function canManageVoiceChannel(member, channel) {
  * qui a créé et accès à la voc peut avoir accès au panel control". Appelé à
  * la création d'un salon temporaire, à sa suppression, et à un transfert de
  * propriété (voir index.js et handleVoiceControlInteraction, action
- * "transferpick"/&vc transfer).
+ * "transferpick"/&voc transfer).
  * @param {import('discord.js').Guild} guild
  * @param {string} userId
  * @param {boolean} allowed
@@ -698,21 +698,21 @@ async function vc(client, message, args) {
 
   if (sub === "limit") {
     const n = parseInt(args[1], 10);
-    if (isNaN(n) || n < 0 || n > 99) return reply(message, "error", "Indique une limite entre 0 (illimité) et 99 : `vc limit <n>`.");
+    if (isNaN(n) || n < 0 || n > 99) return reply(message, "error", "Indique une limite entre 0 (illimité) et 99 : `voc limit <n>`.");
     await channel.setUserLimit(n, `Limite changée par ${message.author.tag}`).catch(() => {});
     return reply(message, "success", n === 0 ? "Limite retirée." : `Limite réglée sur **${n}**.`);
   }
 
   if (sub === "rename") {
     const name = args.slice(1).join(" ").trim();
-    if (!name) return reply(message, "error", "Indique un nom : `vc rename <nom>`.");
+    if (!name) return reply(message, "error", "Indique un nom : `voc rename <nom>`.");
     await channel.setName(name, `Renommé par ${message.author.tag}`).catch(() => {});
     return reply(message, "success", `Salon renommé **${name}**.`);
   }
 
   if (sub === "kick") {
     const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", "Indique un membre : `vc kick @membre`.");
+    if (!target) return reply(message, "error", "Indique un membre : `voc kick @membre`.");
     if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre n'est pas dans ton salon.");
     await target.voice.disconnect(`Expulsé du salon vocal par ${message.author.tag}`).catch(() => {});
     return reply(message, "success", `**${target.user.tag}** expulsé du salon.`);
@@ -720,7 +720,7 @@ async function vc(client, message, args) {
 
   if (sub === "add") {
     const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", "Indique un membre : `vc add @membre`.");
+    if (!target) return reply(message, "error", "Indique un membre : `voc add @membre`.");
     await channel.permissionOverwrites
       .edit(target, { ViewChannel: true, Connect: true }, { reason: `Accès accordé par ${message.author.tag}` })
       .catch(() => {});
@@ -729,7 +729,7 @@ async function vc(client, message, args) {
 
   if (sub === "remove") {
     const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", "Indique un membre : `vc remove @membre`.");
+    if (!target) return reply(message, "error", "Indique un membre : `voc remove @membre`.");
     await channel.permissionOverwrites.delete(target, `Accès retiré par ${message.author.tag}`).catch(() => {});
     if (target.voice.channelId === channel.id) await target.voice.disconnect(`Accès retiré par ${message.author.tag}`).catch(() => {});
     return reply(message, "success", `Accès de **${target.user.tag}** retiré.`);
@@ -737,7 +737,7 @@ async function vc(client, message, args) {
 
   if (sub === "transfer") {
     const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", "Indique un membre : `vc transfer @membre`.");
+    if (!target) return reply(message, "error", "Indique un membre : `voc transfer @membre`.");
     if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre doit être dans ton salon pour en devenir propriétaire.");
     const previousOwnerId = voiceChannels.getChannelInfo(channel.id)?.ownerId;
     voiceChannels.registerChannel(channel.id, message.guild.id, target.id);
@@ -746,7 +746,7 @@ async function vc(client, message, args) {
     return reply(message, "success", `**${target.user.tag}** est désormais propriétaire de ce salon.`);
   }
 
-  return reply(message, "error", "Utilise `vc lock|unlock|limit <n>|rename <nom>|kick @membre|add @membre|remove @membre|transfer @membre`.");
+  return reply(message, "error", "Utilise `voc lock|unlock|limit <n>|rename <nom>|kick @membre|add @membre|remove @membre|transfer @membre`.");
 }
 
 // --- Panneau de contrôle PARTAGÉ, un seul salon texte permanent créé par
@@ -783,7 +783,7 @@ function buildVoiceControlCard() {
     new TextDisplayBuilder().setContent(
       "Un seul panneau pour tout le monde : les boutons agissent toujours sur **ton** salon vocal temporaire, " +
         "celui où tu es connecté au moment du clic — peu importe d'où tu cliques.\n" +
-        "Toujours accessible en texte, où que tu sois : `&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
+        "Toujours accessible en texte, où que tu sois : `&voc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -823,7 +823,7 @@ async function handleVoiceControlInteraction(interaction) {
   // instant, pas celui où elle a cliqué. Doit être un salon TEMPORAIRE
   // réellement enregistré (voiceChannels.getChannelInfo), sinon même le
   // générateur lui-même serait manipulable. Même garde-fou que la commande
-  // texte &vc (ci-dessus).
+  // texte &voc (ci-dessus).
   const voiceChannelId = interaction.member?.voice?.channelId;
   const channel = voiceChannelId ? interaction.guild.channels.cache.get(voiceChannelId) : null;
   const isTempChannel = channel?.type === ChannelType.GuildVoice && voiceChannels.getChannelInfo(channel.id);

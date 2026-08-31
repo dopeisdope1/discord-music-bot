@@ -1,4 +1,4 @@
-const { ChannelType } = require("discord.js");
+const { ChannelType, ActivityType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { buildListCard } = require("./listCard");
 const readOnlyLists = require("./readOnlyLists");
@@ -114,6 +114,37 @@ const handlers = {
    * qu'une deuxième fiche qui divergerait à la première retouche.
    */
   member: (client, message, args) => moderationHandlers.userinfo(client, message, args),
+
+  /**
+   * &vc — statistiques d'ensemble du serveur (membres, présence, vocal).
+   * "Actifs" = joue à un jeu/utilise une appli en ce moment (activité de
+   * présence Discord hors statut personnalisé), pas une notion de messages
+   * récents — rien de tel n'est suivi par ce bot.
+   */
+  async stats(client, message) {
+    const guild = message.guild;
+    await readOnlyLists.ensureMembersCached(guild);
+    const members = guild.members.cache;
+
+    const online = members.filter((m) => m.presence && m.presence.status !== "offline").size;
+    const inVoice = members.filter((m) => m.voice.channelId).size;
+    const streaming = members.filter((m) => m.voice.streaming || m.voice.selfVideo).size;
+    const active = members.filter((m) => m.presence?.activities?.some((a) => a.type !== ActivityType.Custom)).size;
+    const muted = members.filter((m) => m.voice.channelId && m.voice.mute).size;
+
+    await reply(message, "info", null, {
+      title: `📊 Statistiques de ${guild.name}`,
+      thumbnail: guild.iconURL({ size: 256 }) || undefined,
+      fields: [
+        { name: "Membres", value: guild.memberCount.toLocaleString("fr-FR"), inline: true },
+        { name: "En ligne", value: online.toLocaleString("fr-FR"), inline: true },
+        { name: "En vocal", value: inVoice.toLocaleString("fr-FR"), inline: true },
+        { name: "En stream", value: streaming.toLocaleString("fr-FR"), inline: true },
+        { name: "Actifs", value: active.toLocaleString("fr-FR"), inline: true },
+        { name: "Mute", value: muted.toLocaleString("fr-FR"), inline: true },
+      ],
+    });
+  },
 
   /** &vocinfo — état vocal du serveur, salon par salon. */
   async vocinfo(client, message) {

@@ -792,7 +792,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 });
 
-// ---- Salons vocaux temporaires (&voicehub, &vc, voir utils/voiceChannels.js)
+// ---- Salons vocaux temporaires (&voicehub, &voc, voir utils/voiceChannels.js)
 // — listener séparé du nettoyage du player musique ci-dessus, aucun rapport
 // entre les deux. ----
 client.on("voiceStateUpdate", async (oldState, newState) => {

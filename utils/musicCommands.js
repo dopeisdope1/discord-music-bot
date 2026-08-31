@@ -366,7 +366,8 @@ const modHandlers = {
   dero: serverAdmin.dero,
   antinuke: serverAdmin.antinuke,
   voicehub: serverAdmin.voicehub,
-  vc: serverAdmin.vc,
+  voc: serverAdmin.vc,
+  vc: utilityHandlers.stats,
 
   // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
   // utils/giveaways.js.

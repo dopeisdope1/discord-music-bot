@@ -179,7 +179,7 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
   await cas("connecté à un salon RÉELLEMENT enregistré mais dont il n'est PAS propriétaire -> refusé, MÊME pour le propriétaire du bot", async () => {
     // Second correctif demandé sur le même sujet : owner/sys ne doit plus
     // avoir AUCUNE exception, y compris sur un vrai salon temporaire créé
-    // par quelqu'un d'autre — plus de bypass du tout, ni ici ni dans &vc.
+    // par quelqu'un d'autre — plus de bypass du tout, ni ici ni dans &voc.
     const salonPanel = { id: PANEL, type: ChannelType.GuildText };
     const interaction = interactionConnecteA(VOCAL, "owner-bot", salonPanel);
     await handleVoiceControlInteraction(interaction);

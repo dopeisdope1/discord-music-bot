@@ -1,8 +1,9 @@
 /**
- * Vérifie les salons vocaux temporaires (utils/voiceChannels.js) et les
- * commandes &vc (utils/serverAdminCommands.js) : stockage propriétaire/salon,
- * contrôle refusé à qui n'est pas propriétaire, autorisé au propriétaire et
- * au rang sys.
+ * Vérifie les salons vocaux temporaires (utils/voiceChannels.js) et la
+ * commande &voc (utils/serverAdminCommands.js) : stockage propriétaire/
+ * salon, contrôle refusé à qui n'est pas propriétaire — AUCUNE exception,
+ * même le rang sys/owner du bot ne peut gérer un salon dont il n'est pas
+ * propriétaire (plus de bypass, demande explicite).
  *
  * DATA_DIR pointe vers un dossier temporaire créé pour ce process.
  *
@@ -79,7 +80,7 @@ async function main() {
     assert.strictEqual(voiceChannels.getChannelInfo("chan-1"), null);
   });
 
-  console.log("\nContrôle &vc :");
+  console.log("\nContrôle &voc :");
 
   await cas("le propriétaire du salon peut le renommer", async () => {
     const channel = fakeChannel({ id: "chan-2" });
@@ -117,7 +118,7 @@ async function main() {
     assert.strictEqual(channel.limit, 5);
   });
 
-  await cas("&vc refuse silencieusement hors d'un salon temporaire connu", async () => {
+  await cas("&voc refuse silencieusement hors d'un salon temporaire connu", async () => {
     const channel = fakeChannel({ id: "chan-not-registered" });
     const message = fakeMessage({ authorId: "vc-owner-1", voiceChannel: channel });
     await serverAdmin.vc(null, message, ["rename", "Test"]);

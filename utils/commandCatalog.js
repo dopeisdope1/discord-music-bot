@@ -32,11 +32,12 @@ const CATEGORIES = [
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
       { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
       {
-        name: "vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre",
+        name: "voc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre",
         prefix: "mod",
         permission: null,
         description: "Gère TON salon vocal temporaire (voir &voicehub) — ouvert à tous, réservé au propriétaire du salon",
       },
+      { name: "vc", prefix: "mod", permission: null, description: "Affiche les statistiques du serveur (membres, en ligne, en vocal, en stream, actifs, mute)" },
       { name: "changelogs", prefix: "mod", permission: null, description: "Affiche les dernières notes de mise à jour" },
       { name: "alladmins", prefix: "mod", permission: null, description: "Affiche la liste des membres (hors bots) ayant la permission administrateur" },
       { name: "botadmins", prefix: "mod", permission: null, description: "Affiche la liste des bots ayant la permission administrateur" },

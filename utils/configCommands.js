@@ -168,7 +168,7 @@ const handlers = {
         `> **Salon générateur** : ${existe ? `<#${hubId}>` : "*aucun — désactivé*"}`,
         hubId && !existe ? "> ⚠️ Le salon configuré n'existe plus." : null,
         "",
-        "`&voicehub` pour le régler, `&vc` pour piloter ton propre salon.",
+        "`&voicehub` pour le régler, `&voc` pour piloter ton propre salon.",
       ]
         .filter((l) => l !== null)
         .join("\n")

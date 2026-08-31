@@ -10,7 +10,7 @@
  */
 const assert = require("assert");
 
-const { Collection, PermissionFlagsBits, ChannelType } = require("discord.js");
+const { Collection, PermissionFlagsBits, ChannelType, ActivityType } = require("discord.js");
 const { utilityHandlers } = require("../utils/utilityCommands");
 const readOnlyLists = require("../utils/readOnlyLists");
 const { DEFINITIONS } = readOnlyLists;
@@ -35,7 +35,7 @@ function fakeRole(id, name, position = 1) {
   return { id, name, position, toString: () => `<@&${id}>` };
 }
 
-function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSince = null, joined = 1700000000000 }) {
+function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSince = null, joined = 1700000000000, presence = null, voice = {} }) {
   const roleCache = new Collection();
   for (const r of roles) roleCache.set(r.id, r);
   const highest = roles.length ? roles.reduce((a, b) => (a.position > b.position ? a : b)) : fakeRole("everyone", "@everyone", 0);
@@ -49,6 +49,8 @@ function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSi
     joinedTimestamp: joined,
     joinedAt: new Date(joined),
     communicationDisabledUntil: null,
+    presence,
+    voice: { channelId: voice.channelId || null, streaming: voice.streaming || false, selfVideo: voice.selfVideo || false, mute: voice.mute || false },
   };
 }
 
@@ -64,6 +66,8 @@ function fakeGuild({ members = [], roles = [], channels = [], voiceStates = [] }
 
   return {
     id: "guild-1",
+    name: "Serveur de test",
+    iconURL: () => "https://icon",
     memberCount: members.length,
     premiumTier: 2,
     premiumSubscriptionCount: members.filter((m) => m.premiumSince).length,
@@ -253,6 +257,38 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     const msg = fakeMessage(fakeGuild({ channels: [] }));
     await utilityHandlers.vocinfo(null, msg);
     assert.ok(embedText(msg._replies[0]).includes("Aucun salon vocal occupé"));
+  });
+
+  await cas("&vc (statistiques) compte membres/en ligne/en vocal/en stream/actifs/mute correctement", async () => {
+    const g = fakeGuild({
+      members: [
+        fakeMember({ id: "m1", tag: "en-ligne-actif#0001", presence: { status: "online", activities: [{ type: ActivityType.Playing }] } }),
+        fakeMember({ id: "m2", tag: "idle-en-vocal-stream#0001", presence: { status: "idle", activities: [] }, voice: { channelId: "v1", streaming: true } }),
+        fakeMember({ id: "m3", tag: "hors-ligne-mute#0001", presence: null, voice: { channelId: "v1", mute: true } }),
+        fakeMember({ id: "m4", tag: "statut-perso-seulement#0001", presence: { status: "dnd", activities: [{ type: ActivityType.Custom }] } }),
+      ],
+    });
+    const msg = fakeMessage(g);
+    await utilityHandlers.stats(null, msg);
+    const payload = msg._replies[0];
+    assert.strictEqual(embedTitle(payload), "📊 Statistiques de Serveur de test");
+    const fields = payload.embeds[0].data.fields;
+    const val = (name) => fields.find((f) => f.name === name).value;
+    assert.strictEqual(val("Membres"), "4");
+    // en ligne = tout statut différent de "offline" (online/idle/dnd) -> m1, m2, m4 (m3 sans présence n'est pas compté).
+    assert.strictEqual(val("En ligne"), "3");
+    assert.strictEqual(val("En vocal"), "2"); // m2, m3
+    assert.strictEqual(val("En stream"), "1"); // m2
+    assert.strictEqual(val("Actifs"), "1"); // m1 (jeu) — m4 n'a qu'un statut personnalisé, ne compte pas
+    assert.strictEqual(val("Mute"), "1"); // m3, connecté ET mute
+  });
+
+  await cas("&vc : quelqu'un mute mais PAS connecté ne compte pas dans Mute", async () => {
+    const g = fakeGuild({ members: [fakeMember({ id: "m1", tag: "mute-hors-vocal#0001", voice: { mute: true } })] });
+    const msg = fakeMessage(g);
+    await utilityHandlers.stats(null, msg);
+    const fields = msg._replies[0].embeds[0].data.fields;
+    assert.strictEqual(fields.find((f) => f.name === "Mute").value, "0");
   });
 
   await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {
