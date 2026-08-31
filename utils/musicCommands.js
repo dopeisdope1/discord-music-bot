@@ -465,17 +465,32 @@ async function handleMusicTextCommand(client, message) {
 
     // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
     // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),
-    // une commande qui a un formulaire dédié ouvre sa carte interactive
-    // dans le salon plutôt que d'échouer sur "indique un membre..." — voir
-    // utils/commandForms.js (BARE_COMMAND_FORMS). Avec de vrais arguments,
-    // l'exécution directe reste inchangée (habitudes déjà acquises, pas cassées).
+    // une commande qui a un formulaire dédié ouvre sa carte interactive —
+    // voir utils/commandForms.js (BARE_COMMAND_FORMS).
     const secondWord = modArgs.length === 1 && /^[a-z]+$/i.test(modArgs[0]) ? modArgs[0].toLowerCase() : null;
     const bareKey = modArgs.length === 0 ? cmdLower : secondWord ? `${cmdLower} ${secondWord}` : null;
-    const formKey = bareKey ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
-    if (formKey) {
-      const form = commandForms.FORMS[formKey];
+    const bareFormKey = bareKey ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
+    if (bareFormKey) {
+      const form = commandForms.FORMS[bareFormKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {
-        return message.reply(commandForms.buildFormCard(formKey, message.member));
+        return message.reply(commandForms.buildFormCard(bareFormKey, message.member));
+      }
+    }
+
+    // Tapée avec des arguments INSUFFISANTS (ex: "&addrole @membre" sans
+    // rôle) plutôt que complètement vides, la même carte s'ouvre — mais
+    // PRÉ-REMPLIE avec ce qui a déjà été donné, au lieu d'un message
+    // d'erreur "indique un membre ET un rôle". Avec tout le nécessaire déjà
+    // fourni, l'exécution directe reste inchangée (habitudes acquises intactes).
+    const directFormKey = !bareFormKey ? commandForms.BARE_COMMAND_FORMS[cmdLower] : null;
+    if (directFormKey) {
+      const form = commandForms.FORMS[directFormKey];
+      if (form && (form.permission == null || can(message.member, form.permission))) {
+        const extracted = commandForms.extractFormValues(form, message, modArgs);
+        if (!commandForms.structuralFieldsSatisfied(form, extracted)) {
+          commandForms.setFormState(message.author.id, directFormKey, extracted);
+          return message.reply(commandForms.buildFormCard(directFormKey, message.member));
+        }
       }
     }
 

@@ -798,6 +798,64 @@ const FORMS = {
   },
 };
 
+/**
+ * Extrait ce qui est déjà déterminable (membre/rôle/salon, mention OU ID)
+ * depuis une commande tapée avec des arguments INSUFFISANTS — sert à
+ * pré-remplir la carte plutôt que de la montrer vide (voir
+ * structuralFieldsSatisfied + utils/musicCommands.js). Les champs texte ne
+ * sont jamais devinés ici, seulement remplis via la modale de la carte.
+ */
+function extractFormValues(form, message, args) {
+  const values = {};
+  const used = new Set();
+
+  if (form.fields.includes("user")) {
+    const mentioned = message.mentions.members?.first() || message.mentions.users?.first();
+    if (mentioned) {
+      values.userId = mentioned.id;
+      used.add(mentioned.id);
+    } else {
+      const idArg = args.find((a) => /^\d{15,25}$/.test(a) && !used.has(a));
+      if (idArg) {
+        values.userId = idArg;
+        used.add(idArg);
+      }
+    }
+  }
+  if (form.fields.includes("role")) {
+    const mentioned = message.mentions.roles?.first();
+    if (mentioned) {
+      values.roleId = mentioned.id;
+      used.add(mentioned.id);
+    } else {
+      const idArg = args.find((a) => /^\d{15,25}$/.test(a) && !used.has(a));
+      if (idArg) {
+        values.roleId = idArg;
+        used.add(idArg);
+      }
+    }
+  }
+  if (form.fields.includes("channel")) {
+    const mentioned = message.mentions.channels?.first();
+    if (mentioned) values.channelId = mentioned.id;
+  }
+  return values;
+}
+
+/** Vrai si tous les champs NON-texte (salon/rôle/membre) du formulaire sont déjà déterminés. */
+function structuralFieldsSatisfied(form, values) {
+  return form.fields
+    .filter((f) => ["user", "role", "channel", "channel2", "roles"].includes(f))
+    .every((f) => {
+      if (f === "user") return Boolean(values.userId);
+      if (f === "role") return Boolean(values.roleId);
+      if (f === "channel") return Boolean(values.channelId);
+      if (f === "channel2") return Boolean(values.channelId2);
+      if (f === "roles") return Boolean(values.roleIds?.length);
+      return true;
+    });
+}
+
 // État en mémoire du formulaire EN COURS, par (personne, commande) — une
 // personne peut avoir plusieurs cartes différentes ouvertes en même temps
 // (une par commande tapée), donc la clé doit inclure la commande, pas
@@ -1041,5 +1099,7 @@ module.exports = {
   clearFormState,
   buildFormCard,
   handleFormCardInteraction,
+  extractFormValues,
+  structuralFieldsSatisfied,
   CARD_ID,
 };
