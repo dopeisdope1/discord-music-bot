@@ -192,6 +192,11 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
   - **Publiques**, sans permission : `&pic`/`&avatar [@membre]`,
     `&banner [@membre]`, `&server`/`&serverinfo`, `&userinfo [@membre]`,
     `&snipe`.
+  - **Utilitaires**, sans permission non plus — elles ne font que lire (voir
+    section 6nonies) : `&alladmins`, `&botadmins`, `&boosters`,
+    `&rolemembers <rôle>`, `&user [@membre]`, `&member [@membre]`,
+    `&vocinfo`, `&emoji <émoji>`, `&calc <calcul>`, `&wiki <mot-clé>`,
+    `&search wiki <mot-clé>`.
   - **Modération**, chacune sa propre clé de permission (voir section 6ter
     ci-dessous) : `&clear`/`&purge`, `&kick`, `&ban`, `&unban`, `&softban`,
     `&timeout`, `&untimeout`, `&banall`, `&modlogs`.
@@ -503,6 +508,70 @@ qu'un giveaway est en cours ne le fait pas disparaître. `&giveaway reroll
 [id]` retire un nouveau gagnant du dernier giveaway du salon (ou d'un
 giveaway précis par ID de message).
 
+## 6nonies. Utilitaires de consultation
+
+Onze commandes en **lecture seule** : elles n'écrivent jamais rien sur le
+serveur, donc aucune ne demande de permission — même famille que `&pic` ou
+`&userinfo`. Contrairement aux commandes de modération, elles **répondent**
+quand on les tape mal : le silence sur le préfixe `&` sert à ne pas parler à
+la place du CrowBot, et aucun de ces noms ne lui appartient.
+
+### Listes de membres
+
+`&alladmins` (humains administrateurs), `&botadmins` (bots administrateurs —
+la surface d'attaque la plus large du serveur), `&boosters` (du boost le plus
+ancien au plus récent) et `&rolemembers <rôle>` (mention, ID **ou** nom du
+rôle) partagent la carte paginée déjà utilisée par `&owners`/`&whitelist`/
+`&allbots` (`utils/listCard.js`), 10 entrées par page.
+
+Le contenu de ces listes est défini une seule fois, dans
+`utils/readOnlyLists.js`, et sert **deux** chemins qui ne peuvent donc plus
+diverger : la commande texte qui poste la première page, et le sélecteur de
+page de la carte. Rien n'est gardé en mémoire entre les deux — le rôle visé
+voyage dans le `customId` (`srv:page:rolemembers/<id>`) et tout est recalculé
+au clic, si bien que la carte reste utilisable même après un redémarrage du
+bot. Au passage, `&allbots` gagne une pagination qui **fonctionne** : son
+sélecteur de page était affiché mais sans effet.
+
+### Fiches d'information
+
+- `&user [@membre]` décrit le **compte Discord** : il répond donc aussi pour
+  quelqu'un qui n'est pas (ou plus) sur le serveur, à partir de son ID.
+- `&member [@membre]` décrit l'**appartenance au serveur** : c'est le même
+  rendu que `&userinfo`, sous son deuxième nom documenté, plutôt qu'une
+  seconde fiche qui divergerait à la première retouche.
+- `&vocinfo` donne l'état vocal du serveur : connectés, micros/casques
+  coupés, partages d'écran, et le détail des salons occupés.
+- `&emoji <émoji>` récupère l'image d'un émoji personnalisé donné en émoji,
+  en nom ou en ID — y compris un émoji venu d'un **autre** serveur, dont
+  l'URL CDN est reconstruite. Un émoji Unicode (😀) n'a aucune image à
+  récupérer : il est dessiné par l'appareil du lecteur, et la commande le dit
+  au lieu d'échouer sans explication.
+
+### `&calc` — calculatrice
+
+Parenthèses, `+ - * / % ^`, multiplication implicite (`3(4+1)`, `2x`),
+virgule décimale, constantes `pi`/`e` et fonctions `sqrt`, `abs`, `round`,
+`floor`, `ceil`, `ln`, `log`, `exp`, `sin`, `cos`, `tan`. Une entrée
+contenant `=` est traitée comme une **équation du premier degré** à une
+inconnue `x` (`&calc 2x+3=7` → `x = 2`) ; une équation d'un autre degré est
+refusée explicitement plutôt que résolue de travers.
+
+L'expression est analysée par un parseur écrit à la main
+(`utils/calc.js` : tokenizer + shunting-yard), **jamais** par `eval()` ni
+`new Function()`. L'entrée vient de n'importe quel membre du serveur, et il
+n'existe aucune façon sûre d'exécuter ça comme du JavaScript : ici, un
+caractère hors de la grammaire est une erreur, pas du code.
+
+### `&wiki` et `&search wiki`
+
+`&wiki <mot-clé>` affiche le résumé de l'article Wikipédia francophone
+correspondant (titre, extrait tronqué à 1000 caractères, vignette, lien) ;
+`&search wiki <mot-clé>` liste jusqu'à 10 articles proches. Les appels
+(`utils/wikipedia.js`) sont coupés au bout de 8 secondes, un article
+introuvable est distingué d'une panne, et Wikipédia injoignable donne un
+message clair au lieu d'un plantage silencieux.
+
 ## 7. Notes sur le support Spotify
 
 `!play <nom>` cherche directement sur Spotify (API officielle, via
@@ -588,6 +657,26 @@ Le CrowBot continue de les couvrir.
 Aucune commande sur un préfixe caché ou un mécanisme parallèle au système de
 permissions décrit en section 6ter : tout, y compris `&banall` et l'anti-nuke,
 passe par le même moteur central.
+
+Parmi les commandes de la catégorie **Utilitaire** du catalogue, quatre
+restent documentées sans backend, chacune pour une raison précise plutôt que
+par oubli :
+
+- `&image <mot-clé>` demande une clé d'API Google Custom Search, qui n'existe
+  pas dans la configuration du bot — la câbler supposerait d'en créer une et
+  d'assumer son quota.
+- `&suggestion` et `&lb suggestions` ne sont pas une consultation mais une
+  fonctionnalité à part entière (salon dédié, votes, stockage, classement) :
+  leur place est aux côtés des tickets/sondages/giveaways de la section
+  6octies, pas dans ce lot en lecture seule.
+- `&changelogs` n'a aucune source à afficher : le dépôt ne tient pas de
+  fichier de notes de version, et fabriquer les notes à partir des messages
+  de commit donnerait un rendu illisible pour les membres du serveur.
+- `&support` supposerait un serveur de support, qui n'existe pas.
+
+Comme toutes les commandes du catalogue sans handler, elles restent listées
+dans `&help`/`&panel` (demande explicite : la référence complète, backend ou
+non) et ne répondent simplement rien si on les tape.
 
 ## 8. Notes sur Components V2
 
