@@ -457,6 +457,23 @@ pour ne pas devenir une copie :
 Aucun anti-raid/anti-nuke complet n'est reconstruit ici — c'est le rôle du
 CrowBot du serveur, et le dupliquer n'apporterait rien.
 
+### Anti-spam en commandes texte
+
+`&antispam on|off` active la surveillance ; `&antispam <nombre>/<durée>`
+règle le seuil (`&antispam 5/10` = 5 messages en 10 secondes). Les valeurs
+sont bornées — de 2 à 50 messages, sur 1 à 60 secondes : en dessous, le
+moindre double envoi sanctionnerait ; au-delà, ce n'est plus du flood mais
+une conversation. Un seuil hors bornes est refusé avec le message qui le dit,
+plutôt qu'accepté et silencieusement inopérant.
+
+`&spam allow [#salon]` exempte un salon de l'anti-spam (salon de flood
+assumé), `deny`/`reset` le remettent sous surveillance. Même forme que
+`&link` pour l'anti-lien.
+
+Sans argument, `&antispam` affiche l'état, le seuil et les salons exemptés.
+Régler un seuil alors que l'anti-spam est désactivé le signale : sinon on
+croirait avoir posé une protection qui ne tourne pas.
+
 ## 6quinquies. Administration du serveur et bienvenue
 
 Outils de structure du serveur (créer/supprimer/modifier rôles et salons),
