@@ -21,6 +21,7 @@ const { botProfileHandlers } = require("./botProfileCommands");
 const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
+const permsCommands = require("./permsCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -445,6 +446,10 @@ const modHandlers = {
   sync: serverExtra.sync,
   cleanup: serverExtra.cleanup,
   autoreact: serverExtra.autoreact,
+
+  // Vue d'ensemble des permissions par palier — voir utils/permsCommands.js.
+  perms: permsCommands.perms,
+  helpall: permsCommands.helpall,
 };
 
 /**

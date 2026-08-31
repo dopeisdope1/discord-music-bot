@@ -1,6 +1,16 @@
-const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags, AuditLogEvent, ChannelType } = require("discord.js");
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
+  AuditLogEvent,
+  ChannelType,
+  PermissionsBitField,
+} = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
+const voiceChannels = require("./voiceChannels");
 
 // Toute action qui compte comme "modération" au sens large : ce que fait ce
 // bot (&ban/&unban/&banall/&kick/...), ce que fait le CrowBot du serveur, et
@@ -101,11 +111,11 @@ const HANDLERS = {
     },
   },
   [AuditLogEvent.ChannelCreate]: {
-    category: "server",
+    category: "channels",
     describe: (e) => ({ title: "Salon créé", fields: [channelField(e), ...channelDetailFields(e.target)] }),
   },
   [AuditLogEvent.ChannelDelete]: {
-    category: "server",
+    category: "channels",
     describe: (e) => ({ title: "Salon supprimé", fields: [channelField(e), ...channelDetailFields(e.target)] }),
   },
   [AuditLogEvent.ChannelUpdate]: {
@@ -140,23 +150,40 @@ const HANDLERS = {
     describe: (e) => overwriteDescribe(e, "modifiée"),
   },
   [AuditLogEvent.RoleCreate]: {
-    category: "server",
+    category: "roles",
     describe: (e) => ({ title: "Création de rôle", fields: [targetField(e, "Rôle créé"), ...roleDetailFields(e.target)] }),
   },
   [AuditLogEvent.RoleDelete]: {
-    category: "server",
+    category: "roles",
     describe: (e) => ({ title: "Suppression de rôle", fields: [targetField(e, "Rôle supprimé"), ...roleDetailFields(e.target)] }),
   },
   [AuditLogEvent.RoleUpdate]: {
-    category: "server",
+    category: "roles",
+    // Nom, couleur, permission Administrateur : le reste (position,
+    // mentionable, hoist...) n'est pas assez significatif pour justifier une
+    // entrée de log à chaque fois.
     describe: (e) => {
+      const fields = [targetField(e, "Rôle mis à jour")];
       const name = e.changes.find((c) => c.key === "name");
-      if (!name || name.old === name.new) return null; // seul le renommage nous intéresse ici
-      return { title: "Rôle mis à jour", fields: [targetField(e, "Rôle mis à jour"), { label: "Nom", value: `${name.old} → ${name.new}` }] };
+      if (name && name.old !== name.new) fields.push({ label: "Nom", value: `${name.old} → ${name.new}` });
+      const color = e.changes.find((c) => c.key === "color");
+      if (color && color.old !== color.new) {
+        const hex = (v) => `#${(v || 0).toString(16).padStart(6, "0")}`;
+        fields.push({ label: "Couleur", value: `${hex(color.old)} → ${hex(color.new)}` });
+      }
+      const perms = e.changes.find((c) => c.key === "permissions");
+      if (perms) {
+        const before = new PermissionsBitField(BigInt(perms.old || 0));
+        const after = new PermissionsBitField(BigInt(perms.new || 0));
+        const gained = before.has(PermissionsBitField.Flags.Administrator) !== after.has(PermissionsBitField.Flags.Administrator);
+        if (gained) fields.push({ label: "Administrateur", value: after.has(PermissionsBitField.Flags.Administrator) ? "donné" : "retiré" });
+      }
+      if (fields.length === 1) return null;
+      return { title: "Rôle mis à jour", fields };
     },
   },
   [AuditLogEvent.WebhookCreate]: {
-    category: "server",
+    category: "channels",
     describe: (e) => ({ title: "Webhook créé", fields: [targetField(e)] }),
   },
   [AuditLogEvent.MessageBulkDelete]: {
@@ -257,14 +284,11 @@ function formatTimestamp(date = new Date()) {
  * plutôt que dans chaque appelant : même format de carte partout.
  * @param {import('discord.js').Client} client
  * @param {string} guildId
- * @param {"moderation"|"members"|"server"|"bots"|"channels"|"messages"} category
+ * @param {"moderation"|"members"|"roles"|"channels"|"voice"|"server"|"bots"|"messages"} category
  * @param {{ title: string, fields: {label: string, value: string}[], moderatorId?: string|null, moderatorTag?: string|null, reason?: string|null }} entry
  */
 async function postModerationEntry(client, guildId, category, { title, fields, moderatorId = null, moderatorTag = null, reason = null }) {
-  // "channels" n'est pas une catégorie de salon distincte côté modLogStore
-  // (section 17 ne la liste pas séparément) : ses entrées rejoignent "server".
-  const routedCategory = category === "channels" ? "server" : category;
-  const channelId = getLogChannelId(guildId, routedCategory);
+  const channelId = getLogChannelId(guildId, category);
   if (!channelId) return;
 
   const guild = client.guilds.cache.get(guildId);
@@ -381,4 +405,72 @@ async function logMessageDelete(client, message) {
   });
 }
 
-module.exports = { relayAuditLogEntry, postModerationEntry, logMessageDelete };
+/**
+ * Journalise un changement de salon vocal (rejoint/quitté/déplacé) —
+ * catégorie "voice". Le journal d'audit Discord ne couvre pas les
+ * rejoints/départs volontaires (seulement les déconnexions FORCÉES, déjà
+ * gérées par MemberDisconnect ci-dessus) : ceci s'appuie sur
+ * voiceStateUpdate directement (voir index.js).
+ *
+ * Volontairement muet pour les salons vocaux temporaires (&voicehub) : leur
+ * churn est normal et fréquent, le journaliser noierait le salon de logs
+ * sans rien apporter — seuls les VRAIS salons du serveur sont suivis.
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').VoiceState} oldState
+ * @param {import('discord.js').VoiceState} newState
+ */
+async function logVoiceStateChange(client, oldState, newState) {
+  const member = newState.member || oldState.member;
+  if (!member || member.user.bot) return;
+
+  const before = oldState.channelId;
+  const after = newState.channelId;
+  if (before === after) return; // sourdine/muet/statut... pas un changement de salon
+
+  const isTempChannel = (id) => Boolean(id && voiceChannels.getChannelInfo(id));
+  if (isTempChannel(before) || isTempChannel(after)) return;
+
+  let title;
+  let fields;
+  if (!before && after) {
+    title = "Rejoint un salon vocal";
+    fields = [{ label: "Membre", value: `<@${member.id}> (${member.id})` }, { label: "Salon", value: `<#${after}>` }];
+  } else if (before && !after) {
+    title = "Quitté un salon vocal";
+    fields = [{ label: "Membre", value: `<@${member.id}> (${member.id})` }, { label: "Salon", value: `<#${before}>` }];
+  } else {
+    title = "Changé de salon vocal";
+    fields = [
+      { label: "Membre", value: `<@${member.id}> (${member.id})` },
+      { label: "De", value: `<#${before}>` },
+      { label: "Vers", value: `<#${after}>` },
+    ];
+  }
+  await postModerationEntry(client, newState.guild.id, "voice", { title, fields });
+}
+
+/**
+ * Journalise l'édition d'un message — catégorie "messages", à côté de
+ * logMessageDelete. Ne fait rien si le contenu texte n'a pas changé (Discord
+ * déclenche aussi cet événement pour un embed qui se charge, une réaction...).
+ * @param {import('discord.js').Client} client
+ * @param {import('discord.js').Message} oldMessage tel qu'en cache avant l'édition (peut être partiel)
+ * @param {import('discord.js').Message} newMessage message après édition
+ */
+async function logMessageEdit(client, oldMessage, newMessage) {
+  if (!newMessage.guild || newMessage.author?.bot) return;
+  if ((oldMessage.content || "") === (newMessage.content || "")) return;
+
+  await postModerationEntry(client, newMessage.guild.id, "messages", {
+    title: "Message modifié",
+    fields: [
+      { label: "Auteur", value: `<@${newMessage.author.id}> (${newMessage.author.id})` },
+      { label: "Salon", value: `<#${newMessage.channel.id}>` },
+      { label: "Avant", value: oldMessage.content ? oldMessage.content.slice(0, 500) : "*(inconnu — message non mis en cache)*" },
+      { label: "Après", value: newMessage.content ? newMessage.content.slice(0, 500) : "*(vide)*" },
+      { label: "Lien", value: newMessage.url },
+    ],
+  });
+}
+
+module.exports = { relayAuditLogEntry, postModerationEntry, logMessageDelete, logVoiceStateChange, logMessageEdit };

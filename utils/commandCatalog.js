@@ -223,7 +223,18 @@ const CATEGORIES = [
     key: "serverconfig",
     label: "Configuration du serveur",
     commands: [
-      { name: "perms", prefix: "mod", permission: "panel.permissions.manage", description: "Affiche un résumé des permissions configurées" },
+      {
+        name: "perms",
+        prefix: "mod",
+        permission: "panel.permissions.manage",
+        description: "Affiche les paliers de permissions accordés (rôles ayant les mêmes droits) et les commandes qu'ils débloquent",
+      },
+      {
+        name: "helpall",
+        prefix: "mod",
+        permission: "panel.permissions.manage",
+        description: "Affiche les paliers de permissions accordés et les rôles associés à chacun",
+      },
       { name: "slowmode <durée> [salon]", prefix: "mod", permission: "channels.slowmode", description: "Règle le mode lent d'un salon (voir aussi la catégorie Modération)" },
       { name: "autodelete <moderation/snipe> <commande/reply> <on/off/durée>", prefix: "mod", permission: "panel.permissions.manage", description: "Règle la suppression automatique des réponses du bot" },
       { name: "rolemenu [ID]", prefix: "mod", permission: "server.roles.manage", description: "Crée un menu de sélection de rôles" },

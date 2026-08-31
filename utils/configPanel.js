@@ -46,6 +46,9 @@ const voiceChannels = require("./voiceChannels");
 const LOG_CHANNEL_NAMES = {
   moderation: "logs-moderation",
   members: "logs-membres",
+  roles: "logs-roles",
+  channels: "logs-salons",
+  voice: "logs-vocal",
   server: "logs-serveur",
   bots: "logs-bots",
   messages: "logs-messages",
@@ -106,6 +109,27 @@ async function createLogChannelsAutomatically(guild) {
     created.push({ category, channel });
   }
   return { created };
+}
+
+/**
+ * Supprime tous les salons de logs actuellement configurés (et existants)
+ * puis vide leur configuration — le bouton "Créer les salons
+ * automatiquement" les recrée ensuite tous à neuf, catégorie de logs
+ * réinitialisée entièrement.
+ * @param {import('discord.js').Guild} guild
+ * @returns {Promise<{ deleted: string[] }>} catégories dont le salon a été supprimé
+ */
+async function deleteLogChannelsAutomatically(guild) {
+  const existing = getAllLogChannels(guild.id);
+  const deleted = [];
+  for (const [category, channelId] of Object.entries(existing)) {
+    if (!channelId) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (channel) await channel.delete("Suppression des salons de logs (&panel > Logs)").catch(() => {});
+    setLogChannelId(guild.id, category, null);
+    deleted.push(category);
+  }
+  return { deleted };
 }
 
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
@@ -282,7 +306,8 @@ function sectionBody(section, guild, member, state) {
       manage
         ? "Bouton \"Créer les salons automatiquement\" : crée un salon par catégorie manquante (visibles des " +
           "seuls membres avec la permission Discord Administrateur — elle passe outre les restrictions de " +
-          "salon, rien d'autre à configurer)."
+          "salon, rien d'autre à configurer). \"Supprimer les salons de logs\" : supprime tous les salons " +
+          "configurés existants — reclique ensuite sur \"Créer\" pour tout recréer à neuf."
         : "Tu peux consulter cette configuration mais pas la modifier (droit `logs.manage` requis).",
       manage
         ? catLabel
@@ -620,7 +645,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           new ButtonBuilder()
             .setCustomId(`${ID}:logauto`)
             .setLabel("Créer les salons automatiquement")
-            .setStyle(ButtonStyle.Success)
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`${ID}:logdelete`)
+            .setLabel("Supprimer les salons de logs")
+            .setStyle(ButtonStyle.Danger)
         )
       );
     }
@@ -961,6 +990,21 @@ async function handleConfigInteraction(interaction) {
       content: created.length
         ? `${created.length} salon(s) créé(s) : ${created.map((c) => `<#${c.channel.id}>`).join(", ")}.`
         : "Toutes les catégories ont déjà un salon configuré, rien à créer.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return goto("logs");
+  }
+
+  if (action === "logdelete") {
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const botPerm = checkBotPermission(guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
+    if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
+
+    const { deleted } = await deleteLogChannelsAutomatically(guild);
+    await interaction.reply({
+      content: deleted.length
+        ? `${deleted.length} salon(s) de logs supprimé(s). Utilise "Créer les salons automatiquement" pour les recréer.`
+        : "Aucun salon de logs configuré, rien à supprimer.",
       flags: MessageFlags.Ephemeral,
     });
     return goto("logs");

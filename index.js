@@ -52,7 +52,7 @@ const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyAc
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./utils/playerControl");
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
 const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
-const { relayAuditLogEntry, logMessageDelete } = require("./utils/moderationLog");
+const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
 const { checkAuditEntry, checkEveryoneMention, checkJoinFlood } = require("./utils/guard/definitions");
 
 const client = new Client({
@@ -482,9 +482,16 @@ client.on("interactionCreate", async (interaction) => {
 
   // Navigation dans l'aide : la réponse est recalculée pour QUI CLIQUE et
   // envoyée en éphémère, deux membres de rangs différents ne voyant pas la
-  // même liste de commandes.
+  // même liste de commandes. Premier clic (sur le message public &help) :
+  // nouvelle réponse éphémère, on ne peut pas éditer le message public sans
+  // y montrer le contenu filtré d'une seule personne à tout le salon. Clics
+  // suivants (déjà sur SA carte éphémère à elle) : on édite en place plutôt
+  // que d'empiler une nouvelle carte à chaque catégorie choisie.
   if (interaction.isStringSelectMenu?.() && interaction.customId === HELP_SELECT_ID) {
     const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0]);
+    if (interaction.message.flags?.has(MessageFlags.Ephemeral)) {
+      return interaction.update(panel).catch(() => {});
+    }
     return interaction
       .reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral })
       .catch(() => {});
@@ -734,6 +741,19 @@ client.on("messageDelete", (message) => {
   if (message.author) {
     logMessageDelete(client, message).catch((err) => console.error("[moderationLog]", err));
   }
+});
+
+// ---- Salon de logs "Messages" : édition (voir &panel > Logs) ----
+client.on("messageUpdate", (oldMessage, newMessage) => {
+  if (!newMessage.guild || newMessage.author?.bot) return;
+  logMessageEdit(client, oldMessage, newMessage).catch((err) => console.error("[moderationLog]", err));
+});
+
+// ---- Salon de logs "Vocal" : rejoint/quitté/déplacé (voir &panel > Logs) —
+// écouteur dédié, séparé des deux ci-dessous (nettoyage du player musique et
+// salons vocaux temporaires), aucun rapport entre les trois. ----
+client.on("voiceStateUpdate", (oldState, newState) => {
+  logVoiceStateChange(client, oldState, newState).catch((err) => console.error("[moderationLog]", err));
 });
 
 // ---- Déconnecte le bot si tout le monde quitte le salon vocal, et nettoie
