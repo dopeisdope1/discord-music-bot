@@ -66,8 +66,14 @@ const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage, ancien accès aux salons", permission: "sys" },
-  { key: "permissions", label: "Permissions", description: "Permissions de modération par rôle", permission: "panel.permissions.manage" },
-  { key: "roles", label: "Rôles", description: "Nom, couleur, position, membres, permissions notables", permission: "panel.roles.manage" },
+  {
+    key: "permissions",
+    label: "Rôles et permissions",
+    description: "Informations d'un rôle et permissions du bot qu'il accorde",
+    // Consultable avec l'un OU l'autre droit ; seul panel.permissions.manage
+    // fait apparaître les menus qui modifient.
+    visible: (member) => can(member, "panel.permissions.manage") || can(member, "panel.roles.manage"),
+  },
   {
     key: "logs",
     label: "Logs",
@@ -118,7 +124,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
 const FAMILIES = [
   { key: "accueil", label: "Accueil", description: "Vue d'ensemble", sections: ["home"] },
-  { key: "acces", label: "Permissions et accès", description: "Qui a le droit de quoi", sections: ["permissions", "roles", "access", "sys", "banall"] },
+  { key: "acces", label: "Permissions et accès", description: "Qui a le droit de quoi", sections: ["permissions", "access", "sys", "banall"] },
   { key: "protection", label: "Protection", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
   { key: "journal", label: "Logs et historique", description: "Salons de logs, recherche dans l'historique", sections: ["logs", "history"] },
   { key: "communaute", label: "Communauté", description: "Bienvenue, tickets, vocaux temporaires", sections: ["welcome", "tickets", "voice"] },
@@ -202,15 +208,26 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
+  // "Permissions" et "Rôles" étaient deux rubriques qui commençaient toutes
+  // deux par "choisis un rôle" — au point que la seconde avait un bouton pour
+  // sauter vers la première. Fusionnées : un seul sélecteur de rôle, puis
+  // TOUT ce qui concerne ce rôle, ses informations comme ses permissions.
   if (section === "permissions") {
     const roleId = state.permissionsRoleId;
-    // Le catalogue complet des permissions n'est plus recopié ici : le menu
-    // déroulant plus bas les liste déjà toutes, en cochant celles qui sont
-    // accordées. Deux fois la même information, dont une seule cliquable.
     if (!roleId) return "> *Choisis un rôle dans le menu ci-dessous.*";
     const role = guild.roles.cache.get(roleId);
-    if (!role) return "Ce rôle n'existe plus sur le serveur.";
+    if (!role) return "> *Ce rôle n'existe plus sur le serveur.*";
+
+    // Seules les permissions Discord qui donnent un vrai pouvoir : lister les
+    // 40 autres noierait celles qui comptent.
+    const notables = role.permissions
+      .toArray()
+      .filter((perm) =>
+        ["Administrator", "BanMembers", "KickMembers", "ModerateMembers", "ManageRoles", "ManageChannels", "ManageGuild", "ManageMessages"].includes(perm)
+      );
     const granted = permStore.getRoleGrants(guildId, roleId);
+    // Le catalogue complet n'est pas recopié : le menu déroulant plus bas les
+    // liste déjà toutes, en cochant celles qui sont accordées.
     const parCategorie = permCatalog
       .byCategory()
       .map((group) => {
@@ -218,26 +235,13 @@ function sectionBody(section, guild, member, state) {
         return n ? `> **${group.label}** : ${n}` : null;
       })
       .filter(Boolean);
-    return [`> **Rôle** : ${role.toString()}`, `> **Permissions accordées** : ${granted.length}`, ...parCategorie].join("\n");
-  }
 
-  if (section === "roles") {
-    const roleId = state.rolesRoleId;
-    if (!roleId) return "Choisis un rôle ci-dessous pour voir ses informations.";
-    const role = guild.roles.cache.get(roleId);
-    if (!role) return "Ce rôle n'existe plus sur le serveur.";
-    const notable = role.permissions.toArray().filter((p) =>
-      ["Administrator", "BanMembers", "KickMembers", "ModerateMembers", "ManageRoles", "ManageChannels", "ManageGuild", "ManageMessages"].includes(p)
-    );
     return [
-      `**Nom** : ${role.name}`,
-      `**ID** : \`${role.id}\``,
-      `**Couleur** : ${role.hexColor}`,
-      `**Position** : ${role.position} / ${guild.roles.cache.size}`,
-      `**Membres** : ${role.members.size}`,
-      `**Mentionnable** : ${role.mentionable ? "oui" : "non"}`,
-      `**Permissions Discord notables** : ${notable.length ? notable.join(", ") : "*aucune*"}`,
-      `**Permissions de modération accordées** : ${permStore.getRoleGrants(guildId, role.id).length}`,
+      `> **Rôle** : ${role.toString()} — \`${role.id}\``,
+      `> **Membres** : ${role.members.size} · **position** : ${role.position}/${guild.roles.cache.size} · **couleur** : ${role.hexColor}`,
+      `> **Permissions Discord notables** : ${notables.length ? notables.join(", ") : "*aucune*"}`,
+      `> **Permissions du bot accordées** : ${granted.length}`,
+      ...parCategorie,
     ].join("\n");
   }
 
@@ -437,6 +441,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
     for (const row of accessRows("salon", "accès legacy aux salons")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
+    const peutModifier = can(member, "panel.permissions.manage");
     // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
     // toutes les clés : Discord plafonne un menu à 25 options, et le
     // catalogue (utils/permissions/catalog.js) a vocation à grandir —
@@ -446,7 +451,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
       )
     );
-    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
+    if (peutModifier && state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
       const categories = permCatalog.byCategory();
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -485,22 +490,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           );
         }
       }
-    }
-  } else if (meta.key === "roles") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId(`${ID}:roleinfo`).setPlaceholder("Choisir un rôle")
-      )
-    );
-    if (state.rolesRoleId && guild.roles.cache.has(state.rolesRoleId)) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:jumpperm:${state.rolesRoleId}`)
-            .setLabel("Voir/modifier ses permissions")
-            .setStyle(ButtonStyle.Secondary)
-        )
-      );
     }
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
@@ -836,13 +825,14 @@ async function handleConfigInteraction(interaction) {
     return goto("permissions", { permissionsRoleId: extra, permissionsCategory: extra2 });
   }
 
+  // "roleinfo" et "jumpperm" appartenaient à la rubrique "Rôles", fusionnée
+  // dans "Rôles et permissions" : une carte restée ouverte peut encore les
+  // envoyer, on la redirige plutôt que de la laisser sans effet.
   if (action === "roleinfo") {
-    if (!can(member, "panel.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    return goto("roles", { rolesRoleId: interaction.values[0] });
+    return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
 
   if (action === "jumpperm") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: extra });
   }
 
