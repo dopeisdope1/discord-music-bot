@@ -463,13 +463,16 @@ async function handleMusicTextCommand(client, message) {
     const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
     const cmdLower = (modCmd || "").toLowerCase();
 
-    // Tapée SANS argument, une commande qui a un formulaire dédié ouvre sa
-    // carte interactive dans le salon plutôt que d'échouer sur "indique un
-    // membre..." — voir utils/commandForms.js (BARE_COMMAND_FORMS). Avec
-    // des arguments, l'exécution directe reste inchangée (habitudes des
-    // utilisateurs qui connaissent déjà la syntaxe, pas cassées).
-    const formKey = commandForms.BARE_COMMAND_FORMS[cmdLower];
-    if (formKey && modArgs.length === 0) {
+    // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
+    // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),
+    // une commande qui a un formulaire dédié ouvre sa carte interactive
+    // dans le salon plutôt que d'échouer sur "indique un membre..." — voir
+    // utils/commandForms.js (BARE_COMMAND_FORMS). Avec de vrais arguments,
+    // l'exécution directe reste inchangée (habitudes déjà acquises, pas cassées).
+    const secondWord = modArgs.length === 1 && /^[a-z]+$/i.test(modArgs[0]) ? modArgs[0].toLowerCase() : null;
+    const bareKey = modArgs.length === 0 ? cmdLower : secondWord ? `${cmdLower} ${secondWord}` : null;
+    const formKey = bareKey ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
+    if (formKey) {
       const form = commandForms.FORMS[formKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {
         return message.reply(commandForms.buildFormCard(formKey, message.member));

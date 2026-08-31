@@ -970,9 +970,12 @@ async function handleFormCardInteraction(interaction) {
   }
 }
 
-// Commande tapée (sans ses arguments) -> formulaire ouvert directement dans
-// le salon. Périmètre volontairement progressif : les commandes les plus
-// utilisées d'abord (voir utils/musicCommands.js pour le branchement).
+// Commande tapée (sans ses arguments, ou juste avec le mot de sous-commande
+// pour un dispatcher partagé comme "role create") -> formulaire ouvert
+// directement dans le salon au lieu de l'exécution texte classique — voir
+// utils/musicCommands.js pour le branchement. Couvre les 50 FORMS
+// existantes ; les commandes du catalogue sans backend réel (voir
+// utils/commandCatalog.js) n'ont pas d'entrée ici, il n'y a rien à exécuter.
 const BARE_COMMAND_FORMS = {
   giveaway: "giveaway_start",
   addrole: "addrole_member",
@@ -992,6 +995,41 @@ const BARE_COMMAND_FORMS = {
   lock: "lock_channel",
   unlock: "unlock_channel",
   slowmode: "slowmode_channel",
+  ticket: "ticket_setup",
+  mutelist: "mutelist_view",
+  unmuteall: "unmuteall_action",
+  banlist: "banlist_view",
+  sanctions: "sanctions_view",
+  hideall: "hideall_action",
+  unhideall: "unhideall_action",
+  dero: "dero_role",
+  choose: "choose_random",
+  create: "create_emoji",
+  massiverole: "massiverole_action",
+  unmassiverole: "unmassiverole_action",
+  voicemove: "voicemove_action",
+  voicekick: "voicekick_action",
+  bringall: "bringall_action",
+  temprole: "temprole_action",
+  untemprole: "untemprole_action",
+  online: "online_action",
+  idle: "idle_action",
+  dnd: "dnd_action",
+  invisible: "invisible_action",
+  end: "giveaway_end",
+  // Clés à deux mots : commandes dont le premier mot est un dispatcher
+  // partagé (&role/&channel/&clear gèrent plusieurs sous-commandes) —
+  // voir utils/musicCommands.js pour la logique de correspondance.
+  "role create": "role_create",
+  "role delete": "role_delete",
+  "role rename": "role_rename",
+  "role color": "role_color",
+  "channel delete": "channel_delete",
+  "channel rename": "channel_rename",
+  "channel topic": "channel_topic",
+  "clear sanctions": "clear_sanctions_member",
+  "giveaway reroll": "giveaway_reroll",
+  "remove activity": "remove_activity_action",
 };
 
 module.exports = {
