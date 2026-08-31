@@ -1,12 +1,13 @@
 /**
  * Vérifie que le ménage ne laisse pas ses propres traces :
  *  - &clear supprime aussi le message de commande (utils/moderationCommands.js) ;
- *  - `uo clear` supprime aussi les réponses que le bot a faites à la personne
- *    (utils/selfClear.js), mais RIEN d'autre du bot.
+ *  - `uo clear` supprime les messages de la personne ET tous ceux du bot
+ *    (utils/selfClear.js), le déclencheur lui-même compris.
  *
- * Ce dernier point est le plus important : le déclencheur est ouvert à tout le
- * monde, sans permission. S'il effaçait tous les messages du bot, n'importe qui
- * pourrait supprimer une carte de giveaway ou un panneau de tickets.
+ * Le périmètre côté bot est une demande explicite, maintenue après avoir été
+ * discutée. Comme ce déclencheur n'exige aucune permission, une carte de
+ * giveaway ou un panneau de tickets en cours part avec — les tests le
+ * vérifient pour que ça reste un choix visible, pas une surprise.
  *
  * Lancement : node scripts/test-clear-cleanup.js
  */
@@ -53,29 +54,35 @@ const msg = (id, authorId, referenceId = null) => ({
 (async () => {
   console.log("`uo clear` — quels messages sont emportés :");
 
-  await cas("mes messages et les réponses du bot qui me sont adressées", () => {
-    const salon = [msg("m1", MOI), msg("r1", BOT, "m1"), msg("m2", MOI), msg("r2", BOT, "m2")];
+  await cas("mes messages et TOUS ceux du bot", () => {
+    const salon = [msg("m1", MOI), msg("r1", BOT, "m1"), msg("carte-giveaway", BOT), msg("m2", MOI)];
     const pris = collectOwnConversation(salon, MOI, BOT).map((m) => m.id);
-    assert.deepStrictEqual(pris.sort(), ["m1", "m2", "r1", "r2"]);
+    assert.deepStrictEqual(pris.sort(), ["carte-giveaway", "m1", "m2", "r1"]);
   });
 
-  await cas("PAS les messages du bot qui ne répondent à personne", () => {
-    // Une carte de giveaway, un panneau de tickets, le lecteur de musique :
-    // postés sans référence, ils ne doivent jamais partir.
-    const salon = [msg("m1", MOI), msg("carte-giveaway", BOT), msg("panneau-tickets", BOT)];
-    const pris = collectOwnConversation(salon, MOI, BOT).map((m) => m.id);
-    assert.deepStrictEqual(pris, ["m1"], "seuls mes messages devaient partir");
+  await cas("une carte du bot qui ne répond à personne part aussi", () => {
+    // Demande explicite, maintenue après discussion : "enlève tous les
+    // messages du bot". Une carte de giveaway ou un panneau de tickets en
+    // cours est donc emporté, par qui que ce soit — le quota est le seul
+    // garde-fou. Ce test existe pour que ce soit un choix visible, pas un
+    // effet de bord découvert un jour en production.
+    const salon = [msg("carte-giveaway", BOT), msg("panneau-tickets", BOT)];
+    assert.strictEqual(collectOwnConversation(salon, MOI, BOT).length, 2);
   });
 
-  await cas("PAS les réponses du bot adressées à quelqu'un d'autre", () => {
-    const salon = [msg("m1", MOI), msg("son-message", AUTRE), msg("sa-reponse", BOT, "son-message")];
-    const pris = collectOwnConversation(salon, MOI, BOT).map((m) => m.id);
-    assert.deepStrictEqual(pris, ["m1"]);
+  await cas("les réponses du bot adressées à quelqu'un d'autre partent aussi", () => {
+    const salon = [msg("son-message", AUTRE), msg("sa-reponse", BOT, "son-message")];
+    assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["sa-reponse"]);
   });
 
-  await cas("PAS les messages des autres membres", () => {
-    const salon = [msg("m1", MOI), msg("m2", AUTRE)];
+  await cas("PAS les messages des autres membres — la seule limite qui reste", () => {
+    const salon = [msg("m1", MOI), msg("m2", AUTRE), msg("m3", AUTRE)];
     assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["m1"]);
+  });
+
+  await cas("le message déclencheur part avec, puisqu'il est de la personne", () => {
+    const salon = [msg("le-uo-clear", MOI)];
+    assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["le-uo-clear"]);
   });
 
   await cas("sans bot identifiable, on se limite à mes messages", () => {
@@ -105,7 +112,7 @@ const msg = (id, authorId, referenceId = null) => ({
     };
     await handleSelfClear({ user: { id: BOT } }, declencheur);
     assert.ok(supprimes.includes("m1") && supprimes.includes("r1"), supprimes.join(", "));
-    assert.ok(!supprimes.includes("carte"), "la carte du bot devait rester");
+    assert.ok(supprimes.includes("carte"), "tous les messages du bot partent, carte comprise");
     assert.ok(!supprimes.includes("autre"), "le message d'un autre membre devait rester");
   });
 
