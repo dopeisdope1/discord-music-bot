@@ -310,7 +310,7 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
-Ses seize rubriques sont regroupées en **six familles** : le menu principal
+Ses quinze rubriques sont regroupées en **six familles** : le menu principal
 propose les familles, un second menu n'apparaît que pour choisir à l'intérieur
 d'une famille qui en contient plusieurs. Les écrans, eux, ne sont **pas**
 fusionnés — chacun garde ses contrôles et ses avertissements. « Rang sys » et
@@ -320,11 +320,19 @@ fusionnés — chacun garde ses contrôles et ses avertissements. « Rang sys »
 | Famille | Rubriques |
 |---|---|
 | Accueil | Vue d'ensemble |
-| Permissions et accès | Permissions, Rôles, Accès panel, Rang sys, Ban de masse |
+| Permissions et accès | Rôles et permissions, Accès panel, Rang sys, Ban de masse |
 | Protection | Protection, Anti-nuke, Mute |
 | Logs et historique | Logs, Historique |
 | Communauté | Bienvenue, Tickets, Vocaux |
 | Réglages du bot | Préfixes, Dispenses |
+
+« Permissions » et « Rôles » étaient deux rubriques qui commençaient toutes
+deux par *choisis un rôle* — au point que la seconde avait un bouton pour
+sauter vers la première. Elles n'en font plus qu'une, **Rôles et
+permissions** : un seul sélecteur, puis tout ce qui concerne ce rôle — ses
+informations Discord comme les permissions du bot qu'il accorde. Elle est
+consultable avec `panel.roles.manage` ; seul `panel.permissions.manage` fait
+apparaître les menus qui modifient.
 
 `&panel` est un **poste de commande**, pas une documentation : chaque
 rubrique affiche l'état courant (une ligne `> **Réglage** : valeur` par

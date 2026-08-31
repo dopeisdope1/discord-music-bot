@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { buildConfigPanel } = require("../utils/configPanel");
+const { buildConfigPanel, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -36,10 +36,9 @@ async function cas(nom, fn) {
   }
 }
 
-const SECTIONS = [
-  "home", "prefixes", "moderation", "permissions", "roles", "logs", "history",
-  "protection", "guard", "welcome", "mute", "tickets", "voice", "access", "sys", "banall",
-];
+// Dérivée de la vraie liste, jamais recopiée : une rubrique ajoutée ou
+// fusionnée est couverte sans que ce fichier ait à suivre.
+const SECTIONS = SECTIONS_META.map((s) => s.key);
 
 const member = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
 const guild = {
