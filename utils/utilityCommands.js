@@ -26,6 +26,18 @@ const wikipedia = require("./wikipedia");
 
 const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
 
+const CHANNEL_TYPE_LABELS = {
+  [ChannelType.GuildText]: "texte",
+  [ChannelType.GuildVoice]: "vocal",
+  [ChannelType.GuildCategory]: "catégorie",
+  [ChannelType.GuildAnnouncement]: "annonces",
+  [ChannelType.GuildStageVoice]: "conférence",
+  [ChannelType.GuildForum]: "forum",
+  [ChannelType.PublicThread]: "fil public",
+  [ChannelType.PrivateThread]: "fil privé",
+  [ChannelType.AnnouncementThread]: "fil d'annonce",
+};
+
 /** Poste la première page d'une liste définie dans utils/readOnlyLists.js. */
 async function postList(message, kind, arg) {
   await readOnlyLists.ensureMembersCached(message.guild);
@@ -240,6 +252,46 @@ const handlers = {
       `[Ouvrir l'image](${url})`,
     ];
     await reply(message, "info", lines.join("\n"), { title: "Informations émoji", image: url });
+  },
+
+  /** &role @rôle|id — fiche d'info d'un rôle (distinct de `role create/delete/...`, réservé à server.roles.manage). */
+  async roleInfo(client, message, args) {
+    if (!can(message.member, "server.info.view")) return;
+    const role = resolveRole(message, args);
+    if (!role) return reply(message, "error", "Indique un rôle (mention, ID ou nom) : `role @rôle`.");
+
+    const lines = [
+      `**Rôle** : ${role.toString()}`,
+      `**ID** : ${role.id}`,
+      `**Couleur** : ${role.hexColor}`,
+      `**Position** : ${role.position}`,
+      `**Membres** : ${role.members.size}`,
+      `**Affiché séparément** : ${role.hoist ? "oui" : "non"}`,
+      `**Mentionnable** : ${role.mentionable ? "oui" : "non"}`,
+      `**Créé le** : <t:${Math.floor(role.createdTimestamp / 1000)}:D>`,
+    ];
+    await reply(message, "info", lines.join("\n"), { title: "Informations rôle" });
+  },
+
+  /** &channel [#salon|id] — fiche d'info d'un salon (distinct de `channel create/delete/...`, réservé à server.channels.manage). */
+  async channelInfo(client, message, args) {
+    if (!can(message.member, "server.info.view")) return;
+    const mentioned = message.mentions.channels?.first();
+    const idArg = args.find((a) => /^\d{15,25}$/.test(a));
+    const target = mentioned || (idArg && message.guild.channels.cache.get(idArg)) || message.channel;
+    if (!target) return reply(message, "error", "Salon introuvable.");
+
+    const lines = [
+      `**Salon** : ${target.name}`,
+      `**ID** : ${target.id}`,
+      `**Type** : ${CHANNEL_TYPE_LABELS[target.type] || "inconnu"}`,
+      target.parent ? `**Catégorie** : ${target.parent.name}` : null,
+      "topic" in target && target.topic ? `**Topic** : ${target.topic}` : null,
+      "userLimit" in target && target.userLimit ? `**Limite de places** : ${target.userLimit}` : null,
+      "rateLimitPerUser" in target && target.rateLimitPerUser ? `**Mode lent** : ${target.rateLimitPerUser}s` : null,
+      `**Créé le** : <t:${Math.floor(target.createdTimestamp / 1000)}:D>`,
+    ].filter((l) => l !== null);
+    await reply(message, "info", lines.join("\n"), { title: `Salon ${target.name}` });
   },
 
   // --- Outils ---

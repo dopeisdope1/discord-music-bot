@@ -55,14 +55,24 @@ function fullText(member = owner, tier = null) {
     .map((c) => c.content)
     .join("\n\n");
 }
-/** Seuls les blocs de texte APRÈS le titre et la légende (le détail des commandes). */
+/** Le détail des commandes d'un palier, TOUTES PAGES confondues (le palier dense est paginé). */
 function commandsText(member = owner, tier) {
-  return buildHelpPanel("g1", member, tier, member.id)
-    .components[0].toJSON()
-    .components.filter((c) => c.type === 10)
-    .slice(2)
-    .map((c) => c.content)
-    .join("\n\n");
+  const pieces = [];
+  let page = 0;
+  for (;;) {
+    const json = buildHelpPanel("g1", member, tier, member.id, page).components[0].toJSON();
+    pieces.push(
+      ...json.components
+        .filter((c) => c.type === 10)
+        .slice(1) // titre+légende fusionnés dans un seul bloc désormais
+        .map((c) => c.content)
+    );
+    const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
+    const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
+    if (!hasNext) break;
+    page++;
+  }
+  return pieces.join("\n\n");
 }
 
 (async () => {
@@ -330,26 +340,76 @@ function commandsText(member = owner, tier) {
     }
   });
 
-  console.log("\nRépartition sur plusieurs blocs (le palier dense ne tient pas dans un seul) :");
+  console.log("\nRépartition sur plusieurs blocs ET plusieurs pages (le palier dense ne tient pas dans un seul Container) :");
+
+  /** Chaque bloc de commandes du palier, brut (pas joint), TOUTES PAGES confondues. */
+  function allChunks(member, tier) {
+    const chunks = [];
+    let page = 0;
+    for (;;) {
+      const json = buildHelpPanel("g1", member, tier, member.id, page).components[0].toJSON();
+      chunks.push(...json.components.filter((c) => c.type === 10).slice(1));
+      const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
+      const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
+      if (!hasNext) break;
+      page++;
+    }
+    return chunks;
+  }
 
   await cas("un palier dense (\"configurable\") est réparti sur PLUSIEURS blocs de texte, chacun sous la limite Discord", () => {
-    const parts = buildHelpPanel("g1", owner, "configurable", owner.id)
-      .components[0].toJSON()
-      .components.filter((c) => c.type === 10)
-      .slice(2); // titre + légende exclus
+    const parts = allChunks(owner, "configurable");
     assert.ok(parts.length > 1, "une seule commande par bloc rendrait ça bien trop long pour un seul bloc de texte");
     for (const p of parts) assert.ok(p.content.length < 4000, `bloc de ${p.content.length} caractères`);
   });
 
+  await cas("chaque page du palier \"configurable\" reste sous le seuil de composants qui faisait planter l'interaction", () => {
+    for (let page = 0; page < 3; page++) {
+      const total = buildHelpPanel("g1", owner, "configurable", owner.id, page).components[0].toJSON().components.length;
+      assert.ok(total <= 7, `page ${page} a ${total} composants au premier niveau — "l'application n'a pas répondu" survenait à 10`);
+    }
+  });
+
   await cas("la coupe entre deux blocs ne tombe jamais AU MILIEU d'une commande", () => {
-    const parts = buildHelpPanel("g1", owner, "configurable", owner.id)
-      .components[0].toJSON()
-      .components.filter((c) => c.type === 10)
-      .slice(2);
+    const parts = allChunks(owner, "configurable");
     for (const p of parts) {
       assert.ok(p.content.trimStart().startsWith("**"), "chaque bloc doit commencer par le nom d'une commande");
       assert.ok(p.content.includes("Usage : `"), "chaque bloc doit contenir au moins une commande complète");
     }
+  });
+
+  await cas("un menu de pagination dédié apparaît sur le palier dense, avec \"Page suivante\"", () => {
+    const json = buildHelpPanel("g1", owner, "configurable", owner.id, 0).components[0].toJSON();
+    const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
+    assert.ok(pageRow, "le palier dense doit proposer un menu de pagination");
+    assert.strictEqual(pageRow.components[0].custom_id, `help_page:${owner.id}:configurable`);
+    assert.ok(pageRow.components[0].options.some((o) => o.label === "Page suivante"));
+    assert.ok(!pageRow.components[0].options.some((o) => o.label === "Page précédente"), "page 0 : pas de \"page précédente\"");
+  });
+
+  await cas("cliquer \"Page suivante\" affiche bien la suite des commandes, sans jamais créer de nouveau message", async () => {
+    const page0 = commandsText(owner, "configurable").split("\n\n")[0];
+    const interaction = {
+      guild: { id: "g1" },
+      member: owner,
+      user: { id: owner.id },
+      values: ["1"],
+      customId: `help_page:${owner.id}:configurable`,
+      replies: [],
+      updated: null,
+      reply(p) {
+        this.replies.push(p);
+        return Promise.resolve(p);
+      },
+      update(p) {
+        this.updated = p;
+        return Promise.resolve(p);
+      },
+    };
+    await handleHelpInteraction(interaction);
+    assert.strictEqual(interaction.replies.length, 0, "aucun nouveau message ne doit être créé");
+    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).slice(1).map((c) => c.content).join("\n\n");
+    assert.ok(!body.startsWith(page0), "la page 1 doit montrer d'autres commandes que la page 0");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

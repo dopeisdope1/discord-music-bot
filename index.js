@@ -482,10 +482,13 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Choix d'un palier dans &help (voir utils/helpPanel.js) : message public
-  // unique édité en place, réservé à qui a lancé la commande (son ID est
-  // encodé après "help_tier:" dans le customId).
-  if (interaction.isStringSelectMenu?.() && interaction.customId?.startsWith("help_tier:")) {
+  // Choix d'un palier OU d'une page dans &help (voir utils/helpPanel.js) :
+  // message public unique édité en place, réservé à qui a lancé la
+  // commande (son ID est encodé dans le customId).
+  if (
+    interaction.isStringSelectMenu?.() &&
+    (interaction.customId?.startsWith("help_tier:") || interaction.customId?.startsWith("help_page:"))
+  ) {
     await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
     return;
   }

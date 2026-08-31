@@ -395,6 +395,8 @@ async function roleAdmin(client, message, args) {
 
 // --- &channel create/delete/rename/topic ---
 
+const CHANNEL_ADMIN_SUBCOMMANDS = new Set(["create", "delete", "rename", "topic"]);
+
 async function channelAdmin(client, message, args) {
   if (!can(message.member, "server.channels.manage")) return;
   const sub = (args[0] || "").toLowerCase();
@@ -935,5 +937,6 @@ module.exports = {
   handleConfirmInteraction,
   requestConfirmation,
   ROLE_ADMIN_SUBCOMMANDS,
+  CHANNEL_ADMIN_SUBCOMMANDS,
   ID,
 };

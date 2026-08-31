@@ -38,8 +38,19 @@ async function cas(nom, fn) {
 
 // --- Faux serveur Discord, réduit à ce que lisent les commandes testées ---
 
-function fakeRole(id, name, position = 1) {
-  return { id, name, position, toString: () => `<@&${id}>` };
+function fakeRole(id, name, position = 1, extra = {}) {
+  return {
+    id,
+    name,
+    position,
+    hexColor: "#000000",
+    hoist: false,
+    mentionable: false,
+    createdTimestamp: 1600000000000,
+    members: { size: 0 },
+    toString: () => `<@&${id}>`,
+    ...extra,
+  };
 }
 
 function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSince = null, joined = 1700000000000, presence = null, voice = {} }) {
@@ -397,6 +408,56 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     await utilityHandlers.vocinfo(null, msg);
     await utilityHandlers.user(null, msg, []);
     assert.strictEqual(msg._replies.length, 2);
+  });
+
+  await cas("&role @rôle affiche sa fiche d'info — distinct de role create/delete/... (utils/serverAdminCommands.js)", async () => {
+    const role = fakeRole("role-info-1", "Modérateur", 3, { hoist: true, mentionable: true, hexColor: "#ff0000" });
+    const g = fakeGuild({ roles: [role] });
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-info-1", role]]) } });
+    await utilityHandlers.roleInfo(null, msg, []);
+    assert.strictEqual(msg._replies.length, 1);
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("Modérateur") || texte.includes(role.id), texte);
+    assert.ok(texte.includes("#ff0000"), texte);
+  });
+
+  await cas("&role sans sous-commande reconnue affiche l'info, ne renvoie jamais silencieusement rien", async () => {
+    const role = fakeRole("role-info-2", "VIP");
+    const g = fakeGuild({ roles: [role] });
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-info-2", role]]) } });
+    await utilityHandlers.roleInfo(null, msg, []);
+    assert.strictEqual(msg._replies.length, 1);
+  });
+
+  await cas("&role exige server.info.view", async () => {
+    const role = fakeRole("role-info-3", "Test");
+    const g = fakeGuild({ roles: [role] });
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-info-3", role]]) } });
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    await utilityHandlers.roleInfo(null, msg, []);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  await cas("&channel [#salon] affiche sa fiche d'info — distinct de channel create/delete/... (utils/serverAdminCommands.js)", async () => {
+    const textChannel = { id: "chan-1", name: "annonces", type: ChannelType.GuildText, topic: "Les news du serveur", createdTimestamp: 1650000000000, parent: null };
+    const g = fakeGuild({ channels: [textChannel] });
+    const msg = fakeMessage(g);
+    msg.channel = textChannel;
+    await utilityHandlers.channelInfo(null, msg, []);
+    assert.strictEqual(msg._replies.length, 1);
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("annonces"), texte);
+    assert.ok(texte.includes("Les news du serveur"), texte);
+  });
+
+  await cas("&channel exige server.info.view", async () => {
+    const textChannel = { id: "chan-2", name: "général", type: ChannelType.GuildText, createdTimestamp: 1650000000000, parent: null };
+    const g = fakeGuild({ channels: [textChannel] });
+    const msg = fakeMessage(g);
+    msg.channel = textChannel;
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    await utilityHandlers.channelInfo(null, msg, []);
+    assert.strictEqual(msg._replies.length, 0);
   });
 
   await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {

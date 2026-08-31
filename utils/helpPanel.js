@@ -14,6 +14,19 @@ const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 
 const SELECT_ID = "help_tier";
+const PAGE_SELECT_ID = "help_page";
+
+// Un Container (Components V2) refuse au-delà d'un certain nombre d'enfants
+// directs — constaté en prod : le palier "configurable" (le plus dense)
+// plantait l'interaction ("l'application n'a pas répondu") une fois monté à
+// 10 enfants (titre+légende, 4 blocs de commandes, séparateurs, menu de
+// palier), alors que les paliers plus légers (7 enfants) fonctionnaient. Le
+// seuil EXACT n'est pas documenté avec certitude — 2 blocs par page (au lieu
+// de 4) ramène le total au niveau des paliers déjà confirmés fiables (7
+// enfants), marge de sécurité incluse plutôt qu'une valeur pile à la limite
+// supposée. Vu que le catalogue ne fait que grandir, un vrai découpage en
+// PAGES est plus sûr qu'un simple ajustement ponctuel de la taille des blocs.
+const MAX_CHUNKS_PER_PAGE = 2;
 
 /**
  * Identité d'affichage d'une commande : tous les mots de TÊTE qui sont de
@@ -150,6 +163,17 @@ function buildSelect(availableTiers, current, authorId) {
     .addOptions(options);
 }
 
+/** Pagination du palier actif, même style que utils/listCard.js::buildListCard. */
+function buildPageSelect(tier, page, totalPages, authorId) {
+  const options = [];
+  if (page > 0) options.push(new StringSelectMenuOptionBuilder().setLabel("Page précédente").setValue(String(page - 1)));
+  if (page < totalPages - 1) options.push(new StringSelectMenuOptionBuilder().setLabel("Page suivante").setValue(String(page + 1)));
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${PAGE_SELECT_ID}:${authorId}:${tier}`)
+    .setPlaceholder(`Page ${page + 1}/${totalPages}`)
+    .addOptions(options);
+}
+
 /**
  * &help — vue d'ensemble compacte (juste les paliers et leur effectif) puis,
  * une fois un palier choisi dans le menu, la liste de ses commandes. Filtré
@@ -160,27 +184,37 @@ function buildSelect(availableTiers, current, authorId) {
  * @param {import('discord.js').GuildMember} member
  * @param {string|null} [tier] palier actif ("public"/"configurable"/"sys")
  * @param {string} authorId qui a lancé &help — seul lui peut piloter le menu
+ * @param {number} [page] page de commandes affichée dans le palier actif
  */
-function buildHelpPanel(guildId, member, tier = null, authorId) {
+function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
   const prefixes = getPrefixes(guildId);
   const groups = groupByTier(member);
   const availableTiers = TIER_ORDER.filter((t) => groups[t].length);
   const activeTier = availableTiers.includes(tier) ? tier : null;
 
   const container = new ContainerBuilder();
+  // Titre ET légende dans le MÊME bloc de texte (pas deux composants
+  // séparés) : chaque composant compte dans la limite du Container, et le
+  // palier dense en a besoin ailleurs (voir MAX_CHUNKS_PER_PAGE ci-dessus).
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(activeTier ? `## Aide — ${TIER_LABELS[activeTier]}` : "## Aide")
+    new TextDisplayBuilder().setContent(
+      activeTier
+        ? `## Aide — ${TIER_LABELS[activeTier]}\nLes arguments entre \`[]\` sont **facultatifs**, les arguments entre \`<>\` sont **obligatoires**`
+        : "## Aide"
+    )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
+  let clampedPage = 0;
+  let totalPages = 1;
   if (activeTier) {
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**")
-    );
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     const entries = dedupeByIdentity(groups[activeTier]);
     const blocks = entries.map((e) => formatCommandBlock(e, prefixes.musicMod));
-    for (const chunk of chunkBlocks(blocks)) {
+    const chunks = chunkBlocks(blocks);
+    totalPages = Math.max(1, Math.ceil(chunks.length / MAX_CHUNKS_PER_PAGE));
+    clampedPage = Math.min(Math.max(0, page), totalPages - 1);
+    const pageChunks = chunks.slice(clampedPage * MAX_CHUNKS_PER_PAGE, (clampedPage + 1) * MAX_CHUNKS_PER_PAGE);
+    for (const chunk of pageChunks) {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
     }
   } else {
@@ -202,27 +236,34 @@ function buildHelpPanel(guildId, member, tier = null, authorId) {
   if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(buildSelect(availableTiers, activeTier, authorId)));
+    if (activeTier && totalPages > 1) {
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
+    }
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 /**
- * Toutes les interactions "help_tier:<authorId>" (voir index.js) : choix
- * d'un palier. Message PUBLIC et unique, édité en place à chaque clic —
- * jamais de nouveau message — mais réservé à qui a lancé &help : n'importe
- * qui d'autre verrait un palier filtré sur SES droits à lui, potentiellement
- * plus larges (Sys, configurable), affiché publiquement dans le salon.
+ * Toutes les interactions "help_tier:<authorId>" (choix d'un palier, revient
+ * à la page 0) ET "help_page:<authorId>:<tier>" (change de page dans le
+ * palier actif) — voir index.js. Message PUBLIC et unique, édité en place à
+ * chaque clic — jamais de nouveau message — mais réservé à qui a lancé
+ * &help : n'importe qui d'autre verrait un palier filtré sur SES droits à
+ * lui, potentiellement plus larges (Sys, configurable), affiché publiquement
+ * dans le salon.
  */
 async function handleHelpInteraction(interaction) {
-  const [, authorId] = interaction.customId.split(":");
+  const [kind, authorId, tierFromCustomId] = interaction.customId.split(":");
   if (interaction.user.id !== authorId) {
     return interaction
       .reply({ content: "Seule la personne qui a lancé `&help` peut utiliser ce menu.", flags: MessageFlags.Ephemeral })
       .catch(() => {});
   }
-  const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0], authorId);
+  const tier = kind === PAGE_SELECT_ID ? tierFromCustomId : interaction.values[0];
+  const page = kind === PAGE_SELECT_ID ? parseInt(interaction.values[0], 10) || 0 : 0;
+  const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
   return interaction.update(panel).catch(() => {});
 }
 
-module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID };
+module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID };

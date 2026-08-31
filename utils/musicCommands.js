@@ -333,9 +333,14 @@ const modHandlers = {
   // "role create/delete/rename/color/admin" gère le rôle lui-même (voir
   // utils/serverAdminCommands.js) ; l'appartenance d'un membre à un rôle se
   // fait via "&addrole"/"&delrole" (utils/moderationCommands.js), distincts.
+  // Sans sous-commande reconnue, "role @rôle" affiche sa fiche d'info
+  // (utils/utilityCommands.js::roleInfo, server.info.view) — un mot qui
+  // n'est ni une sous-commande ni un rôle valide échoue simplement côté
+  // roleInfo, comme n'importe quel argument invalide.
   role: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (serverAdmin.ROLE_ADMIN_SUBCOMMANDS.has(sub)) return serverAdmin.roleAdmin(client, message, args);
+    return utilityHandlers.roleInfo(client, message, args);
   },
   addrole: moderationHandlers.addrole,
   delrole: moderationHandlers.delrole,
@@ -359,7 +364,14 @@ const modHandlers = {
 
   // Administration du serveur (rôles/salons créés de zéro, owners, whitelist,
   // liste des bots, dero automatique) — voir utils/serverAdminCommands.js.
-  channel: serverAdmin.channelAdmin,
+  // Même principe que "role" ci-dessus : sans sous-commande reconnue,
+  // "channel [#salon]" affiche sa fiche d'info (server.info.view) au lieu
+  // du message d'erreur générique de channelAdmin.
+  channel: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (serverAdmin.CHANNEL_ADMIN_SUBCOMMANDS.has(sub)) return serverAdmin.channelAdmin(client, message, args);
+    return utilityHandlers.channelInfo(client, message, args);
+  },
   owners: serverAdmin.owners,
   whitelist: serverAdmin.whitelist,
   allbots: serverAdmin.allbots,

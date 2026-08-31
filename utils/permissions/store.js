@@ -34,9 +34,10 @@ function save() {
 
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {} };
+  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [] };
   if (!data[guildId].roleGrants) data[guildId].roleGrants = {};
   if (!data[guildId].userGrants) data[guildId].userGrants = {};
+  if (!data[guildId].exclusiveRoles) data[guildId].exclusiveRoles = [];
   return data[guildId];
 }
 
@@ -90,6 +91,24 @@ function listUserGrants(guildId) {
   return Object.entries(guildData(guildId).userGrants).filter(([, keys]) => keys.length);
 }
 
+// "Exclusif" : simple étiquette posée par l'admin sur un rôle depuis le
+// panel — aucun effet sur le calcul des permissions (utils/permissions/
+// engine.js::can n'y touche pas), juste un marqueur affiché à part pour
+// distinguer d'un coup d'œil les rôles "à part" (ex. un rôle dédié à une
+// seule permission précise) des rôles cumulés normalement.
+const isRoleExclusive = (guildId, roleId) => guildData(guildId).exclusiveRoles.includes(roleId);
+
+function setRoleExclusive(guildId, roleId, exclusive) {
+  const data = guildData(guildId);
+  const has = data.exclusiveRoles.includes(roleId);
+  if (exclusive && !has) data.exclusiveRoles.push(roleId);
+  else if (!exclusive && has) data.exclusiveRoles = data.exclusiveRoles.filter((id) => id !== roleId);
+  else return;
+  save();
+}
+
+const listExclusiveRoles = (guildId) => [...guildData(guildId).exclusiveRoles];
+
 module.exports = {
   getRoleGrants,
   getUserGrants,
@@ -99,4 +118,7 @@ module.exports = {
   clearUserGrants,
   listRoleGrants,
   listUserGrants,
+  isRoleExclusive,
+  setRoleExclusive,
+  listExclusiveRoles,
 };

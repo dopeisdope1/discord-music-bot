@@ -41,6 +41,7 @@ const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
 const voiceHubSetup = require("./voiceHubSetup");
+const { roleAdmin } = require("./serverAdminCommands");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
