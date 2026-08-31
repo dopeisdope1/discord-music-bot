@@ -164,5 +164,94 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     assert.ok(overwrites.find((o) => o.id === "bot").allow.includes(PermissionFlagsBits.SendMessages));
   });
 
+  console.log("\nInstallation en un clic (&panel > Vocaux) :");
+
+  const { setupVoiceHub, VOICE_CATEGORY_NAME, TEXT_CATEGORY_NAME, HUB_CHANNEL_NAME } = require("../utils/voiceHubSetup");
+
+  function fakeGuild(id) {
+    const cache = new Collection();
+    let n = 0;
+    return {
+      id,
+      roles: { everyone: { id } },
+      members: { me: { id: "bot" } },
+      channels: {
+        cache,
+        create: async (opts) => {
+          const salon = { id: `cree-${++n}`, name: opts.name, type: opts.type, parent: opts.parent, permissionOverwrites: opts.permissionOverwrites };
+          cache.set(salon.id, salon);
+          return salon;
+        },
+      },
+      _cache: cache,
+    };
+  }
+
+  await cas("crée les deux catégories et le salon générateur", async () => {
+    const guild = fakeGuild("g-setup");
+    const { config, created } = await setupVoiceHub(guild);
+    assert.strictEqual(created.length, 3, created.join(" | "));
+    const noms = [...guild._cache.values()].map((c) => c.name);
+    assert.ok(noms.includes(VOICE_CATEGORY_NAME) && noms.includes(TEXT_CATEGORY_NAME) && noms.includes(HUB_CHANNEL_NAME), noms.join(", "));
+    assert.ok(config.hubId && config.voiceCategoryId && config.textCategoryId, JSON.stringify(config));
+  });
+
+  await cas("le générateur est bien rangé dans la catégorie des vocaux", async () => {
+    const guild = fakeGuild("g-setup2");
+    const { config } = await setupVoiceHub(guild);
+    assert.strictEqual(guild._cache.get(config.hubId).parent, config.voiceCategoryId);
+  });
+
+  await cas("la catégorie des panneaux est verrouillée en écriture", async () => {
+    const guild = fakeGuild("g-setup3");
+    const { config } = await setupVoiceHub(guild);
+    const overwrites = guild._cache.get(config.textCategoryId).permissionOverwrites;
+    const everyone = overwrites.find((o) => o.id === "g-setup3");
+    assert.ok(everyone.deny.includes(PermissionFlagsBits.SendMessages), "@everyone doit être muet");
+    assert.ok(overwrites.some((o) => o.id === "bot"), "le bot doit garder le droit d'écrire");
+  });
+
+  await cas("relancée, elle ne recrée rien", async () => {
+    const guild = fakeGuild("g-setup4");
+    await setupVoiceHub(guild);
+    const avant = guild._cache.size;
+    const { created } = await setupVoiceHub(guild);
+    assert.deepStrictEqual(created, [], "rien ne devait être recréé");
+    assert.strictEqual(guild._cache.size, avant);
+  });
+
+  await cas("une pièce supprimée à la main est recréée, les autres non", async () => {
+    const guild = fakeGuild("g-setup5");
+    const { config } = await setupVoiceHub(guild);
+    guild._cache.delete(config.hubId); // quelqu'un a supprimé le générateur
+    const { created } = await setupVoiceHub(guild);
+    assert.strictEqual(created.length, 1, created.join(" | "));
+    assert.ok(created[0].includes(HUB_CHANNEL_NAME));
+  });
+
+  console.log("\nModèles de noms :");
+
+  await cas("`{pseudo}` est remplacé, et le nom tronqué à la limite Discord", () => {
+    assert.strictEqual(voiceChannels.formatChannelName("Salon de {pseudo}", "uo"), "Salon de uo");
+    assert.strictEqual(voiceChannels.formatChannelName("panel-{pseudo}", "uo"), "panel-uo");
+    assert.strictEqual(voiceChannels.formatChannelName("{pseudo}", "x".repeat(150)).length, 100);
+  });
+
+  await cas("un modèle absent retombe sur le défaut plutôt que sur un nom vide", () => {
+    assert.strictEqual(voiceChannels.formatChannelName("", "uo"), "Salon de uo");
+    assert.strictEqual(voiceChannels.formatChannelName(undefined, "uo"), "Salon de uo");
+  });
+
+  await cas("l'ancien format du fichier (une simple chaîne) reste lisible", () => {
+    // Avant les catégories, seul l'identifiant du générateur était stocké.
+    const fichier = path.join(process.env.DATA_DIR, "voiceHub.json");
+    fs.writeFileSync(fichier, JSON.stringify({ "g-ancien": "hub-ancien" }));
+    delete require.cache[require.resolve("../utils/voiceChannels")];
+    const relu = require("../utils/voiceChannels");
+    const config = relu.getHubConfig("g-ancien");
+    assert.strictEqual(config.hubId, "hub-ancien");
+    assert.strictEqual(config.voiceName, "Salon de {pseudo}", "les défauts comblent le reste");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

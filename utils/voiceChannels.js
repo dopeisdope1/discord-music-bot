@@ -50,17 +50,55 @@ function saveChannels() {
   }
 }
 
+// `{pseudo}` est remplacé par le pseudo affiché de la personne. C'est le seul
+// jeton reconnu : en ajouter d'autres compliquerait la configuration pour un
+// gain que personne n'a demandé.
+const DEFAULT_VOICE_NAME = "Salon de {pseudo}";
+const DEFAULT_TEXT_NAME = "panel-{pseudo}";
+
+/**
+ * Configuration complète du hub. L'ancien format stockait directement
+ * l'identifiant du salon générateur (une chaîne) : il est relu comme tel,
+ * sans migration du fichier.
+ * @returns {{ hubId: string|null, voiceCategoryId: string|null, textCategoryId: string|null, voiceName: string, textName: string }}
+ */
+function getHubConfig(guildId) {
+  const brut = loadHubs()[guildId];
+  const entry = typeof brut === "string" ? { hubId: brut } : brut || {};
+  return {
+    hubId: entry.hubId || null,
+    voiceCategoryId: entry.voiceCategoryId || null,
+    textCategoryId: entry.textCategoryId || null,
+    voiceName: entry.voiceName || DEFAULT_VOICE_NAME,
+    textName: entry.textName || DEFAULT_TEXT_NAME,
+  };
+}
+
+/** Modifie une partie de la configuration, sans toucher au reste. */
+function setHubConfig(guildId, patch) {
+  const data = loadHubs();
+  const suivant = { ...getHubConfig(guildId), ...patch };
+  // Plus de générateur = plus rien à retenir : on nettoie l'entrée au lieu de
+  // laisser une configuration orpheline derrière.
+  if (!suivant.hubId) delete data[guildId];
+  else data[guildId] = suivant;
+  saveHubs();
+  return suivant;
+}
+
+/** Applique le modèle de nom, `{pseudo}` remplacé, tronqué à la limite Discord. */
+function formatChannelName(template, displayName) {
+  return (template || DEFAULT_VOICE_NAME).replace(/\{pseudo\}/g, displayName).slice(0, 100);
+}
+
 /** @returns {string|null} salon générateur configuré pour ce serveur. */
 function getHub(guildId) {
-  return loadHubs()[guildId] || null;
+  return getHubConfig(guildId).hubId;
 }
 
 /** @param {string|null} channelId null pour désactiver. */
 function setHub(guildId, channelId) {
-  const data = loadHubs();
-  if (channelId) data[guildId] = channelId;
-  else delete data[guildId];
-  saveHubs();
+  setHubConfig(guildId, { hubId: channelId || null });
 }
 
 /**
@@ -100,4 +138,16 @@ function unregisterChannel(channelId) {
   return true;
 }
 
-module.exports = { getHub, setHub, registerChannel, getChannelInfo, getVoiceChannelForText, unregisterChannel };
+module.exports = {
+  getHub,
+  setHub,
+  getHubConfig,
+  setHubConfig,
+  formatChannelName,
+  registerChannel,
+  getChannelInfo,
+  getVoiceChannelForText,
+  unregisterChannel,
+  DEFAULT_VOICE_NAME,
+  DEFAULT_TEXT_NAME,
+};

@@ -39,6 +39,7 @@ const { ALL_GUARDS } = require("./guard/definitions");
 const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
+const { setupVoiceHub } = require("./voiceHubSetup");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -370,9 +371,14 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "voice") {
-    const hubId = voiceChannels.getHub(guildId);
+    const config = voiceChannels.getHubConfig(guildId);
+    const salon = (id) => (id && guild.channels.cache.has(id) ? `<#${id}>` : id ? "*supprimé*" : "*aucun*");
     return [
-      `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
+      `> **Salon générateur** : ${salon(config.hubId)}`,
+      `> **Catégorie des vocaux** : ${salon(config.voiceCategoryId)}`,
+      `> **Catégorie des panneaux** : ${salon(config.textCategoryId)}`,
+      `> **Nom du vocal** : \`${config.voiceName}\``,
+      `> **Nom du panneau** : \`${config.textName}\``,
     ].join("\n");
   }
 
@@ -724,6 +730,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       )
     );
   } else if (meta.key === "voice") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:voicesetup`).setLabel("Créer la configuration").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`${ID}:voicenames`).setLabel("Modifier les noms").setStyle(ButtonStyle.Secondary)
+      )
+    );
     const hubId = voiceChannels.getHub(guild.id);
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -834,6 +846,66 @@ async function handleConfigInteraction(interaction) {
 
   if (action === "jumpperm") {
     return goto("permissions", { permissionsRoleId: extra });
+  }
+
+  if (action === "voicesetup") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    // La création de plusieurs salons dépasse les 3 secondes de réponse
+    // qu'accorde Discord : sans defer, l'interaction expire avant la fin.
+    await interaction.deferUpdate();
+    const { created } = await setupVoiceHub(guild).catch((err) => {
+      console.error("[voiceHubSetup]", err);
+      return { created: null };
+    });
+    if (created === null) {
+      await interaction.followUp({ content: "Discord a refusé la création (permissions du bot ?).", flags: MessageFlags.Ephemeral }).catch(() => {});
+    } else {
+      await interaction
+        .followUp({
+          content: created.length ? `Créé : ${created.join(", ")}.` : "Tout était déjà en place, rien à créer.",
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => {});
+    }
+    return interaction.message?.edit(buildConfigPanel(guild, "voice", member, state)).catch(() => {});
+  }
+
+  if (action === "voicenames") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const voiceName = interaction.fields.getTextInputValue("voiceName").trim();
+      const textName = interaction.fields.getTextInputValue("textName").trim();
+      voiceChannels.setHubConfig(guild.id, {
+        // Un champ vidé revient au modèle par défaut plutôt que de produire
+        // des salons sans nom.
+        voiceName: voiceName || voiceChannels.DEFAULT_VOICE_NAME,
+        textName: textName || voiceChannels.DEFAULT_TEXT_NAME,
+      });
+      return goto("voice", state);
+    }
+    const config = voiceChannels.getHubConfig(guild.id);
+    const modal = new ModalBuilder().setCustomId(`${ID}:voicenames`).setTitle("Nom des salons créés");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("voiceName")
+          .setLabel("Salon vocal ({pseudo} = le pseudo)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(100)
+          .setValue(config.voiceName)
+          .setRequired(false)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("textName")
+          .setLabel("Salon du panneau")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(100)
+          .setValue(config.textName)
+          .setRequired(false)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "logcat") {

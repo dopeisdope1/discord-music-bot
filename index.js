@@ -807,11 +807,17 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   const hubId = voiceChannels.getHub(newState.guild.id);
   if (hubId && newState.channelId === hubId && oldState.channelId !== hubId) {
     const hub = newState.channel;
+    const config = voiceChannels.getHubConfig(newState.guild.id);
+    // Les catégories configurées (voir &panel > Vocaux > "Créer la
+    // configuration") l'emportent ; à défaut, on retombe sur la catégorie du
+    // salon générateur, comme avant qu'elles n'existent.
+    const categorieVocale = config.voiceCategoryId || hub?.parentId || null;
+    const categorieTexte = config.textCategoryId || hub?.parentId || null;
     const created = await newState.guild.channels
       .create({
-        name: `Salon de ${newState.member.displayName}`.slice(0, 100),
+        name: voiceChannels.formatChannelName(config.voiceName, newState.member.displayName),
         type: ChannelType.GuildVoice,
-        parent: hub?.parentId || null,
+        parent: categorieVocale,
         reason: `Salon vocal temporaire pour ${newState.member.user.tag}`,
       })
       .catch((err) => {
@@ -826,9 +832,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       // les admins peuvent donc y écrire sans qu'on ait à l'autoriser.
       const texte = await newState.guild.channels
         .create({
-          name: `panel-${newState.member.displayName}`.slice(0, 100),
+          name: voiceChannels.formatChannelName(config.textName, newState.member.displayName),
           type: ChannelType.GuildText,
-          parent: hub?.parentId || null,
+          parent: categorieTexte,
           position: created.rawPosition,
           permissionOverwrites: [
             { id: newState.guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] },
