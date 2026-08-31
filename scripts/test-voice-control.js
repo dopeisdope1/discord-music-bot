@@ -101,10 +101,22 @@ async function cas(nom, fn) {
   voiceChannels.registerChannel("vc1", "g1", OWNER_ID);
   const owner = makeMember(OWNER_ID, channel);
   const target = makeMember(TARGET_ID, channel);
+
+  const panelOverwrites = new Collection();
+  const panelChannel = {
+    id: "panel-1",
+    permissionOverwrites: {
+      cache: panelOverwrites,
+      edit: async (t, p) => panelOverwrites.set(t.id || t, { ...(panelOverwrites.get(t.id || t) || {}), ...p }),
+      delete: async (t) => panelOverwrites.delete(t.id || t),
+    },
+  };
+  voiceChannels.setPanelChannel("g1", "panel-1");
+
   const guild = {
     id: "g1",
     roles: { everyone: { id: "everyone" } },
-    channels: { cache: new Collection([[channel.id, channel]]) },
+    channels: { cache: new Collection([[channel.id, channel], [panelChannel.id, panelChannel]]) },
     members: { fetch: async (id) => (id === TARGET_ID ? target : id === OWNER_ID ? owner : null) },
   };
 
@@ -134,6 +146,11 @@ async function cas(nom, fn) {
   await cas("transférer la propriété change bien le propriétaire enregistré", async () => {
     await serverAdmin.handleVoiceControlInteraction(fakeInteraction("vcpanel:transferpick", guild, owner, { values: [TARGET_ID] }));
     assert.strictEqual(voiceChannels.getChannelInfo("vc1").ownerId, TARGET_ID);
+  });
+
+  await cas("le transfert révoque l'accès au salon-panneau de l'ancien propriétaire et l'accorde au nouveau", () => {
+    assert.ok(!panelOverwrites.has(OWNER_ID), "l'ancien propriétaire ne doit plus voir le salon-panneau");
+    assert.strictEqual(panelOverwrites.get(TARGET_ID)?.ViewChannel, true);
   });
 
   await cas("l'ancien propriétaire n'a plus la main après transfert", async () => {

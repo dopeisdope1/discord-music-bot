@@ -35,6 +35,7 @@ const {
   applyDeroToNewChannel,
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
+  setPanelAccess,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const voiceChannels = require("./utils/voiceChannels");
@@ -821,6 +822,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       });
     if (created) {
       voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id);
+      await setPanelAccess(newState.guild, newState.member.id, true);
       await newState.member.voice.setChannel(created).catch(() => {});
 
       // Le chat du vocal reçoit l'accueil, qui mentionne le propriétaire,
@@ -851,6 +853,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     if (info && oldState.channel && oldState.channel.members.size === 0) {
       await oldState.channel.delete("Salon vocal temporaire vidé").catch(() => {});
       voiceChannels.unregisterChannel(oldState.channelId);
+      await setPanelAccess(oldState.guild, info.ownerId, false);
     }
   }
 });

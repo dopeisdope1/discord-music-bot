@@ -648,6 +648,31 @@ function canManageVoiceChannel(member, channel) {
   return info?.ownerId === member.id;
 }
 
+/**
+ * Le salon-panneau partagé n'est visible QUE par qui possède actuellement
+ * un salon vocal temporaire actif — demande explicite : "seul la personne
+ * qui a créé et accès à la voc peut avoir accès au panel control". Appelé à
+ * la création d'un salon temporaire, à sa suppression, et à un transfert de
+ * propriété (voir index.js et handleVoiceControlInteraction, action
+ * "transferpick"/&vc transfer).
+ * @param {import('discord.js').Guild} guild
+ * @param {string} userId
+ * @param {boolean} allowed
+ */
+async function setPanelAccess(guild, userId, allowed) {
+  const panelChannelId = voiceChannels.getHubConfig(guild.id).panelChannelId;
+  const panelChannel = panelChannelId && guild.channels.cache.get(panelChannelId);
+  if (!panelChannel) return;
+  // Corrige au passage un salon-panneau créé avant cette restriction
+  // (@everyone pouvait encore le voir) — idempotent, sans risque à rejouer.
+  await panelChannel.permissionOverwrites.edit(guild.roles.everyone, { ViewChannel: false }).catch(() => {});
+  if (allowed) {
+    await panelChannel.permissionOverwrites.edit(userId, { ViewChannel: true }, { reason: "Salon vocal temporaire actif" }).catch(() => {});
+  } else {
+    await panelChannel.permissionOverwrites.delete(userId, "Salon vocal temporaire terminé ou transféré").catch(() => {});
+  }
+}
+
 async function vc(client, message, args) {
   const channel = message.member.voice.channel;
   if (!channel) return reply(message, "error", "Tu dois être dans un salon vocal temporaire.");
@@ -710,7 +735,10 @@ async function vc(client, message, args) {
     const target = message.mentions.members?.first();
     if (!target) return reply(message, "error", "Indique un membre : `vc transfer @membre`.");
     if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre doit être dans ton salon pour en devenir propriétaire.");
+    const previousOwnerId = voiceChannels.getChannelInfo(channel.id)?.ownerId;
     voiceChannels.registerChannel(channel.id, message.guild.id, target.id);
+    if (previousOwnerId) await setPanelAccess(message.guild, previousOwnerId, false);
+    await setPanelAccess(message.guild, target.id, true);
     return reply(message, "success", `**${target.user.tag}** est désormais propriétaire de ce salon.`);
   }
 
@@ -729,8 +757,8 @@ async function vc(client, message, args) {
 function voiceControlButtonRows() {
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Ouvrir").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Fermer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Fermer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Ouvrir").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:add").setLabel("Ajouter").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:remove").setLabel("Retirer").setStyle(ButtonStyle.Secondary)
     ),
@@ -762,24 +790,23 @@ function buildVoiceControlCard() {
 /**
  * Message posté dans le chat du salon VOCAL lui-même à sa création : il
  * mentionne le propriétaire (d'où allowedMentions, sans quoi le client
- * Discord.js n'envoie aucune notification — voir index.js) et porte les
- * MÊMES boutons que le panneau partagé, directement ici. Volontairement PAS
- * un bouton-lien vers le salon-panneau : Discord peut sortir de la vue
- * d'appel vocal en cliquant un lien vers un autre salon (comportement du
- * client, hors de contrôle du bot) — inutile d'y exposer qui que ce soit
- * puisque les boutons marchent identiquement ici, sans naviguer nulle part.
+ * Discord.js n'envoie aucune notification — voir index.js) avec un seul
+ * bouton "Gérer ton salon". Volontairement PAS un bouton-lien vers le
+ * salon-panneau (Discord peut sortir de la vue d'appel vocal en cliquant un
+ * lien vers un autre salon, comportement du client hors de contrôle du bot)
+ * ni la grille complète de boutons ici (encombrant pour un simple message
+ * d'accueil) : le clic ouvre les vrais contrôles en ÉPHÉMÈRE, sans naviguer
+ * nulle part — voir handleVoiceControlInteraction, action "menu".
  */
 function buildVoiceWelcomeCard(channel, ownerId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 <@${ownerId}>, ton salon est prêt`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "Verrouille-le, invite du monde, cède-le à quelqu'un — les boutons ci-dessous s'appliquent directement à ce salon, pas besoin d'aller ailleurs."
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("vcpanel:menu").setLabel("Gérer ton salon").setStyle(ButtonStyle.Primary)
     )
   );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(...voiceControlButtonRows());
   return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { users: [ownerId] } };
 }
 
@@ -805,6 +832,16 @@ async function handleVoiceControlInteraction(interaction) {
   }
   if (!canManageVoiceChannel(interaction.member, channel)) {
     return interaction.reply({ content: "Seul le propriétaire de ce salon peut le gérer.", flags: MessageFlags.Ephemeral });
+  }
+
+  // Bouton "Gérer ton salon" de l'accueil du vocal (voir buildVoiceWelcomeCard)
+  // : ouvre les vrais contrôles en éphémère, RIEN À NAVIGUER — un lien vers
+  // le salon-panneau pouvait fermer la vue d'appel côté client Discord.
+  if (action === "menu") {
+    const menu = new ContainerBuilder();
+    menu.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🎛️ ${channel.name}`));
+    menu.addActionRowComponents(...voiceControlButtonRows());
+    return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [menu] });
   }
 
   if (action === "lock" || action === "unlock") {
@@ -855,7 +892,10 @@ async function handleVoiceControlInteraction(interaction) {
       if (target.voice.channelId !== channel.id) {
         return interaction.update({ content: "Ce membre doit être dans le salon pour en devenir propriétaire.", components: [] });
       }
+      const previousOwnerId = voiceChannels.getChannelInfo(channel.id)?.ownerId;
       voiceChannels.registerChannel(channel.id, interaction.guild.id, target.id);
+      if (previousOwnerId) await setPanelAccess(interaction.guild, previousOwnerId, false);
+      await setPanelAccess(interaction.guild, target.id, true);
       return interaction.update({ content: `**${target.user.tag}** est désormais propriétaire de ce salon.`, components: [] });
     }
     if (action === "kickpick") {
@@ -881,6 +921,7 @@ module.exports = {
   buildVoiceControlCard,
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
+  setPanelAccess,
   handleConfirmInteraction,
   requestConfirmation,
   ROLE_ADMIN_SUBCOMMANDS,

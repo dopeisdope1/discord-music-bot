@@ -48,11 +48,12 @@ async function createVoiceHubSetup(guild) {
     name: PANEL_CHANNEL_NAME,
     type: ChannelType.GuildText,
     parent: spawnCategory.id,
-    // Verrouillé en écriture pour tout le monde : c'est un panneau de
-    // boutons, pas un salon de discussion (le bot doit pouvoir y écrire son
-    // propre message même s'il n'est pas administrateur).
+    // Invisible par défaut : seule la personne qui possède ACTUELLEMENT un
+    // salon vocal temporaire y a accès (voir setPanelAccess dans
+    // utils/serverAdminCommands.js, appelé à la création/suppression/
+    // transfert d'un salon) — demande explicite, pas un salon public.
     permissionOverwrites: [
-      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] },
+      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: guild.members.me.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel] },
     ],
   });

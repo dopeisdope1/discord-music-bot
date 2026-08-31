@@ -6,7 +6,11 @@
  *  - ses boutons agissent sur le salon vocal où la personne qui CLIQUE est
  *    connectée à cet instant, pas sur le salon où le clic a eu lieu ;
  *  - le chat du vocal reçoit un message d'accueil qui MENTIONNE réellement
- *    le propriétaire, avec un bouton-lien vers le salon-panneau.
+ *    le propriétaire, avec un seul bouton "Gérer ton salon" qui ouvre les
+ *    vrais contrôles en éphémère (jamais de bouton-lien) ;
+ *  - le salon-panneau n'est visible QUE par qui possède actuellement un
+ *    salon temporaire (setPanelAccess), accordé/retiré à la création, la
+ *    suppression et le transfert d'un salon.
  *
  * Lancement : node scripts/test-voice-hub.js
  */
@@ -20,7 +24,7 @@ process.env.BOT_OWNER_IDS = "owner-bot";
 
 const { Collection, ChannelType } = require("discord.js");
 const voiceChannels = require("../utils/voiceChannels");
-const { buildVoiceControlCard, buildVoiceWelcomeCard, handleVoiceControlInteraction } = require("../utils/serverAdminCommands");
+const { buildVoiceControlCard, buildVoiceWelcomeCard, handleVoiceControlInteraction, setPanelAccess } = require("../utils/serverAdminCommands");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -59,6 +63,17 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     assert.deepStrictEqual(buildVoiceControlCard().allowedMentions, { parse: [] });
   });
 
+  await cas('"lock" est bien étiqueté FERMER et "unlock" bien étiqueté OUVRIR (pas l\'inverse)', () => {
+    // Bug réel signalé : les deux libellés étaient inversés — cliquer
+    // "Ouvrir" verrouillait le salon et "Fermer" le déverrouillait.
+    const boutons = buildVoiceControlCard()
+      .components[0].toJSON()
+      .components.filter((c) => c.type === 1)
+      .flatMap((r) => r.components);
+    assert.strictEqual(boutons.find((b) => b.custom_id === "vcpanel:lock").label, "Fermer");
+    assert.strictEqual(boutons.find((b) => b.custom_id === "vcpanel:unlock").label, "Ouvrir");
+  });
+
   console.log("\nAccueil du salon vocal :");
 
   await cas("mentionne réellement le propriétaire", () => {
@@ -69,17 +84,15 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     assert.deepStrictEqual(carte.allowedMentions, { users: [PROPRIO] });
   });
 
-  await cas("porte les boutons de contrôle DIRECTEMENT — jamais de bouton-lien vers un autre salon", () => {
+  await cas("porte UN SEUL bouton \"Gérer ton salon\" — jamais de bouton-lien vers un autre salon", () => {
     // Cliquer un lien vers un autre salon depuis la vue d'appel vocal peut en
     // sortir côté client Discord (hors de contrôle du bot) — signalé comme
-    // gênant. Les boutons agissent ici même, sans naviguer nulle part.
+    // gênant. Le clic ouvre les vrais contrôles en éphémère (action "menu"),
+    // sans naviguer nulle part et sans encombrer l'accueil de 7 boutons.
     const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO);
     const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
     assert.ok(!boutons.some((b) => b.style === 5), "aucun bouton-lien ne doit plus être présent"); // ButtonStyle.Link
-    const ids = boutons.map((b) => b.custom_id);
-    for (const attendu of ["vcpanel:lock", "vcpanel:unlock", "vcpanel:rename", "vcpanel:add", "vcpanel:remove", "vcpanel:transfer", "vcpanel:kick"]) {
-      assert.ok(ids.includes(attendu), `${attendu} manque`);
-    }
+    assert.deepStrictEqual(boutons.map((b) => b.custom_id), ["vcpanel:menu"]);
   });
 
   console.log("\nLes boutons agissent sur le salon vocal COURANT de la personne qui clique :");
@@ -154,6 +167,63 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     const interaction = interactionConnecteA(HUB, "owner-bot", salonPanel);
     await handleVoiceControlInteraction(interaction);
     assert.ok(interaction._reponses[0]?.content.includes("Rejoins"), JSON.stringify(interaction._reponses));
+  });
+
+  await cas('le bouton "Gérer ton salon" (action "menu") ouvre les vrais contrôles en éphémère', async () => {
+    const salonPanel = { id: PANEL, type: ChannelType.GuildText };
+    const interaction = interactionConnecteA(VOCAL, PROPRIO, salonPanel);
+    interaction.customId = "vcpanel:menu";
+    await handleVoiceControlInteraction(interaction);
+    const payload = interaction._reponses[0];
+    assert.ok((payload.flags & 64) === 64, "doit être éphémère"); // MessageFlags.Ephemeral
+    const boutons = payload.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components.map((b) => b.custom_id));
+    for (const attendu of ["vcpanel:lock", "vcpanel:unlock", "vcpanel:rename", "vcpanel:kick"]) {
+      assert.ok(boutons.includes(attendu), `${attendu} manque`);
+    }
+  });
+
+  console.log("\nAccès au salon-panneau (utils/serverAdminCommands.js::setPanelAccess) :");
+
+  function makeGuildWithPanel(panelId) {
+    const overwrites = new Map();
+    const panelChannel = {
+      id: panelId,
+      permissionOverwrites: {
+        edit: async (target, perms) => overwrites.set(target.id || target, { ...(overwrites.get(target.id || target) || {}), ...perms }),
+        delete: async (target) => overwrites.delete(target.id || target),
+      },
+    };
+    voiceChannels.setPanelChannel("g-acl", panelId);
+    return {
+      id: "g-acl",
+      roles: { everyone: { id: "g-acl" } },
+      channels: { cache: new Collection([[panelId, panelChannel]]) },
+      _overwrites: overwrites,
+    };
+  }
+
+  await cas("accorder l'accès donne bien ViewChannel:true à cette personne précise", async () => {
+    const guild = makeGuildWithPanel("panel-acl-1");
+    await setPanelAccess(guild, "membre-1", true);
+    assert.strictEqual(guild._overwrites.get("membre-1").ViewChannel, true);
+  });
+
+  await cas("retirer l'accès supprime l'overwrite de cette personne", async () => {
+    const guild = makeGuildWithPanel("panel-acl-2");
+    await setPanelAccess(guild, "membre-1", true);
+    await setPanelAccess(guild, "membre-1", false);
+    assert.ok(!guild._overwrites.has("membre-1"));
+  });
+
+  await cas("@everyone est mis à ViewChannel:false à chaque appel (corrige aussi un ancien salon-panneau public)", async () => {
+    const guild = makeGuildWithPanel("panel-acl-3");
+    await setPanelAccess(guild, "membre-1", true);
+    assert.strictEqual(guild._overwrites.get("g-acl").ViewChannel, false);
+  });
+
+  await cas("sans salon-panneau configuré, ne plante pas (no-op silencieux)", async () => {
+    const guild = { id: "g-sans-panel", roles: { everyone: { id: "g-sans-panel" } }, channels: { cache: new Collection() } };
+    await setPanelAccess(guild, "membre-1", true); // ne doit pas lever
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
