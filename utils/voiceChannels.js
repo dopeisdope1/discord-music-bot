@@ -69,33 +69,15 @@ function setHub(guildId, channelId) {
   saveHubs();
 }
 
-/**
- * Enregistre un salon temporaire fraîchement créé, avec son propriétaire et le
- * salon texte qui l'accompagne (celui qui porte le panneau de contrôle).
- * @param {string|null} [textChannelId] null si le salon texte n'a pas pu être créé
- */
-function registerChannel(channelId, guildId, ownerId, textChannelId = null) {
-  loadChannels()[channelId] = { guildId, ownerId, textChannelId };
+/** Enregistre un salon temporaire fraîchement créé, avec son propriétaire. */
+function registerChannel(channelId, guildId, ownerId) {
+  loadChannels()[channelId] = { guildId, ownerId };
   saveChannels();
 }
 
-/** @returns {{ guildId: string, ownerId: string, textChannelId?: string|null }|null} */
+/** @returns {{ guildId: string, ownerId: string }|null} */
 function getChannelInfo(channelId) {
   return loadChannels()[channelId] || null;
-}
-
-/**
- * Salon vocal auquel appartient un salon texte de panneau.
- *
- * C'est ce qui permet aux boutons de fonctionner depuis le salon TEXTE : sans
- * ça, le panneau ne saurait pas sur quel salon vocal agir, puisqu'on ne clique
- * plus depuis le vocal lui-même.
- *
- * @returns {string|null} identifiant du salon vocal
- */
-function getVoiceChannelForText(textChannelId) {
-  const data = loadChannels();
-  return Object.keys(data).find((voiceId) => data[voiceId].textChannelId === textChannelId) || null;
 }
 
 function unregisterChannel(channelId) {
@@ -126,17 +108,16 @@ function saveConfig() {
 }
 
 const DEFAULT_VOICE_NAME_TEMPLATE = "Salon de {pseudo}";
-const DEFAULT_TEXT_NAME_TEMPLATE = "panel-{pseudo}";
 
 /**
- * @returns {{ spawnCategoryId: string|null, voiceNameTemplate: string, textNameTemplate: string }}
+ * @returns {{ spawnCategoryId: string|null, panelChannelId: string|null, voiceNameTemplate: string }}
  */
 function getHubConfig(guildId) {
   const entry = loadConfig()[guildId] || {};
   return {
     spawnCategoryId: entry.spawnCategoryId || null,
+    panelChannelId: entry.panelChannelId || null,
     voiceNameTemplate: entry.voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE,
-    textNameTemplate: entry.textNameTemplate || DEFAULT_TEXT_NAME_TEMPLATE,
   };
 }
 
@@ -147,13 +128,23 @@ function setSpawnCategory(guildId, categoryId) {
   saveConfig();
 }
 
-function setNameTemplates(guildId, { voiceNameTemplate, textNameTemplate }) {
+/**
+ * Salon texte UNIQUE et permanent qui porte le panneau de contrôle partagé
+ * (boutons Ouvrir/Fermer/Ajouter/Retirer/Renommer/Transférer) — un clic y
+ * agit sur le salon vocal où la personne est CONNECTÉE au moment du clic
+ * (voir utils/serverAdminCommands.js::handleVoiceControlInteraction), pas
+ * sur un salon texte compagnon créé puis détruit à chaque salon vocal.
+ * @param {string|null} channelId
+ */
+function setPanelChannel(guildId, channelId) {
   const data = loadConfig();
-  data[guildId] = {
-    ...data[guildId],
-    voiceNameTemplate: voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE,
-    textNameTemplate: textNameTemplate || DEFAULT_TEXT_NAME_TEMPLATE,
-  };
+  data[guildId] = { ...data[guildId], panelChannelId: channelId || null };
+  saveConfig();
+}
+
+function setNameTemplates(guildId, { voiceNameTemplate }) {
+  const data = loadConfig();
+  data[guildId] = { ...data[guildId], voiceNameTemplate: voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE };
   saveConfig();
 }
 
@@ -168,12 +159,11 @@ module.exports = {
   setHub,
   registerChannel,
   getChannelInfo,
-  getVoiceChannelForText,
   unregisterChannel,
   getHubConfig,
   setSpawnCategory,
+  setPanelChannel,
   setNameTemplates,
   formatTemplate,
   DEFAULT_VOICE_NAME_TEMPLATE,
-  DEFAULT_TEXT_NAME_TEMPLATE,
 };

@@ -1,10 +1,12 @@
 /**
  * Vérifie la configuration en un clic du voicehub (&panel > Communauté >
  * Vocaux, boutons "Créer la configuration" / "Modifier les noms") :
- *  - utils/voiceChannels.js : catégorie de destination et modèles de nom,
- *    persistés séparément du fichier existant (voir CONFIG_FILE) ;
- *  - utils/voiceHubSetup.js : crée les DEUX catégories + le générateur en un
- *    appel, refuse de dupliquer si un générateur est déjà actif ;
+ *  - utils/voiceChannels.js : catégorie de destination, salon-panneau
+ *    partagé et modèle de nom, persistés séparément du fichier existant
+ *    (voir CONFIG_FILE) ;
+ *  - utils/voiceHubSetup.js : crée les DEUX catégories, le générateur ET le
+ *    salon-panneau partagé en un seul appel, refuse de dupliquer si un
+ *    générateur est déjà actif ;
  *  - utils/configPanel.js : les boutons appellent bien ce qui précède, avec
  *    les vérifications de droits habituelles.
  *
@@ -42,12 +44,18 @@ function makeGuild(id) {
   return {
     id,
     name: "Test",
-    members: { cache: new Collection() },
+    members: { cache: new Collection(), me: { id: "bot-1" } },
     roles: { cache: new Collection(), everyone: { id } },
     channels: {
       cache: channelsCache,
       create: async (opts) => {
-        const ch = { id: `ch-${created.length + 1}`, name: opts.name, type: opts.type, parentId: opts.parent || null };
+        const ch = {
+          id: `ch-${created.length + 1}`,
+          name: opts.name,
+          type: opts.type,
+          parentId: opts.parent || null,
+          send: async () => ({}),
+        };
         created.push(ch);
         channelsCache.set(ch.id, ch);
         return ch;
@@ -62,22 +70,23 @@ function makeMember(guild) {
 }
 
 (async () => {
-  console.log("Modèles de nom (utils/voiceChannels.js) :");
+  console.log("Modèle de nom et salon-panneau (utils/voiceChannels.js) :");
 
   await cas("valeurs par défaut sans config enregistrée", () => {
     const config = voiceChannels.getHubConfig("g-defaut");
     assert.strictEqual(config.spawnCategoryId, null);
+    assert.strictEqual(config.panelChannelId, null);
     assert.strictEqual(config.voiceNameTemplate, "Salon de {pseudo}");
-    assert.strictEqual(config.textNameTemplate, "panel-{pseudo}");
   });
 
-  await cas("setSpawnCategory / setNameTemplates persistent bien", () => {
+  await cas("setSpawnCategory / setPanelChannel / setNameTemplates persistent bien, sans se marcher dessus", () => {
     voiceChannels.setSpawnCategory("g1", "cat-1");
-    voiceChannels.setNameTemplates("g1", { voiceNameTemplate: "🔊 {pseudo}", textNameTemplate: "ctrl-{pseudo}" });
+    voiceChannels.setPanelChannel("g1", "panel-1");
+    voiceChannels.setNameTemplates("g1", { voiceNameTemplate: "🔊 {pseudo}" });
     const config = voiceChannels.getHubConfig("g1");
     assert.strictEqual(config.spawnCategoryId, "cat-1");
+    assert.strictEqual(config.panelChannelId, "panel-1");
     assert.strictEqual(config.voiceNameTemplate, "🔊 {pseudo}");
-    assert.strictEqual(config.textNameTemplate, "ctrl-{pseudo}");
   });
 
   await cas("formatTemplate remplace {pseudo} partout où il apparaît", () => {
@@ -97,22 +106,40 @@ function makeMember(guild) {
 
   console.log("\nConstruction en un clic (utils/voiceHubSetup.js) :");
 
-  await cas("crée deux catégories et le générateur, dans la bonne hiérarchie", async () => {
+  await cas("crée les deux catégories, le générateur ET le salon-panneau, dans la bonne hiérarchie", async () => {
     const guild = makeGuild("g-setup");
-    const { hubCategory, spawnCategory, hubChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    const { hubCategory, spawnCategory, hubChannel, panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
 
     assert.strictEqual(hubCategory.type, ChannelType.GuildCategory);
     assert.strictEqual(spawnCategory.type, ChannelType.GuildCategory);
     assert.notStrictEqual(hubCategory.id, spawnCategory.id, "les deux catégories doivent être distinctes");
     assert.strictEqual(hubChannel.type, ChannelType.GuildVoice);
     assert.strictEqual(hubChannel.parentId, hubCategory.id, "le générateur doit vivre dans la catégorie dédiée, pas celle des salons créés");
+    assert.strictEqual(panelChannel.type, ChannelType.GuildText);
+    assert.strictEqual(panelChannel.parentId, spawnCategory.id, "le panneau vit avec les salons créés, pas dans la catégorie du générateur");
   });
 
-  await cas("enregistre le générateur ET la catégorie de destination", async () => {
+  await cas("enregistre le générateur, la catégorie de destination ET le salon-panneau", async () => {
     const guild = makeGuild("g-setup2");
-    const { spawnCategory, hubChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    const { spawnCategory, hubChannel, panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
     assert.strictEqual(voiceChannels.getHub("g-setup2"), hubChannel.id);
-    assert.strictEqual(voiceChannels.getHubConfig("g-setup2").spawnCategoryId, spawnCategory.id);
+    const config = voiceChannels.getHubConfig("g-setup2");
+    assert.strictEqual(config.spawnCategoryId, spawnCategory.id);
+    assert.strictEqual(config.panelChannelId, panelChannel.id);
+  });
+
+  await cas("poste bien la carte de contrôle statique dans le salon-panneau", async () => {
+    const guild = makeGuild("g-setup2b");
+    let sent = null;
+    const originalCreate = guild.channels.create;
+    guild.channels.create = async (opts) => {
+      const ch = await originalCreate(opts);
+      if (opts.type === ChannelType.GuildText) ch.send = async (p) => (sent = p);
+      return ch;
+    };
+    await voiceHubSetup.createVoiceHubSetup(guild);
+    assert.ok(sent, "rien n'a été posté dans le salon-panneau");
+    assert.ok(sent.flags !== undefined, "doit être une carte Components V2");
   });
 
   await cas("isAlreadyConfigured est faux tant que rien n'existe, vrai une fois créé", async () => {
@@ -145,6 +172,9 @@ function makeMember(guild) {
       reply: async (p) => {
         replies.push(p);
       },
+      update: async (p) => {
+        edited = p;
+      },
       followUp: async (p) => {
         followUps.push(p);
       },
@@ -166,8 +196,9 @@ function makeMember(guild) {
     const guild = makeGuild("g-panel1");
     const interaction = fakeInteraction(guild, "cfg:voicehubsetup");
     await configPanel.handleConfigInteraction(interaction);
-    assert.strictEqual(guild._created.length, 3, "deux catégories + un salon vocal");
+    assert.strictEqual(guild._created.length, 4, "deux catégories + un salon vocal + le salon-panneau");
     assert.ok(voiceChannels.getHub("g-panel1"));
+    assert.ok(voiceChannels.getHubConfig("g-panel1").panelChannelId);
     assert.ok(interaction._followUps[0]?.content.includes("Configuration créée"));
   });
 
@@ -203,34 +234,39 @@ function makeMember(guild) {
     assert.ok(interaction._replies[0]?.content.includes("Accès refusé"), JSON.stringify(interaction._replies));
   });
 
-  await cas("\"Modifier les noms\" ouvre une modale pré-remplie avec les valeurs actuelles", async () => {
+  await cas("\"Modifier les noms\" ouvre une modale pré-remplie avec la valeur actuelle (un seul champ)", async () => {
     const guild = makeGuild("g-panel4");
-    voiceChannels.setNameTemplates("g-panel4", { voiceNameTemplate: "Vocal-{pseudo}", textNameTemplate: "Ctrl-{pseudo}" });
+    voiceChannels.setNameTemplates("g-panel4", { voiceNameTemplate: "Vocal-{pseudo}" });
     let capturedModal = null;
     const interaction = fakeInteraction(guild, "cfg:voicenames", { showModal: async (modal) => (capturedModal = modal) });
     await configPanel.handleConfigInteraction(interaction);
     const rows = capturedModal.toJSON().components;
-    const values = rows.map((r) => r.components[0].value);
-    assert.deepStrictEqual(values, ["Vocal-{pseudo}", "Ctrl-{pseudo}"]);
+    assert.strictEqual(rows.length, 1, "un seul champ maintenant que le salon texte compagnon n'existe plus");
+    assert.strictEqual(rows[0].components[0].value, "Vocal-{pseudo}");
   });
 
-  await cas("la soumission de la modale enregistre les nouveaux modèles", async () => {
+  await cas("la soumission de la modale enregistre le nouveau modèle", async () => {
     const guild = makeGuild("g-panel5");
-    const values = { voice: "🎙️ {pseudo}", text: "panneau-{pseudo}" };
     const interaction = fakeInteraction(guild, "cfg:voicenames", {
       isModalSubmit: () => true,
-      fields: { getTextInputValue: (id) => values[id] },
+      fields: { getTextInputValue: () => "🎙️ {pseudo}" },
     });
     await configPanel.handleConfigInteraction(interaction);
-    const saved = voiceChannels.getHubConfig("g-panel5");
-    assert.strictEqual(saved.voiceNameTemplate, "🎙️ {pseudo}");
-    assert.strictEqual(saved.textNameTemplate, "panneau-{pseudo}");
+    assert.strictEqual(voiceChannels.getHubConfig("g-panel5").voiceNameTemplate, "🎙️ {pseudo}");
+  });
+
+  await cas("le sélecteur de salon-panneau enregistre bien le choix", async () => {
+    const guild = makeGuild("g-panel6");
+    const interaction = fakeInteraction(guild, "cfg:voicepanelchannel", { values: ["chan-panel-x"] });
+    await configPanel.handleConfigInteraction(interaction);
+    assert.strictEqual(voiceChannels.getHubConfig("g-panel6").panelChannelId, "chan-panel-x");
   });
 
   await cas("la rubrique Vocaux du panel s'affiche sans erreur, config vide ou remplie", () => {
     const guildVide = makeGuild("g-render-vide");
     const guildPleine = makeGuild("g-render-pleine");
     voiceChannels.setSpawnCategory("g-render-pleine", "cat-x");
+    voiceChannels.setPanelChannel("g-render-pleine", "panel-x");
     for (const g of [guildVide, guildPleine]) {
       const panel = configPanel.buildConfigPanel(g, "voice", makeMember(g));
       for (const c of panel.components) c.toJSON();

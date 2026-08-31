@@ -1,6 +1,6 @@
 require("dotenv").config();
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, MessageFlags, ChannelType, PermissionFlagsBits } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, MessageFlags, ChannelType } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors, Constants: ShoukakuConstants } = require("shoukaku");
 const ShoukakuState = ShoukakuConstants.State;
@@ -33,7 +33,6 @@ const {
   handleServerAdminInteraction,
   handleConfirmInteraction,
   applyDeroToNewChannel,
-  buildVoiceControlCard,
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
 } = require("./utils/serverAdminCommands");
@@ -460,8 +459,9 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Carte de contrôle postée dans un salon vocal temporaire (voir
-  // utils/serverAdminCommands.js::buildVoiceControlCard).
+  // Panneau de contrôle partagé des salons vocaux temporaires (voir
+  // utils/serverAdminCommands.js::buildVoiceControlCard, posté une seule
+  // fois dans le salon-panneau par utils/voiceHubSetup.js).
   if (interaction.customId?.startsWith("vcpanel:")) {
     await handleVoiceControlInteraction(interaction).catch((err) => console.error("[voiceControl]", err));
     return;
@@ -828,44 +828,16 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         return null;
       });
     if (created) {
-      // Salon texte compagnon, placé JUSTE AU-DESSUS du vocal : il porte le
-      // panneau de contrôle à boutons. Verrouillé en écriture pour tout le
-      // monde — personne n'y discute, on ne fait qu'y cliquer. La permission
-      // Discord Administrateur passe outre les overwrites par construction,
-      // les admins peuvent donc y écrire sans qu'on ait à l'autoriser.
-      const texte = await newState.guild.channels
-        .create({
-          name: voiceChannels.formatTemplate(hubConfig.textNameTemplate, newState.member.displayName),
-          type: ChannelType.GuildText,
-          parent: spawnCategory,
-          position: created.rawPosition,
-          permissionOverwrites: [
-            { id: newState.guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] },
-            // Le bot n'est pas forcément administrateur : sans cette
-            // exception, il ne pourrait pas poster son propre panneau.
-            { id: newState.guild.members.me.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.ViewChannel] },
-          ],
-          reason: `Panneau du salon vocal temporaire de ${newState.member.user.tag}`,
-        })
-        .catch((err) => {
-          console.error("[voiceChannels] échec de création du salon texte :", err.message);
-          return null;
-        });
-
-      voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id, texte?.id || null);
+      voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id);
       await newState.member.voice.setChannel(created).catch(() => {});
 
-      // Le panneau à boutons va dans le salon texte…
-      if (texte) {
-        await texte
-          .send(buildVoiceControlCard(created, newState.member.id))
-          .catch((err) => console.error("[voiceChannels] panneau de contrôle :", err.message));
-      }
-
-      // …et le chat du vocal reçoit l'accueil, qui mentionne le propriétaire
-      // et rappelle les commandes texte équivalentes.
+      // Le chat du vocal reçoit l'accueil, qui mentionne le propriétaire,
+      // rappelle les commandes texte équivalentes, et pointe vers le
+      // salon-panneau PARTAGÉ (un seul salon permanent pour tout le monde,
+      // voir &panel > Communauté > Vocaux — plus de salon compagnon créé
+      // puis détruit à chaque salon vocal).
       await created
-        .send(buildVoiceWelcomeCard(created, newState.member.id, texte?.id || null))
+        .send(buildVoiceWelcomeCard(created, newState.member.id, hubConfig.panelChannelId))
         .catch((err) => console.error("[voiceChannels] message d'accueil :", err.message));
     }
   }
@@ -875,14 +847,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     const info = voiceChannels.getChannelInfo(oldState.channelId);
     if (info && oldState.channel && oldState.channel.members.size === 0) {
       await oldState.channel.delete("Salon vocal temporaire vidé").catch(() => {});
-      // Le salon texte compagnon n'a plus de raison d'être : le laisser
-      // accumulerait un salon mort par salon vocal créé.
-      if (info.textChannelId) {
-        await oldState.guild.channels.cache
-          .get(info.textChannelId)
-          ?.delete("Panneau du salon vocal temporaire vidé")
-          .catch(() => {});
-      }
       voiceChannels.unregisterChannel(oldState.channelId);
     }
   }

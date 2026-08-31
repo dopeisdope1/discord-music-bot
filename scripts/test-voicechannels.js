@@ -74,10 +74,7 @@ async function main() {
 
   cas("un salon enregistré retrouve son propriétaire, puis plus rien après désenregistrement", () => {
     voiceChannels.registerChannel("chan-1", GUILD_ID, "owner-of-chan");
-    // `textChannelId` est le salon texte compagnon qui porte le panneau de
-    // contrôle (voir scripts/test-voice-hub.js) : null quand il n'a pas pu
-    // être créé, ou pour un salon enregistré avant son introduction.
-    assert.deepStrictEqual(voiceChannels.getChannelInfo("chan-1"), { guildId: GUILD_ID, ownerId: "owner-of-chan", textChannelId: null });
+    assert.deepStrictEqual(voiceChannels.getChannelInfo("chan-1"), { guildId: GUILD_ID, ownerId: "owner-of-chan" });
     voiceChannels.unregisterChannel("chan-1");
     assert.strictEqual(voiceChannels.getChannelInfo("chan-1"), null);
   });

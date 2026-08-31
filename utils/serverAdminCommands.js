@@ -717,56 +717,50 @@ async function vc(client, message, args) {
   return reply(message, "error", "Utilise `vc lock|unlock|limit <n>|rename <nom>|kick @membre|add @membre|remove @membre|transfer @membre`.");
 }
 
-// --- Carte de contrôle postée dans le salon vocal temporaire lui-même
-// (voir index.js, création du salon) : boutons pour les actions du
-// propriétaire, plutôt que de devoir taper &vc ... — mêmes vérifications
-// que la commande texte (canManageVoiceChannel), rien de plus permissif.
+// --- Panneau de contrôle PARTAGÉ, un seul salon texte permanent créé par
+// &panel > Communauté > Vocaux > "Créer la configuration" (voir
+// utils/voiceHubSetup.js) — plus un salon compagnon par salon vocal créé
+// puis détruit à chaque fois. Les boutons agissent sur le salon vocal où la
+// personne qui clique est CONNECTÉE au moment du clic, exactement comme un
+// panneau "Voice Create" classique : mêmes vérifications que la commande
+// texte (canManageVoiceChannel), rien de plus permissif.
 
-/**
- * Panneau de contrôle, posté dans le salon TEXTE qui accompagne le salon vocal
- * temporaire. Les boutons agissent sur le salon vocal apparié (voir
- * utils/voiceChannels.js::getVoiceChannelForText), pas sur le salon où l'on
- * clique.
- */
-function buildVoiceControlCard(channel, ownerId) {
+/** Panneau de contrôle STATIQUE, posté une seule fois dans le salon-panneau partagé. */
+function buildVoiceControlCard() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Panel de contrôle"));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `${ownerId ? `<@${ownerId}> ` : ""}Rejoins ton salon vocal puis utilise les boutons ci-dessous pour le gérer.\n` +
+      "Rejoins ton salon vocal puis utilise les boutons ci-dessous pour le gérer.\n" +
         "Équivalent en texte : `&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Verrouiller").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Déverrouiller").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("vcpanel:rename").setLabel("Renommer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Ouvrir").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Fermer").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:add").setLabel("Ajouter").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:remove").setLabel("Retirer").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("vcpanel:transfer").setLabel("Transférer la propriété").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:rename").setLabel("Renommer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:transfer").setLabel("Transférer").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("vcpanel:kick").setLabel("Expulser").setStyle(ButtonStyle.Danger)
     )
   );
-  return {
-    flags: MessageFlags.IsComponentsV2,
-    components: [container],
-    allowedMentions: ownerId ? { users: [ownerId] } : { parse: [] },
-  };
+  return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { parse: [] } };
 }
 
 /**
- * Message posté dans le chat du salon VOCAL lui-même : il mentionne la
- * personne (d'où allowedMentions, sans quoi le client Discord.js n'envoie
- * aucune notification — voir index.js) et récapitule ce qu'elle peut taper.
- * Pas de boutons ici : ils sont dans le salon texte du panneau, une seule
- * fois, pour ne pas dupliquer les mêmes contrôles à deux endroits.
+ * Message posté dans le chat du salon VOCAL lui-même à sa création : il
+ * mentionne le propriétaire (d'où allowedMentions, sans quoi le client
+ * Discord.js n'envoie aucune notification — voir index.js), récapitule ce
+ * qu'il peut taper, et pointe vers le salon-panneau partagé via un bouton-
+ * lien (impossible de "sauter" vers un salon autrement qu'avec un vrai lien).
  */
-function buildVoiceWelcomeCard(channel, ownerId, textChannelId) {
+function buildVoiceWelcomeCard(channel, ownerId, panelChannelId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 👋 Bienvenue <@${ownerId}>`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -784,33 +778,35 @@ function buildVoiceWelcomeCard(channel, ownerId, textChannelId) {
         "> `&vc rename <nom>` — Renommer",
         "> `&vc limit <n>` — Limiter les places",
         "> `&vc transfer @membre` — Céder la propriété",
-        "",
-        textChannelId ? `Les mêmes actions en boutons : <#${textChannelId}>` : null,
-      ]
-        .filter((l) => l !== null)
-        .join("\n")
+      ].join("\n")
     )
   );
-  return {
-    flags: MessageFlags.IsComponentsV2,
-    components: [container],
-    allowedMentions: { users: [ownerId] },
-  };
+  const payload = { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { users: [ownerId] } };
+  if (panelChannelId) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Link)
+          .setLabel("Gérer mon salon")
+          .setURL(`https://discord.com/channels/${channel.guildId}/${panelChannelId}`)
+      )
+    );
+  }
+  return payload;
 }
 
 async function handleVoiceControlInteraction(interaction) {
   const [, action] = interaction.customId.split(":");
 
-  // Le panneau vit dans un salon TEXTE : on remonte au salon vocal qu'il
-  // pilote. Un clic depuis le vocal lui-même reste accepté (cartes postées
-  // avant ce changement, et &vc qui répond dans le vocal).
-  const clique = interaction.channel;
-  let channel = clique?.type === ChannelType.GuildVoice ? clique : null;
-  if (!channel && clique) {
-    const voiceId = voiceChannels.getVoiceChannelForText(clique.id);
-    channel = voiceId ? interaction.guild.channels.cache.get(voiceId) || null : null;
+  // Le panneau est PARTAGÉ (un seul salon pour tout le monde) : le salon
+  // ciblé est celui où la personne qui clique est connectée EN VOCAL à cet
+  // instant, pas celui où elle a cliqué.
+  const voiceChannelId = interaction.member?.voice?.channelId;
+  const channel = voiceChannelId ? interaction.guild.channels.cache.get(voiceChannelId) : null;
+  if (!channel || channel.type !== ChannelType.GuildVoice) {
+    return interaction.reply({ content: "Rejoins d'abord ton salon vocal temporaire, puis reclique.", flags: MessageFlags.Ephemeral });
   }
-  if (!channel || channel.type !== ChannelType.GuildVoice) return;
   if (!canManageVoiceChannel(interaction.member, channel)) {
     return interaction.reply({ content: "Seul le propriétaire de ce salon peut le gérer.", flags: MessageFlags.Ephemeral });
   }
