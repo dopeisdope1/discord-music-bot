@@ -380,8 +380,12 @@ const modHandlers = {
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,
-  avatar: moderationHandlers.avatar,
-  serverinfo: moderationHandlers.serverinfo,
+  // Alias stricts : la même fonction, pas une seconde version du même écran.
+  // &avatar et &serverinfo avaient chacun leur propre implémentation, qui
+  // affichait les mêmes informations autrement (et moins bien : &avatar ne
+  // savait pas lire un ID brut). Elles ont été supprimées.
+  avatar: publicHandlers.pic,
+  serverinfo: publicHandlers.server,
 
   // Automod léger (anti-lien/anti-mass-mention/mots interdits) — voir
   // utils/automodCommands.js, permission "protection.automod" (même que

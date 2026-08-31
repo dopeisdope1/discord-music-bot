@@ -444,29 +444,6 @@ const handlers = {
     });
   },
 
-  async serverinfo(client, message) {
-    const guild = message.guild;
-    const lines = [
-      `**Nom** : ${guild.name} (${guild.id})`,
-      `**Propriétaire** : <@${guild.ownerId}>`,
-      `**Créé le** : <t:${Math.floor(guild.createdTimestamp / 1000)}:f>`,
-      `**Membres** : ${guild.memberCount}`,
-      `**Salons** : ${guild.channels.cache.size}`,
-      `**Rôles** : ${guild.roles.cache.size}`,
-      `**Niveau de boost** : ${guild.premiumTier} (${guild.premiumSubscriptionCount || 0} boosts)`,
-    ];
-    await message.reply({
-      embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Informations serveur", thumbnail: guild.iconURL() })],
-    });
-  },
-
-  async avatar(client, message) {
-    const mentioned = message.mentions.users?.first() || message.author;
-    await message.reply({
-      embeds: [buildStatusEmbed("info", null, { title: `Avatar de ${mentioned.tag}`, image: mentioned.displayAvatarURL({ size: 1024 }) })],
-    });
-  },
-
   async modlogs(client, message, args) {
     if (!can(message.member, "logs.view")) return;
     const mentioned = message.mentions.users?.first();

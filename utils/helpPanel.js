@@ -19,7 +19,28 @@ const HOME = "__home__";
 // Nom court affiché dans les listes en ligne : sans les arguments pour une
 // commande préfixée ("play <titre>" -> "play"), mais intégral pour les
 // entrées sans préfixe, dont le nom EST la formulation ("uo clear").
-const shortName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
+const baseName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
+
+/**
+ * Réduit une liste d'entrées du catalogue aux NOMS DE COMMANDES distincts.
+ *
+ * Deux sources de répétition à absorber, sans quoi la même commande occupe
+ * plusieurs fois la ligne :
+ *  - les sous-commandes d'un même dispatcher ("server", "server pic",
+ *    "server banner" -> un seul "server") ;
+ *  - les alias, qui ne sont plus des entrées à part et s'affichent collés à
+ *    leur commande ("pic/avatar") — découvrables, sans laisser croire à deux
+ *    fonctionnalités différentes.
+ */
+function commandNames(commands) {
+  const aliases = new Map();
+  for (const cmd of commands) {
+    const base = baseName(cmd);
+    if (!aliases.has(base)) aliases.set(base, new Set());
+    for (const a of cmd.aliases || []) aliases.get(base).add(a);
+  }
+  return [...aliases].map(([base, alias]) => (alias.size ? `${base}/${[...alias].join("/")}` : base));
+}
 
 // Groupe par palier d'accès plutôt que par catégorie ou en détaillant chaque
 // commande (syntaxe + description) : liste compacte de noms, comme la
@@ -43,21 +64,27 @@ function tieredBody(commands) {
   // taper ne produit rien (voir utils/implementedCommands.js).
   const documented = [];
   for (const cmd of commands) {
-    if (isImplemented(cmd)) groups[tierOf(cmd)].push(shortName(cmd));
-    else documented.push(shortName(cmd));
+    if (isImplemented(cmd)) groups[tierOf(cmd)].push(cmd);
+    else documented.push(cmd);
   }
 
-  const sections = ["public", "configurable", "sys"]
-    .filter((tier) => groups[tier].length)
-    .map((tier) => {
-      const names = [...new Set(groups[tier])];
-      return `**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`;
-    });
+  // Un nom ne peut appartenir qu'à un seul palier : une commande dont les
+  // sous-commandes ont des permissions différentes (&clear, &role) serait
+  // sinon listée deux fois. Le palier le plus ouvert gagne, c'est celui qui
+  // décrit ce que la personne peut réellement lancer.
+  const placed = new Set();
+  const sections = [];
+  for (const tier of ["public", "configurable", "sys"]) {
+    const names = commandNames(groups[tier]).filter((n) => !placed.has(n));
+    if (!names.length) continue;
+    for (const n of names) placed.add(n);
+    sections.push(`**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`);
+  }
 
-  if (documented.length) {
-    const names = [...new Set(documented)];
+  const documentedNames = commandNames(documented).filter((n) => !placed.has(n));
+  if (documentedNames.length) {
     sections.push(
-      `\n*Documentées, pas encore actives (${names.length}) — les taper ne fait rien pour l'instant :*\n*${names.join(", ")}*`
+      `\n*Documentées, pas encore actives (${documentedNames.length}) — les taper ne fait rien pour l'instant :*\n*${documentedNames.join(", ")}*`
     );
   }
   return sections.join("\n");
