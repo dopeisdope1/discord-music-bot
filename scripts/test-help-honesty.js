@@ -49,7 +49,7 @@ const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collecti
 
 /** Concatène TOUS les blocs de texte du panneau (un palier dense en a plusieurs). */
 function fullText(member = owner, tier = null) {
-  return buildHelpPanel("g1", member, tier)
+  return buildHelpPanel("g1", member, tier, member.id)
     .components[0].toJSON()
     .components.filter((c) => c.type === 10)
     .map((c) => c.content)
@@ -57,7 +57,7 @@ function fullText(member = owner, tier = null) {
 }
 /** Seuls les blocs de texte APRÈS le titre et la légende (le détail des commandes). */
 function commandsText(member = owner, tier) {
-  return buildHelpPanel("g1", member, tier)
+  return buildHelpPanel("g1", member, tier, member.id)
     .components[0].toJSON()
     .components.filter((c) => c.type === 10)
     .slice(2)
@@ -160,26 +160,40 @@ function commandsText(member = owner, tier) {
     assert.ok(body.includes("**role create**"), body);
   });
 
-  await cas("changer de palier depuis la carte affiche bien le détail de CE palier", async () => {
-    const interaction = {
+  /** Fabrique une fausse interaction de sélection sur le menu &help, lancée par `clicker` sur la commande de `authorId`. */
+  function fakeSelect(values, clicker, authorId) {
+    const i = {
       guild: { id: "g1" },
-      member: owner,
-      values: ["public"],
-      message: { flags: { has: () => false } },
+      member: clicker,
+      user: { id: clicker.id },
+      values,
+      customId: `help_tier:${authorId}`,
       replies: [],
+      updated: null,
       reply(p) {
         this.replies.push(p);
         return Promise.resolve(p);
       },
+      update(p) {
+        this.updated = p;
+        return Promise.resolve(p);
+      },
     };
+    return i;
+  }
+
+  await cas("changer de palier depuis la carte édite le MÊME message en place — jamais de nouveau message", async () => {
+    const interaction = fakeSelect(["public"], owner, owner.id);
     await handleHelpInteraction(interaction);
-    const body = interaction.replies[0].components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.strictEqual(interaction.replies.length, 0, "aucun nouveau message ne doit être créé");
+    assert.ok(interaction.updated, "le message existant doit être édité en place");
+    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(body.includes("pic/avatar"), body);
     assert.ok(!body.includes("role create"), "le palier configurable ne doit plus apparaître");
   });
 
   await cas("le menu garde toujours une option \"Accueil\" — le chemin retour sans retaper &help", () => {
-    const menu = buildHelpPanel("g1", owner, "public")
+    const menu = buildHelpPanel("g1", owner, "public", owner.id)
       .components[0].toJSON()
       .components.find((c) => c.type === 1).components[0];
     const accueil = menu.options.find((o) => o.value === "home");
@@ -188,62 +202,36 @@ function commandsText(member = owner, tier) {
   });
 
   await cas("choisir \"Accueil\" depuis un palier revient bien à la vue compacte", async () => {
-    const interaction = {
-      guild: { id: "g1" },
-      member: owner,
-      values: ["home"],
-      message: { flags: { has: (f) => f === MessageFlags.Ephemeral } },
-      reply: () => {
-        throw new Error("ne devrait pas être appelé");
-      },
-      updated: null,
-      update(p) {
-        this.updated = p;
-        return Promise.resolve(p);
-      },
-    };
+    const interaction = fakeSelect(["home"], owner, owner.id);
     await handleHelpInteraction(interaction);
     const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(/\*\*Commandes publiques\*\* — \d+ commande\(s\)/.test(body), body);
     assert.ok(!body.includes("Usage :"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
   });
 
-  console.log("\nÉphémère vs message public (deux personnes, deux droits différents) :");
+  console.log("\nMessage public unique, réservé à qui a lancé &help :");
 
-  await cas("premier clic sur le message PUBLIC -> nouvelle réponse éphémère", async () => {
-    const interaction = {
-      guild: { id: "g1" },
-      member: owner,
-      values: ["sys"],
-      message: { flags: { has: () => false } },
-      replies: [],
-      reply(p) {
-        this.replies.push(p);
-        return Promise.resolve(p);
-      },
-    };
-    await handleHelpInteraction(interaction);
-    assert.strictEqual(interaction.replies.length, 1);
-    assert.ok(interaction.replies[0].flags & MessageFlags.Ephemeral);
+  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId du menu", () => {
+    const menu = buildHelpPanel("g1", owner, null, owner.id)
+      .components[0].toJSON()
+      .components.find((c) => c.type === 1).components[0];
+    assert.strictEqual(menu.custom_id, `help_tier:${owner.id}`);
   });
 
-  await cas("clic suivant sur SA carte déjà éphémère -> édition en place, pas d'empilement", async () => {
-    let updated = null;
-    const interaction = {
-      guild: { id: "g1" },
-      member: owner,
-      values: ["public"],
-      message: { flags: { has: (f) => f === MessageFlags.Ephemeral } },
-      reply: () => {
-        throw new Error("ne devrait pas être appelé");
-      },
-      update(p) {
-        updated = p;
-        return Promise.resolve(p);
-      },
-    };
+  await cas("l'auteur qui clique édite le message en place", async () => {
+    const interaction = fakeSelect(["sys"], owner, owner.id);
     await handleHelpInteraction(interaction);
-    assert.ok(updated, "aucune édition en place n'a eu lieu");
+    assert.ok(interaction.updated, "le message doit être édité en place pour l'auteur");
+    assert.strictEqual(interaction.replies.length, 0);
+  });
+
+  await cas("QUELQU'UN D'AUTRE qui clique est refusé — jamais le palier d'un autre affiché publiquement à sa place", async () => {
+    const intrus = { id: "intrus-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
+    const interaction = fakeSelect(["sys"], intrus, owner.id);
+    await handleHelpInteraction(interaction);
+    assert.strictEqual(interaction.updated, null, "le message public ne doit pas changer pour un clic d'un autre membre");
+    assert.strictEqual(interaction.replies.length, 1, "un refus doit être envoyé, seulement à l'intrus");
+    assert.ok(interaction.replies[0].flags & MessageFlags.Ephemeral, "le refus doit être privé, pas visible du salon");
   });
 
   console.log("\nGarde-fou contre la dérive :");
@@ -333,7 +321,7 @@ function commandsText(member = owner, tier) {
   console.log("\nRépartition sur plusieurs blocs (le palier dense ne tient pas dans un seul) :");
 
   await cas("un palier dense (\"configurable\") est réparti sur PLUSIEURS blocs de texte, chacun sous la limite Discord", () => {
-    const parts = buildHelpPanel("g1", owner, "configurable")
+    const parts = buildHelpPanel("g1", owner, "configurable", owner.id)
       .components[0].toJSON()
       .components.filter((c) => c.type === 10)
       .slice(2); // titre + légende exclus
@@ -342,7 +330,7 @@ function commandsText(member = owner, tier) {
   });
 
   await cas("la coupe entre deux blocs ne tombe jamais AU MILIEU d'une commande", () => {
-    const parts = buildHelpPanel("g1", owner, "configurable")
+    const parts = buildHelpPanel("g1", owner, "configurable", owner.id)
       .components[0].toJSON()
       .components.filter((c) => c.type === 10)
       .slice(2);

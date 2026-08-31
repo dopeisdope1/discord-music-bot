@@ -283,7 +283,7 @@ const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
   // de la personne (voir utils/helpPanel.js).
   async help(client, message) {
-    await message.reply(buildHelpPanel(message.guild.id, message.member));
+    await message.reply(buildHelpPanel(message.guild.id, message.member, null, message.author.id));
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne

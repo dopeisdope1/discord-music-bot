@@ -112,16 +112,22 @@ function groupByTier(member) {
   return groups;
 }
 
-function buildSelect(availableTiers, current) {
+function buildSelect(availableTiers, current, authorId) {
   // "Accueil" toujours présent dans le même menu : une fois entré dans un
   // palier, il donne le chemin retour sans avoir à retaper &help.
+  // L'ID de l'auteur est encodé dans le customId : le message est public
+  // (pas d'ephémère possible pour une commande texte), mais seul l'auteur
+  // doit pouvoir le piloter (voir handleHelpInteraction).
   const options = [
     new StringSelectMenuOptionBuilder().setLabel("Accueil").setValue("home").setDefault(current === null),
     ...availableTiers.map((tier) =>
       new StringSelectMenuOptionBuilder().setLabel(TIER_LABELS[tier]).setValue(tier).setDefault(tier === current)
     ),
   ];
-  return new StringSelectMenuBuilder().setCustomId(SELECT_ID).setPlaceholder("Choisir un palier").addOptions(options);
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${SELECT_ID}:${authorId}`)
+    .setPlaceholder("Choisir un palier")
+    .addOptions(options);
 }
 
 /**
@@ -133,8 +139,9 @@ function buildSelect(availableTiers, current) {
  * @param {string} guildId
  * @param {import('discord.js').GuildMember} member
  * @param {string|null} [tier] palier actif ("public"/"configurable"/"sys")
+ * @param {string} authorId qui a lancé &help — seul lui peut piloter le menu
  */
-function buildHelpPanel(guildId, member, tier = null) {
+function buildHelpPanel(guildId, member, tier = null, authorId) {
   const prefixes = getPrefixes(guildId);
   const groups = groupByTier(member);
   const availableTiers = TIER_ORDER.filter((t) => groups[t].length);
@@ -174,24 +181,28 @@ function buildHelpPanel(guildId, member, tier = null) {
 
   if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildSelect(availableTiers, activeTier)));
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildSelect(availableTiers, activeTier, authorId)));
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-/** Toutes les interactions "help_tier" (voir index.js) : choix d'un palier. */
+/**
+ * Toutes les interactions "help_tier:<authorId>" (voir index.js) : choix
+ * d'un palier. Message PUBLIC et unique, édité en place à chaque clic —
+ * jamais de nouveau message — mais réservé à qui a lancé &help : n'importe
+ * qui d'autre verrait un palier filtré sur SES droits à lui, potentiellement
+ * plus larges (Sys, configurable), affiché publiquement dans le salon.
+ */
 async function handleHelpInteraction(interaction) {
-  const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0]);
-
-  // Premier clic sur le message PUBLIC (&help) : nouvelle réponse éphémère,
-  // impossible d'éditer le message public sans montrer à tout le salon le
-  // contenu filtré d'une seule personne. Clics suivants (déjà sur SA carte
-  // éphémère) : on édite en place plutôt que d'empiler une carte par choix.
-  if (interaction.message.flags?.has(MessageFlags.Ephemeral)) {
-    return interaction.update(panel).catch(() => {});
+  const [, authorId] = interaction.customId.split(":");
+  if (interaction.user.id !== authorId) {
+    return interaction
+      .reply({ content: "Seule la personne qui a lancé `&help` peut utiliser ce menu.", flags: MessageFlags.Ephemeral })
+      .catch(() => {});
   }
-  return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral }).catch(() => {});
+  const panel = buildHelpPanel(interaction.guild.id, interaction.member, interaction.values[0], authorId);
+  return interaction.update(panel).catch(() => {});
 }
 
 module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID };
