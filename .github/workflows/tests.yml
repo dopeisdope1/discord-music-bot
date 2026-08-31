@@ -1,0 +1,28 @@
+# Le déploiement est automatique depuis que le service Railway est branché sur
+# ce dépôt : tout ce qui atteint `main` part en production. Cette CI est donc
+# le dernier endroit où une régression peut encore être arrêtée.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Même version que le service Railway (node@22), pour qu'un test ne
+          # puisse pas passer ici et échouer là-bas.
+          node-version: "22"
+          cache: npm
+
+      # `npm ci` plutôt qu'`install` : installe exactement le package-lock,
+      # sans le réécrire au passage.
+      - run: npm ci
+
+      - run: npm test

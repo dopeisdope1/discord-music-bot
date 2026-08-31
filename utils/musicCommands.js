@@ -23,6 +23,7 @@ const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
+const { logHandlers } = require("./logCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -475,6 +476,19 @@ const modHandlers = {
   search: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "wiki") return utilityHandlers.searchWiki(client, message, args.slice(1));
   },
+
+  // Logs : équivalents texte de &panel > Logs, même store et même création
+  // automatique — voir utils/logCommands.js.
+  settings: logHandlers.settings,
+  autoconfiglog: logHandlers.autoconfiglog,
+  modlog: logHandlers.modlog,
+  memberlog: logHandlers.memberlog,
+  rolelog: logHandlers.rolelog,
+  channellog: logHandlers.channellog,
+  voicelog: logHandlers.voicelog,
+  serverlog: logHandlers.serverlog,
+  botlog: logHandlers.botlog,
+  messagelog: logHandlers.messagelog,
 };
 
 /**
@@ -541,9 +555,41 @@ async function handleMusicTextCommand(client, message) {
   }
 }
 
+// Sous-commandes RÉELLEMENT routées par les commandes qui en dispatchent.
+// Sans cette table, &help comptait "&set modlogs" ou "&clear owners" comme
+// actives au seul motif que "set" et "clear" existent — alors que ces
+// sous-mots ne mènent nulle part et que les taper ne fait rien.
+//
+// Une commande absente d'ici n'a pas de sous-commande : un deuxième mot
+// documenté après elle ("server pic") n'est donc pas géré. À tenir à jour
+// avec les dispatchers ci-dessus — scripts/test-help-honesty.js vérifie au
+// moins que chacune de ces commandes existe bien.
+const MOD_SUBCOMMANDS = {
+  role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
+  channel: ["create", "delete", "rename", "topic"],
+  set: ["name", "pic", "banner", "muterole"],
+  clear: ["sanctions", "all"],
+  del: ["sanction"],
+  ticket: ["setup"],
+  giveaway: ["start", "reroll"],
+  end: ["giveaway"],
+  search: ["wiki"],
+  badwords: ["on", "off", "add", "del", "clear", "list"],
+  autoreact: ["list", "add"],
+  remove: ["activity"],
+  modlog: ["on", "off"],
+  memberlog: ["on", "off"],
+  rolelog: ["on", "off"],
+  channellog: ["on", "off"],
+  voicelog: ["on", "off"],
+  serverlog: ["on", "off"],
+  botlog: ["on", "off"],
+  messagelog: ["on", "off"],
+};
+
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond
 // vraiment sur le préfixe "&" : &help s'en sert pour ne plus présenter de la
 // même façon une commande câblée et une commande seulement documentée (voir
 // utils/implementedCommands.js). Dérivée de la table réelle, jamais recopiée
 // à la main — les deux ne peuvent donc pas diverger.
-module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers) };
+module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS };

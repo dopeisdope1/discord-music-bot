@@ -13,8 +13,11 @@
 // fichier fermerait la boucle et renverrait un module vide.
 let cache = null;
 
-function names() {
-  if (!cache) cache = new Set(require("./musicCommands").MOD_COMMAND_NAMES);
+function tables() {
+  if (!cache) {
+    const { MOD_COMMAND_NAMES, MOD_SUBCOMMANDS } = require("./musicCommands");
+    cache = { names: new Set(MOD_COMMAND_NAMES), subcommands: MOD_SUBCOMMANDS };
+  }
   return cache;
 }
 
@@ -28,7 +31,21 @@ function isImplemented(command) {
   // Les entrées sans préfixe ("uo clear") ne passent pas par la table du
   // préfixe "&" : elles ont leur propre déclencheur (utils/selfClear.js).
   if (!command.prefix) return true;
-  return names().has(command.name.trim().split(/[\s<[|]/)[0].toLowerCase());
+
+  const { names, subcommands } = tables();
+  const mots = command.name.trim().split(/\s+/);
+  const base = mots[0].toLowerCase().replace(/[<[|].*$/, "");
+  if (!names.has(base)) return false;
+
+  // Un deuxième mot ORDINAIRE ("set modlogs") désigne une sous-commande ; un
+  // paramètre ("mute <membre>", "clear [nombre]") désigne la commande de base,
+  // qui est bien celle qu'on vient de trouver.
+  const second = (mots[1] || "").toLowerCase();
+  if (!second || !/^[a-z]+$/.test(second)) return true;
+
+  // Le deuxième mot est un vrai mot : la commande doit le router pour que la
+  // ligne documentée corresponde à quelque chose.
+  return Boolean(subcommands[base]?.includes(second));
 }
 
 module.exports = { isImplemented };

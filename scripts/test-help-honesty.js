@@ -57,8 +57,39 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
   });
 
   await cas("une commande seulement documentée est reconnue comme telle", () => {
-    for (const name of ["antitoken <on/off/lock>", "modlog on [salon]", "changelogs", "updatebot"]) {
+    for (const name of ["antitoken <on/off/lock>", "changelogs", "updatebot"]) {
       assert.strictEqual(isImplemented({ name, prefix: "mod" }), false, `${name} ne devrait pas être annoncée active`);
+    }
+  });
+
+  await cas("une SOUS-COMMANDE non routée n'est pas comptée active", () => {
+    // "set" et "clear" existent, mais leurs dispatchers ne connaissent pas ces
+    // sous-mots : les taper ne fait rien. C'est le faux positif que la table
+    // MOD_SUBCOMMANDS supprime.
+    for (const name of ["set modlogs", "set boostembed", "clear owners", "clear customs", "ticket settings", "server pic"]) {
+      assert.strictEqual(isImplemented({ name, prefix: "mod" }), false, `${name} n'est routée nulle part`);
+    }
+  });
+
+  await cas("une sous-commande réellement routée reste comptée active", () => {
+    for (const name of ["set muterole <rôle>", "clear all sanctions", "role create <nom>", "giveaway start <durée> <lot>", "modlog on [salon]"]) {
+      assert.strictEqual(isImplemented({ name, prefix: "mod" }), true, `${name} est bien routée`);
+    }
+  });
+
+  await cas("un paramètre n'est jamais pris pour une sous-commande", () => {
+    // "clear <@membre|id> [nombre]" désigne la commande de base, pas un
+    // sous-mot "membre" qui n'existerait pas.
+    for (const name of ["clear <@membre|id> [nombre]", "kick <membre> [raison]", "mute <membre> [raison]"]) {
+      assert.strictEqual(isImplemented({ name, prefix: "mod" }), true, name);
+    }
+  });
+
+  await cas("chaque dispatcher déclaré dans MOD_SUBCOMMANDS existe vraiment", () => {
+    const { MOD_COMMAND_NAMES, MOD_SUBCOMMANDS } = require("../utils/musicCommands");
+    const handlers = new Set(MOD_COMMAND_NAMES);
+    for (const base of Object.keys(MOD_SUBCOMMANDS)) {
+      assert.ok(handlers.has(base), `MOD_SUBCOMMANDS déclare "${base}" qui n'a pas de handler`);
     }
   });
 
@@ -102,13 +133,18 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
   console.log("\nGarde-fou contre la dérive :");
 
   await cas("chaque commande annoncée active a bien un handler dans la table", () => {
-    const { MOD_COMMAND_NAMES } = require("../utils/musicCommands");
+    const { MOD_COMMAND_NAMES, MOD_SUBCOMMANDS } = require("../utils/musicCommands");
     const handlers = new Set(MOD_COMMAND_NAMES);
     for (const category of CATEGORIES) {
       for (const cmd of category.commands) {
         if (!cmd.prefix || !isImplemented(cmd)) continue;
-        const word = cmd.name.trim().split(/[\s<[|]/)[0].toLowerCase();
-        assert.ok(handlers.has(word), `${cmd.name} est annoncée active sans handler`);
+        const mots = cmd.name.trim().split(/\s+/);
+        const base = mots[0].toLowerCase().replace(/[<[|].*$/, "");
+        assert.ok(handlers.has(base), `${cmd.name} est annoncée active sans handler`);
+        const second = (mots[1] || "").toLowerCase();
+        if (second && /^[a-z]+$/.test(second)) {
+          assert.ok(MOD_SUBCOMMANDS[base]?.includes(second), `${cmd.name} est annoncée active sans que "${second}" soit routé`);
+        }
       }
     }
   });

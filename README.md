@@ -323,6 +323,31 @@ masse** garde son avertissement — c'est le seul écran dont un mauvais clic
 bannit le serveur entier. `scripts/test-panel-controls.js` échoue si une
 rubrique se remet à expliquer au lieu de montrer.
 
+#### Logs en commandes texte
+
+Tout ce que fait `&panel` > Logs se fait aussi en tapant, avec la clé
+`logs.manage` :
+
+| Commande | Catégorie de logs |
+|---|---|
+| `&modlog on\|off [salon]` | Modération |
+| `&memberlog on\|off [salon]` | Membres (arrivées/départs) |
+| `&rolelog on\|off [salon]` | Rôles |
+| `&channellog on\|off [salon]` | Salons |
+| `&voicelog on\|off [salon]` | Vocal |
+| `&serverlog on\|off [salon]` | Serveur |
+| `&botlog on\|off [salon]` | Bots |
+| `&messagelog on\|off [salon]` | Messages (édition/suppression) |
+
+Sans `on`/`off`, la commande affiche l'état courant. Sans salon, `on` prend
+le salon où elle est tapée. Un salon vocal, ou un salon où le bot ne peut pas
+écrire, est **refusé explicitement** plutôt que d'accepter une configuration
+qui ferait disparaître les logs en silence.
+
+`&settings` résume les huit catégories, et `&autoconfiglog` crée les salons
+manquants — la même fonction que le bouton du panel
+(`utils/logChannels.js`), pas une seconde version.
+
 ### `&panel` — rubriques
 
 Chaque rubrique n'apparaît que si tu y as droit :
