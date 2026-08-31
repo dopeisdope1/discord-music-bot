@@ -535,9 +535,14 @@ async function clear(client, message, args) {
     extra: { count: deleted, targetUserId },
   });
 
-  // Confirmation supprimée instantanément après l'envoi : le salon de logs
-  // (voir report ci-dessus) garde la trace permanente, pas besoin que celle-ci
-  // reste affichée dans le salon nettoyé.
+  // La commande elle-même disparaît aussi : laisser "&clear @membre 50" au
+  // milieu d'un salon qu'on vient de nettoyer annule une partie du ménage.
+  // Le salon de logs (voir report ci-dessus) garde la trace permanente.
+  // `.catch` obligatoire : si la cible est l'auteur, le message vient déjà
+  // d'être supprimé par le nettoyage lui-même.
+  await message.delete().catch(() => {});
+
+  // Confirmation supprimée instantanément après l'envoi, pour la même raison.
   const confirmation = await message.channel
     .send({ embeds: [buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`)] })
     .catch(() => null);
