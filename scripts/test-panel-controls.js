@@ -99,6 +99,52 @@ function render(section) {
     assert.ok(!texte.includes("moderation.kick"), "les clés de permission n'ont pas à être listées en texte");
   });
 
+  console.log("\nNavigation regroupée par famille :");
+
+  await cas("le menu principal propose des familles, pas les 16 rubriques", () => {
+    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
+    const nav = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":nav"));
+    assert.ok(nav, "le menu de navigation doit exister");
+    assert.ok(nav.components[0].options.length <= 8, `${nav.components[0].options.length} entrées — c'est de nouveau une liste à faire défiler`);
+    assert.ok(nav.components[0].options.length < SECTIONS.length, "il doit y avoir moins de familles que de rubriques");
+  });
+
+  await cas("un second menu apparaît pour choisir dans une famille qui en contient plusieurs", () => {
+    const json = buildConfigPanel(guild, "sys", member).components[0].toJSON();
+    const sub = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":subnav"));
+    assert.ok(sub, "la famille Permissions et accès contient plusieurs rubriques");
+    const valeurs = sub.components[0].options.map((o) => o.value);
+    assert.ok(valeurs.includes("sys") && valeurs.includes("banall"));
+  });
+
+  await cas("aucun second menu quand la famille n'a qu'une rubrique", () => {
+    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
+    assert.ok(!json.components.some((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":subnav")));
+  });
+
+  await cas("toutes les rubriques restent atteignables — aucune perdue au regroupement", () => {
+    const atteignables = new Set();
+    for (const section of SECTIONS) {
+      const json = buildConfigPanel(guild, section, member).components[0].toJSON();
+      const sub = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":subnav"));
+      if (sub) for (const o of sub.components[0].options) atteignables.add(o.value);
+      else atteignables.add(section);
+    }
+    for (const section of SECTIONS) {
+      assert.ok(atteignables.has(section), `${section} n'est plus atteignable par la navigation`);
+    }
+  });
+
+  await cas("chaque écran reste distinct — le regroupement n'a fusionné aucun contrôle", () => {
+    // "Rang sys" donne accès à tout le bot, "Ban de masse" bannit le serveur
+    // entier : même famille, jamais le même écran.
+    const sys = render("sys");
+    const banall = render("banall");
+    assert.notStrictEqual(sys.texte, banall.texte);
+    assert.ok(banall.texte.includes("bannit tout le serveur"));
+    assert.ok(!sys.texte.includes("bannit tout le serveur"));
+  });
+
   await cas("l'avertissement du ban de masse est conservé", () => {
     // Seule exception assumée : un mauvais clic y bannit le serveur entier.
     assert.ok(render("banall").texte.includes("bannit tout le serveur"));

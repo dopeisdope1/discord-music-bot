@@ -107,12 +107,61 @@ const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys",
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
+// Seize rubriques dans un seul menu, c'était une liste à faire défiler dont on
+// ne retenait rien. Elles sont regroupées par FAMILLE : le menu principal en
+// propose sept, et un second menu n'apparaît que pour choisir dans la famille
+// ouverte.
+//
+// Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
+// ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
+// famille sans jamais partager le même écran : l'un donne accès à tout le bot,
+// l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
+const FAMILIES = [
+  { key: "accueil", label: "Accueil", description: "Vue d'ensemble", sections: ["home"] },
+  { key: "acces", label: "Permissions et accès", description: "Qui a le droit de quoi", sections: ["permissions", "roles", "access", "sys", "banall"] },
+  { key: "protection", label: "Protection", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
+  { key: "journal", label: "Logs et historique", description: "Salons de logs, recherche dans l'historique", sections: ["logs", "history"] },
+  { key: "communaute", label: "Communauté", description: "Bienvenue, tickets, vocaux temporaires", sections: ["welcome", "tickets", "voice"] },
+  { key: "bot", label: "Réglages du bot", description: "Préfixes, dispenses", sections: ["prefixes", "moderation"] },
+];
+
+const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
+
+/** Rubriques d'une famille auxquelles la personne a réellement droit. */
+function familySections(family, member, isOwner) {
+  const visibles = sectionsFor(member, isOwner);
+  return family.sections.map((key) => visibles.find((s) => s.key === key)).filter(Boolean);
+}
+
 function buildNav(current, member, isOwner) {
+  const famille = familyOf(current);
+  const disponibles = FAMILIES.filter((f) => familySections(f, member, isOwner).length);
   return new StringSelectMenuBuilder()
     .setCustomId(`${ID}:nav`)
-    .setPlaceholder("Choisis une rubrique à configurer")
+    .setPlaceholder("Choisis une famille de réglages")
     .addOptions(
-      sectionsFor(member, isOwner).map((s) =>
+      disponibles.map((f) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(f.label)
+          .setDescription(f.description.slice(0, 100))
+          .setValue(f.key)
+          .setDefault(f.key === famille.key)
+      )
+    );
+}
+
+/**
+ * Second menu, affiché seulement quand la famille ouverte contient plus d'une
+ * rubrique visible : sinon il n'offrirait aucun choix.
+ */
+function buildSubNav(current, member, isOwner) {
+  const rubriques = familySections(familyOf(current), member, isOwner);
+  if (rubriques.length < 2) return null;
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${ID}:subnav`)
+    .setPlaceholder("Choisis une rubrique")
+    .addOptions(
+      rubriques.map((s) =>
         new StringSelectMenuOptionBuilder()
           .setLabel(s.label)
           .setDescription(s.description.slice(0, 100))
@@ -374,6 +423,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
+  const subNav = buildSubNav(meta.key, member, isOwner);
+  if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
 
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
@@ -748,6 +799,14 @@ async function handleConfigInteraction(interaction) {
   const goto = (section, state) => interaction.update(buildConfigPanel(guild, section, member, state));
 
   if (action === "nav") {
+    // Le menu principal donne une famille : on ouvre sa première rubrique
+    // accessible, celle qui a le plus de chances d'être celle qu'on cherche.
+    const famille = FAMILIES.find((f) => f.key === interaction.values[0]);
+    const rubriques = famille ? familySections(famille, member, isOwner) : [];
+    return goto(rubriques[0]?.key || "home");
+  }
+
+  if (action === "subnav") {
     return goto(interaction.values[0]);
   }
 
