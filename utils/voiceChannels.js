@@ -63,15 +63,33 @@ function setHub(guildId, channelId) {
   saveHubs();
 }
 
-/** Enregistre un salon temporaire fraîchement créé, avec son propriétaire. */
-function registerChannel(channelId, guildId, ownerId) {
-  loadChannels()[channelId] = { guildId, ownerId };
+/**
+ * Enregistre un salon temporaire fraîchement créé, avec son propriétaire et le
+ * salon texte qui l'accompagne (celui qui porte le panneau de contrôle).
+ * @param {string|null} [textChannelId] null si le salon texte n'a pas pu être créé
+ */
+function registerChannel(channelId, guildId, ownerId, textChannelId = null) {
+  loadChannels()[channelId] = { guildId, ownerId, textChannelId };
   saveChannels();
 }
 
-/** @returns {{ guildId: string, ownerId: string }|null} */
+/** @returns {{ guildId: string, ownerId: string, textChannelId?: string|null }|null} */
 function getChannelInfo(channelId) {
   return loadChannels()[channelId] || null;
+}
+
+/**
+ * Salon vocal auquel appartient un salon texte de panneau.
+ *
+ * C'est ce qui permet aux boutons de fonctionner depuis le salon TEXTE : sans
+ * ça, le panneau ne saurait pas sur quel salon vocal agir, puisqu'on ne clique
+ * plus depuis le vocal lui-même.
+ *
+ * @returns {string|null} identifiant du salon vocal
+ */
+function getVoiceChannelForText(textChannelId) {
+  const data = loadChannels();
+  return Object.keys(data).find((voiceId) => data[voiceId].textChannelId === textChannelId) || null;
 }
 
 function unregisterChannel(channelId) {
@@ -82,4 +100,4 @@ function unregisterChannel(channelId) {
   return true;
 }
 
-module.exports = { getHub, setHub, registerChannel, getChannelInfo, unregisterChannel };
+module.exports = { getHub, setHub, registerChannel, getChannelInfo, getVoiceChannelForText, unregisterChannel };

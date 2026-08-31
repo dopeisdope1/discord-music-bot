@@ -674,20 +674,33 @@ sans se coordonner.
 
 ## 6septies. Salons vocaux temporaires (`&voicehub`, `&vc`)
 
-`&voicehub #salon-vocal` (clé `server.voice.manage`) désigne un salon
-"générateur" : le rejoindre crée aussitôt un salon vocal personnel
-("Salon de {pseudo}", dans la même catégorie) et y déplace le membre.
-Supprimé automatiquement dès qu'il se vide — pas de nettoyage manuel à
-faire. `&voicehub off` désactive.
+`&voicehub` désigne un **salon générateur**. Le rejoindre crée, pour la
+personne :
 
-Dans son propre salon temporaire, le membre qui l'a créé (ou le rang
-sys/le propriétaire du bot) peut le gérer sans permission particulière —
-c'est une question de propriété, pas de rôle :
+1. **un salon vocal personnel**, où elle est déplacée aussitôt ;
+2. **un salon texte compagnon**, placé juste au-dessus, qui porte le panneau
+   de contrôle à boutons.
 
-- `&vc lock` / `&vc unlock` — autorise/interdit `@everyone` à s'y connecter.
-- `&vc limit <n>` — limite de places (0 = illimité).
-- `&vc rename <nom>` — renomme le salon.
-- `&vc kick @membre` — déconnecte quelqu'un de CE salon précisément.
+Le salon texte est **verrouillé en écriture pour tout le monde** : personne
+n'y discute, on ne fait qu'y cliquer. La permission Discord *Administrateur*
+passe outre les overwrites par construction, les administrateurs peuvent donc
+y écrire sans qu'on ait à l'autoriser. Le bot, lui, est explicitement
+autorisé — il n'est pas forcément administrateur, et sans ça il ne pourrait
+pas poster son propre panneau.
+
+Les boutons du panneau agissent sur le salon **vocal apparié**, pas sur le
+salon où l'on clique : l'appariement est retenu dans
+`utils/voiceChannels.js` (`getVoiceChannelForText`). Un clic depuis le vocal
+lui-même reste accepté, pour les cartes postées avant ce changement.
+
+Le chat du salon vocal reçoit de son côté un **message d'accueil qui mentionne
+réellement le propriétaire** (le client Discord.js désactive toutes les
+mentions par défaut, d'où l'`allowedMentions` ciblé) et récapitule les
+commandes équivalentes : `&vc lock|unlock`, `&vc add|remove|kick @membre`,
+`&vc rename <nom>`, `&vc limit <n>`, `&vc transfer @membre`.
+
+Quand le salon vocal se vide, il est supprimé — **et son salon texte avec**,
+sinon un salon mort s'accumulerait à chaque création.
 
 ## 6octies. Communauté : tickets, sondages, giveaways
 

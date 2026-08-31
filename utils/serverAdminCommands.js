@@ -722,14 +722,20 @@ async function vc(client, message, args) {
 // propriétaire, plutôt que de devoir taper &vc ... — mêmes vérifications
 // que la commande texte (canManageVoiceChannel), rien de plus permissif.
 
+/**
+ * Panneau de contrôle, posté dans le salon TEXTE qui accompagne le salon vocal
+ * temporaire. Les boutons agissent sur le salon vocal apparié (voir
+ * utils/voiceChannels.js::getVoiceChannelForText), pas sur le salon où l'on
+ * clique.
+ */
 function buildVoiceControlCard(channel, ownerId) {
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Salon vocal de ${channel.name}`));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Panel de contrôle"));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      `${ownerId ? `<@${ownerId}> ` : ""}Ce salon est à toi tant que tu y es connecté — utilise les boutons ci-dessous pour le gérer, ou tape ` +
-        "`&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
+      `${ownerId ? `<@${ownerId}> ` : ""}Rejoins ton salon vocal puis utilise les boutons ci-dessous pour le gérer.\n` +
+        "Équivalent en texte : `&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -753,9 +759,57 @@ function buildVoiceControlCard(channel, ownerId) {
   };
 }
 
+/**
+ * Message posté dans le chat du salon VOCAL lui-même : il mentionne la
+ * personne (d'où allowedMentions, sans quoi le client Discord.js n'envoie
+ * aucune notification — voir index.js) et récapitule ce qu'elle peut taper.
+ * Pas de boutons ici : ils sont dans le salon texte du panneau, une seule
+ * fois, pour ne pas dupliquer les mêmes contrôles à deux endroits.
+ */
+function buildVoiceWelcomeCard(channel, ownerId, textChannelId) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 👋 Bienvenue <@${ownerId}>`));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        "Voici un aperçu des commandes de ton salon.",
+        "",
+        "**Accès**",
+        "> `&vc unlock` · `&vc lock` — Ouvrir ou verrouiller",
+        "> `&vc add @membre` · `&vc remove @membre` — Autoriser / retirer",
+        "> `&vc kick @membre` — Déconnecter du salon",
+        "",
+        "**Salon**",
+        "> `&vc rename <nom>` — Renommer",
+        "> `&vc limit <n>` — Limiter les places",
+        "> `&vc transfer @membre` — Céder la propriété",
+        "",
+        textChannelId ? `Les mêmes actions en boutons : <#${textChannelId}>` : null,
+      ]
+        .filter((l) => l !== null)
+        .join("\n")
+    )
+  );
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+    allowedMentions: { users: [ownerId] },
+  };
+}
+
 async function handleVoiceControlInteraction(interaction) {
   const [, action] = interaction.customId.split(":");
-  const channel = interaction.channel;
+
+  // Le panneau vit dans un salon TEXTE : on remonte au salon vocal qu'il
+  // pilote. Un clic depuis le vocal lui-même reste accepté (cartes postées
+  // avant ce changement, et &vc qui répond dans le vocal).
+  const clique = interaction.channel;
+  let channel = clique?.type === ChannelType.GuildVoice ? clique : null;
+  if (!channel && clique) {
+    const voiceId = voiceChannels.getVoiceChannelForText(clique.id);
+    channel = voiceId ? interaction.guild.channels.cache.get(voiceId) || null : null;
+  }
   if (!channel || channel.type !== ChannelType.GuildVoice) return;
   if (!canManageVoiceChannel(interaction.member, channel)) {
     return interaction.reply({ content: "Seul le propriétaire de ce salon peut le gérer.", flags: MessageFlags.Ephemeral });
@@ -833,6 +887,7 @@ module.exports = {
   voicehub,
   vc,
   buildVoiceControlCard,
+  buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
   handleConfirmInteraction,
   requestConfirmation,
