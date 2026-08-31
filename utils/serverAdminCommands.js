@@ -788,11 +788,20 @@ async function handleVoiceControlInteraction(interaction) {
 
   // Le panneau est PARTAGÉ (un seul salon pour tout le monde) : le salon
   // ciblé est celui où la personne qui clique est connectée EN VOCAL à cet
-  // instant, pas celui où elle a cliqué.
+  // instant, pas celui où elle a cliqué. Doit être un salon TEMPORAIRE
+  // réellement enregistré (voiceChannels.getChannelInfo) — sans ce
+  // contrôle, le rang sys/owner passait outre canManageVoiceChannel et
+  // pouvait agir sur N'IMPORTE QUEL salon vocal où il se trouvait
+  // connecté (le générateur lui-même y compris), pas seulement les vrais
+  // salons temporaires. Même garde-fou que la commande texte &vc (ci-dessus).
   const voiceChannelId = interaction.member?.voice?.channelId;
   const channel = voiceChannelId ? interaction.guild.channels.cache.get(voiceChannelId) : null;
-  if (!channel || channel.type !== ChannelType.GuildVoice) {
-    return interaction.reply({ content: "Rejoins d'abord ton salon vocal temporaire, puis reclique.", flags: MessageFlags.Ephemeral });
+  const isTempChannel = channel?.type === ChannelType.GuildVoice && voiceChannels.getChannelInfo(channel.id);
+  if (!isTempChannel) {
+    return interaction.reply({
+      content: "Rejoins d'abord TON salon vocal temporaire (créé en rejoignant le générateur), puis reclique.",
+      flags: MessageFlags.Ephemeral,
+    });
   }
   if (!canManageVoiceChannel(interaction.member, channel)) {
     return interaction.reply({ content: "Seul le propriétaire de ce salon peut le gérer.", flags: MessageFlags.Ephemeral });

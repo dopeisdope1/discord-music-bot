@@ -831,6 +831,17 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       await created
         .send(buildVoiceWelcomeCard(created, newState.member.id))
         .catch((err) => console.error("[voiceChannels] message d'accueil :", err.message));
+    } else {
+      // Échec silencieux jusqu'ici (juste un console.error côté serveur) :
+      // la personne qui rejoint le générateur ne voyait RIEN se passer, sans
+      // savoir pourquoi. Le chat du générateur lui-même reste le seul salon
+      // sûr où prévenir (pas encore de salon personnel à ce stade).
+      await hub
+        ?.send({
+          content: `<@${newState.member.id}> Échec de la création de ton salon vocal — il manque probablement au bot la permission **Gérer les salons** sur ce serveur. Préviens un admin.`,
+          allowedMentions: { users: [newState.member.id] },
+        })
+        .catch(() => {});
     }
   }
 

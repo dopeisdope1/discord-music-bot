@@ -84,6 +84,8 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
 
   console.log("\nLes boutons agissent sur le salon vocal COURANT de la personne qui clique :");
 
+  const HUB = "hub-non-enregistre";
+
   const interactionConnecteA = (voiceChannelId, membreId, clickChannel) => {
     const reponses = [];
     return {
@@ -97,6 +99,10 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
         channels: {
           cache: new Collection([
             [VOCAL, { id: VOCAL, type: ChannelType.GuildVoice, name: "Salon de uo", permissionOverwrites: { edit: async () => {} } }],
+            // Le générateur lui-même : un VRAI salon vocal, jamais enregistré
+            // comme salon temporaire (voiceChannels.registerChannel n'est
+            // jamais appelé dessus).
+            [HUB, { id: HUB, type: ChannelType.GuildVoice, name: "➕ Nouveau salon vocal", permissionOverwrites: { edit: async () => {} } }],
           ]),
         },
       },
@@ -136,6 +142,18 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     const interaction = interactionConnecteA(VOCAL, PROPRIO, { id: VOCAL, type: ChannelType.GuildVoice });
     await handleVoiceControlInteraction(interaction);
     assert.strictEqual(interaction._reponses[0]?.content, "Salon verrouillé.");
+  });
+
+  await cas("connecté à un salon vocal RÉEL mais jamais enregistré (le générateur lui-même) -> refusé, MÊME pour le propriétaire du bot", async () => {
+    // Bug réel signalé : le rang owner/sys passait outre canManageVoiceChannel
+    // sans vérifier que le salon était bien un salon temporaire enregistré —
+    // le propriétaire du bot pouvait "gérer" n'importe quel salon vocal où
+    // il se trouvait connecté, générateur y compris, juste en cliquant
+    // depuis le panneau partagé.
+    const salonPanel = { id: PANEL, type: ChannelType.GuildText };
+    const interaction = interactionConnecteA(HUB, "owner-bot", salonPanel);
+    await handleVoiceControlInteraction(interaction);
+    assert.ok(interaction._reponses[0]?.content.includes("Rejoins"), JSON.stringify(interaction._reponses));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
