@@ -163,6 +163,19 @@ npm run deploy
 npm start
 ```
 
+Au démarrage, le bot affiche le commit qu'il fait tourner :
+
+```
+✅ Connecté en tant que xd#1234
+[version] 52e5b01 sur main — feat: menus déroulants pour le giveaway
+```
+
+Ça vient des variables `RAILWAY_GIT_*`, que Railway ne renseigne que si le
+service est **branché sur le dépôt GitHub** (Settings > Source > Connect
+Repo). Déployé autrement (`railway up` depuis un poste) la ligne dit
+`commit inconnu` : c'est le signe que les pushs sur `main` ne déclenchent
+rien et qu'il faudra redéployer à la main à chaque fois.
+
 ## 6. Commandes disponibles
 
 | Commande      | Description                                   |
