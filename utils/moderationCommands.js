@@ -484,9 +484,13 @@ async function clear(client, message, args) {
   const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
   const idMatch = args[0]?.match(/^\d{15,25}$/);
   const targetUserId = mentionMatch?.[1] || idMatch?.[0];
-  if (!targetUserId) {
-    return reply(message, "error", "Indique un membre : `clear @membre [nombre]` ou `clear <id> [nombre]`.");
-  }
+
+  // Sans cible, on sort EN SILENCE plutôt que d'expliquer la syntaxe : ce bot
+  // ne connaît que "&clear <@membre|id>", alors que "&clear" seul et
+  // "&clear <nombre>" sont la syntaxe du CrowBot, avec qui le préfixe "&" est
+  // partagé. Répondre "indique un membre" reviendrait à lui couper la parole
+  // sur ses propres commandes.
+  if (!targetUserId) return;
   const remaining = args.slice(1);
 
   let count = DEFAULT_CLEAR_COUNT;

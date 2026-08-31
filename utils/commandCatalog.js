@@ -74,7 +74,7 @@ const CATEGORIES = [
         name: "clear <@membre|id> [nombre]",
         prefix: "mod",
         permission: "moderation.clear",
-        aliases: ["purge"], description: "Supprime les messages récents d'un membre précis dans le salon",
+        aliases: ["purge"], description: "Supprime les messages récents d'un membre précis dans le salon. La cible est obligatoire : sans elle, le bot laisse la main au CrowBot",
       },
       { name: "kick @membre [raison]", prefix: "mod", permission: "moderation.kick", description: "Expulse un membre" },
       {

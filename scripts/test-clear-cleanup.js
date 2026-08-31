@@ -183,5 +183,55 @@ const msg = (id, authorId, referenceId = null) => ({
     await moderationHandlers.clear({ user: { id: BOT } }, commande, [`<@${MOD}>`]);
   });
 
+  console.log("\n&clear sans cible — le CrowBot garde la parole :");
+
+  const clearSansCible = async (args) => {
+    const reponses = [];
+    const commande = {
+      content: `&clear ${args.join(" ")}`,
+      author: { id: MOD, tag: "mod#0001" },
+      member: {
+        id: MOD,
+        guild: { id: "g1" },
+        roles: { cache: new Collection([["role-mod", { id: "role-mod" }]]) },
+        permissions: new PermissionsBitField(),
+      },
+      guild: { id: "g1", members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) } } },
+      channel: {
+        id: "c1",
+        messages: { fetch: async () => new Collection() },
+        bulkDelete: async () => new Collection(),
+        send: async () => ({ delete: async () => {} }),
+      },
+      mentions: { users: new Collection(), members: new Collection() },
+      reply: async (p) => {
+        reponses.push(p);
+        return {};
+      },
+      delete: async () => {},
+    };
+    await moderationHandlers.clear({ user: { id: BOT } }, commande, args);
+    return reponses;
+  };
+
+  await cas("`&clear` seul ne répond rien", async () => {
+    assert.deepStrictEqual(await clearSansCible([]), []);
+  });
+
+  await cas("`&clear 50` ne répond rien — c'est la syntaxe du CrowBot", async () => {
+    // Le préfixe "&" est partagé : expliquer la syntaxe reviendrait à couper
+    // la parole à l'autre bot sur sa propre commande.
+    assert.deepStrictEqual(await clearSansCible(["50"]), []);
+  });
+
+  await cas("`&clear mot` ne répond rien non plus", async () => {
+    assert.deepStrictEqual(await clearSansCible(["nimportequoi"]), []);
+  });
+
+  await cas("mais `&clear <@id>` agit bien", async () => {
+    const reponses = await clearSansCible([`<@${CIBLE}>`]);
+    assert.strictEqual(reponses.length, 1, "une cible valide doit produire une réponse");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();
