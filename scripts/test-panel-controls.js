@@ -21,8 +21,9 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection } = require("discord.js");
+const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel, handleConfigInteraction, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("../utils/permissions/store");
 
 let reussis = 0;
@@ -169,6 +170,190 @@ function render(section, state) {
     assert.ok(texte.includes("Commandes débloquées par ce rôle (0)"), texte);
     assert.ok(texte.includes("Accès sans commande dédiée (1)"), texte);
     assert.ok(!texte.includes("panel.roles.manage"), "la clé technique ne doit pas apparaître, seulement son libellé");
+  });
+
+  console.log("\nCréer / supprimer un rôle, le marquer exclusif (permissions > rôle) :");
+
+  /** Un serveur assez complet pour que utils/serverAdminCommands.js::roleAdmin fonctionne (create/delete réels). */
+  function fakeGuildForRoleAdmin() {
+    const rolesCache = new Collection();
+    const g = {
+      id: "g-rolecrud",
+      name: "Serveur",
+      roles: {
+        cache: rolesCache,
+        create: async ({ name, reason }) => {
+          const created = {
+            id: `role-created-${rolesCache.size + 1}`,
+            name,
+            position: 1,
+            hexColor: "#000000",
+            hoist: false,
+            mentionable: false,
+            createdTimestamp: Date.now(),
+            members: { size: 0 },
+            permissions: { toArray: () => [] },
+            toString() {
+              return `<@&${this.id}>`;
+            },
+          };
+          rolesCache.set(created.id, created);
+          return created;
+        },
+      },
+      members: {
+        me: { permissions: new PermissionsBitField(PermissionsBitField.All), roles: { highest: { position: 10 } } },
+        cache: new Collection(),
+      },
+      channels: { cache: new Collection() },
+    };
+    return g;
+  }
+
+  await cas("bouton \"Créer un rôle\" visible pour qui a server.roles.manage", () => {
+    const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const bouton = boutons.find((b) => b.custom_id === `${ID}:rolecreate`);
+    assert.ok(bouton, "le bouton \"Créer un rôle\" est absent");
+  });
+
+  await cas("cliquer \"Créer un rôle\" (pas encore un modal) ouvre bien une modale, ne crée rien tout de suite", async () => {
+    let modalShown = null;
+    const g = fakeGuildForRoleAdmin();
+    const interaction = {
+      customId: `${ID}:rolecreate`,
+      member,
+      guild: g,
+      client: {},
+      user: { id: "owner-1", tag: "owner#0001" },
+      isModalSubmit: () => false,
+      showModal: async (m) => {
+        modalShown = m;
+      },
+      reply: async () => {},
+    };
+    await handleConfigInteraction(interaction);
+    assert.ok(modalShown, "une modale doit s'ouvrir");
+    assert.strictEqual(g.roles.cache.size, 0, "aucun rôle ne doit être créé avant la soumission de la modale");
+  });
+
+  await cas("soumettre la modale \"Créer un rôle\" crée réellement le rôle sur le serveur", async () => {
+    const g = fakeGuildForRoleAdmin();
+    const replies = [];
+    const interaction = {
+      customId: `${ID}:rolecreate`,
+      member,
+      guild: g,
+      channel: { id: "chan-1" },
+      client: { users: { fetch: async () => null } },
+      user: { id: "owner-1", tag: "owner#0001" },
+      isModalSubmit: () => true,
+      fields: { getTextInputValue: () => "Nouveau Rôle" },
+      reply: async (p) => {
+        replies.push(p);
+        return {};
+      },
+    };
+    await handleConfigInteraction(interaction);
+    const created = [...g.roles.cache.values()][0];
+    assert.ok(created, "le rôle devrait avoir été créé sur le serveur");
+    assert.strictEqual(created.name, "Nouveau Rôle");
+  });
+
+  await cas("cliquer \"Supprimer ce rôle\" demande une confirmation, ne supprime pas tout de suite", async () => {
+    const g = fakeGuildForRoleAdmin();
+    // ID numérique de type "snowflake" — utils/serverAdminCommands.js::roleAdmin
+    // ne reconnaît un ID brut (sans mention) que via /^\d{15,25}$/.
+    const role = { id: "333333333333333331", name: "Éphémère", position: 1, delete: async () => {} };
+    g.roles.cache.set(role.id, role);
+    const replies = [];
+    const interaction = {
+      customId: `${ID}:roledelete:${role.id}`,
+      member,
+      guild: g,
+      channel: { id: "chan-1" },
+      client: { users: { fetch: async () => null } },
+      user: { id: "owner-1", tag: "owner#0001" },
+      isModalSubmit: () => false,
+      reply: async (p) => {
+        replies.push(p);
+        return {};
+      },
+    };
+    await handleConfigInteraction(interaction);
+    assert.strictEqual(replies.length, 1);
+    const texte = replies[0].components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("Confirmer la suppression du rôle"), texte);
+    assert.ok(g.roles.cache.has(role.id), "le rôle ne doit pas encore être supprimé avant confirmation");
+  });
+
+  await cas("confirmer la suppression supprime réellement le rôle", async () => {
+    const g = fakeGuildForRoleAdmin();
+    let deleted = false;
+    // Comme discord.js le fait réellement : delete() retire le rôle du
+    // cache du serveur, pas seulement côté API.
+    const role = {
+      id: "333333333333333332",
+      name: "Éphémère2",
+      position: 1,
+      delete: async () => {
+        deleted = true;
+        g.roles.cache.delete(role.id);
+      },
+    };
+    g.roles.cache.set(role.id, role);
+    let confirmCard = null;
+    const initial = {
+      customId: `${ID}:roledelete:${role.id}`,
+      member,
+      guild: g,
+      channel: { id: "chan-1" },
+      client: { users: { fetch: async () => null } },
+      user: { id: "owner-1", tag: "owner#0001" },
+      isModalSubmit: () => false,
+      reply: async (p) => {
+        confirmCard = p;
+        return {};
+      },
+    };
+    await handleConfigInteraction(initial);
+    const confirmButton = confirmCard.components[0]
+      .toJSON()
+      .components.find((c) => c.type === 1)
+      .components.find((b) => b.label === "Supprimer");
+    const confirmInteraction = {
+      customId: confirmButton.custom_id,
+      user: { id: "owner-1", tag: "owner#0001" },
+      member,
+      guild: g,
+      channelId: "chan-1",
+      client: { users: { fetch: async () => null } },
+      update: async () => {},
+    };
+    await handleConfirmInteraction(confirmInteraction);
+    assert.ok(deleted, "le rôle doit être réellement supprimé après confirmation");
+    assert.ok(!g.roles.cache.has(role.id));
+  });
+
+  await cas("\"Ajouter à l'exclusif\" marque le rôle, l'affichage et le bouton basculent", async () => {
+    const g = guild;
+    permStore.setRoleExclusive("g1", roleId, false);
+    let panel = null;
+    await handleConfigInteraction(fakeInteraction(`roleexclusive:${roleId}`, { update: async (p) => { panel = p; } }));
+    assert.ok(permStore.isRoleExclusive("g1", roleId), "le rôle doit être marqué exclusif");
+    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("**Exclusif** : oui"), texte);
+    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    assert.ok(boutons.some((b) => b.custom_id === `${ID}:roleexclusiveoff:${roleId}`), "le bouton doit basculer vers \"Retirer de l'exclusif\"");
+  });
+
+  await cas("\"Retirer de l'exclusif\" annule le marquage", async () => {
+    permStore.setRoleExclusive("g1", roleId, true);
+    let panel = null;
+    await handleConfigInteraction(fakeInteraction(`roleexclusiveoff:${roleId}`, { update: async (p) => { panel = p; } }));
+    assert.ok(!permStore.isRoleExclusive("g1", roleId));
+    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("**Exclusif** : non"), texte);
   });
 
   console.log("\nNavigation regroupée par famille :");

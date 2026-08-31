@@ -242,6 +242,7 @@ function sectionBody(section, guild, member, state) {
     const lines = [
       `> **Rôle** : ${role.toString()} — \`${role.id}\``,
       `> **Membres** : ${role.members.size} · **position** : ${role.position}/${guild.roles.cache.size} · **couleur** : ${role.hexColor}`,
+      `> **Exclusif** : ${permStore.isRoleExclusive(guildId, roleId) ? "oui" : "non"}`,
       `> **Permissions Discord notables** : ${notables.length ? notables.join(", ") : "*aucune*"}`,
       `> **Permissions du bot accordées** : ${granted.length}`,
       ...parCategorie,
@@ -428,6 +429,23 @@ function sectionBody(section, guild, member, state) {
   ].join("\n");
 }
 
+/**
+ * Adapte une interaction en objet "message" minimal pour réutiliser
+ * TEL QUEL utils/serverAdminCommands.js::roleAdmin (create/delete déjà
+ * testés, avec confirmation et journalisation) plutôt que réimplémenter la
+ * création/suppression de rôle depuis le panel.
+ */
+function messageFromInteraction(interaction) {
+  return {
+    member: interaction.member,
+    guild: interaction.guild,
+    channel: interaction.channel,
+    author: interaction.user,
+    mentions: { roles: { first: () => null } },
+    reply: (payload) => interaction.reply(payload),
+  };
+}
+
 /** Menus d'ajout/retrait pour une portée legacy (accessStore). */
 function accessRows(scope, label) {
   return [
@@ -485,23 +503,46 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
       )
     );
-    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
-      // Bascule encodée dans le customId lui-même (pas d'état côté serveur
-      // entre deux interactions) : le libellé/l'action reflètent ce que CE
-      // rendu affiche déjà, donc un clic fait toujours l'inverse.
+    if (peutModifier) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          state.permissionsShowCommands
-            ? new ButtonBuilder()
-                .setCustomId(`${ID}:permhidecmds:${state.permissionsRoleId}`)
-                .setLabel("Masquer les commandes débloquées")
-                .setStyle(ButtonStyle.Secondary)
-            : new ButtonBuilder()
-                .setCustomId(`${ID}:permshowcmds:${state.permissionsRoleId}`)
-                .setLabel("Voir les commandes débloquées")
-                .setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success)
         )
       );
+    }
+    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
+      // Bascules encodées dans le customId lui-même (pas d'état côté
+      // serveur entre deux interactions) : le libellé/l'action reflètent ce
+      // que CE rendu affiche déjà, donc un clic fait toujours l'inverse.
+      const exclusif = permStore.isRoleExclusive(guild.id, state.permissionsRoleId);
+      const boutons = [
+        state.permissionsShowCommands
+          ? new ButtonBuilder()
+              .setCustomId(`${ID}:permhidecmds:${state.permissionsRoleId}`)
+              .setLabel("Masquer les commandes débloquées")
+              .setStyle(ButtonStyle.Secondary)
+          : new ButtonBuilder()
+              .setCustomId(`${ID}:permshowcmds:${state.permissionsRoleId}`)
+              .setLabel("Voir les commandes débloquées")
+              .setStyle(ButtonStyle.Secondary),
+      ];
+      if (peutModifier) {
+        boutons.push(
+          exclusif
+            ? new ButtonBuilder()
+                .setCustomId(`${ID}:roleexclusiveoff:${state.permissionsRoleId}`)
+                .setLabel("Retirer de l'exclusif")
+                .setStyle(ButtonStyle.Secondary)
+            : new ButtonBuilder()
+                .setCustomId(`${ID}:roleexclusive:${state.permissionsRoleId}`)
+                .setLabel("Ajouter à l'exclusif")
+                .setStyle(ButtonStyle.Secondary)
+        );
+        boutons.push(
+          new ButtonBuilder().setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`).setLabel("Supprimer ce rôle").setStyle(ButtonStyle.Danger)
+        );
+      }
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
     }
     if (peutModifier && state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
       const categories = permCatalog.byCategory();
@@ -899,6 +940,42 @@ async function handleConfigInteraction(interaction) {
       return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     }
     return goto("permissions", { permissionsRoleId: extra, permissionsShowCommands: action === "permshowcmds" });
+  }
+
+  // Création/suppression de rôle depuis le panel : réutilise TEL QUEL
+  // utils/serverAdminCommands.js::roleAdmin (même vérif de droits, même
+  // journal, même confirmation avant suppression) via un objet "message"
+  // minimal — pas de logique dupliquée entre &role create/delete et ces
+  // boutons.
+  if (action === "rolecreate") {
+    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const name = interaction.fields.getTextInputValue("name").trim();
+      if (!name) return interaction.reply({ content: "Nom vide, aucun rôle créé.", flags: MessageFlags.Ephemeral });
+      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["create", name]);
+      return;
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:rolecreate`).setTitle("Créer un rôle");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nom du rôle").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "roledelete") {
+    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    await roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
+    return;
+  }
+
+  // "Exclusif" : simple étiquette côté panel, aucun effet sur le calcul des
+  // permissions (voir utils/permissions/store.js).
+  if (action === "roleexclusive" || action === "roleexclusiveoff") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    permStore.setRoleExclusive(guildId, extra, action === "roleexclusive");
+    return goto("permissions", { permissionsRoleId: extra });
   }
 
   if (action === "permcat") {
