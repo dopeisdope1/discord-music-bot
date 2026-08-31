@@ -13,6 +13,9 @@ const {
   SeparatorBuilder,
   SeparatorSpacingSize,
   MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
@@ -705,7 +708,131 @@ async function vc(client, message, args) {
     return reply(message, "success", `**${target.user.tag}** expulsé du salon.`);
   }
 
-  return reply(message, "error", "Utilise `vc lock|unlock|limit <n>|rename <nom>|kick @membre`.");
+  if (sub === "add") {
+    const target = message.mentions.members?.first();
+    if (!target) return reply(message, "error", "Indique un membre : `vc add @membre`.");
+    await channel.permissionOverwrites
+      .edit(target, { ViewChannel: true, Connect: true }, { reason: `Accès accordé par ${message.author.tag}` })
+      .catch(() => {});
+    return reply(message, "success", `**${target.user.tag}** peut désormais rejoindre ce salon, même verrouillé.`);
+  }
+
+  if (sub === "remove") {
+    const target = message.mentions.members?.first();
+    if (!target) return reply(message, "error", "Indique un membre : `vc remove @membre`.");
+    await channel.permissionOverwrites.delete(target, `Accès retiré par ${message.author.tag}`).catch(() => {});
+    if (target.voice.channelId === channel.id) await target.voice.disconnect(`Accès retiré par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", `Accès de **${target.user.tag}** retiré.`);
+  }
+
+  if (sub === "transfer") {
+    const target = message.mentions.members?.first();
+    if (!target) return reply(message, "error", "Indique un membre : `vc transfer @membre`.");
+    if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre doit être dans ton salon pour en devenir propriétaire.");
+    voiceChannels.registerChannel(channel.id, message.guild.id, target.id);
+    return reply(message, "success", `**${target.user.tag}** est désormais propriétaire de ce salon.`);
+  }
+
+  return reply(message, "error", "Utilise `vc lock|unlock|limit <n>|rename <nom>|kick @membre|add @membre|remove @membre|transfer @membre`.");
+}
+
+// --- Carte de contrôle postée dans le salon vocal temporaire lui-même
+// (voir index.js, création du salon) : boutons pour les actions du
+// propriétaire, plutôt que de devoir taper &vc ... — mêmes vérifications
+// que la commande texte (canManageVoiceChannel), rien de plus permissif.
+
+function buildVoiceControlCard(channel) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Salon vocal de ${channel.name}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      "Ce salon est à toi tant que tu y es connecté — utilise les boutons ci-dessous pour le gérer, ou tape " +
+        "`&vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre`."
+    )
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("vcpanel:lock").setLabel("Verrouiller").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:unlock").setLabel("Déverrouiller").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:rename").setLabel("Renommer").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:add").setLabel("Ajouter").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:remove").setLabel("Retirer").setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("vcpanel:transfer").setLabel("Transférer la propriété").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vcpanel:kick").setLabel("Expulser").setStyle(ButtonStyle.Danger)
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+async function handleVoiceControlInteraction(interaction) {
+  const [, action] = interaction.customId.split(":");
+  const channel = interaction.channel;
+  if (!channel || channel.type !== ChannelType.GuildVoice) return;
+  if (!canManageVoiceChannel(interaction.member, channel)) {
+    return interaction.reply({ content: "Seul le propriétaire de ce salon peut le gérer.", flags: MessageFlags.Ephemeral });
+  }
+
+  if (action === "lock" || action === "unlock") {
+    await channel.permissionOverwrites
+      .edit(interaction.guild.roles.everyone, { Connect: action === "lock" ? false : null }, { reason: `Salon vocal ${action === "lock" ? "verrouillé" : "déverrouillé"} par ${interaction.user.tag}` })
+      .catch(() => {});
+    return interaction.reply({ content: action === "lock" ? "Salon verrouillé." : "Salon déverrouillé.", flags: MessageFlags.Ephemeral });
+  }
+
+  if (action === "rename") {
+    if (interaction.isModalSubmit()) {
+      const name = interaction.fields.getTextInputValue("name").trim();
+      if (!name) return interaction.reply({ content: "Nom vide, rien n'a changé.", flags: MessageFlags.Ephemeral });
+      await channel.setName(name, `Renommé par ${interaction.user.tag}`).catch(() => {});
+      return interaction.reply({ content: `Salon renommé **${name}**.`, flags: MessageFlags.Ephemeral });
+    }
+    const modal = new ModalBuilder().setCustomId("vcpanel:rename").setTitle("Renommer le salon");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (["add", "remove", "transfer", "kick"].includes(action)) {
+    return interaction.reply({
+      content: `Choisis un membre pour "${{ add: "Ajouter", remove: "Retirer", transfer: "Transférer la propriété", kick: "Expulser" }[action]}".`,
+      components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`vcpanel:${action}pick`).setPlaceholder("Choisir un membre"))],
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  if (["addpick", "removepick", "transferpick", "kickpick"].includes(action)) {
+    const target = await interaction.guild.members.fetch(interaction.values[0]).catch(() => null);
+    if (!target) return interaction.reply({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+
+    if (action === "addpick") {
+      await channel.permissionOverwrites.edit(target, { ViewChannel: true, Connect: true }, { reason: `Accès accordé par ${interaction.user.tag}` }).catch(() => {});
+      return interaction.update({ content: `**${target.user.tag}** peut désormais rejoindre ce salon, même verrouillé.`, components: [] });
+    }
+    if (action === "removepick") {
+      await channel.permissionOverwrites.delete(target, `Accès retiré par ${interaction.user.tag}`).catch(() => {});
+      if (target.voice.channelId === channel.id) await target.voice.disconnect(`Accès retiré par ${interaction.user.tag}`).catch(() => {});
+      return interaction.update({ content: `Accès de **${target.user.tag}** retiré.`, components: [] });
+    }
+    if (action === "transferpick") {
+      if (target.voice.channelId !== channel.id) {
+        return interaction.update({ content: "Ce membre doit être dans le salon pour en devenir propriétaire.", components: [] });
+      }
+      voiceChannels.registerChannel(channel.id, interaction.guild.id, target.id);
+      return interaction.update({ content: `**${target.user.tag}** est désormais propriétaire de ce salon.`, components: [] });
+    }
+    if (action === "kickpick") {
+      if (target.voice.channelId !== channel.id) return interaction.update({ content: "Ce membre n'est pas dans le salon.", components: [] });
+      await target.voice.disconnect(`Expulsé du salon vocal par ${interaction.user.tag}`).catch(() => {});
+      return interaction.update({ content: `**${target.user.tag}** expulsé du salon.`, components: [] });
+    }
+  }
 }
 
 module.exports = {
@@ -720,6 +847,8 @@ module.exports = {
   applyDeroToNewChannel,
   voicehub,
   vc,
+  buildVoiceControlCard,
+  handleVoiceControlInteraction,
   handleConfirmInteraction,
   requestConfirmation,
   ROLE_ADMIN_SUBCOMMANDS,

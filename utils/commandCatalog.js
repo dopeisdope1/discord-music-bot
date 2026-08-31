@@ -34,7 +34,7 @@ const CATEGORIES = [
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
       { name: "allbots", prefix: "mod", permission: "sys", description: "Liste paginée des comptes bot présents sur le serveur" },
       {
-        name: "vc lock|unlock|limit <n>|rename <nom>|kick @membre",
+        name: "vc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre",
         prefix: "mod",
         permission: null,
         description: "Gère TON salon vocal temporaire (voir &voicehub) — ouvert à tous, réservé au propriétaire du salon",

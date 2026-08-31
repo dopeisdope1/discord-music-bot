@@ -433,8 +433,10 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
       "",
-      "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. " +
-        "Contrôle en jeu : &vc lock/unlock/limit/rename/kick (voir &help > Utilitaire).",
+      "Rejoindre ce salon crée un salon vocal personnel temporaire, supprimé automatiquement une fois vide. Une " +
+        "carte de contrôle (boutons) est postée dans le chat du salon lui-même — verrouiller/déverrouiller, " +
+        "renommer, ajouter/retirer un membre, expulser, transférer la propriété. Équivalent en texte : &vc " +
+        "lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre.",
     ].join("\n");
   }
 

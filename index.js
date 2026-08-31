@@ -29,7 +29,13 @@ const { checkMessage: checkAntiLink } = require("./utils/automod/antiLink");
 const { checkMessage: checkAntiMention } = require("./utils/automod/antiMention");
 const { checkMessage: checkBadWords } = require("./utils/automod/badWords");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
-const { handleServerAdminInteraction, handleConfirmInteraction, applyDeroToNewChannel } = require("./utils/serverAdminCommands");
+const {
+  handleServerAdminInteraction,
+  handleConfirmInteraction,
+  applyDeroToNewChannel,
+  buildVoiceControlCard,
+  handleVoiceControlInteraction,
+} = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
@@ -453,6 +459,13 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // Carte de contrôle postée dans un salon vocal temporaire (voir
+  // utils/serverAdminCommands.js::buildVoiceControlCard).
+  if (interaction.customId?.startsWith("vcpanel:")) {
+    await handleVoiceControlInteraction(interaction).catch((err) => console.error("[voiceControl]", err));
+    return;
+  }
+
   // Communauté (voir utils/tickets.js, utils/polls.js, utils/giveaways.js).
   if (interaction.customId?.startsWith("ticket:")) {
     await handleTicketButton(interaction).catch((err) => console.error("[tickets]", err));
@@ -787,6 +800,10 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     if (created) {
       voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id);
       await newState.member.voice.setChannel(created).catch(() => {});
+      // Chaque salon vocal a son propre chat textuel (fonctionnalité Discord
+      // standard) — on y poste la carte de contrôle plutôt que de laisser le
+      // propriétaire deviner la syntaxe de &vc.
+      await created.send(buildVoiceControlCard(created)).catch((err) => console.error("[voiceChannels] carte de contrôle :", err.message));
     }
   }
 
