@@ -6,9 +6,10 @@
  *  - ses boutons agissent sur le salon vocal où la personne qui CLIQUE est
  *    connectée à cet instant, pas sur le salon où le clic a eu lieu ;
  *  - le chat du vocal reçoit un message d'accueil qui MENTIONNE réellement
- *    le propriétaire, avec un seul bouton "Gérer ton salon" qui ouvre les
- *    vrais contrôles en ÉPHÉMÈRE (jamais de bouton-lien : ne navigue pas de
- *    façon fiable depuis le chat d'un salon vocal, confirmé en réel) ;
+ *    le propriétaire, avec un seul bouton-LIEN "Gérer ton salon" qui emmène
+ *    au salon-panneau — choix assumé malgré un bug confirmé sur mobile (la
+ *    navigation n'y est pas fiable), repli en éphémère seulement si aucun
+ *    salon-panneau n'est configuré (aucun lien possible dans ce cas) ;
  *  - le salon-panneau n'est visible QUE par qui possède actuellement un
  *    salon temporaire (setPanelAccess), accordé/retiré à la création, la
  *    suppression et le transfert d'un salon.
@@ -85,14 +86,21 @@ const contenu = (payload) => payload.components[0].toJSON().components.filter((c
     assert.deepStrictEqual(carte.allowedMentions, { users: [PROPRIO] });
   });
 
-  await cas('"Gérer ton salon" ouvre les contrôles en ÉPHÉMÈRE — jamais de bouton-lien', () => {
-    // Confirmé en conditions réelles (mobile) : un bouton-lien cliqué depuis
-    // le chat propre à un salon vocal ne navigue pas de façon fiable, la
-    // personne reste bloquée sur le message — limitation du client Discord,
-    // aucune alternative de lien n'y changerait rien.
-    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO);
+  await cas('avec un salon-panneau configuré, "Gérer ton salon" est un vrai bouton-LIEN qui y emmène', () => {
+    // Choix assumé malgré le bug confirmé sur mobile (navigation pas
+    // fiable) — demande explicite de garder le lien plutôt que le repli en
+    // éphémère. Accès garanti par setPanelAccess dès la création du salon.
+    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO, PANEL);
     const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(!boutons.some((b) => b.style === 5), "aucun bouton-lien ne doit plus être présent"); // ButtonStyle.Link
+    assert.strictEqual(boutons.length, 1);
+    assert.strictEqual(boutons[0].style, 5); // ButtonStyle.Link
+    assert.strictEqual(boutons[0].url, `https://discord.com/channels/${GUILD_ID}/${PANEL}`);
+    assert.strictEqual(boutons[0].custom_id, undefined, "un bouton-lien n'a jamais de custom_id");
+  });
+
+  await cas("sans salon-panneau configuré (aucun lien possible), repli sur les contrôles en éphémère", () => {
+    const carte = buildVoiceWelcomeCard({ id: VOCAL, guildId: GUILD_ID, name: "x" }, PROPRIO, null);
+    const boutons = carte.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
     assert.deepStrictEqual(boutons.map((b) => b.custom_id), ["vcpanel:menu"]);
   });
 

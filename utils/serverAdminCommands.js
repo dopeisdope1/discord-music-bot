@@ -795,26 +795,31 @@ function buildVoiceControlCard() {
  * Message posté dans le chat du salon VOCAL lui-même à sa création : il
  * mentionne le propriétaire (d'où allowedMentions, sans quoi le client
  * Discord.js n'envoie aucune notification — voir index.js) avec un seul
- * bouton "Gérer ton salon".
+ * bouton "Gérer ton salon" qui emmène directement au salon-panneau partagé
+ * (accès garanti : setPanelAccess donne la vue à cette personne dès la
+ * création de son salon).
  *
- * Confirmé en conditions réelles (mobile) : un bouton-lien vers un autre
- * salon, cliqué depuis le chat propre à un salon vocal, ne navigue PAS de
- * façon fiable — la personne reste bloquée sur le message. Limitation du
- * client Discord, hors de portée du bot (aucune alternative de lien ne
- * changerait ce comportement). Le bouton ouvre donc les vrais contrôles en
- * ÉPHÉMÈRE, ici même, sans jamais dépendre d'une navigation — voir
- * handleVoiceControlInteraction, action "menu". Le salon-panneau partagé
- * reste accessible normalement via la liste des salons (setPanelAccess lui
- * donne la vue), juste plus via ce bouton précis.
+ * CHOIX ASSUMÉ malgré un bug confirmé : un bouton-lien cliqué depuis le
+ * chat propre à un salon vocal ne navigue pas de façon fiable sur mobile
+ * (la personne reste bloquée sur le message) — comportement du client
+ * Discord, hors de portée du bot. Un repli existait (contrôles ouverts en
+ * éphémère, sans navigation) mais a été explicitement refusé : demande de
+ * garder le lien malgré tout, quitte à ce qu'il ne marche pas partout.
+ * Repli conservé UNIQUEMENT si aucun salon-panneau n'est configuré (aucun
+ * lien possible dans ce cas).
  */
-function buildVoiceWelcomeCard(channel, ownerId) {
+function buildVoiceWelcomeCard(channel, ownerId, panelChannelId) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 <@${ownerId}>, ton salon est prêt`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  const bouton = panelChannelId
+    ? new ButtonBuilder()
+        .setStyle(ButtonStyle.Link)
+        .setLabel("Gérer ton salon")
+        .setURL(`https://discord.com/channels/${channel.guildId}/${panelChannelId}`)
+    : new ButtonBuilder().setCustomId("vcpanel:menu").setLabel("Gérer ton salon").setStyle(ButtonStyle.Primary);
   container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("vcpanel:menu").setLabel("Gérer ton salon").setStyle(ButtonStyle.Primary)
-    )
+    new ActionRowBuilder().addComponents(bouton)
   );
   return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { users: [ownerId] } };
 }
