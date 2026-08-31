@@ -290,6 +290,12 @@ autre :
 | `uo clear` (ou `anas clear`, `yanis clear`) | Les messages de la personne qui tape **et tous ceux du bot** | tout le monde, 2 fois par 25 min |
 | `&clear <@membre\|id> [nombre]` (alias `&purge`) | Les messages du membre visé | clé `moderation.clear` |
 
+**La cible est obligatoire.** `&clear` seul, `&clear 50` ou `&clear nimporte`
+ne produisent **aucune réponse** : ce bot ne connaît que la forme avec une
+mention ou un identifiant, et `&clear <nombre>` est la syntaxe du CrowBot avec
+qui le préfixe `&` est partagé. Expliquer la syntaxe reviendrait à lui couper
+la parole sur sa propre commande.
+
 Les autres sous-commandes de `&clear` (`clear perms`, `clear limit`,
 `clear sanctions`) ne touchent aucun message — elles portent le même mot mais
 agissent sur la configuration.
