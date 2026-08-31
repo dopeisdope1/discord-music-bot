@@ -807,11 +807,20 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   const hubId = voiceChannels.getHub(newState.guild.id);
   if (hubId && newState.channelId === hubId && oldState.channelId !== hubId) {
     const hub = newState.channel;
+    // La catégorie de destination des salons créés est configurable (voir
+    // &panel > Communauté > Vocaux, "Créer la configuration") : par défaut,
+    // sans réglage explicite, on retombe sur la catégorie du générateur
+    // lui-même — comportement inchangé pour les serveurs déjà en place.
+    const hubConfig = voiceChannels.getHubConfig(newState.guild.id);
+    const spawnCategory =
+      hubConfig.spawnCategoryId && newState.guild.channels.cache.get(hubConfig.spawnCategoryId)?.type === ChannelType.GuildCategory
+        ? hubConfig.spawnCategoryId
+        : hub?.parentId || null;
     const created = await newState.guild.channels
       .create({
-        name: `Salon de ${newState.member.displayName}`.slice(0, 100),
+        name: voiceChannels.formatTemplate(hubConfig.voiceNameTemplate, newState.member.displayName),
         type: ChannelType.GuildVoice,
-        parent: hub?.parentId || null,
+        parent: spawnCategory,
         reason: `Salon vocal temporaire pour ${newState.member.user.tag}`,
       })
       .catch((err) => {
@@ -826,9 +835,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       // les admins peuvent donc y écrire sans qu'on ait à l'autoriser.
       const texte = await newState.guild.channels
         .create({
-          name: `panel-${newState.member.displayName}`.slice(0, 100),
+          name: voiceChannels.formatTemplate(hubConfig.textNameTemplate, newState.member.displayName),
           type: ChannelType.GuildText,
-          parent: hub?.parentId || null,
+          parent: spawnCategory,
           position: created.rawPosition,
           permissionOverwrites: [
             { id: newState.guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages] },

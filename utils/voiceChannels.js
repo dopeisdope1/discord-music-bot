@@ -8,9 +8,15 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const HUB_FILE = path.join(DATA_DIR, "voiceHub.json");
 const CHANNELS_FILE = path.join(DATA_DIR, "tempVoiceChannels.json");
+// Réglages additionnels du voicehub (catégorie de destination des salons
+// créés à la volée, modèles de nom) — fichier SÉPARÉ de voiceHub.json pour
+// ne pas toucher au format existant (guildId -> id de salon brut) et éviter
+// toute migration.
+const CONFIG_FILE = path.join(DATA_DIR, "voiceHubConfig.json");
 
 let hubCache = null;
 let channelsCache = null;
+let configCache = null;
 
 function loadHubs() {
   if (hubCache) return hubCache;
@@ -100,4 +106,74 @@ function unregisterChannel(channelId) {
   return true;
 }
 
-module.exports = { getHub, setHub, registerChannel, getChannelInfo, getVoiceChannelForText, unregisterChannel };
+function loadConfig() {
+  if (configCache) return configCache;
+  try {
+    configCache = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+  } catch {
+    configCache = {};
+  }
+  return configCache;
+}
+
+function saveConfig() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configCache, null, 2));
+  } catch (err) {
+    console.error("[voiceChannels] échec de la sauvegarde (config) :", err);
+  }
+}
+
+const DEFAULT_VOICE_NAME_TEMPLATE = "Salon de {pseudo}";
+const DEFAULT_TEXT_NAME_TEMPLATE = "panel-{pseudo}";
+
+/**
+ * @returns {{ spawnCategoryId: string|null, voiceNameTemplate: string, textNameTemplate: string }}
+ */
+function getHubConfig(guildId) {
+  const entry = loadConfig()[guildId] || {};
+  return {
+    spawnCategoryId: entry.spawnCategoryId || null,
+    voiceNameTemplate: entry.voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE,
+    textNameTemplate: entry.textNameTemplate || DEFAULT_TEXT_NAME_TEMPLATE,
+  };
+}
+
+/** @param {string|null} categoryId null pour revenir au comportement par défaut (même catégorie que le générateur). */
+function setSpawnCategory(guildId, categoryId) {
+  const data = loadConfig();
+  data[guildId] = { ...data[guildId], spawnCategoryId: categoryId || null };
+  saveConfig();
+}
+
+function setNameTemplates(guildId, { voiceNameTemplate, textNameTemplate }) {
+  const data = loadConfig();
+  data[guildId] = {
+    ...data[guildId],
+    voiceNameTemplate: voiceNameTemplate || DEFAULT_VOICE_NAME_TEMPLATE,
+    textNameTemplate: textNameTemplate || DEFAULT_TEXT_NAME_TEMPLATE,
+  };
+  saveConfig();
+}
+
+/** Applique un modèle de nom ("Salon de {pseudo}") ; sans le jeton, le pseudo est ajouté à la fin. */
+function formatTemplate(template, pseudo) {
+  const applied = template.includes("{pseudo}") ? template.replace(/\{pseudo\}/g, pseudo) : `${template} ${pseudo}`;
+  return applied.slice(0, 100);
+}
+
+module.exports = {
+  getHub,
+  setHub,
+  registerChannel,
+  getChannelInfo,
+  getVoiceChannelForText,
+  unregisterChannel,
+  getHubConfig,
+  setSpawnCategory,
+  setNameTemplates,
+  formatTemplate,
+  DEFAULT_VOICE_NAME_TEMPLATE,
+  DEFAULT_TEXT_NAME_TEMPLATE,
+};

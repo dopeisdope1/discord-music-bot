@@ -39,6 +39,7 @@ const { ALL_GUARDS } = require("./guard/definitions");
 const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
+const voiceHubSetup = require("./voiceHubSetup");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -371,8 +372,17 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "voice") {
     const hubId = voiceChannels.getHub(guildId);
+    const hubConfig = voiceChannels.getHubConfig(guildId);
+    const spawnOk = hubConfig.spawnCategoryId && guild.channels.cache.has(hubConfig.spawnCategoryId);
     return [
       `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
+      `> **Catégorie des salons créés** : ${spawnOk ? `<#${hubConfig.spawnCategoryId}>` : "*par défaut, même catégorie que le générateur*"}`,
+      `> **Modèle de nom (vocal)** : \`${hubConfig.voiceNameTemplate}\``,
+      `> **Modèle de nom (salon texte du panneau)** : \`${hubConfig.textNameTemplate}\``,
+      "",
+      hubId && guild.channels.cache.has(hubId)
+        ? "Configuré manuellement ou via \"Créer la configuration\" — le bouton ci-dessous ne recrée rien tant que c'est actif."
+        : "\"Créer la configuration\" crée en un clic les deux catégories et le salon générateur.",
     ].join("\n");
   }
 
@@ -725,6 +735,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     );
   } else if (meta.key === "voice") {
     const hubId = voiceChannels.getHub(guild.id);
+    const hubConfig = voiceChannels.getHubConfig(guild.id);
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
@@ -734,6 +745,27 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           .setMinValues(0)
           .setMaxValues(1)
           .setDefaultChannels(hubId && guild.channels.cache.has(hubId) ? [hubId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:voicespawncategory`)
+          .setPlaceholder("Choisir la catégorie des salons créés (optionnel)")
+          .addChannelTypes(ChannelType.GuildCategory)
+          .setMinValues(0)
+          .setMaxValues(1)
+          .setDefaultChannels(hubConfig.spawnCategoryId && guild.channels.cache.has(hubConfig.spawnCategoryId) ? [hubConfig.spawnCategoryId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:voicehubsetup`)
+          .setLabel("Créer la configuration")
+          .setStyle(ButtonStyle.Success)
+          .setDisabled(Boolean(hubId && guild.channels.cache.has(hubId))),
+        new ButtonBuilder().setCustomId(`${ID}:voicenames`).setLabel("Modifier les noms").setStyle(ButtonStyle.Secondary)
       )
     );
   }
@@ -1099,6 +1131,63 @@ async function handleConfigInteraction(interaction) {
     if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     voiceChannels.setHub(guildId, interaction.values[0] || null);
     return goto("voice");
+  }
+
+  if (action === "voicespawncategory") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    voiceChannels.setSpawnCategory(guildId, interaction.values[0] || null);
+    return goto("voice");
+  }
+
+  if (action === "voicehubsetup") {
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (voiceHubSetup.isAlreadyConfigured(guild)) {
+      return interaction.reply({ content: "Un générateur est déjà actif — change-le via le sélecteur plutôt que d'en recréer un.", flags: MessageFlags.Ephemeral });
+    }
+    await interaction.deferUpdate();
+    const { hubCategory, spawnCategory, hubChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
+    await interaction
+      .followUp({
+        content: `Configuration créée : ${hubCategory} > ${hubChannel} (rejoindre crée un salon), et ${spawnCategory} pour les salons créés.`,
+        flags: MessageFlags.Ephemeral,
+      })
+      .catch(() => {});
+    return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
+  }
+
+  if (action === "voicenames") {
+    if (interaction.isModalSubmit()) {
+      const voiceNameTemplate = interaction.fields.getTextInputValue("voice").trim();
+      const textNameTemplate = interaction.fields.getTextInputValue("text").trim();
+      voiceChannels.setNameTemplates(guildId, { voiceNameTemplate, textNameTemplate });
+      await interaction.reply({ content: "Modèles de nom enregistrés.", flags: MessageFlags.Ephemeral });
+      return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
+    }
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+
+    const current = voiceChannels.getHubConfig(guildId);
+    const modal = new ModalBuilder().setCustomId(`${ID}:voicenames`).setTitle("Modèles de nom des salons");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("voice")
+          .setLabel("Nom du salon vocal créé ({pseudo})")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(90)
+          .setRequired(true)
+          .setValue(current.voiceNameTemplate)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("text")
+          .setLabel("Nom du salon texte du panneau ({pseudo})")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(90)
+          .setRequired(true)
+          .setValue(current.textNameTemplate)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "prefix") {
