@@ -77,6 +77,21 @@ function isGuardEnabled(guildId, key) {
 }
 
 /** @returns {boolean} nouvel état (true = désormais activé) */
+/**
+ * Règle un guard à une valeur EXPLICITE, contrairement à toggleGuard qui
+ * bascule : "&antibot on" tapé deux fois doit laisser le guard actif, pas le
+ * rallumer puis l'éteindre.
+ * @returns {boolean} true si l'état a changé
+ */
+function setGuardEnabled(guildId, key, enabled) {
+  const entry = guildEntry(guildId);
+  const wasEnabled = !entry.disabledGuards.includes(key);
+  if (wasEnabled === enabled) return false;
+  entry.disabledGuards = enabled ? entry.disabledGuards.filter((k) => k !== key) : [...entry.disabledGuards, key];
+  save();
+  return true;
+}
+
 function toggleGuard(guildId, key) {
   const entry = guildEntry(guildId);
   const disabled = entry.disabledGuards.includes(key);
@@ -85,4 +100,4 @@ function toggleGuard(guildId, key) {
   return disabled;
 }
 
-module.exports = { getConfig, setEnabled, setPunishment, isGuardEnabled, toggleGuard, PUNISHMENTS };
+module.exports = { getConfig, setEnabled, setPunishment, isGuardEnabled, toggleGuard, setGuardEnabled, PUNISHMENTS };

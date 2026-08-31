@@ -542,6 +542,32 @@ entrée d'audit alimente les deux, sans lien entre eux).
   lui-même dans une rafale de kicks/bans qui ressemblerait à un nuke aux
   yeux du CrowBot.
 
+#### Anti-nuke en commandes texte
+
+Tout ce que fait `&panel` > Anti-nuke se fait aussi en tapant, avec la clé
+`protection.guard.manage` :
+
+- **Interrupteur général** : `&secur on|off` (alias de `&antinuke on|off`).
+  Sans argument, il résume l'état — sanction, guards actifs, taille de la
+  whitelist.
+- **Un guard, une commande** : `&antibot`, `&antiwebhook`, `&antiroleadmin`,
+  `&antichannel`, `&antichanneldelete`, `&antirole`, `&antiroledelete`,
+  `&antikick`, `&antiban`, `&antiunban`, `&antieveryone`, `&antijoin` —
+  chacune en `on|off` (`max` accepté comme synonyme de `on` : ces guards sont
+  binaires, il n'y a pas de palier intermédiaire). Sans argument, la commande
+  affiche l'état du guard et son seuil de déclenchement.
+- **Sanction** : `&punition all <timeout|kick|ban>`. Elle est **globale** —
+  ce bot ne règle pas la sanction guard par guard, et le dit plutôt que
+  d'ignorer un premier argument qui laisserait croire le contraire.
+- **Whitelist** : `&wl [@membre|@rôle|ID]` pour ajouter ou afficher la liste,
+  `&unwl` pour retirer. Distincte de `&whitelist`, qui est celle de
+  l'anti-spam.
+
+`on` est un réglage explicite, pas une bascule : taper `&antibot on` deux
+fois laisse le guard actif. Et activer un guard alors que l'interrupteur
+général est coupé le signale — sinon on croirait avoir posé une protection
+qui ne se déclenchera jamais.
+
 ### CrowBot tourne aussi son propre anti-nuke sur ce serveur
 
 **Ajoute le compte du CrowBot à la whitelist de cet anti-nuke** (`&panel`
