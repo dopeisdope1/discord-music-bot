@@ -138,11 +138,21 @@ function fakeClearMessage(mentionsUsers) {
     assert.strictEqual(refused, false);
   });
 
-  await casAsync('"clear sanctions @membre" est refusé (ne supprime plus de messages)', async () => {
+  await casAsync('"clear sanctions @membre" ne supprime aucun message', async () => {
+    // La cible doit être le PREMIER argument : "sanctions" n'en étant pas une,
+    // la commande sort sans rien faire. Elle sort aussi SANS RIEN DIRE, parce
+    // que "&clear <autre chose>" est la syntaxe du CrowBot sur ce préfixe
+    // partagé — d'où la vérification sur l'absence de suppression plutôt que
+    // sur un message d'erreur.
     const msg = fakeClearMessage(REAL_ID);
+    let fetches = 0;
+    msg.channel.messages.fetch = async () => {
+      fetches++;
+      return new Collection();
+    };
     await moderationHandlers.clear(null, msg, ["sanctions", `<@${REAL_ID}>`]);
-    const refused = msg._replies.some((r) => r.embeds?.[0]?.data?.description?.includes("Indique un membre"));
-    assert.strictEqual(refused, true);
+    assert.strictEqual(fetches, 0, "aucun message ne doit même être cherché");
+    assert.deepStrictEqual(msg._replies, [], "et rien n'est répondu à la place du CrowBot");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
