@@ -1,13 +1,16 @@
 /**
- * Vérifie que &help ne promet pas de commandes muettes
- * (utils/implementedCommands.js + utils/helpPanel.js).
- *
- * Le catalogue liste volontairement des commandes SANS backend (demande
- * explicite : "intègre tout, même sans backend"). Les afficher à l'identique
- * des autres revenait à promettre qu'elles répondent : au 31/08, la moitié
- * des entrées listées restaient muettes quand on les tapait. Elles sont donc
- * séparées — et ce test garde la séparation exacte, pour qu'une commande
- * nouvellement câblée quitte automatiquement la liste "pas encore actives".
+ * Vérifie &help (utils/helpPanel.js + utils/implementedCommands.js) :
+ *  - une seule vue, groupée UNIQUEMENT par palier d'accès (publiques/
+ *    configurables/Sys), toutes catégories du catalogue confondues —
+ *    demande explicite : le découpage par thème (Modération, Antiraid,
+ *    Paramètres de modération...) faisait "40 mille pages" pour rien ;
+ *  - ne promet jamais de commande muette : seules les entrées avec un
+ *    VRAI handler sont affichées, plus de section "documentées" du tout
+ *    (demande explicite : "enlève-moi les trucs documentés qui servent
+ *    à rien") ;
+ *  - conserve la correction d'identité qui causait le "&help
+ *    incompréhensible" d'origine : "role create"/"role delete"/... restent
+ *    des entrées distinctes, jamais fusionnées sous "role".
  *
  * Lancement : node scripts/test-help-honesty.js
  */
@@ -39,13 +42,13 @@ async function cas(nom, fn) {
   }
 }
 
-const member = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
-const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON().components[2].content;
+const owner = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
+const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => false } };
+const bodyOf = (member = owner) => buildHelpPanel("g1", member).components[0].toJSON().components[2].content;
 
-/** Toutes les identités listées dans les paliers ACTIFS (pas la section "documentées"), à plat. */
-function activeIdentities(body) {
-  const [activesTxt] = body.split("Documentées, pas encore actives");
-  return [...activesTxt.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].flatMap((m) => m[1].split(", "));
+/** Toutes les identités listées, tous paliers confondus, à plat. */
+function allIdentities(body) {
+  return [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].flatMap((m) => m[1].split(", "));
 }
 
 (async () => {
@@ -69,9 +72,6 @@ function activeIdentities(body) {
   });
 
   await cas("une SOUS-COMMANDE non routée n'est pas comptée active", () => {
-    // "set" et "clear" existent, mais leurs dispatchers ne connaissent pas ces
-    // sous-mots : les taper ne fait rien. C'est le faux positif que la table
-    // MOD_SUBCOMMANDS supprime.
     for (const name of ["set modlogs", "set boostembed", "clear owners", "clear customs", "server pic", "server list"]) {
       assert.strictEqual(isImplemented({ name, prefix: "mod" }), false, `${name} n'est routée nulle part`);
     }
@@ -84,8 +84,6 @@ function activeIdentities(body) {
   });
 
   await cas("un paramètre n'est jamais pris pour une sous-commande", () => {
-    // "clear <@membre|id> [nombre]" désigne la commande de base, pas un
-    // sous-mot "membre" qui n'existerait pas.
     for (const name of ["clear <@membre|id> [nombre]", "kick <membre> [raison]", "mute <membre> [raison]"]) {
       assert.strictEqual(isImplemented({ name, prefix: "mod" }), true, name);
     }
@@ -100,44 +98,48 @@ function activeIdentities(body) {
   });
 
   await cas("les déclencheurs sans préfixe ne sont pas comptés comme muets", () => {
-    // "uo clear" a son propre déclencheur (utils/selfClear.js), pas la table "&".
     assert.strictEqual(isImplemented({ name: "uo clear" }), true);
   });
 
   console.log("\nRendu de &help :");
 
-  await cas("les commandes muettes sont annoncées comme telles, pas mélangées", () => {
-    const body = bodyOf("utilitaire");
-    assert.ok(body.includes("pas encore actives"), "une section dédiée doit exister");
-    assert.ok(body.includes("changelogs"), "la référence complète reste affichée");
-  });
-
-  await cas("aucune commande n'apparaît à la fois active et non active", () => {
-    // Comparaison sur les identités RÉELLEMENT listées, pas une recherche de
-    // sous-chaîne brute (un nom comme "image" pourrait par coïncidence
-    // apparaître ailleurs dans le texte).
-    const body = bodyOf("utilitaire");
-    const identites = activeIdentities(body);
-    const [, documenteesTxt] = body.split("Documentées, pas encore actives");
-    for (const name of ["changelogs", "image", "support"]) {
-      assert.ok(!identites.some((id) => id === name || id.startsWith(`${name}/`)), `${name} ne doit pas figurer parmi les actives`);
-      assert.ok(documenteesTxt.includes(name));
-    }
-    for (const name of ["calc", "vocinfo", "boosters"]) {
-      assert.ok(identites.some((id) => id === name || id.startsWith(`${name}/`)), `${name} doit figurer parmi les actives`);
-    }
-  });
-
-  await cas("l'accueil annonce le nombre réel d'actives par catégorie", () => {
+  await cas("aucune trace de la section \"documentées\" — plus de commandes muettes affichées du tout", () => {
     const body = bodyOf();
-    assert.ok(/\*\*Utilitaire\*\* — \d+ active\(s\) sur \d+ documentées/.test(body), body);
+    assert.ok(!body.includes("Documentées"), body);
+    assert.ok(!body.includes("changelogs"), "une commande sans backend ne doit plus apparaître nulle part");
   });
 
-  await cas("une catégorie entièrement câblée n'affiche aucune mention inutile", () => {
-    // La ligne ne doit dire "sur N documentées" QUE s'il reste des muettes.
-    const complete = CATEGORIES.find((c) => c.commands.every(isImplemented));
-    if (!complete) return; // aucune catégorie complète pour l'instant : rien à vérifier
-    assert.ok(!bodyOf().includes(`**${complete.label}** — ${complete.commands.length} active(s) sur`));
+  await cas("groupé uniquement par palier — aucune trace d'un découpage par thème", () => {
+    const body = bodyOf();
+    for (const theme of ["Modération", "Antiraid", "Gestion du serveur", "Paramètres de modération", "Logs"]) {
+      assert.ok(!body.includes(`## ${theme}`) && !body.includes(`— ${theme}`), `"${theme}" ne doit plus apparaître comme titre/rubrique`);
+    }
+    assert.ok(body.includes("Commandes publiques"));
+    assert.ok(body.includes("Commandes configurables"));
+  });
+
+  await cas("une seule vue : pas de bouton ni de sélecteur, rien à naviguer", () => {
+    const panel = buildHelpPanel("g1", owner);
+    assert.strictEqual(panel.components[0].toJSON().components.filter((c) => c.type === 1).length, 0);
+  });
+
+  await cas("les commandes de paramètres de modération sont bien rangées avec les autres \"configurables\", pas à part", () => {
+    const identites = allIdentities(bodyOf());
+    // "antilink" vit dans la catégorie catalogue "Paramètres de modération" ;
+    // "role create" vit dans "Gestion du serveur" — les deux doivent
+    // atterrir dans le MÊME palier "Commandes configurables", à plat.
+    const body = bodyOf();
+    const configurableLine = body.split("\n").find((l) => l.startsWith("**Commandes configurables"));
+    assert.ok(configurableLine.includes("antilink"), configurableLine);
+    assert.ok(configurableLine.includes("role create"), configurableLine);
+    assert.ok(identites.includes("antilink") && identites.includes("role create"));
+  });
+
+  await cas("un membre sans aucun droit ne voit QUE les commandes publiques", () => {
+    const body = bodyOf(plain);
+    assert.ok(body.includes("Commandes publiques"));
+    assert.ok(!body.includes("Commandes configurables"), body);
+    assert.ok(!body.includes("Commandes Sys"), body);
   });
 
   console.log("\nGarde-fou contre la dérive :");
@@ -181,7 +183,7 @@ function activeIdentities(body) {
   });
 
   await cas("les alias restent visibles, collés à leur commande", () => {
-    const body = bodyOf("utilitaire");
+    const body = bodyOf();
     assert.ok(body.includes("pic/avatar"), body);
     assert.ok(body.includes("server/serverinfo"));
     assert.ok(body.includes("userinfo/member"));
@@ -197,42 +199,34 @@ function activeIdentities(body) {
     }
   });
 
-  await cas("une commande n'apparaît jamais dans deux paliers à la fois", () => {
-    for (const view of CATEGORIES.map((c) => c.key)) {
-      const body = bodyOf(view);
-      const listes = [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].map((m) => m[1].split(", "));
-      const vus = new Set();
-      for (const liste of listes) {
-        for (const nom of liste) {
-          assert.ok(!vus.has(nom), `${nom} listé deux fois`);
-          vus.add(nom);
-        }
-      }
+  await cas("une identité n'apparaît jamais dans deux paliers à la fois", () => {
+    const identites = allIdentities(bodyOf());
+    const vus = new Set();
+    for (const id of identites) {
+      assert.ok(!vus.has(id), `${id} listé deux fois`);
+      vus.add(id);
     }
   });
 
   console.log("\nSous-commandes distinctes (le bug \"&help incompréhensible\") :");
 
   await cas("role create/delete/rename/color/admin sont CINQ identités distinctes, pas fusionnées sous \"role\"", () => {
-    const identites = activeIdentities(bodyOf("server"));
+    const identites = allIdentities(bodyOf());
     for (const sub of ["role create", "role delete", "role rename", "role color", "role admin"]) {
-      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte — trouvé :\n${identites.join(", ")}`);
+      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
   await cas("channel create/delete/rename/topic sont des identités distinctes elles aussi", () => {
-    const identites = activeIdentities(bodyOf("server"));
+    const identites = allIdentities(bodyOf());
     for (const sub of ["channel create", "channel delete", "channel rename", "channel topic"]) {
       assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
-  await cas("une catégorie dense reste compacte (liste de noms, pas le détail syntaxe/description)", () => {
-    // Signalé : la référence montrée tient tout sur un seul écran, sans
-    // pagination ni palier séparé — repose sur des identités compactes,
-    // comme &help d'origine, pas sur une fiche détaillée par commande.
-    const longest = Math.max(...CATEGORIES.map((c) => bodyOf(c.key).length));
-    assert.ok(longest < 2000, `une catégorie ne doit pas dépasser ~2000 caractères : ${longest}`);
+  await cas("même pour le propriétaire (vue la plus large possible), tout tient largement sous la limite Discord d'un bloc de texte", () => {
+    const body = bodyOf();
+    assert.ok(body.length < 4000, `${body.length} caractères`);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
