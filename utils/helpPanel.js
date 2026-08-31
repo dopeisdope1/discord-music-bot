@@ -16,30 +16,33 @@ const { isImplemented } = require("./implementedCommands");
 const SELECT_ID = "help_nav";
 const HOME = "__home__";
 
-// Nom court affiché dans les listes en ligne : sans les arguments pour une
-// commande préfixée ("play <titre>" -> "play"), mais intégral pour les
-// entrées sans préfixe, dont le nom EST la formulation ("uo clear").
-const baseName = (cmd) => (cmd.prefix ? cmd.name.split(/\s+/)[0] : cmd.name);
-
 /**
- * Réduit une liste d'entrées du catalogue aux NOMS DE COMMANDES distincts.
- *
- * Deux sources de répétition à absorber, sans quoi la même commande occupe
- * plusieurs fois la ligne :
- *  - les sous-commandes d'un même dispatcher ("server", "server pic",
- *    "server banner" -> un seul "server") ;
- *  - les alias, qui ne sont plus des entrées à part et s'affichent collés à
- *    leur commande ("pic/avatar") — découvrables, sans laisser croire à deux
- *    fonctionnalités différentes.
+ * Identité d'affichage d'une commande : tous les mots de TÊTE qui sont de
+ * vrais mots du déclencheur (pas un argument) — même logique que
+ * utils/implementedCommands.js::isImplemented, pour rester cohérent avec ce
+ * qui est réellement routé. Sans ça, "role create", "role delete", "role
+ * rename", "role color" et "role admin" fusionnaient tous sous le seul mot
+ * ambigu "role" : cinq commandes différentes affichées comme une seule,
+ * sans dire lesquelles existent ni comment les taper — la cause principale
+ * du "&help incompréhensible" signalé.
+ * @param {{ name: string, prefix?: string }} cmd
  */
-function commandNames(commands) {
-  const aliases = new Map();
-  for (const cmd of commands) {
-    const base = baseName(cmd);
-    if (!aliases.has(base)) aliases.set(base, new Set());
-    for (const a of cmd.aliases || []) aliases.get(base).add(a);
+function leadingWords(cmd) {
+  if (!cmd.prefix) return [cmd.name];
+  const words = cmd.name.trim().split(/\s+/);
+  const lead = [];
+  for (const w of words) {
+    if (/^[a-z]+$/i.test(w)) lead.push(w.toLowerCase());
+    else break;
   }
-  return [...aliases].map(([base, alias]) => (alias.size ? `${base}/${[...alias].join("/")}` : base));
+  return lead.length ? lead : [words[0]];
+}
+const identityOf = (cmd) => leadingWords(cmd).join(" ");
+
+/** Une ligne par commande : syntaxe complète + description, alias visibles. */
+function formatEntry(cmd) {
+  const aliasNote = cmd.aliases?.length ? ` *(alias : ${cmd.aliases.join(", ")})*` : "";
+  return `\`${cmd.name}\`${aliasNote} — ${cmd.description}`;
 }
 
 // Groupe par palier d'accès plutôt que par catégorie ou en détaillant chaque
@@ -68,26 +71,30 @@ function tieredBody(commands) {
     else documented.push(cmd);
   }
 
-  // Un nom ne peut appartenir qu'à un seul palier : une commande dont les
-  // sous-commandes ont des permissions différentes (&clear, &role) serait
-  // sinon listée deux fois. Le palier le plus ouvert gagne, c'est celui qui
-  // décrit ce que la personne peut réellement lancer.
+  // Une identité (ex: "role create") ne peut apparaître qu'une fois — garde-
+  // fou pour un doublon accidentel dans le catalogue, pas un mécanisme de
+  // fusion : chaque sous-commande garde sa propre ligne désormais.
   const placed = new Set();
   const sections = [];
   for (const tier of ["public", "configurable", "sys"]) {
-    const names = commandNames(groups[tier]).filter((n) => !placed.has(n));
-    if (!names.length) continue;
-    for (const n of names) placed.add(n);
-    sections.push(`**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`);
+    const entries = [];
+    for (const cmd of groups[tier]) {
+      const id = identityOf(cmd);
+      if (placed.has(id)) continue;
+      placed.add(id);
+      entries.push(formatEntry(cmd));
+    }
+    if (!entries.length) continue;
+    sections.push(`**${TIER_LABELS[tier]} (${entries.length})**\n${entries.join("\n")}`);
   }
 
-  const documentedNames = commandNames(documented).filter((n) => !placed.has(n));
+  const documentedNames = [...new Set(documented.map(identityOf))].filter((n) => !placed.has(n));
   if (documentedNames.length) {
     sections.push(
-      `\n*Documentées, pas encore actives (${documentedNames.length}) — les taper ne fait rien pour l'instant :*\n*${documentedNames.join(", ")}*`
+      `*Documentées, pas encore actives (${documentedNames.length}) — les taper ne fait rien pour l'instant :*\n*${documentedNames.join(", ")}*`
     );
   }
-  return sections.join("\n");
+  return sections.join("\n\n");
 }
 
 /** @returns {{ actives: number, total: number }} pour l'accueil et le menu. */

@@ -107,14 +107,20 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
   });
 
   await cas("aucune commande n'apparaît à la fois active et non active", () => {
+    // Comparaison sur les identités RÉELLEMENT listées (texte entre
+    // backticks en début de ligne côté actives, mots simples côté
+    // documentées) — pas une recherche de sous-chaîne brute : depuis que les
+    // descriptions sont affichées, un mot comme "image" apparaît aussi dans
+    // la prose d'une commande active sans rapport ("l'image d'un émoji").
     const body = bodyOf("utilitaire");
-    const [actives, documentees] = body.split("Documentées, pas encore actives");
+    const [activesTxt, documenteesTxt] = body.split("Documentées, pas encore actives");
+    const activeIdentities = [...activesTxt.matchAll(/^`([^`]+)`/gm)].map((m) => m[1]);
     for (const name of ["changelogs", "image", "support"]) {
-      assert.ok(!actives.includes(name), `${name} ne doit pas figurer parmi les actives`);
-      assert.ok(documentees.includes(name));
+      assert.ok(!activeIdentities.some((id) => id === name || id.startsWith(`${name} `)), `${name} ne doit pas figurer parmi les actives`);
+      assert.ok(documenteesTxt.includes(name));
     }
     for (const name of ["calc", "vocinfo", "boosters"]) {
-      assert.ok(actives.includes(name), `${name} doit figurer parmi les actives`);
+      assert.ok(activeIdentities.some((id) => id === name || id.startsWith(`${name} `)), `${name} doit figurer parmi les actives`);
     }
   });
 
@@ -172,9 +178,9 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
 
   await cas("les alias restent visibles, collés à leur commande", () => {
     const body = bodyOf("utilitaire");
-    assert.ok(body.includes("pic/avatar"), body);
-    assert.ok(body.includes("server/serverinfo"));
-    assert.ok(body.includes("userinfo/member"));
+    assert.ok(body.includes("`pic [@membre]` *(alias : avatar)*"), body);
+    assert.ok(body.includes("*(alias : serverinfo)*"));
+    assert.ok(body.includes("*(alias : member)*"));
   });
 
   await cas("chaque alias déclaré répond réellement", () => {
@@ -190,22 +196,38 @@ const bodyOf = (view) => buildHelpPanel("g1", member, view).components[0].toJSON
   await cas("une commande n'apparaît jamais dans deux paliers à la fois", () => {
     for (const view of CATEGORIES.map((c) => c.key)) {
       const body = bodyOf(view);
-      const listes = [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].map((m) => m[1].split(", "));
+      const lignes = [...body.matchAll(/^`([^`]+)`/gm)].map((m) => m[1]);
       const vus = new Set();
-      for (const liste of listes) {
-        for (const nom of liste) {
-          assert.ok(!vus.has(nom), `${nom} listé deux fois dans la catégorie ${view}`);
-          vus.add(nom);
-        }
+      for (const nom of lignes) {
+        assert.ok(!vus.has(nom), `${nom} listé deux fois dans la catégorie ${view}`);
+        vus.add(nom);
       }
     }
   });
 
-  await cas("une sous-commande ne fait pas réapparaître son dispatcher", () => {
-    // "server", "server pic", "server banner" -> un seul "server/serverinfo".
+  console.log("\nSous-commandes distinctes (le bug \"&help incompréhensible\") :");
+
+  await cas("role create/delete/rename/color/admin sont CINQ lignes distinctes, pas fusionnées sous \"role\"", () => {
+    const body = bodyOf("server");
+    for (const sub of ["role create <nom>", "role delete @rôle", "role rename @rôle <nom>", "role color @rôle <hex>", "role admin @rôle"]) {
+      assert.ok(body.includes(`\`${sub}\``), `"${sub}" doit apparaître littéralement — trouvé :\n${body}`);
+    }
+    // Chacune garde sa propre description, preuve qu'aucune n'a été avalée par une autre.
+    assert.ok(body.includes("Crée un nouveau rôle"));
+    assert.ok(body.includes("Supprime un rôle"));
+    assert.ok(body.includes("Renomme un rôle"));
+  });
+
+  await cas("channel create/delete/rename/topic sont des lignes distinctes elles aussi", () => {
+    const body = bodyOf("server");
+    for (const sub of ["channel create <nom> [vocal]", "channel delete [#salon]", "channel rename [#salon] <nom>", "channel topic [#salon] <texte>"]) {
+      assert.ok(body.includes(`\`${sub}\``), `"${sub}" doit apparaître littéralement`);
+    }
+  });
+
+  await cas("chaque commande active affiche sa description, pas seulement son nom", () => {
     const body = bodyOf("utilitaire");
-    const noms = body.split("**Commandes publiques")[1].split("\n")[0].split(", ");
-    assert.strictEqual(noms.filter((n) => n.startsWith("server")).length, 1, noms.join(" | "));
+    assert.ok(body.includes("`banner [@membre]` — Affiche la bannière d'un membre"));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
