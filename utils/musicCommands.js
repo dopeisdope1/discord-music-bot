@@ -537,4 +537,9 @@ async function handleMusicTextCommand(client, message) {
   }
 }
 
-module.exports = { handleMusicTextCommand };
+// MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond
+// vraiment sur le préfixe "&" : &help s'en sert pour ne plus présenter de la
+// même façon une commande câblée et une commande seulement documentée (voir
+// utils/implementedCommands.js). Dérivée de la table réelle, jamais recopiée
+// à la main — les deux ne peuvent donc pas diverger.
+module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers) };

@@ -11,6 +11,7 @@ const {
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { categoriesFor } = require("./commandCatalog");
+const { isImplemented } = require("./implementedCommands");
 
 const SELECT_ID = "help_nav";
 const HOME = "__home__";
@@ -37,15 +38,35 @@ const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes co
 
 function tieredBody(commands) {
   const groups = { public: [], configurable: [], sys: [] };
-  for (const cmd of commands) groups[tierOf(cmd)].push(shortName(cmd));
+  // Les commandes seulement DOCUMENTÉES sont mises à part : les afficher au
+  // milieu des autres revenait à promettre qu'elles répondent, alors que les
+  // taper ne produit rien (voir utils/implementedCommands.js).
+  const documented = [];
+  for (const cmd of commands) {
+    if (isImplemented(cmd)) groups[tierOf(cmd)].push(shortName(cmd));
+    else documented.push(shortName(cmd));
+  }
 
-  return ["public", "configurable", "sys"]
+  const sections = ["public", "configurable", "sys"]
     .filter((tier) => groups[tier].length)
     .map((tier) => {
       const names = [...new Set(groups[tier])];
       return `**${TIER_LABELS[tier]} (${names.length}) :** ${names.join(", ")}`;
-    })
-    .join("\n");
+    });
+
+  if (documented.length) {
+    const names = [...new Set(documented)];
+    sections.push(
+      `\n*Documentées, pas encore actives (${names.length}) — les taper ne fait rien pour l'instant :*\n*${names.join(", ")}*`
+    );
+  }
+  return sections.join("\n");
+}
+
+/** @returns {{ actives: number, total: number }} pour l'accueil et le menu. */
+function countsOf(category) {
+  const actives = category.commands.filter(isImplemented).length;
+  return { actives, total: category.commands.length };
 }
 
 function homeBody(categories, prefixes) {
@@ -53,7 +74,10 @@ function homeBody(categories, prefixes) {
   // propriétaire) reste trop long même regroupé par palier sur une seule
   // vue — la liste complète (aussi compacte que la référence) vit dans
   // chaque catégorie (voir categoryBody), l'accueil ne fait que résumer.
-  const lines = categories.map((c) => `> **${c.label}** — ${c.commands.length} commande(s)`);
+  const lines = categories.map((c) => {
+    const { actives, total } = countsOf(c);
+    return `> **${c.label}** — ${actives} active(s)${actives < total ? ` sur ${total} documentées` : ""}`;
+  });
   return [
     "Bienvenue sur le **panel d'aide** du bot",
     "Sélectionne une **catégorie** via le menu ci-dessous pour découvrir tes commandes disponibles",
@@ -81,13 +105,14 @@ function buildSelect(categories, current) {
         .setDescription("Vue d'ensemble")
         .setValue(HOME)
         .setDefault(current === HOME),
-      ...categories.map((c) =>
-        new StringSelectMenuOptionBuilder()
+      ...categories.map((c) => {
+        const { actives, total } = countsOf(c);
+        return new StringSelectMenuOptionBuilder()
           .setLabel(c.label)
-          .setDescription(`${c.commands.length} commande(s)`)
+          .setDescription(actives < total ? `${actives} active(s) sur ${total}` : `${actives} commande(s)`)
           .setValue(c.key)
-          .setDefault(current === c.key)
-      ),
+          .setDefault(current === c.key);
+      }),
     ]);
 }
 

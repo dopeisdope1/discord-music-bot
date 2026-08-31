@@ -236,6 +236,20 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
 moteur de permissions que les commandes et que `&panel`, jamais une liste
 séparée qui pourrait diverger (voir section 6ter).
 
+Il distingue aussi les commandes **actives** de celles qui sont seulement
+**documentées**. Le catalogue liste volontairement des commandes sans backend
+(demande explicite : "intègre tout, même sans backend"), mais les afficher à
+l'identique revenait à promettre qu'elles répondent — alors que les taper ne
+produit rien, silencieusement. Chaque catégorie annonce donc son nombre réel
+d'actives, et les autres sont regroupées sous *"Documentées, pas encore
+actives"*.
+
+La distinction est calculée depuis la **vraie** table de dispatch
+(`utils/implementedCommands.js` lit `MOD_COMMAND_NAMES`), pas depuis une
+liste tenue à la main : une commande qui gagne un backend quitte
+automatiquement la liste des inactives, et `scripts/test-help-honesty.js`
+échoue si les deux se contredisent.
+
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien
 activé sur le portail développeur (voir section 3).
 
