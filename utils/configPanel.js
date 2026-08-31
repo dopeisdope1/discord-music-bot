@@ -23,7 +23,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
-const { commandsForKeys } = require("./permsCommands");
+const { commandsForKeys, nonCommandGrants } = require("./permsCommands");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
@@ -252,6 +252,14 @@ function sectionBody(section, guild, member, state) {
       const commands = commandsForKeys(granted);
       lines.push("", `**Commandes débloquées par ce rôle (${commands.length})** :`);
       lines.push(commands.length ? commands.map((c) => `\`${c}\``).join(", ") : "*aucune*");
+      // Une clé accordée peut donner accès à une rubrique du panel plutôt
+      // qu'à une commande tapée — sans cette section, "0 commande" donnait
+      // l'impression fausse que rien n'était accordé du tout.
+      const autres = nonCommandGrants(granted);
+      if (autres.length) {
+        lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
+        lines.push(autres.map((l) => `\`${l}\``).join(", "));
+      }
     }
 
     return lines.join("\n");

@@ -2,6 +2,7 @@ const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacing
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
+const permCatalog = require("./permissions/catalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
@@ -37,6 +38,31 @@ function commandsForKeys(keys) {
   const set = new Set(keys);
   const names = ALL_COMMANDS.filter((cmd) => cmd.permission && set.has(cmd.permission) && isImplemented(cmd)).map(identityOf);
   return [...new Set(names)];
+}
+
+// Calculés à l'APPEL, pas au chargement du module : `isImplemented` fait un
+// require différé vers musicCommands.js (voir implementedCommands.js) pour
+// casser un cycle — l'appeler dès le chargement de ce module le rouvrirait,
+// puisque musicCommands.js require aussi configPanel.js qui require ce
+// fichier-ci.
+let CATALOG_LABELS = null;
+function catalogLabels() {
+  if (!CATALOG_LABELS) CATALOG_LABELS = new Map(permCatalog.byCategory().flatMap((g) => g.permissions).map((p) => [p.key, p.label]));
+  return CATALOG_LABELS;
+}
+
+/**
+ * Certaines clés du catalogue (ex. `panel.roles.manage`) donnent accès à une
+ * RUBRIQUE DU PANEL, pas à une commande tapée — elles restent invisibles
+ * dans `commandsForKeys`. Sans ça, un rôle avec "1 permission accordée"
+ * pouvait afficher "0 commande débloquée : aucune", donnant l'impression
+ * trompeuse que rien n'était accordé.
+ * @returns {string[]} libellés du catalogue pour les clés sans commande
+ */
+function nonCommandGrants(keys) {
+  const commandKeys = new Set(ALL_COMMANDS.filter(isImplemented).map((cmd) => cmd.permission).filter(Boolean));
+  const labels = catalogLabels();
+  return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
 }
 
 function buildTierCard(title, intro, tiers, renderTierLine) {
@@ -87,4 +113,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers, commandsForKeys };
+module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants };

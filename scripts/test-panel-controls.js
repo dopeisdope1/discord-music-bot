@@ -158,6 +158,19 @@ function render(section, state) {
     assert.ok(bouton, "le bouton doit repasser à \"Voir les commandes débloquées\" une fois replié");
   });
 
+  await cas("une permission accordée SANS commande dédiée (ex. accès à une rubrique du panel) reste visible — pas juste \"0 : aucune\"", () => {
+    const roleId2 = "role-2";
+    guild.roles.cache.set(roleId2, { id: roleId2, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [] } });
+    // panel.roles.manage donne accès à une rubrique du panel, pas à une
+    // commande tapée : reproduit le cas "1 permission accordée" affichant
+    // "0 commande débloquée" sans explication.
+    permStore.setRoleGrants("g1", roleId2, ["panel.roles.manage"]);
+    const { texte } = render("permissions", { permissionsRoleId: roleId2, permissionsShowCommands: true });
+    assert.ok(texte.includes("Commandes débloquées par ce rôle (0)"), texte);
+    assert.ok(texte.includes("Accès sans commande dédiée (1)"), texte);
+    assert.ok(!texte.includes("panel.roles.manage"), "la clé technique ne doit pas apparaître, seulement son libellé");
+  });
+
   console.log("\nNavigation regroupée par famille :");
 
   await cas("le menu principal propose des familles, pas les 16 rubriques", () => {
