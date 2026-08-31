@@ -1,13 +1,11 @@
 /**
  * Vérifie &help (utils/helpPanel.js + utils/implementedCommands.js) :
- *  - une seule vue, groupée UNIQUEMENT par palier d'accès (publiques/
- *    configurables/Sys), toutes catégories du catalogue confondues —
- *    demande explicite : le découpage par thème (Modération, Antiraid,
- *    Paramètres de modération...) faisait "40 mille pages" pour rien ;
- *  - ne promet jamais de commande muette : seules les entrées avec un
- *    VRAI handler sont affichées, plus de section "documentées" du tout
- *    (demande explicite : "enlève-moi les trucs documentés qui servent
- *    à rien") ;
+ *  - accueil compact (juste les paliers et leur effectif : "Commandes
+ *    publiques — 24 commande(s)"), puis un menu déroulant pour choisir un
+ *    palier et voir sa liste de commandes — demande explicite : pas de
+ *    découpage par thème ("40 mille pages"), juste public/configurable/Sys ;
+ *  - ne promet jamais de commande muette : seules les entrées avec un VRAI
+ *    handler sont affichées, plus de section "documentées" du tout ;
  *  - conserve la correction d'identité qui causait le "&help
  *    incompréhensible" d'origine : "role create"/"role delete"/... restent
  *    des entrées distinctes, jamais fusionnées sous "role".
@@ -22,12 +20,12 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "helphonesty-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection } = require("discord.js");
+const { Collection, MessageFlags } = require("discord.js");
 // Volontairement requis EN PREMIER : ce module fait un require différé de
 // musicCommands pour casser la boucle de dépendances. S'il était rompu, la
 // première ligne du test planterait.
 const { isImplemented } = require("../utils/implementedCommands");
-const { buildHelpPanel } = require("../utils/helpPanel");
+const { buildHelpPanel, handleHelpInteraction } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
 
 let reussis = 0;
@@ -44,12 +42,7 @@ async function cas(nom, fn) {
 
 const owner = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
 const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => false } };
-const bodyOf = (member = owner) => buildHelpPanel("g1", member).components[0].toJSON().components[2].content;
-
-/** Toutes les identités listées, tous paliers confondus, à plat. */
-function allIdentities(body) {
-  return [...body.matchAll(/\*\*[^*]+\(\d+\) :\*\* ([^\n]+)/g)].flatMap((m) => m[1].split(", "));
-}
+const bodyOf = (member = owner, tier = null) => buildHelpPanel("g1", member, tier).components[0].toJSON().components[2].content;
 
 (async () => {
   console.log("Distinction câblé / seulement documenté :");
@@ -101,45 +94,100 @@ function allIdentities(body) {
     assert.strictEqual(isImplemented({ name: "uo clear" }), true);
   });
 
-  console.log("\nRendu de &help :");
+  console.log("\nAccueil (paliers + effectif, pas de liste) :");
+
+  await cas("l'accueil affiche juste le nom du palier et son effectif, aucun nom de commande", () => {
+    const body = bodyOf();
+    assert.ok(/\*\*Commandes publiques\*\* — \d+ commande\(s\)/.test(body), body);
+    assert.ok(/\*\*Commandes configurables\*\* — \d+ commande\(s\)/.test(body), body);
+    assert.ok(!body.includes("kick"), "aucune commande ne doit apparaître avant d'avoir choisi un palier");
+  });
 
   await cas("aucune trace de la section \"documentées\" — plus de commandes muettes affichées du tout", () => {
     const body = bodyOf();
     assert.ok(!body.includes("Documentées"), body);
-    assert.ok(!body.includes("changelogs"), "une commande sans backend ne doit plus apparaître nulle part");
   });
 
   await cas("groupé uniquement par palier — aucune trace d'un découpage par thème", () => {
     const body = bodyOf();
     for (const theme of ["Modération", "Antiraid", "Gestion du serveur", "Paramètres de modération", "Logs"]) {
-      assert.ok(!body.includes(`## ${theme}`) && !body.includes(`— ${theme}`), `"${theme}" ne doit plus apparaître comme titre/rubrique`);
+      assert.ok(!body.includes(theme), `"${theme}" ne doit plus apparaître`);
     }
-    assert.ok(body.includes("Commandes publiques"));
-    assert.ok(body.includes("Commandes configurables"));
   });
 
-  await cas("une seule vue : pas de bouton ni de sélecteur, rien à naviguer", () => {
-    const panel = buildHelpPanel("g1", owner);
-    assert.strictEqual(panel.components[0].toJSON().components.filter((c) => c.type === 1).length, 0);
-  });
-
-  await cas("les commandes de paramètres de modération sont bien rangées avec les autres \"configurables\", pas à part", () => {
-    const identites = allIdentities(bodyOf());
-    // "antilink" vit dans la catégorie catalogue "Paramètres de modération" ;
-    // "role create" vit dans "Gestion du serveur" — les deux doivent
-    // atterrir dans le MÊME palier "Commandes configurables", à plat.
-    const body = bodyOf();
-    const configurableLine = body.split("\n").find((l) => l.startsWith("**Commandes configurables"));
-    assert.ok(configurableLine.includes("antilink"), configurableLine);
-    assert.ok(configurableLine.includes("role create"), configurableLine);
-    assert.ok(identites.includes("antilink") && identites.includes("role create"));
-  });
-
-  await cas("un membre sans aucun droit ne voit QUE les commandes publiques", () => {
+  await cas("un membre sans aucun droit ne voit que le palier public à l'accueil", () => {
     const body = bodyOf(plain);
     assert.ok(body.includes("Commandes publiques"));
     assert.ok(!body.includes("Commandes configurables"), body);
     assert.ok(!body.includes("Commandes Sys"), body);
+  });
+
+  console.log("\nUn palier choisi : la liste de ses commandes, tout court :");
+
+  await cas("le palier \"configurable\" liste bien ses commandes, tous thèmes confondus", () => {
+    const body = bodyOf(owner, "configurable");
+    // "antilink" vit dans la catégorie catalogue "Paramètres de modération" ;
+    // "role create" vit dans "Gestion du serveur" — les deux atterrissent
+    // dans le MÊME palier, à plat, sans distinction de thème d'origine.
+    assert.ok(body.includes("antilink"), body);
+    assert.ok(body.includes("role create"), body);
+    assert.ok(!body.includes("Commandes configurables —"), "ne doit plus afficher le résumé une fois le palier choisi");
+  });
+
+  await cas("changer de palier depuis la carte affiche bien les commandes de CE palier", async () => {
+    const interaction = {
+      guild: { id: "g1" },
+      member: owner,
+      values: ["public"],
+      message: { flags: { has: () => false } },
+      replies: [],
+      reply(p) {
+        this.replies.push(p);
+        return Promise.resolve(p);
+      },
+    };
+    await handleHelpInteraction(interaction);
+    const body = interaction.replies[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("pic/avatar"), body);
+    assert.ok(!body.includes("role create"), "le palier configurable ne doit plus apparaître");
+  });
+
+  console.log("\nÉphémère vs message public (deux personnes, deux droits différents) :");
+
+  await cas("premier clic sur le message PUBLIC -> nouvelle réponse éphémère", async () => {
+    const interaction = {
+      guild: { id: "g1" },
+      member: owner,
+      values: ["sys"],
+      message: { flags: { has: () => false } },
+      replies: [],
+      reply(p) {
+        this.replies.push(p);
+        return Promise.resolve(p);
+      },
+    };
+    await handleHelpInteraction(interaction);
+    assert.strictEqual(interaction.replies.length, 1);
+    assert.ok(interaction.replies[0].flags & MessageFlags.Ephemeral);
+  });
+
+  await cas("clic suivant sur SA carte déjà éphémère -> édition en place, pas d'empilement", async () => {
+    let updated = null;
+    const interaction = {
+      guild: { id: "g1" },
+      member: owner,
+      values: ["public"],
+      message: { flags: { has: (f) => f === MessageFlags.Ephemeral } },
+      reply: () => {
+        throw new Error("ne devrait pas être appelé");
+      },
+      update(p) {
+        updated = p;
+        return Promise.resolve(p);
+      },
+    };
+    await handleHelpInteraction(interaction);
+    assert.ok(updated, "aucune édition en place n'a eu lieu");
   });
 
   console.log("\nGarde-fou contre la dérive :");
@@ -183,7 +231,7 @@ function allIdentities(body) {
   });
 
   await cas("les alias restent visibles, collés à leur commande", () => {
-    const body = bodyOf();
+    const body = bodyOf(owner, "public");
     assert.ok(body.includes("pic/avatar"), body);
     assert.ok(body.includes("server/serverinfo"));
     assert.ok(body.includes("userinfo/member"));
@@ -200,33 +248,37 @@ function allIdentities(body) {
   });
 
   await cas("une identité n'apparaît jamais dans deux paliers à la fois", () => {
-    const identites = allIdentities(bodyOf());
     const vus = new Set();
-    for (const id of identites) {
-      assert.ok(!vus.has(id), `${id} listé deux fois`);
-      vus.add(id);
+    for (const tier of ["public", "configurable", "sys"]) {
+      const names = bodyOf(owner, tier).split(", ");
+      for (const n of names) {
+        assert.ok(!vus.has(n), `${n} listé dans deux paliers`);
+        vus.add(n);
+      }
     }
   });
 
   console.log("\nSous-commandes distinctes (le bug \"&help incompréhensible\") :");
 
   await cas("role create/delete/rename/color/admin sont CINQ identités distinctes, pas fusionnées sous \"role\"", () => {
-    const identites = allIdentities(bodyOf());
+    const body = bodyOf(owner, "configurable");
     for (const sub of ["role create", "role delete", "role rename", "role color", "role admin"]) {
-      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte`);
+      assert.ok(body.split(", ").includes(sub), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
   await cas("channel create/delete/rename/topic sont des identités distinctes elles aussi", () => {
-    const identites = allIdentities(bodyOf());
+    const body = bodyOf(owner, "configurable");
     for (const sub of ["channel create", "channel delete", "channel rename", "channel topic"]) {
-      assert.ok(identites.includes(sub), `"${sub}" doit apparaître comme identité distincte`);
+      assert.ok(body.split(", ").includes(sub), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
-  await cas("même pour le propriétaire (vue la plus large possible), tout tient largement sous la limite Discord d'un bloc de texte", () => {
-    const body = bodyOf();
-    assert.ok(body.length < 4000, `${body.length} caractères`);
+  await cas("même le palier le plus dense tient largement sous la limite Discord d'un bloc de texte", () => {
+    for (const tier of ["public", "configurable", "sys"]) {
+      const body = bodyOf(owner, tier);
+      assert.ok(body.length < 4000, `${tier} : ${body.length} caractères`);
+    }
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

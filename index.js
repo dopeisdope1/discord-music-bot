@@ -46,6 +46,7 @@ const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
+const { handleHelpInteraction } = require("./utils/helpPanel");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
@@ -478,6 +479,14 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId?.startsWith("giveaway:")) {
     await handleGiveawayButton(interaction).catch((err) => console.error("[giveaways]", err));
+    return;
+  }
+
+  // Choix d'un palier dans &help (voir utils/helpPanel.js) : la réponse est
+  // recalculée pour QUI CLIQUE et envoyée en éphémère, deux membres de
+  // rangs différents ne voyant pas la même liste de commandes.
+  if (interaction.isStringSelectMenu?.() && interaction.customId === "help_tier") {
+    await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
     return;
   }
 
