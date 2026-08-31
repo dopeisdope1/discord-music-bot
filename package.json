@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "deploy:musique": "node deploy-commands.js musique",
-    "test": "node scripts/test-deadtrack.js && node scripts/test-sources.js && node scripts/test-permissions.js && node scripts/test-moderation.js && node scripts/test-guard.js && node scripts/test-voicechannels.js && node scripts/test-community.js && node scripts/test-automod.js && node scripts/test-moderation-extra.js && node scripts/test-server-extra.js && node scripts/test-command-forms.js && node scripts/test-voice-control.js && node scripts/test-role-membership.js && node scripts/test-partial-forms.js && node scripts/test-logs-expansion.js && node scripts/test-perms-commands.js && node scripts/test-text-capture.js && node scripts/test-utility-commands.js && node scripts/test-giveaway-options.js && node scripts/test-help-honesty.js && node scripts/test-panel-controls.js"
+    "test": "node scripts/test-deadtrack.js && node scripts/test-sources.js && node scripts/test-permissions.js && node scripts/test-moderation.js && node scripts/test-guard.js && node scripts/test-voicechannels.js && node scripts/test-community.js && node scripts/test-automod.js && node scripts/test-moderation-extra.js && node scripts/test-server-extra.js && node scripts/test-command-forms.js && node scripts/test-voice-control.js && node scripts/test-role-membership.js && node scripts/test-partial-forms.js && node scripts/test-logs-expansion.js && node scripts/test-perms-commands.js && node scripts/test-text-capture.js && node scripts/test-utility-commands.js && node scripts/test-giveaway-options.js && node scripts/test-help-honesty.js && node scripts/test-panel-controls.js && node scripts/test-log-commands.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
