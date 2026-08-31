@@ -392,6 +392,8 @@ const modHandlers = {
   // Automod léger (anti-lien/anti-mass-mention/mots interdits) — voir
   // utils/automodCommands.js, permission "protection.automod" (même que
   // l'anti-spam, configurable aussi depuis &panel > Protection).
+  antispam: automodHandlers.antispam,
+  spam: automodHandlers.spam,
   antilink: automodHandlers.antilink,
   link: automodHandlers.link,
   antimassmention: automodHandlers.antimassmention,
@@ -619,6 +621,8 @@ const MOD_SUBCOMMANDS = {
   antieveryone: ["on", "off", "max"],
   antijoin: ["on", "off", "max"],
   punition: ["all"],
+  antispam: ["on", "off"],
+  spam: ["allow", "deny", "reset"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond

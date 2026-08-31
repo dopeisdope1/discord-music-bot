@@ -12,6 +12,11 @@ const DATA_FILE = path.join(DATA_DIR, "automod.json");
 
 const DEFAULT_CONFIG = { enabled: false, maxMessages: 6, windowSeconds: 6, timeoutSeconds: 60 };
 
+// Bornes du seuil réglable par &antispam <nombre>/<durée> : en dessous de 2
+// messages, le moindre double envoi sanctionne ; au-delà d'une minute de
+// fenêtre, ce n'est plus du flood mais une conversation normale.
+const THRESHOLD_LIMITS = { minMessages: 2, maxMessages: 50, minWindow: 1, maxWindow: 60 };
+
 let cache = null;
 
 function load() {
@@ -35,14 +40,53 @@ function save() {
 
 function guildEntry(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { ...DEFAULT_CONFIG, whitelist: { users: [], roles: [] } };
+  if (!data[guildId]) data[guildId] = { ...DEFAULT_CONFIG, whitelist: { users: [], roles: [] }, exemptChannels: [] };
   if (!data[guildId].whitelist) data[guildId].whitelist = { users: [], roles: [] };
+  // Ajouté après coup : les serveurs déjà configurés n'ont pas la clé.
+  if (!data[guildId].exemptChannels) data[guildId].exemptChannels = [];
   return data[guildId];
 }
 
 function getConfig(guildId) {
   const { whitelist, ...config } = guildEntry(guildId);
   return config;
+}
+
+/**
+ * Règle le seuil de déclenchement (`&antispam 5/10` = 5 messages en 10s).
+ * @returns {{ maxMessages: number, windowSeconds: number }|null} null si hors bornes
+ */
+function setThreshold(guildId, maxMessages, windowSeconds) {
+  const { minMessages, maxMessages: plafond, minWindow, maxWindow } = THRESHOLD_LIMITS;
+  if (!Number.isInteger(maxMessages) || maxMessages < minMessages || maxMessages > plafond) return null;
+  if (!Number.isInteger(windowSeconds) || windowSeconds < minWindow || windowSeconds > maxWindow) return null;
+  const entry = guildEntry(guildId);
+  entry.maxMessages = maxMessages;
+  entry.windowSeconds = windowSeconds;
+  save();
+  return { maxMessages, windowSeconds };
+}
+
+/** Salons où l'anti-spam ne s'applique pas (salons de flood assumés, bots...). */
+function getExemptChannels(guildId) {
+  return [...guildEntry(guildId).exemptChannels];
+}
+
+/** @returns {boolean} true si la liste a changé */
+function setChannelExempt(guildId, channelId, exempt) {
+  const list = guildEntry(guildId).exemptChannels;
+  const index = list.indexOf(channelId);
+  if (exempt && index === -1) {
+    list.push(channelId);
+    save();
+    return true;
+  }
+  if (!exempt && index !== -1) {
+    list.splice(index, 1);
+    save();
+    return true;
+  }
+  return false;
 }
 
 function getWhitelist(guildId) {
@@ -96,6 +140,7 @@ async function checkMessage(client, message) {
 
   const config = getConfig(message.guild.id);
   if (!config.enabled) return;
+  if (config.exemptChannels.includes(message.channel.id)) return;
   if (isWhitelisted(message.member)) return;
 
   const key = keyOf(message.guild.id, message.author.id);
@@ -141,6 +186,10 @@ module.exports = {
   getConfig,
   getWhitelist,
   setEnabled,
+  setThreshold,
+  getExemptChannels,
+  setChannelExempt,
+  THRESHOLD_LIMITS,
   addToWhitelist,
   removeFromWhitelist,
   isWhitelisted,
