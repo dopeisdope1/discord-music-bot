@@ -123,6 +123,7 @@ async function checkEveryoneMention(client, message) {
       { label: "Sanction", value: punished ? config.punishment : "aucune (protégé)" },
     ],
     moderatorTag: "Anti-nuke (automatique)",
+    pingRoleId: config.pingRoleId,
   });
 }
 
@@ -150,17 +151,51 @@ async function checkJoinFlood(client, member) {
     title: "Anti-nuke — Afflux de joins suspect",
     fields: [{ label: "Dernier membre expulsé", value: `<@${member.id}> (${member.id})` }],
     moderatorTag: "Anti-nuke (automatique)",
+    pingRoleId: guardConfig.getConfig(member.guild.id).pingRoleId,
   });
 }
 
-// Liste complète pour le panel (&panel > Anti-nuke) : les 8 guards basés sur
-// l'audit log + antieveryone/antijoin, qui n'y figurent pas (déclenchés
-// autrement, voir plus haut) mais sont individuellement activables/désactivables
-// au même titre via guardConfig.isGuardEnabled/toggleGuard.
+// --- creationlimit : compte trop récent pour rejoindre sans être sanctionné
+// — "&antinuke creationlimit <durée>", désactivé tant qu'aucun seuil n'est
+// réglé (creationLimitMs = 0). Contrairement à antijoin (débit anormal de
+// joins), ça se déclenche sur CHAQUE arrivée dont le compte est trop jeune,
+// indépendamment du rythme des arrivées. ---
+async function checkNewAccount(client, member) {
+  if (!guardConfig.isGuardEnabled(member.guild.id, "creationlimit")) return;
+  const config = guardConfig.getConfig(member.guild.id);
+  if (!config.creationLimitMs) return;
+  if (isFullyExempt(member)) return;
+  if (Date.now() - member.user.createdTimestamp >= config.creationLimitMs) return;
+
+  if (punishmentCapReached(member.guild.id)) {
+    console.warn(`[guard:creationlimit] plafond de sanctions atteint sur "${member.guild.name}", membre non sanctionné (log conservé).`);
+    return;
+  }
+  const punished = await applyPunishment(client, member.guild, member, config, "Anti-nuke : compte trop récent pour rejoindre");
+  if (punished) recordPunishment(member.guild.id);
+
+  await postModerationEntry(client, member.guild.id, "moderation", {
+    title: "Anti-nuke — Compte trop récent",
+    fields: [
+      { label: "Membre", value: `<@${member.id}> (${member.id})` },
+      { label: "Compte créé", value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>` },
+      { label: "Sanction", value: punished ? config.punishment : "aucune (protégé, ou plafond de sanctions atteint)" },
+    ],
+    moderatorTag: "Anti-nuke (automatique)",
+    pingRoleId: config.pingRoleId,
+  });
+}
+
+// Liste complète pour le panel (&panel > Anti-nuke) : les guards basés sur
+// l'audit log + antieveryone/antijoin/creationlimit, qui n'y figurent pas
+// (déclenchés autrement, voir plus haut) mais sont individuellement
+// activables/désactivables au même titre via guardConfig.isGuardEnabled/
+// toggleGuard.
 const ALL_GUARDS = [
   ...DEFINITIONS.map((d) => ({ key: d.key, label: d.label, threshold: d.threshold })),
   { key: "antieveryone", label: "Mention @everyone/@here non autorisée", threshold: null },
   { key: "antijoin", label: "Afflux de joins suspect", threshold: JOIN_FLOOD },
+  { key: "creationlimit", label: "Compte trop récent pour rejoindre", threshold: null },
 ];
 
-module.exports = { DEFINITIONS, ALL_GUARDS, checkAuditEntry, checkEveryoneMention, checkJoinFlood };
+module.exports = { DEFINITIONS, ALL_GUARDS, checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkNewAccount };

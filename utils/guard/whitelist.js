@@ -69,4 +69,14 @@ function isWhitelisted(member) {
   return member.roles.cache.some((r) => roles.includes(r.id));
 }
 
-module.exports = { getWhitelist, add, remove, isWhitelisted };
+/** Vide la whitelist (utilisateurs ET rôles) d'un coup — "&antinuke clearwl". @returns {number} nombre d'entrées retirées. */
+function clearAll(guildId) {
+  const entry = guildEntry(guildId);
+  const count = entry.users.length + entry.roles.length;
+  entry.users = [];
+  entry.roles = [];
+  save();
+  return count;
+}
+
+module.exports = { getWhitelist, add, remove, isWhitelisted, clearAll };

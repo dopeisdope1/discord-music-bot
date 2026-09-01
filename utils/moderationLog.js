@@ -324,9 +324,14 @@ function formatTimestamp(date = new Date()) {
  * @param {import('discord.js').Client} client
  * @param {string} guildId
  * @param {"moderation"|"members"|"roles"|"channels"|"voice"|"server"|"bots"|"messages"} category
- * @param {{ title: string, fields: {label: string, value: string}[], moderatorId?: string|null, moderatorTag?: string|null, reason?: string|null }} entry
+ * @param {{ title: string, fields: {label: string, value: string}[], moderatorId?: string|null, moderatorTag?: string|null, reason?: string|null, pingRoleId?: string|null }} entry
  */
-async function postModerationEntry(client, guildId, category, { title, fields, moderatorId = null, moderatorTag = null, reason = null }) {
+async function postModerationEntry(
+  client,
+  guildId,
+  category,
+  { title, fields, moderatorId = null, moderatorTag = null, reason = null, pingRoleId = null }
+) {
   const channelId = getLogChannelId(guildId, category);
   if (!channelId) return;
 
@@ -361,9 +366,20 @@ async function postModerationEntry(client, guildId, category, { title, fields, m
   // Message permanent, volontairement pas de suppression automatique : c'est
   // tout l'intérêt de ce salon face aux confirmations qui s'effacent d'elles-
   // mêmes ailleurs dans le bot.
-  await channel.send({ flags: MessageFlags.IsComponentsV2, components: [container] }).catch((err) => {
-    console.error(`[moderationLog] échec d'envoi dans le salon de logs (${channelId}) :`, err.message);
-  });
+  //
+  // pingRoleId ("&antinuke ping @rôle") : le client a allowedMentions.parse
+  // = [] par défaut (voir index.js) — un rôle en contenu ne notifierait
+  // personne sans l'autoriser explicitement ici.
+  await channel
+    .send({
+      content: pingRoleId ? `<@&${pingRoleId}>` : undefined,
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      allowedMentions: pingRoleId ? { roles: [pingRoleId] } : { parse: [] },
+    })
+    .catch((err) => {
+      console.error(`[moderationLog] échec d'envoi dans le salon de logs (${channelId}) :`, err.message);
+    });
 }
 
 /**

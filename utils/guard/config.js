@@ -18,6 +18,12 @@ const DEFAULT_CONFIG = {
   // + "antieveryone"/"antijoin" qui ne sont pas dans DEFINITIONS) — le
   // panel permet de couper un guard précis sans tout désactiver.
   disabledGuards: [],
+  // Rôle pingé (en plus du log habituel) à chaque déclenchement d'un guard —
+  // "&antinuke ping @rôle" / "off". null = pas de ping, comportement d'avant.
+  pingRoleId: null,
+  // Âge minimum du compte pour pouvoir rejoindre sans être sanctionné —
+  // "&antinuke creationlimit <durée>". 0 = désactivé (comportement d'avant).
+  creationLimitMs: 0,
 };
 
 let cache = null;
@@ -49,6 +55,8 @@ function guildEntry(guildId) {
   if (!PUNISHMENTS.includes(entry.punishment)) entry.punishment = DEFAULT_CONFIG.punishment;
   if (typeof entry.punishmentDurationMs !== "number") entry.punishmentDurationMs = DEFAULT_CONFIG.punishmentDurationMs;
   if (!Array.isArray(entry.disabledGuards)) entry.disabledGuards = [];
+  if (typeof entry.pingRoleId !== "string") entry.pingRoleId = null;
+  if (typeof entry.creationLimitMs !== "number") entry.creationLimitMs = 0;
   return entry;
 }
 
@@ -100,4 +108,26 @@ function toggleGuard(guildId, key) {
   return disabled;
 }
 
-module.exports = { getConfig, setEnabled, setPunishment, isGuardEnabled, toggleGuard, setGuardEnabled, PUNISHMENTS };
+/** @param {string|null} roleId null pour désactiver le ping. */
+function setPingRole(guildId, roleId) {
+  guildEntry(guildId).pingRoleId = roleId || null;
+  save();
+}
+
+/** @param {number} ms 0 pour désactiver. */
+function setCreationLimit(guildId, ms) {
+  guildEntry(guildId).creationLimitMs = Math.max(0, ms || 0);
+  save();
+}
+
+module.exports = {
+  getConfig,
+  setEnabled,
+  setPunishment,
+  isGuardEnabled,
+  toggleGuard,
+  setGuardEnabled,
+  setPingRole,
+  setCreationLimit,
+  PUNISHMENTS,
+};

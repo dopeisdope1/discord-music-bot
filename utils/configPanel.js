@@ -324,14 +324,19 @@ function sectionBody(section, guild, member, state) {
   if (section === "guard") {
     const config = guardConfig.getConfig(guildId);
     const whitelist = guardWhitelist.getWhitelist(guildId);
+    // Juste la clé (pas le libellé complet) + le seuil : la description de
+    // chaque guard vit dans &help, pas ici — même règle "montre, n'explique
+    // pas" que le reste du panel.
     const guardLines = ALL_GUARDS.map((d) => {
-      const rule = d.threshold ? `${d.threshold.count} en ${d.threshold.windowMs / 1000}s` : "immédiat";
+      const rule = d.threshold ? `${d.threshold.count}/${d.threshold.windowMs / 1000}s` : "immédiat";
       const on = guardConfig.isGuardEnabled(guildId, d.key);
-      return `> ${on ? "🟢" : "🔴"} \`${d.key}\` — ${d.label} (${rule})`;
+      return `> ${on ? "🟢" : "🔴"} \`${d.key}\` (${rule})`;
     });
     return [
       `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
       `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
+      `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
+      `> **Compte minimum** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
       `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
       ...guardLines,

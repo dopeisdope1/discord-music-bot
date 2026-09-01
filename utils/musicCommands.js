@@ -539,6 +539,7 @@ const modHandlers = {
   antiunban: guardHandlers.antiunban,
   antieveryone: guardHandlers.antieveryone,
   antijoin: guardHandlers.antijoin,
+  creationlimit: guardHandlers.creationlimit,
 };
 
 /**
@@ -618,6 +619,7 @@ const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
   banall: ["message"],
+  antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],

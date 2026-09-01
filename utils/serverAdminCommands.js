@@ -24,6 +24,7 @@ const guardWhitelist = require("./guard/whitelist");
 const deroStore = require("./deroStore");
 const voiceChannels = require("./voiceChannels");
 const { checkBotPermission, report } = require("./moderation/actions");
+const { parseDuration } = require("./moderationCommands");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -606,6 +607,51 @@ async function antinuke(client, message, args) {
     );
   }
 
+  if (sub === "wluser") {
+    const mentioned = message.mentions.users?.first();
+    const rawId = (args[1] || "").replace(/\D/g, "");
+    const userId = mentioned?.id || (rawId.length >= 15 ? rawId : null);
+    if (!userId) return reply(message, "error", "Indique un membre (mention ou ID) : `antinuke wluser @membre`.");
+    const removed = guardWhitelist.remove(guildId, "users", userId);
+    if (!removed) guardWhitelist.add(guildId, "users", userId);
+    return reply(
+      message,
+      "success",
+      removed ? `<@${userId}> retiré de la whitelist anti-nuke.` : `<@${userId}> ajouté à la whitelist anti-nuke.`
+    );
+  }
+
+  if (sub === "clearwl") {
+    const count = guardWhitelist.clearAll(guildId);
+    return reply(
+      message,
+      "success",
+      count ? `Whitelist anti-nuke vidée (${count} entrée(s) retirée(s)).` : "La whitelist anti-nuke était déjà vide."
+    );
+  }
+
+  if (sub === "ping") {
+    if ((args[1] || "").toLowerCase() === "off") {
+      guardConfig.setPingRole(guildId, null);
+      return reply(message, "success", "Ping anti-nuke désactivé.");
+    }
+    const role = message.mentions.roles?.first();
+    if (!role) return reply(message, "error", "Indique un rôle ou `off` : `antinuke ping @rôle` ou `antinuke ping off`.");
+    guardConfig.setPingRole(guildId, role.id);
+    return reply(message, "success", `**${role.name}** sera pingé à chaque déclenchement de l'anti-nuke.`);
+  }
+
+  if (sub === "creationlimit") {
+    if ((args[1] || "").toLowerCase() === "off") {
+      guardConfig.setCreationLimit(guildId, 0);
+      return reply(message, "success", "Seuil de création de compte désactivé.");
+    }
+    const ms = parseDuration(args[1]);
+    if (!ms) return reply(message, "error", "Indique une durée ou `off` : `antinuke creationlimit 7d` ou `antinuke creationlimit off`.");
+    guardConfig.setCreationLimit(guildId, ms);
+    return reply(message, "success", `Les comptes créés il y a moins de **${args[1]}** seront sanctionnés à l'arrivée.`);
+  }
+
   const config = guardConfig.getConfig(guildId);
   await message.reply({
     embeds: [
@@ -614,12 +660,17 @@ async function antinuke(client, message, args) {
         [
           `> **Statut** : ${config.enabled ? "activé" : "désactivé"}`,
           `> **Sanction** : ${config.punishment}`,
+          `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
+          `> **Seuil de création de compte** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
           "",
           "`antinuke on|off` — activer/désactiver",
           "`antinuke punishment timeout|kick|ban` — changer la sanction",
-          "`antinuke wlrole @rôle` — exempter/retirer un rôle",
+          "`antinuke wlrole @rôle` / `wluser @membre` — exempter/retirer un rôle ou un membre",
+          "`antinuke clearwl` — vider toute la whitelist",
+          "`antinuke ping @rôle|off` — pingé en plus du log à chaque déclenchement",
+          "`antinuke creationlimit <durée>|off` — sanctionne les comptes trop récents à l'arrivée",
           "",
-          "Whitelist par utilisateur, liste des guards et leurs seuils : `&panel` > Anti-nuke.",
+          "Liste des guards et leurs seuils : `&panel` > Anti-nuke.",
         ].join("\n"),
         { title: "Anti-nuke" }
       ),

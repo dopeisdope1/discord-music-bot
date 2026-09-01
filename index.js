@@ -66,7 +66,7 @@ const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require(".
 const { SEARCH_ENGINE } = require("./utils/searchEngine");
 const { createDeadTrackRecovery, playbackFailureMessage, noteManualSkip } = require("./utils/deadTrack");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
-const { checkAuditEntry, checkEveryoneMention, checkJoinFlood } = require("./utils/guard/definitions");
+const { checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkNewAccount } = require("./utils/guard/definitions");
 
 const client = new Client({
   intents: [
@@ -1014,6 +1014,7 @@ client.on("guildMemberAdd", async (member) => {
 // qui n'a aucun rapport avec l'activation de l'anti-nuke.
 client.on("guildMemberAdd", (member) => {
   checkJoinFlood(client, member).catch((err) => console.error("[guard:antijoin]", err));
+  checkNewAccount(client, member).catch((err) => console.error("[guard:creationlimit]", err));
 });
 
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée

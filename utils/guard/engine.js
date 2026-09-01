@@ -128,6 +128,7 @@ async function handleAuditEntry(client, guild, entry, guardDef) {
       { label: "Sanction", value: punished ? config.punishment : "aucune (protégé, ou plafond de sanctions atteint)" },
     ],
     moderatorTag: "Anti-nuke (automatique)",
+    pingRoleId: config.pingRoleId,
   });
 
   historyStore.record({

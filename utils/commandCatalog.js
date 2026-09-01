@@ -296,8 +296,6 @@ const CATEGORIES = [
       { name: "channellog on|off [salon]", prefix: "mod", permission: "logs.manage", description: "Logs de création/suppression/édition de salons" },
       { name: "serverlog on|off [salon]", prefix: "mod", permission: "logs.manage", description: "Logs des réglages généraux du serveur" },
       { name: "botlog on|off [salon]", prefix: "mod", permission: "logs.manage", description: "Logs des bots ajoutés au serveur" },
-      { name: "raidlog [salon]", prefix: "mod", permission: "logs.manage", description: "Règle le salon de logs de l'antiraid (voir aussi la catégorie Antiraid)" },
-      { name: "raidlog off", prefix: "mod", permission: "logs.manage", description: "Désactive les logs de l'antiraid" },
       { name: "autoconfiglog", prefix: "mod", permission: "logs.manage", description: "Crée automatiquement les salons de logs manquants (voir aussi &panel > Logs)" },
       { name: "boostembed <on/off>", prefix: "mod", permission: "logs.manage", description: "Active/désactive l'embed d'annonce de boost" },
       { name: "set boostembed", prefix: "mod", permission: "logs.manage", description: "Personnalise l'embed d'annonce de boost" },
@@ -451,48 +449,44 @@ const CATEGORIES = [
     key: "antiraid",
     label: "Antiraid",
     commands: [
+      // Nettoyé une fois — signalé et corrigé après coup : "doc-only" ne
+      // voulait dire QUE "absent de utils/implementedCommands.js", pas
+      // "absent de tout le code". &secur/&punition/&wl/&unwl et chaque
+      // &antichannel/&antirole/.../&antijoin individuel sont du vrai code
+      // déjà câblé et testé (utils/guardCommands.js, wiré dans
+      // utils/musicCommands.js) — seuls les 4 concepts qui n'ont RIEN
+      // derrière (antitoken/antiupdate/antideco/blrank, jargon copié du
+      // CrowBot sans équivalent clair dans utils/guard/) et raidlog
+      // (doublon avec le salon de logs "Modération" déjà utilisé par les
+      // guards) ont été retirés pour de vrai.
       {
         name: "antinuke [on|off|punishment|wlrole]",
         prefix: "mod",
         permission: "protection.guard.manage",
         description: "Anti-nuke : rafales de bans/kicks/salons/rôles/webhooks/bots détectées et sanctionnées automatiquement",
       },
+      { name: "antinuke wluser <@membre/ID>", prefix: "mod", permission: "protection.guard.manage", description: "Exempte/retire un membre de l'anti-nuke (voir aussi &wl/&unwl)" },
+      { name: "antinuke clearwl", prefix: "mod", permission: "protection.guard.manage", description: "Vide toute la whitelist anti-nuke (membres et rôles) d'un coup" },
+      { name: "antinuke ping <rôle/off>", prefix: "mod", permission: "protection.guard.manage", description: "Ping un rôle en plus du log à chaque déclenchement d'un guard" },
+      { name: "antinuke creationlimit <durée/off>", prefix: "mod", permission: "protection.guard.manage", description: "Sanctionne à l'arrivée les comptes créés il y a moins de cette durée" },
       { name: "whitelist", prefix: "mod", permission: "protection.whitelist", description: "Liste paginée des exemptés de l'anti-spam" },
-      { name: "raidlog <on/off> [salon]", prefix: "mod", permission: "protection.guard.manage", description: "Active les logs de l'antiraid dans un salon" },
-      { name: "raidping <rôle>", prefix: "mod", permission: "protection.guard.manage", description: "Modifie les rôles mentionnés en cas de raid" },
-      { name: "antitoken <on/off/lock>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antitoken sur le serveur. `lock` verrouille complètement le serveur et empêche quiconque de rejoindre" },
-      { name: "antitoken <nombre>/<durée>", prefix: "mod", permission: "protection.guard.manage", description: "Règle la sensibilité de l'antitoken" },
       { name: "secur [off/on/max]", prefix: "mod", permission: "protection.guard.manage", description: "Affiche et/ou modifie tous les paramètres de l'antiraid sur le serveur" },
-      { name: "antiupdate <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antiupdate" },
       { name: "antichannel <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antichannel" },
       { name: "antirole <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antirole" },
-      { name: "antirole <danger/all>", prefix: "mod", permission: "protection.guard.manage", description: "Active l'antirole seulement pour les rôles dangereux, ou pour tous les rôles" },
       { name: "antiwebhook <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antiwebhook" },
       { name: "antikick <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Rafale d'expulsions" },
       { name: "antichanneldelete <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Rafale de suppression de salons" },
       { name: "antiroledelete <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Rafale de suppression de rôles" },
       { name: "antiroleadmin <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Administrateur donné à un rôle" },
       { name: "antijoin <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Afflux de joins suspect" },
-      { name: "clear webhooks", prefix: "mod", permission: "protection.guard.manage", description: "Supprime tous les webhooks du serveur" },
       { name: "antiunban <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antiunban" },
       { name: "antibot <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antibot" },
       { name: "antiban <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antiban" },
-      { name: "antiban <nombre>/<durée>", prefix: "mod", permission: "protection.guard.manage", description: "Règle le nombre de ban ou kick maximum en une durée donnée" },
       { name: "antieveryone <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antieveryone" },
-      { name: "antieveryone <nombre>/<durée>", prefix: "mod", permission: "protection.guard.manage", description: "Règle le nombre de everyone maximum en une durée donnée" },
-      { name: "antideco <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive l'antideco" },
-      { name: "antideco <nombre>/<durée>", prefix: "mod", permission: "protection.guard.manage", description: "Règle le nombre de déconnexions maximum en une durée donnée" },
-      { name: "blrank <on/off/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive la blacklist rank" },
-      { name: "blrank <danger/all>", prefix: "mod", permission: "protection.guard.manage", description: "Active la blacklist rank seulement pour les rôles dangereux, ou pour tous les rôles" },
-      { name: "blrank <add/del> <membre>", prefix: "mod", permission: "protection.guard.manage", description: "Ajoute/retire un membre de la blacklist rank" },
-      { name: "blrank (liste)", prefix: "mod", permission: "protection.guard.manage", description: "Affiche la blacklist rank" },
-      { name: "punition <antiraid> <derank/kick/ban>", prefix: "mod", permission: "protection.guard.manage", description: "Règle la punition des membres pour une fonction de l'antiraid" },
-      { name: "punition all <derank/kick/ban>", prefix: "mod", permission: "protection.guard.manage", description: "Change la punition de toutes les fonctions de l'antiraid" },
-      { name: "creation limit <durée>", prefix: "mod", permission: "protection.guard.manage", description: "Définit depuis combien de temps le compte d'un utilisateur doit être créé pour pouvoir rejoindre le serveur" },
-      { name: "wl <@membre/ID>", prefix: "mod", permission: "protection.guard.manage", description: "Ajoute quelqu'un à la whitelist du serveur" },
-      { name: "wl (liste)", prefix: "mod", permission: "protection.guard.manage", description: "Affiche la whitelist du serveur" },
-      { name: "unwl <@membre/ID>", prefix: "mod", permission: "protection.guard.manage", description: "Retire quelqu'un de la whitelist du serveur" },
-      { name: "clear wl", prefix: "mod", permission: "protection.guard.manage", description: "Supprime tous les membres de la whitelist du serveur" },
+      { name: "creationlimit <off/on/max>", prefix: "mod", permission: "protection.guard.manage", description: "Active/désactive le guard \"compte trop récent\" (durée réglée séparément via &antinuke creationlimit)" },
+      { name: "punition all <timeout/kick/ban>", prefix: "mod", permission: "protection.guard.manage", description: "Change la sanction appliquée par tous les guards" },
+      { name: "wl <@membre/rôle/ID>", prefix: "mod", permission: "protection.guard.manage", description: "Ajoute quelqu'un (ou un rôle) à la whitelist anti-nuke" },
+      { name: "unwl <@membre/rôle/ID>", prefix: "mod", permission: "protection.guard.manage", description: "Retire quelqu'un (ou un rôle) de la whitelist anti-nuke" },
     ],
   },
 ];
