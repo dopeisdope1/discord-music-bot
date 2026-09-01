@@ -189,7 +189,7 @@ async function massRole(client, message, { remove }) {
 // --- &voicemove / &voicekick / &bringall ---
 
 async function voicemove(client, message) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!can(message.member, "server.voice.moveall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -220,7 +220,7 @@ async function voicekick(client, message, args) {
 }
 
 async function bringall(client, message) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!can(message.member, "server.voice.moveall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 

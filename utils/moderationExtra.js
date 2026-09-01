@@ -172,7 +172,7 @@ async function mutelist(client, message) {
 }
 
 async function unmuteall(client, message) {
-  if (!can(message.member, "moderation.timeout")) return;
+  if (!can(message.member, "moderation.unmuteall")) return;
   const role = await requireMuteRole(message);
   if (!role) return;
 

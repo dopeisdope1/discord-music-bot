@@ -1,11 +1,11 @@
 /**
- * Vérifie que les commandes "toute la portée du serveur d'un coup"
- * (&unbanall, &hideall/&unhideall) ne sont PLUS débloquées par la même
- * permission que leur équivalent ciblé (&unban, &hide/&unhide) —
- * signalé : accorder juste "&ban"/"&unban" (moderation.ban/moderation.unban)
- * ou "&hide"/"&unhide" (channels.manage) à un rôle donnait accès de facto
- * au débannissement de masse / masquage de masse, bien plus dangereux
- * qu'une action ciblée.
+ * Vérifie que TOUTES les commandes "toute la portée du serveur d'un coup"
+ * (&unbanall, &hideall/&unhideall, &unmuteall, &voicemove/&bringall) ne sont
+ * PLUS débloquées par la même permission que leur équivalent ciblé (&unban,
+ * &hide/&unhide, &untimeout/&unmute, &voicekick) — signalé : accorder juste
+ * "&ban"/"&unban" à un rôle donnait accès de facto au débannissement de
+ * masse (et pareil pour hide/mute/vocal), bien plus dangereux qu'une action
+ * ciblée.
  *
  * Lancement : node scripts/test-dangerous-permissions-split.js
  */
@@ -38,7 +38,7 @@ async function cas(nom, fn) {
 function fakeGuild() {
   return {
     id: "g1",
-    roles: { everyone: { id: "everyone" } },
+    roles: { everyone: { id: "everyone" }, cache: new Collection() },
     channels: { cache: new Collection() },
     members: { me: { permissions: { has: () => true } } },
     bans: { fetch: async () => new Collection([["u1", { user: { id: "u1" } }]]) },
@@ -49,7 +49,12 @@ function fakeGuild() {
 // member.guild.id, il doit correspondre à message.guild pour que
 // getRoleGrants/getUserGrants retrouvent les octrois sur "g1".
 function fakeMemberFor(roleId, guild, id = "membre-1") {
-  return { id, guild, roles: { cache: new Collection(roleId ? [[roleId, { id: roleId }]] : []) } };
+  return {
+    id,
+    guild,
+    roles: { cache: new Collection(roleId ? [[roleId, { id: roleId }]] : []) },
+    voice: { channel: null },
+  };
 }
 
 function fakeMessage(member) {
@@ -59,6 +64,7 @@ function fakeMessage(member) {
     member,
     guild: member.guild,
     channel: { id: "c1" },
+    mentions: { channels: new Collection() },
     reply: async (p) => {
       replies.push(p);
       return {};
@@ -146,6 +152,66 @@ function fakeMessage(member) {
     const msg2 = fakeMessage(member);
     await moderationExtra.unhideall(null, msg2);
     assert.strictEqual(msg2._replies.length, 1, "channels.manageall doit débloquer &unhideall");
+  });
+
+  console.log("\n&unmuteall — plus débloquée par moderation.timeout seul :");
+
+  await cas("un rôle avec UNIQUEMENT moderation.timeout ne débloque PAS &unmuteall", async () => {
+    const guild = fakeGuild();
+    const roleId = "role-timeout-only";
+    permStore.setRoleGrants("g1", roleId, ["moderation.timeout"]);
+    const member = fakeMemberFor(roleId, guild);
+    const msg = fakeMessage(member);
+    await moderationExtra.unmuteall(null, msg);
+    assert.strictEqual(msg._replies.length, 0, "aucune réponse : &timeout/&untimeout seuls ne doivent pas débloquer &unmuteall");
+  });
+
+  await cas("un rôle avec moderation.unmuteall débloque bien &unmuteall (au-delà du gate de permission)", async () => {
+    const guild = fakeGuild();
+    const roleId = "role-unmuteall";
+    permStore.setRoleGrants("g1", roleId, ["moderation.unmuteall"]);
+    const member = fakeMemberFor(roleId, guild);
+    const msg = fakeMessage(member);
+    await moderationExtra.unmuteall(null, msg);
+    // Pas de rôle de mute configuré dans ce fixture -> requireMuteRole
+    // répond sa propre erreur, ATTEINTE seulement si le gate de permission
+    // a été franchi (sinon 0 réponse, comme le cas ci-dessus).
+    assert.strictEqual(msg._replies.length, 1, "moderation.unmuteall doit débloquer la commande");
+  });
+
+  console.log("\n&voicemove/&bringall — plus débloquées par server.voice.manage seul :");
+
+  await cas("un rôle avec UNIQUEMENT server.voice.manage ne débloque PAS &voicemove", async () => {
+    const guild = fakeGuild();
+    const roleId = "role-voice-manage-only";
+    permStore.setRoleGrants("g1", roleId, ["server.voice.manage"]);
+    const member = fakeMemberFor(roleId, guild);
+    const msg = fakeMessage(member);
+    await serverExtra.voicemove(null, msg);
+    assert.strictEqual(msg._replies.length, 0, "aucune réponse : &voicekick/&voicehub seuls ne doivent pas débloquer &voicemove");
+  });
+
+  await cas("un rôle avec UNIQUEMENT server.voice.manage ne débloque pas non plus &bringall", async () => {
+    const guild = fakeGuild();
+    const roleId = "role-voice-manage-only-2";
+    permStore.setRoleGrants("g1", roleId, ["server.voice.manage"]);
+    const member = fakeMemberFor(roleId, guild);
+    const msg = fakeMessage(member);
+    await serverExtra.bringall(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  await cas("un rôle avec server.voice.moveall débloque bien &voicemove/&bringall", async () => {
+    const guild = fakeGuild();
+    const roleId = "role-voice-moveall";
+    permStore.setRoleGrants("g1", roleId, ["server.voice.moveall"]);
+    const member = fakeMemberFor(roleId, guild);
+    const msg1 = fakeMessage(member);
+    await serverExtra.voicemove(null, msg1);
+    assert.strictEqual(msg1._replies.length, 1, "server.voice.moveall doit débloquer &voicemove");
+    const msg2 = fakeMessage(member);
+    await serverExtra.bringall(null, msg2);
+    assert.strictEqual(msg2._replies.length, 1, "server.voice.moveall doit débloquer &bringall");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

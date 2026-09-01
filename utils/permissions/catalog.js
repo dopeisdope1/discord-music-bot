@@ -14,7 +14,10 @@ const PERMISSIONS = [
   { key: "moderation.ban", category: "moderation", label: "Bannir un membre (&ban)" },
   { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
   { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
-  { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout)" },
+  { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout, &mute, &unmute)" },
+  // Séparée de moderation.timeout : démuter TOUT LE MONDE d'un coup n'a pas
+  // à suivre automatiquement le droit de (dé)muter une personne précise.
+  { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },
   { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)", roleGrantable: false },
   // Séparée de moderation.unban : signalé — accorder juste "débannir un
   // membre" laissait accéder au débannissement de MASSE, un risque bien
@@ -65,7 +68,11 @@ const PERMISSIONS = [
   },
   { key: "server.channels.manage", category: "server", label: "Créer/supprimer/renommer un salon (&channel create/delete/rename/topic)" },
   { key: "server.dero.manage", category: "server", label: "Permissions automatiques sur les nouveaux salons (&dero)" },
-  { key: "server.voice.manage", category: "server", label: "Configurer le salon générateur de vocaux temporaires (&voicehub)" },
+  { key: "server.voice.manage", category: "server", label: "Configurer les vocaux temporaires, expulser du vocal (&voicehub, &voicekick, &tempvoc)" },
+  // Séparée de server.voice.manage : &voicemove/&bringall déplacent TOUS
+  // les membres d'un coup, contrairement à &voicekick qui cible une seule
+  // personne — même logique que moderation.unmuteall/channels.manageall.
+  { key: "server.voice.moveall", category: "server", label: "Déplacer tout un salon vocal d'un coup (&voicemove, &bringall)" },
   { key: "server.tickets.manage", category: "server", label: "Configurer les tickets (&ticket setup)" },
   { key: "server.polls.manage", category: "server", label: "Créer des sondages (&poll)" },
   { key: "server.giveaways.manage", category: "server", label: "Lancer/retirer un giveaway (&giveaway)" },

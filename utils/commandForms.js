@@ -460,7 +460,7 @@ const FORMS = {
   unmuteall_action: {
     label: "Démute tout le monde",
     category: "moderation",
-    permission: "moderation.timeout",
+    permission: "moderation.unmuteall",
     fields: [],
     ready: () => true,
     run: async (client, interaction) => {
@@ -721,7 +721,7 @@ const FORMS = {
   voicemove_action: {
     label: "Déplacer tout un salon vocal",
     category: "voice",
-    permission: "server.voice.manage",
+    permission: "server.voice.moveall",
     fields: ["channel", "channel2"],
     ready: (v) => Boolean(v.channelId && v.channelId2),
     run: async (client, interaction, v) => {
@@ -750,7 +750,7 @@ const FORMS = {
   bringall_action: {
     label: "Rassembler tout le monde en vocal",
     category: "voice",
-    permission: "server.voice.manage",
+    permission: "server.voice.moveall",
     fields: ["channel"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {

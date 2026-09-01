@@ -127,7 +127,7 @@ const bodyOf = (payload) => payload.components[0].toJSON().components[2]?.conten
     const msg = fakeMessage(guild);
     await handleBanAll(null, msg, []);
     const confirmBody = bodyOf(msg._replies[1]);
-    assert.ok(confirmBody.includes("recevra ce message en DM"), confirmBody);
+    assert.ok(confirmBody.includes("Message DM avant chaque ban") && confirmBody.includes("discord.gg/nouveau"), confirmBody);
   });
 
   await cas("sans message configuré, la carte le dit clairement", async () => {
@@ -139,6 +139,111 @@ const bodyOf = (payload) => payload.components[0].toJSON().components[2]?.conten
     await handleBanAll(null, msg, []);
     const confirmBody = bodyOf(msg._replies[1]);
     assert.ok(confirmBody.includes("Aucun message configuré"), confirmBody);
+  });
+
+  console.log("\nBouton \"Configurer le message DM\" — répond dans le salon, pas de modale :");
+
+  /** Simule la capture d'un message écrit dans le salon (channel.awaitMessages), voir utils/commandForms.js::collectTextFields pour le même principe. */
+  function fakeChannelWithCapture(response) {
+    const sent = [];
+    return {
+      send: async (p) => {
+        sent.push(p);
+        return {};
+      },
+      awaitMessages: async () => {
+        if (response === null) throw new Error("time");
+        return new Collection([["m1", { author: { id: "owner-1" }, content: response }]]);
+      },
+      _sent: sent,
+    };
+  }
+
+  await cas("la carte de confirmation propose le bouton \"Configurer le message DM\"", async () => {
+    const guild = fakeGuild([fakeMember("u1")]);
+    guild.id = "g7";
+    guild.ownerId = "owner-1";
+    const msg = fakeMessage(guild);
+    await handleBanAll(null, msg, []);
+    const rows = msg._replies[1].components[0].toJSON().components.filter((c) => c.type === 1);
+    const configButton = rows.flatMap((r) => r.components).find((b) => b.label === "Configurer le message DM");
+    assert.ok(configButton, "le bouton doit être présent quand aucun message n'est encore configuré");
+    assert.ok(configButton.custom_id.startsWith(`${ID}:configmsg:`));
+  });
+
+  await cas("cliquer le bouton puis écrire dans le salon enregistre le message ET rafraîchit la carte", async () => {
+    const guild = fakeGuild([fakeMember("u1")]);
+    guild.id = "g8";
+    guild.ownerId = "owner-1";
+    const msg = fakeMessage(guild);
+    await handleBanAll(null, msg, []);
+    const confirmCard = msg._replies[1];
+    const configButton = confirmCard.components[0]
+      .toJSON()
+      .components.filter((c) => c.type === 1)
+      .flatMap((r) => r.components)
+      .find((b) => b.label === "Configurer le message DM");
+
+    const captureChannel = fakeChannelWithCapture("Rejoins-nous ici : https://discord.gg/replacement");
+    let edited = null;
+    const interaction = {
+      customId: configButton.custom_id,
+      user: { id: "owner-1", tag: "owner#0001" },
+      member: { id: "owner-1", guild, roles: { cache: new Collection() } },
+      guild,
+      client: {},
+      channel: captureChannel,
+      channelId: "chan-1",
+      reply: async () => {},
+      message: {
+        edit: async (p) => {
+          edited = p;
+        },
+      },
+    };
+    await handleBanAllInteraction(interaction);
+
+    assert.strictEqual(banAllDmStore.getDmMessage("g8"), "Rejoins-nous ici : https://discord.gg/replacement");
+    assert.ok(captureChannel._sent.some((s) => typeof s === "string" && s.includes("Message enregistré")), "confirme dans le salon");
+    assert.ok(edited, "la carte de confirmation d'origine doit être rafraîchie");
+    const refreshedBody = edited.components[0].toJSON().components[2].content;
+    assert.ok(refreshedBody.includes("discord.gg/replacement"), refreshedBody);
+    const refreshedButtons = edited.components[0]
+      .toJSON()
+      .components.filter((c) => c.type === 1)
+      .flatMap((r) => r.components);
+    assert.ok(refreshedButtons.some((b) => b.label === "Changer le message DM"), "le bouton doit refléter qu'un message est maintenant configuré");
+  });
+
+  await cas("un timeout sans réponse ne change rien, prévient dans le salon", async () => {
+    const guild = fakeGuild([fakeMember("u1")]);
+    guild.id = "g9";
+    guild.ownerId = "owner-1";
+    const msg = fakeMessage(guild);
+    await handleBanAll(null, msg, []);
+    const confirmCard = msg._replies[1];
+    const configButton = confirmCard.components[0]
+      .toJSON()
+      .components.filter((c) => c.type === 1)
+      .flatMap((r) => r.components)
+      .find((b) => b.label === "Configurer le message DM");
+
+    const captureChannel = fakeChannelWithCapture(null); // simule un timeout
+    const interaction = {
+      customId: configButton.custom_id,
+      user: { id: "owner-1", tag: "owner#0001" },
+      member: { id: "owner-1", guild, roles: { cache: new Collection() } },
+      guild,
+      client: {},
+      channel: captureChannel,
+      channelId: "chan-1",
+      reply: async () => {},
+      message: { edit: async () => {} },
+    };
+    await handleBanAllInteraction(interaction);
+
+    assert.strictEqual(banAllDmStore.getDmMessage("g9"), null);
+    assert.ok(captureChannel._sent.some((s) => typeof s === "string" && s.includes("Temps écoulé")));
   });
 
   console.log("\nEnvoi réel des DM avant le ban :");

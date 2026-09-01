@@ -27,6 +27,12 @@ const BULK_CHUNK = 200;
 const DELAY_BETWEEN_BANS_MS = 1100;
 const PROGRESS_EVERY = 25;
 
+// "Configurer le message" (bouton sur la carte de confirmation) : réponds
+// dans le salon plutôt qu'une modale, même mécanique que
+// utils/commandForms.js::collectTextFields.
+const pendingMessageCapture = new Set();
+const TEXT_CAPTURE_TIMEOUT_MS = 2 * 60 * 1000;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -90,6 +96,95 @@ async function handleBanAllMessage(message, args) {
   return message.reply(card("Message DM du ban de masse enregistré", text));
 }
 
+/** Carte de confirmation, reconstruite après un "Configurer le message" pour refléter le nouveau statut du DM. */
+function buildConfirmCard(guild, targets, reason, token) {
+  // L'estimation dépend entièrement de la méthode disponible : 200 membres
+  // par requête contre un seul par seconde, l'écart se compte en heures.
+  const bulk = canBulkBan(guild);
+  const estimate = bulk
+    ? `environ **${Math.max(1, Math.ceil((targets.length / BULK_CHUNK) * 2))} seconde(s)**, par lots de ${BULK_CHUNK}`
+    : `environ **${Math.ceil((targets.length * DELAY_BETWEEN_BANS_MS) / 60000)} minute(s)** — ` +
+      "donne-moi la permission **Gérer le serveur** pour que ce soit quasi instantané";
+
+  const dmMessage = banAllDmStore.getDmMessage(guild.id);
+  const dmEstimate = dmMessage ? ` + environ **${Math.ceil((targets.length * DELAY_BETWEEN_DMS_MS) / 1000)} seconde(s)** pour les DM avant le ban` : "";
+
+  return card(
+    "Confirmer le ban de masse",
+    [
+      `**${targets.length}** membre(s) seront bannis de **${guild.name}**.`,
+      `Raison : ${reason || "*aucune*"}`,
+      "",
+      `Durée estimée : ${estimate}${dmEstimate}.`,
+      dmMessage ? `**Message DM avant chaque ban :**\n> ${dmMessage}` : "*Aucun message configuré — personne ne reçoit de DM avant d'être banni.*",
+      "",
+      "Sont épargnés : toi, le propriétaire du serveur, les bots, les propriétaires du bot,",
+      "les membres de rang sys, et ceux dont le rôle dépasse le mien.",
+      "",
+      "**Cette action est irréversible.**",
+    ].join("\n"),
+    [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:go:${token}`)
+          .setLabel(`Bannir ${targets.length} membre(s)`)
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`${ID}:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${ID}:configmsg:${token}`)
+          .setLabel(dmMessage ? "Changer le message DM" : "Configurer le message DM")
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ]
+  );
+}
+
+/**
+ * "Configurer le message DM" (bouton sur la carte de confirmation) : demande
+ * le texte directement dans le salon plutôt qu'une modale — même mécanique
+ * que utils/commandForms.js::collectTextFields. La carte de confirmation
+ * d'origine (celle qui portait le bouton) est ensuite rafraîchie pour
+ * refléter le nouveau statut du DM, sans toucher au jeton de confirmation.
+ */
+async function handleConfigMessage(interaction, request, token) {
+  const guildId = interaction.guild.id;
+  const key = `${interaction.user.id}:${guildId}`;
+  if (pendingMessageCapture.has(key)) {
+    return interaction.reply({ content: "Une saisie est déjà en cours — réponds dans le salon.", flags: MessageFlags.Ephemeral });
+  }
+  pendingMessageCapture.add(key);
+
+  const channel = interaction.channel;
+  await interaction.reply({
+    content: `Écris dans ce salon le message à envoyer en DM à chacun avant d'être banni (${TEXT_CAPTURE_TIMEOUT_MS / 1000}s pour répondre).`,
+    flags: MessageFlags.Ephemeral,
+  });
+  await channel.send(`<@${interaction.user.id}> Message à envoyer en DM avant chaque ban :`).catch(() => {});
+
+  try {
+    const collected = await channel.awaitMessages({
+      filter: (m) => m.author.id === interaction.user.id,
+      max: 1,
+      time: TEXT_CAPTURE_TIMEOUT_MS,
+      errors: ["time"],
+    });
+    const text = collected.first().content.trim();
+    if (text) {
+      banAllDmStore.setDmMessage(guildId, text);
+      await channel.send(`<@${interaction.user.id}> Message enregistré — il sera envoyé à chacun avant d'être banni.`).catch(() => {});
+    }
+  } catch {
+    await channel.send(`<@${interaction.user.id}> Temps écoulé, rien n'a été changé.`).catch(() => {});
+  } finally {
+    pendingMessageCapture.delete(key);
+  }
+
+  const targets = bannableMembers(interaction.guild, request.actorId);
+  await interaction.message?.edit(buildConfirmCard(interaction.guild, targets, request.reason, token)).catch(() => {});
+}
+
 async function handleBanAll(client, message, args) {
   if (!canBanAll(message.guild, message.member)) return;
 
@@ -110,46 +205,9 @@ async function handleBanAll(client, message, args) {
     return message.channel.send(card("Ban de masse", "Aucun membre ne peut être banni."));
   }
 
-  // L'estimation dépend entièrement de la méthode disponible : 200 membres
-  // par requête contre un seul par seconde, l'écart se compte en heures.
-  const bulk = canBulkBan(message.guild);
-  const estimate = bulk
-    ? `environ **${Math.max(1, Math.ceil((targets.length / BULK_CHUNK) * 2))} seconde(s)**, par lots de ${BULK_CHUNK}`
-    : `environ **${Math.ceil((targets.length * DELAY_BETWEEN_BANS_MS) / 60000)} minute(s)** — ` +
-      "donne-moi la permission **Gérer le serveur** pour que ce soit quasi instantané";
-
-  const dmMessage = banAllDmStore.getDmMessage(message.guild.id);
-  const dmEstimate = dmMessage ? ` + environ **${Math.ceil((targets.length * DELAY_BETWEEN_DMS_MS) / 1000)} seconde(s)** pour les DM avant le ban` : "";
-
   const token = rememberRequest({ actorId: message.author.id, reason, count: targets.length });
 
-  await message.channel.send(
-    card(
-      "Confirmer le ban de masse",
-      [
-        `**${targets.length}** membre(s) seront bannis de **${message.guild.name}**.`,
-        `Raison : ${reason || "*aucune*"}`,
-        "",
-        `Durée estimée : ${estimate}${dmEstimate}.`,
-        dmMessage
-          ? "**Chacun recevra ce message en DM avant d'être banni** (voir `&banall message`)."
-          : "*Aucun message configuré — `&banall message <texte>` pour en envoyer un avant le ban.*",
-        "Sont épargnés : toi, le propriétaire du serveur, les bots, les propriétaires du bot,",
-        "les membres de rang sys, et ceux dont le rôle dépasse le mien.",
-        "",
-        "**Cette action est irréversible.**",
-      ].join("\n"),
-      [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:go:${token}`)
-            .setLabel(`Bannir ${targets.length} membre(s)`)
-            .setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${ID}:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
-        ),
-      ]
-    )
-  );
+  await message.channel.send(buildConfirmCard(message.guild, targets, reason, token));
 }
 
 async function handleBanAllInteraction(interaction) {
@@ -170,6 +228,10 @@ async function handleBanAllInteraction(interaction) {
   if (action === "no") {
     pending.delete(token);
     return interaction.update(card("Ban de masse annulé", null));
+  }
+
+  if (action === "configmsg") {
+    return handleConfigMessage(interaction, request, token);
   }
 
   if (action !== "go") return;
