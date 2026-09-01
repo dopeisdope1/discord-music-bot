@@ -42,6 +42,7 @@ const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
 const voiceHubSetup = require("./voiceHubSetup");
 const { roleAdmin } = require("./serverAdminCommands");
+const { parseDuration } = require("./moderationCommands");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -698,6 +699,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       { value: "guard_pick", label: "Activer/désactiver un guard précis" },
       { value: "guard_wl_add", label: "Whitelist : ajouter quelqu'un" },
       { value: "guard_wl_remove", label: "Whitelist : retirer quelqu'un" },
+      { value: "guard_wl_role_add", label: "Whitelist : ajouter un rôle" },
+      { value: "guard_wl_role_remove", label: "Whitelist : retirer un rôle" },
+      { value: "guard_ping", label: "Changer le rôle pingé" },
+      { value: "guard_creationlimit", label: "Changer le seuil de compte" },
     ];
 
     container.addActionRowComponents(
@@ -747,6 +752,30 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     } else if (state.guardAction === "guard_wl_remove") {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:guardwldel`).setPlaceholder("Retirer de la whitelist anti-nuke"))
+      );
+    } else if (state.guardAction === "guard_wl_role_add") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:guardwlroleadd`).setPlaceholder("Ajouter un rôle à la whitelist anti-nuke"))
+      );
+    } else if (state.guardAction === "guard_wl_role_remove") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:guardwlroledel`).setPlaceholder("Retirer un rôle de la whitelist anti-nuke"))
+      );
+    } else if (state.guardAction === "guard_ping") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new RoleSelectMenuBuilder()
+            .setCustomId(`${ID}:guardping`)
+            .setPlaceholder("Rôle à pinguer (vide = aucun)")
+            .setMinValues(0)
+            .setDefaultRoles(config.pingRoleId && guild.roles.cache.has(config.pingRoleId) ? [config.pingRoleId] : [])
+        )
+      );
+    } else if (state.guardAction === "guard_creationlimit") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:guardcreationlimit`).setLabel("Régler le seuil de création de compte").setStyle(ButtonStyle.Secondary)
+        )
       );
     }
   } else if (meta.key === "welcome") {
@@ -1184,6 +1213,51 @@ async function handleConfigInteraction(interaction) {
     if (action === "guardwladd") guardWhitelist.add(guildId, "users", userId);
     else guardWhitelist.remove(guildId, "users", userId);
     return goto("guard");
+  }
+
+  if (action === "guardwlroleadd" || action === "guardwlroledel") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const roleId = interaction.values[0];
+    if (action === "guardwlroleadd") guardWhitelist.add(guildId, "roles", roleId);
+    else guardWhitelist.remove(guildId, "roles", roleId);
+    return goto("guard");
+  }
+
+  if (action === "guardping") {
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    guardConfig.setPingRole(guildId, interaction.values[0] || null);
+    return goto("guard");
+  }
+
+  if (action === "guardcreationlimit") {
+    if (interaction.isModalSubmit()) {
+      const raw = interaction.fields.getTextInputValue("duration").trim();
+      if (!raw || raw.toLowerCase() === "off") {
+        guardConfig.setCreationLimit(guildId, 0);
+        await interaction.reply({ content: "Seuil de création de compte désactivé.", flags: MessageFlags.Ephemeral });
+        return interaction.message?.edit(buildConfigPanel(guild, "guard", member)).catch(() => {});
+      }
+      const ms = parseDuration(raw);
+      if (!ms) {
+        return interaction.reply({ content: "Durée invalide — exemple : `7d`, ou `off` pour désactiver.", flags: MessageFlags.Ephemeral });
+      }
+      guardConfig.setCreationLimit(guildId, ms);
+      await interaction.reply({ content: `Comptes créés il y a moins de **${raw}** sanctionnés à l'arrivée.`, flags: MessageFlags.Ephemeral });
+      return interaction.message?.edit(buildConfigPanel(guild, "guard", member)).catch(() => {});
+    }
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const modal = new ModalBuilder().setCustomId(`${ID}:guardcreationlimit`).setTitle("Seuil de création de compte");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("duration")
+          .setLabel('Durée (ex: 7d, 12h) ou "off"')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(20)
+          .setRequired(false)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "welcomechannel") {
