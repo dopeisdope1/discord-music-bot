@@ -91,5 +91,50 @@ function fakeMessage(guildId) {
     assert.ok(body.includes("<@&role-C>"));
   });
 
+  console.log("\nRôles \"exclusifs\" (&panel > Permissions) — section à part, sous les paliers :");
+
+  await cas("un rôle marqué exclusif apparaît dans une section \"Exclusives\" sur &perms ET &helpall", async () => {
+    permStore.setRoleExclusive("g1", "role-C", true);
+
+    const msgPerms = fakeMessage("g1");
+    await perms(null, msgPerms);
+    const bodyPerms = msgPerms._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(bodyPerms.includes("Exclusives"), bodyPerms);
+    assert.ok(bodyPerms.includes("<@&role-C>"), bodyPerms);
+
+    const msgHelpall = fakeMessage("g1");
+    await helpall(null, msgHelpall);
+    const bodyHelpall = msgHelpall._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(bodyHelpall.includes("Exclusives"), bodyHelpall);
+    assert.ok(bodyHelpall.includes("<@&role-C>"), bodyHelpall);
+  });
+
+  await cas("plusieurs rôles exclusifs sont tous listés", async () => {
+    permStore.setRoleExclusive("g1", "role-A", true);
+    const msg = fakeMessage("g1");
+    await helpall(null, msg);
+    const body = msg._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("<@&role-A>") && body.includes("<@&role-C>"));
+    permStore.setRoleExclusive("g1", "role-A", false);
+  });
+
+  await cas("un serveur SANS permission accordée mais avec un rôle exclusif affiche quand même la carte", async () => {
+    permStore.setRoleExclusive("g-vide-exclusif", "role-solo", true);
+    const msg = fakeMessage("g-vide-exclusif");
+    await perms(null, msg);
+    assert.ok(!msg._replies[0].embeds, "ce n'est plus le message \"Aucune permission\"");
+    const body = msg._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("Exclusives"));
+    assert.ok(body.includes("<@&role-solo>"));
+  });
+
+  await cas("retirer l'exclusivité fait disparaître la section", async () => {
+    permStore.setRoleExclusive("g1", "role-C", false);
+    const msg = fakeMessage("g1");
+    await helpall(null, msg);
+    const body = msg._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(!body.includes("Exclusives"), body);
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

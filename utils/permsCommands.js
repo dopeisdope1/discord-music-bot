@@ -65,7 +65,7 @@ function nonCommandGrants(keys) {
   return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
 }
 
-function buildTierCard(title, intro, tiers, renderTierLine) {
+function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -75,6 +75,14 @@ function buildTierCard(title, intro, tiers, renderTierLine) {
     lines.push(`> ↳ ${renderTierLine(tier) || "*aucune*"}`);
     lines.push("");
   }
+  // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
+  // store.js) : une simple étiquette, affichée à part des paliers numérotés
+  // puisqu'elle ne dépend pas des clés accordées.
+  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
+  if (exclusiveRoleIds.length) {
+    lines.push("**Exclusives**");
+    lines.push(`> ↳ ${exclusiveRoleIds.map((id) => `<@&${id}>`).join(", ")}`);
+  }
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n").trim()));
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
@@ -82,12 +90,15 @@ function buildTierCard(title, intro, tiers, renderTierLine) {
 /** &perms — les commandes débloquées par chaque palier de permissions. */
 async function perms(client, message) {
   if (!can(message.member, "panel.permissions.manage")) return;
-  const tiers = computeTiers(message.guild.id);
-  if (!tiers.length) {
+  const guildId = message.guild.id;
+  const tiers = computeTiers(guildId);
+  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
+  if (!tiers.length && !exclusiveRoleIds.length) {
     return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
   }
   return message.reply(
     buildTierCard(
+      guildId,
       "Permissions liées aux commandes",
       "Voici les différentes permissions ainsi que les commandes accessibles",
       tiers,
@@ -99,12 +110,15 @@ async function perms(client, message) {
 /** &helpall — les rôles associés à chaque palier de permissions. */
 async function helpall(client, message) {
   if (!can(message.member, "panel.permissions.manage")) return;
-  const tiers = computeTiers(message.guild.id);
-  if (!tiers.length) {
+  const guildId = message.guild.id;
+  const tiers = computeTiers(guildId);
+  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
+  if (!tiers.length && !exclusiveRoleIds.length) {
     return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
   }
   return message.reply(
     buildTierCard(
+      guildId,
       "Permissions",
       "Voici les différentes permissions ainsi que les rôles associés",
       tiers,
