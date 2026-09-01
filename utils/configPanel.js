@@ -836,7 +836,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId(`${ID}:muterole`)
-          .setPlaceholder("Choisir le rôle de mute")
+          .setPlaceholder("Choisir le rôle de mute (vide = aucun)")
+          .setMinValues(0)
           .setDefaultRoles(roleId && guild.roles.cache.has(roleId) ? [roleId] : [])
       )
     );
@@ -846,7 +847,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId(`${ID}:ticketstaff`)
-          .setPlaceholder("Choisir le rôle staff")
+          .setPlaceholder("Choisir le rôle staff (vide = aucun)")
+          .setMinValues(0)
           .setDefaultRoles(config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? [config.staffRoleId] : [])
       )
     );

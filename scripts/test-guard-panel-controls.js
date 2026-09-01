@@ -5,6 +5,12 @@
  * et le rôle pingé / seuil de création de compte réglables depuis le panel
  * plutôt que par commande texte uniquement (utils/configPanel.js).
  *
+ * Couvre aussi un bug signalé par l'utilisateur : &panel > Mute (et
+ * Tickets, même cause) ne laissait retirer AUCUN rôle une fois choisi — le
+ * handler acceptait déjà `interaction.values[0] || null`, mais le
+ * RoleSelectMenu n'avait pas `.setMinValues(0)`, donc Discord ne permettait
+ * jamais d'envoyer une sélection vide pour l'effacer.
+ *
  * Lancement : node scripts/test-guard-panel-controls.js
  */
 const assert = require("assert");
@@ -19,6 +25,8 @@ const { Collection } = require("discord.js");
 const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
 const guardConfig = require("../utils/guard/config");
 const guardWhitelist = require("../utils/guard/whitelist");
+const muteStore = require("../utils/muteStore");
+const ticketStore = require("../utils/ticketStore");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -130,6 +138,34 @@ function baseInteraction(customId, extra = {}) {
     );
     assert.strictEqual(guardConfig.getConfig("g1").creationLimitMs, 3 * 86400000, "le seuil précédent doit rester intact");
     assert.ok(replies[0]?.content?.includes("Durée invalide"), JSON.stringify(replies[0]));
+  });
+
+  console.log("\n&panel > Mute et Tickets — le rôle choisi doit pouvoir être retiré :");
+
+  await cas("le sélecteur de rôle de mute autorise une sélection vide (min_values: 0)", () => {
+    const json = buildConfigPanel(guild, "mute", member).components[0].toJSON();
+    const select = json.components.filter((c) => c.type === 1).flatMap((c) => c.components).find((c) => c.custom_id === "cfg:muterole");
+    assert.strictEqual(select?.min_values, 0, JSON.stringify(select));
+  });
+
+  await cas("choisir puis effacer le rôle de mute le retire vraiment", async () => {
+    await handleConfigInteraction(baseInteraction("muterole", { values: ["role-mute"] }));
+    assert.strictEqual(muteStore.getMuteRoleId("g1"), "role-mute");
+    await handleConfigInteraction(baseInteraction("muterole", { values: [] }));
+    assert.strictEqual(muteStore.getMuteRoleId("g1"), null);
+  });
+
+  await cas("le sélecteur de rôle staff (tickets) autorise une sélection vide (min_values: 0)", () => {
+    const json = buildConfigPanel(guild, "tickets", member).components[0].toJSON();
+    const select = json.components.filter((c) => c.type === 1).flatMap((c) => c.components).find((c) => c.custom_id === "cfg:ticketstaff");
+    assert.strictEqual(select?.min_values, 0, JSON.stringify(select));
+  });
+
+  await cas("choisir puis effacer le rôle staff des tickets le retire vraiment", async () => {
+    await handleConfigInteraction(baseInteraction("ticketstaff", { values: ["role-staff"] }));
+    assert.strictEqual(ticketStore.getConfig("g1").staffRoleId, "role-staff");
+    await handleConfigInteraction(baseInteraction("ticketstaff", { values: [] }));
+    assert.strictEqual(ticketStore.getConfig("g1").staffRoleId, null);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
