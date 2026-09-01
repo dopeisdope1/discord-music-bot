@@ -15,6 +15,7 @@ const wikipedia = require("./wikipedia");
 //  - &vc/&stats -> `server.stats.view`
 //  - &alladmins/&botadmins/&boosters/&rolemembers -> `server.members.list`
 //  - &vocinfo/&user/&emoji -> `server.info.view`
+//  - &wiki/&search wiki -> `server.tools.use` (avec &choose, utils/serverExtra.js)
 //
 // Contrairement aux commandes de modération, celles-ci RÉPONDENT en cas de
 // mauvais usage au lieu de rester muettes : le silence sur le préfixe "&"
@@ -309,6 +310,7 @@ const handlers = {
 
   /** &wiki <mot-clé> — résumé de l'article Wikipédia (fr) correspondant. */
   async wiki(client, message, args) {
+    if (!can(message.member, "server.tools.use")) return;
     const term = args.join(" ").trim();
     if (!term) return reply(message, "error", "Donne un mot-clé : `wiki Ada Lovelace`.");
 
@@ -327,6 +329,7 @@ const handlers = {
 
   /** &search wiki <mot-clé> — tous les articles proches du mot-clé. */
   async searchWiki(client, message, args) {
+    if (!can(message.member, "server.tools.use")) return;
     const term = args.join(" ").trim();
     if (!term) return reply(message, "error", "Donne un mot-clé : `search wiki Ada Lovelace`.");
 

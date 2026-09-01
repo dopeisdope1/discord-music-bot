@@ -45,6 +45,7 @@ async function fetchTargetOrReply(message, targetId) {
 // --- &choose <option1>,,<option2>,,... ---
 
 async function choose(client, message, args) {
+  if (!can(message.member, "server.tools.use")) return;
   const options = args
     .join(" ")
     .split(",,")

@@ -67,6 +67,7 @@ const PERMISSIONS = [
     label: "Voir les listes de membres par statut (&alladmins, &botadmins, &boosters, &rolemembers)",
   },
   { key: "server.info.view", category: "server", label: "Voir les fiches d'info détaillées (&vocinfo, &user, &emoji)" },
+  { key: "server.tools.use", category: "server", label: "Utiliser les outils annexes (&choose, &wiki, &search wiki)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

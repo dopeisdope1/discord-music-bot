@@ -54,8 +54,8 @@ const CATEGORIES = [
       { name: "image <mot-clé>", prefix: "mod", permission: null, description: "Fait une recherche google image avec le bot" },
       { name: "suggestion <message>", prefix: "mod", permission: null, description: "Poste une suggestion sur le serveur" },
       { name: "lb suggestions", prefix: "mod", permission: null, description: "Affiche les suggestions les mieux notées du serveur" },
-      { name: "wiki <mot-clé>", prefix: "mod", permission: null, description: "Affiche le résumé de l'article Wikipédia (fr) correspondant" },
-      { name: "search wiki <mot-clé>", prefix: "mod", permission: null, description: "Permet de voir tous les articles wikipedia relatifs au mot-clé donné" },
+      { name: "wiki <mot-clé>", prefix: "mod", permission: "server.tools.use", description: "Affiche le résumé de l'article Wikipédia (fr) correspondant" },
+      { name: "search wiki <mot-clé>", prefix: "mod", permission: "server.tools.use", description: "Permet de voir tous les articles wikipedia relatifs au mot-clé donné" },
       { name: "calc <calcul>", prefix: "mod", permission: null, description: "Résout un calcul (parenthèses, puissances, sqrt/abs/ln/sin...) ou une équation du premier degré en `x`" },
       { name: "support", prefix: "mod", permission: null, description: "Donne un lien d'invitation vers le serveur de support du bot" },
     ],
@@ -189,8 +189,12 @@ const CATEGORIES = [
         description: "Retire un gagnant du dernier giveaway du salon",
       },
       { name: "end giveaway <id>", prefix: "mod", permission: "server.giveaways.manage", description: "Termine un giveaway avant son échéance" },
-      { name: "choose <option1>,,<option2>,,...", prefix: "mod", permission: null, description: "Tire une option au hasard parmi celles données" },
-      { name: "embed", prefix: "mod", permission: null, description: "Ouvre un constructeur d'embed pour poster un message personnalisé" },
+      { name: "choose <option1>,,<option2>,,...", prefix: "mod", permission: "server.tools.use", description: "Tire une option au hasard parmi celles données" },
+      // Le catalogue disait "publique" (permission: null) alors que le vrai
+      // handler exige déjà server.channels.manage (utils/serverExtra.js::
+      // embedPrompt) — corrige la classification plutôt que d'inventer une
+      // deuxième clé qui ferait doublon.
+      { name: "embed", prefix: "mod", permission: "server.channels.manage", description: "Ouvre un constructeur d'embed pour poster un message personnalisé" },
       { name: "backup <serveur/emoji> <nom>", prefix: "mod", permission: "sys", description: "Crée une sauvegarde du serveur ou des emojis" },
       { name: "backup list <serveur/emoji>", prefix: "mod", permission: "sys", description: "Liste les sauvegardes disponibles" },
       { name: "backup delete <serveur/emoji> <nom>", prefix: "mod", permission: "sys", description: "Supprime une sauvegarde" },

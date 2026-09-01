@@ -582,5 +582,30 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     assert.ok(embedText(msg._replies[0]).includes("mot-clé"));
   });
 
+  await cas("&wiki/&search wiki exigent server.tools.use", async () => {
+    const g = fakeGuild({});
+    const msg = fakeMessage(g, { args: ["ada"] });
+    msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
+    await utilityHandlers.wiki(null, msg, ["ada"]);
+    await utilityHandlers.searchWiki(null, msg, ["ada"]);
+    assert.strictEqual(msg._replies.length, 0, "aucune des deux ne doit répondre sans server.tools.use");
+  });
+
+  await cas("un rôle qui a UNIQUEMENT server.tools.use débloque &wiki/&search wiki", async () => {
+    const g = fakeGuild({});
+    const roleId = "role-tools-only";
+    permStore.setRoleGrants(g.id, roleId, ["server.tools.use"]);
+    const msg = fakeMessage(g, { args: ["ada"] });
+    msg.member = { id: "membre-avec-le-role", guild: g, roles: { cache: new Collection([[roleId, { id: roleId }]]) } };
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ status: 404, ok: false, json: async () => ({}) });
+    try {
+      await utilityHandlers.wiki(null, msg, ["ada"]);
+      assert.strictEqual(msg._replies.length, 1);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

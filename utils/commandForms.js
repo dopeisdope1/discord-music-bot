@@ -664,7 +664,7 @@ const FORMS = {
   choose_random: {
     label: "Choisir au hasard",
     category: "server",
-    permission: null,
+    permission: "server.tools.use",
     fields: [],
     textFields: [{ key: "options", label: "Options séparées par ,,", max: 200 }],
     ready: (v) => Boolean(v.text?.options),

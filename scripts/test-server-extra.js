@@ -65,16 +65,31 @@ console.log("\n&choose :");
 
 (async () => {
   await casAsync("choisit toujours parmi les options données", async () => {
-    const message = { reply: async (p) => (message._reply = p) };
+    const message = {
+      member: { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      reply: async (p) => (message._reply = p),
+    };
     await serverExtra.choose(null, message, ["pizza,,burger,,sushi"]);
     const text = message._reply.embeds[0].data.description;
     assert.ok(["pizza", "burger", "sushi"].some((opt) => text.includes(opt)));
   });
 
   await casAsync("refuse avec moins de 2 options", async () => {
-    const message = { reply: async (p) => (message._reply = p) };
+    const message = {
+      member: { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      reply: async (p) => (message._reply = p),
+    };
     await serverExtra.choose(null, message, ["pizza"]);
     assert.ok(message._reply.embeds[0].data.description.includes("2 options"));
+  });
+
+  await casAsync("&choose exige server.tools.use — silencieux sans la permission", async () => {
+    const message = {
+      member: { id: "membre-sans-droits", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      reply: async (p) => (message._reply = p),
+    };
+    await serverExtra.choose(null, message, ["pizza,,burger"]);
+    assert.strictEqual(message._reply, undefined, "aucune réponse sans server.tools.use");
   });
 
   console.log("\n&end giveaway :");
