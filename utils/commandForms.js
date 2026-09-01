@@ -512,7 +512,7 @@ const FORMS = {
   hideall_action: {
     label: "Masquer tous les salons",
     category: "moderation",
-    permission: "channels.manage",
+    permission: "channels.manageall",
     fields: [],
     ready: () => true,
     run: async (client, interaction) => {
@@ -524,7 +524,7 @@ const FORMS = {
   unhideall_action: {
     label: "Réafficher tous les salons",
     category: "moderation",
-    permission: "channels.manage",
+    permission: "channels.manageall",
     fields: [],
     ready: () => true,
     run: async (client, interaction) => {

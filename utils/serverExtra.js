@@ -243,7 +243,7 @@ async function bringall(client, message) {
 // --- &unbanall (confirmation obligatoire, comme &banall) ---
 
 async function unbanall(client, message) {
-  if (!can(message.member, "moderation.unban")) return;
+  if (!can(message.member, "moderation.unbanall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.BanMembers, "BanMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -254,7 +254,7 @@ async function unbanall(client, message) {
     title: "Confirmer le débannissement de masse",
     body: `**${bans.size}** membre(s) actuellement banni(s) seront débannis. Cette action ne peut pas être annulée automatiquement.`,
     confirmLabel: "Débannir tout le monde",
-    permission: "moderation.unban",
+    permission: "moderation.unbanall",
     execute: async (interaction) => {
       const currentBans = await interaction.guild.bans.fetch().catch(() => null);
       let count = 0;

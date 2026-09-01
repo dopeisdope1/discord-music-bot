@@ -354,7 +354,7 @@ async function banlist(client, message) {
 // --- &hideall / &unhideall ---
 
 async function toggleAllChannels(client, message, { deny }) {
-  if (!can(message.member, "channels.manage")) return;
+  if (!can(message.member, "channels.manageall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
   if (botPerm) return reply(message, "error", botPerm);
 

@@ -16,11 +16,22 @@ const PERMISSIONS = [
   { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
   { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout)" },
   { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)", roleGrantable: false },
+  // Séparée de moderation.unban : signalé — accorder juste "débannir un
+  // membre" laissait accéder au débannissement de MASSE, un risque bien
+  // plus large (peut réadmettre tout un raid d'un coup) qu'un simple
+  // &unban ciblé. Même traitement que son inverse moderation.banall :
+  // jamais octroyable par rôle, seulement propriétaire/octroi individuel.
+  { key: "moderation.unbanall", category: "moderation", label: "Débannissement de masse (&unbanall)", roleGrantable: false },
 
   // --- Salons ---
   { key: "channels.lock", category: "channels", label: "Verrouiller/déverrouiller un salon (&lock, &unlock)" },
   { key: "channels.slowmode", category: "channels", label: "Mode lent (&slowmode)" },
   { key: "channels.manage", category: "channels", label: "Masquer/renouveler un salon (&hide, &unhide, &renew)" },
+  // Séparée de channels.manage pour la même raison que moderation.unbanall
+  // ci-dessus : &hide/&unhide touchent UN salon, &hideall/&unhideall
+  // touchent TOUT le serveur d'un coup — ne doivent pas être débloquées
+  // ensemble par la même permission.
+  { key: "channels.manageall", category: "channels", label: "Masquer/réafficher TOUS les salons (&hideall, &unhideall)" },
   { key: "channels.lockdown", category: "channels", label: "Verrouillage d'urgence (&lockdown, &panic)" },
 
   // --- Membres ---
