@@ -1,4 +1,16 @@
 require("dotenv").config();
+
+// Silence un faux positif vu en prod : "Possible AsyncEventEmitter memory
+// leak detected. 11 error/ready listeners added to WebSocketShard." — le
+// connecteur Shoukaku (new Connectors.DiscordJS ci-dessous) réattache des
+// écouteurs sur le shard à chaque reconnexion Discord sans jamais dépasser
+// le compte réel de nœuds Lavalink déclarés ; sur un process de longue
+// durée avec plusieurs reconnexions, le seuil par défaut de Node (10) est
+// donc dépassé sans qu'il s'agisse d'une vraie fuite qui grossirait sans
+// fin. Doit être réglé AVANT toute création de Client/Kazagumo pour
+// s'appliquer à leurs émetteurs.
+require("events").EventEmitter.defaultMaxListeners = 30;
+
 const path = require("path");
 const { Client, GatewayIntentBits, Collection, MessageFlags, ChannelType } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
