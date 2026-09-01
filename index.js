@@ -1070,3 +1070,30 @@ client.login(process.env.DISCORD_TOKEN).catch((err) => {
   console.error("[bot] connexion à Discord impossible :", err.message);
   process.exit(1);
 });
+
+// Même principe que le catch ci-dessus, pour un cas vécu en production :
+// process vivant, AUCUNE erreur/déconnexion journalisée, mais la session
+// gateway bien morte en silence — &online (et tout le reste) ne répondait
+// plus rien après ~1h30. Discord.js n'a rien signalé lui-même dans ce cas
+// précis, donc on suit l'activité RÉELLE du websocket à la main : "raw"
+// arrive à CHAQUE paquet gateway, y compris les simples accusés de battement
+// de cœur (bien plus fréquent qu'un vrai message/interaction sur un serveur
+// calme). Rien pendant GATEWAY_STALE_MS => on force la sortie plutôt que de
+// tenter une reconnexion incertaine en place ; l'hébergeur relance un
+// process tout neuf avec une session propre (mêmes garanties de restart que
+// le login raté ci-dessus).
+const GATEWAY_WATCHDOG_MS = 60_000;
+const GATEWAY_STALE_MS = 3 * 60_000;
+let lastGatewayActivity = Date.now();
+client.on("raw", () => {
+  lastGatewayActivity = Date.now();
+});
+setInterval(() => {
+  const silence = Date.now() - lastGatewayActivity;
+  if (silence < GATEWAY_STALE_MS) return;
+  console.error(
+    `[gateway] garde-fou : aucune activité depuis ${Math.round(silence / 1000)}s — connexion probablement figée, redémarrage forcé.`
+  );
+  process.exit(1);
+}, GATEWAY_WATCHDOG_MS);
+console.log(`[gateway] garde-fou armé, vérification toutes les ${GATEWAY_WATCHDOG_MS / 1000}s (seuil : ${GATEWAY_STALE_MS / 1000}s).`);
