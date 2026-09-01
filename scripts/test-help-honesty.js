@@ -363,11 +363,24 @@ function commandsText(member = owner, tier) {
     for (const p of parts) assert.ok(p.content.length < 4000, `bloc de ${p.content.length} caractères`);
   });
 
-  await cas("chaque page du palier \"configurable\" reste sous le seuil de composants qui faisait planter l'interaction", () => {
-    for (let page = 0; page < 3; page++) {
-      const total = buildHelpPanel("g1", owner, "configurable", owner.id, page).components[0].toJSON().components.length;
-      assert.ok(total <= 7, `page ${page} a ${total} composants au premier niveau — "l'application n'a pas répondu" survenait à 10`);
+  await cas("chaque page du palier \"configurable\" reste sous 4000 caractères affichables AU TOTAL (titre+légende compris)", () => {
+    // La vraie cause du plantage prod ("l'application n'a pas répondu") :
+    // DiscordAPIError[50035] COMPONENT_DISPLAYABLE_TEXT_SIZE_EXCEEDED — ce
+    // n'est PAS une limite par composant (chacun peut déjà aller jusqu'à
+    // 4000) mais le total CUMULÉ de tout le texte affichable du message.
+    let page = 0;
+    let sawMultiplePages = false;
+    for (;;) {
+      const json = buildHelpPanel("g1", owner, "configurable", owner.id, page).components[0].toJSON();
+      const totalText = json.components.filter((c) => c.type === 10).reduce((sum, c) => sum + c.content.length, 0);
+      assert.ok(totalText < 4000, `page ${page} : ${totalText} caractères affichables au total — Discord refuse au-delà de 4000`);
+      const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
+      const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
+      if (!hasNext) break;
+      sawMultiplePages = true;
+      page++;
     }
+    assert.ok(sawMultiplePages, "le palier dense doit avoir besoin de plusieurs pages pour ce test d'être significatif");
   });
 
   await cas("la coupe entre deux blocs ne tombe jamais AU MILIEU d'une commande", () => {

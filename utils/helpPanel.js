@@ -16,17 +16,17 @@ const { isImplemented } = require("./implementedCommands");
 const SELECT_ID = "help_tier";
 const PAGE_SELECT_ID = "help_page";
 
-// Un Container (Components V2) refuse au-delà d'un certain nombre d'enfants
-// directs — constaté en prod : le palier "configurable" (le plus dense)
-// plantait l'interaction ("l'application n'a pas répondu") une fois monté à
-// 10 enfants (titre+légende, 4 blocs de commandes, séparateurs, menu de
-// palier), alors que les paliers plus légers (7 enfants) fonctionnaient. Le
-// seuil EXACT n'est pas documenté avec certitude — 2 blocs par page (au lieu
-// de 4) ramène le total au niveau des paliers déjà confirmés fiables (7
-// enfants), marge de sécurité incluse plutôt qu'une valeur pile à la limite
-// supposée. Vu que le catalogue ne fait que grandir, un vrai découpage en
-// PAGES est plus sûr qu'un simple ajustement ponctuel de la taille des blocs.
-const MAX_CHUNKS_PER_PAGE = 2;
+// Confirmé en prod via le vrai message d'erreur Discord (avant, avalé
+// silencieusement par un .catch vide — la vraie cause n'était pas celle
+// devinée au premier passage) :
+//   DiscordAPIError[50035] data.components[COMPONENT_DISPLAYABLE_TEXT_SIZE_EXCEEDED]:
+//   Components displayable text size exceeds maximum size of 4000
+// Ce n'est PAS une limite par composant (chaque TextDisplay peut déjà aller
+// jusqu'à 4000) mais le TOTAL du texte affichable de TOUS les composants du
+// message CUMULÉS. D'où : un seul bloc de commandes par page (pas deux), et
+// chunkBlocks vise plus bas que 4000 pour laisser de la place au titre/à la
+// légende qui partagent le même budget.
+const MAX_CHUNKS_PER_PAGE = 1;
 
 /**
  * Identité d'affichage d'une commande : tous les mots de TÊTE qui sont de
@@ -82,13 +82,14 @@ function formatCommandBlock(entry, prefixSymbol) {
 }
 
 /**
- * Répartit des blocs de texte sur plusieurs TextDisplay (chacun plafonné à
- * 4000 caractères côté Discord) : un palier dense ("Commandes
- * configurables", 100+ commandes une fois détaillées) dépasse largement
- * cette limite en un seul bloc — la coupe se fait toujours ENTRE deux
- * commandes, jamais au milieu de l'une d'elles.
+ * Répartit des blocs de texte en chunks — un par PAGE (voir
+ * MAX_CHUNKS_PER_PAGE), jamais plusieurs dans le même message, puisque la
+ * limite de 4000 caractères de Discord porte sur le TOTAL affichable du
+ * message, titre+légende compris, pas sur chaque composant pris à part.
+ * maxLen reste sous 4000 avec de la marge pour ce titre+légende. La coupe se
+ * fait toujours ENTRE deux commandes, jamais au milieu de l'une d'elles.
  */
-function chunkBlocks(blocks, maxLen = 3800) {
+function chunkBlocks(blocks, maxLen = 3600) {
   const chunks = [];
   let current = [];
   let currentLen = 0;
