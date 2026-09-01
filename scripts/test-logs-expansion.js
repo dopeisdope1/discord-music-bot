@@ -15,9 +15,9 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "logsexp-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection, PermissionsBitField } = require("discord.js");
+const { Collection, PermissionsBitField, AuditLogEvent } = require("discord.js");
 const { CATEGORIES, CATEGORY_LABELS, setLogChannelId, getAllLogChannels } = require("../utils/modLogStore");
-const { logVoiceStateChange, logMessageEdit } = require("../utils/moderationLog");
+const { logVoiceStateChange, logMessageEdit, relayAuditLogEntry } = require("../utils/moderationLog");
 const voiceChannels = require("../utils/voiceChannels");
 const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
 
@@ -89,6 +89,69 @@ console.log("\nJournal vocal (nouveau) :");
     const msg = { content: "identique", guild, author: { id: "u1", bot: false }, channel: { id: "c1" } };
     await logMessageEdit(client, msg, { ...msg, url: "x" });
     assert.strictEqual(sent.length, 0);
+  });
+
+  console.log("\nJournal \"Serveur\" (nouveau) — signalé : cette catégorie n'était alimentée par AUCUN relais d'audit automatique :");
+
+  await cas("un changement de nom du serveur est journalisé dans la catégorie \"server\"", async () => {
+    const sent = [];
+    const logChannel = { id: "logchan5", isTextBased: () => true, send: async (p) => { sent.push(p); return {}; } };
+    const guild = { id: "g-srv-1", channels: { cache: new Collection([["logchan5", logChannel]]) } };
+    const client = { user: { id: "bot-1" }, guilds: { cache: new Collection([["g-srv-1", guild]]) } };
+    setLogChannelId("g-srv-1", "server", "logchan5");
+    const entry = {
+      action: AuditLogEvent.GuildUpdate,
+      executorId: "human-1",
+      executor: { tag: "Admin#0001" },
+      reason: null,
+      changes: [{ key: "name", old: "Ancien nom", new: "Nouveau nom" }],
+    };
+    await relayAuditLogEntry(client, guild, entry);
+    assert.strictEqual(sent.length, 1);
+    const body = sent[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("Ancien nom → Nouveau nom"), body);
+  });
+
+  await cas("un changement d'icône, de niveau de vérification et de salon AFK sont tous reconnus", async () => {
+    const sent = [];
+    const logChannel = { id: "logchan6", isTextBased: () => true, send: async (p) => { sent.push(p); return {}; } };
+    const guild = { id: "g-srv-2", channels: { cache: new Collection([["logchan6", logChannel]]) } };
+    const client = { user: { id: "bot-1" }, guilds: { cache: new Collection([["g-srv-2", guild]]) } };
+    setLogChannelId("g-srv-2", "server", "logchan6");
+    const entry = {
+      action: AuditLogEvent.GuildUpdate,
+      executorId: "human-1",
+      executor: { tag: "Admin#0001" },
+      reason: null,
+      changes: [
+        { key: "icon_hash", old: "abc", new: "def" },
+        { key: "verification_level", old: 0, new: 2 },
+        { key: "afk_channel_id", old: null, new: "vc-afk" },
+      ],
+    };
+    await relayAuditLogEntry(client, guild, entry);
+    assert.strictEqual(sent.length, 1);
+    const body = sent[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("Icône") && body.includes("changée"), body);
+    assert.ok(body.includes("Moyenne"), body);
+    assert.ok(body.includes("<#vc-afk>"), body);
+  });
+
+  await cas("un changement de position (non notable) ne journalise rien", async () => {
+    const sent = [];
+    const logChannel = { id: "logchan7", isTextBased: () => true, send: async (p) => { sent.push(p); return {}; } };
+    const guild = { id: "g-srv-3", channels: { cache: new Collection([["logchan7", logChannel]]) } };
+    const client = { user: { id: "bot-1" }, guilds: { cache: new Collection([["g-srv-3", guild]]) } };
+    setLogChannelId("g-srv-3", "server", "logchan7");
+    const entry = {
+      action: AuditLogEvent.GuildUpdate,
+      executorId: "human-1",
+      executor: { tag: "Admin#0001" },
+      reason: null,
+      changes: [{ key: "premium_progress_bar_enabled", old: false, new: true }],
+    };
+    await relayAuditLogEntry(client, guild, entry);
+    assert.strictEqual(sent.length, 0, "un champ non suivi ne doit rien journaliser");
   });
 
   console.log("\nCycle créer / supprimer / recréer les salons de logs (&panel > Logs) :");

@@ -182,6 +182,40 @@ const HANDLERS = {
       return { title: "Rôle mis à jour", fields };
     },
   },
+  // Manquait entièrement : "Serveur" (utils/modLogStore.js) n'était alimenté
+  // QUE par une poignée de commandes de CE bot (dero, tickets, &unbanall...),
+  // jamais par un vrai changement du serveur LUI-MÊME (nom, icône, niveau de
+  // vérification...) — d'où l'impression que cette catégorie ne "servait à
+  // rien", contrairement aux autres qui ont toutes leur relais d'audit
+  // automatique. Seuls les changements notables sont montrés (position dans
+  // la liste, mfa_level, owner_id... n'ont pas leur place ici).
+  [AuditLogEvent.GuildUpdate]: {
+    category: "server",
+    describe: (e) => {
+      const fields = [];
+      const name = e.changes.find((c) => c.key === "name");
+      if (name && name.old !== name.new) fields.push({ label: "Nom", value: `${name.old} → ${name.new}` });
+      const icon = e.changes.find((c) => c.key === "icon_hash");
+      if (icon) fields.push({ label: "Icône", value: icon.new ? "changée" : "retirée" });
+      const banner = e.changes.find((c) => c.key === "banner_hash");
+      if (banner) fields.push({ label: "Bannière", value: banner.new ? "changée" : "retirée" });
+      const verif = e.changes.find((c) => c.key === "verification_level");
+      if (verif) fields.push({ label: "Niveau de vérification", value: VERIFICATION_LEVEL_LABELS[verif.new] ?? String(verif.new) });
+      const filter = e.changes.find((c) => c.key === "explicit_content_filter");
+      if (filter) fields.push({ label: "Filtre de contenu explicite", value: EXPLICIT_CONTENT_FILTER_LABELS[filter.new] ?? String(filter.new) });
+      const afkChannel = e.changes.find((c) => c.key === "afk_channel_id");
+      if (afkChannel) fields.push({ label: "Salon AFK", value: afkChannel.new ? `<#${afkChannel.new}>` : "*aucun*" });
+      const afkTimeout = e.changes.find((c) => c.key === "afk_timeout");
+      if (afkTimeout) fields.push({ label: "Délai AFK", value: `${afkTimeout.new}s` });
+      const systemChannel = e.changes.find((c) => c.key === "system_channel_id");
+      if (systemChannel) fields.push({ label: "Salon système", value: systemChannel.new ? `<#${systemChannel.new}>` : "*aucun*" });
+      const vanity = e.changes.find((c) => c.key === "vanity_url_code");
+      if (vanity && vanity.old !== vanity.new) fields.push({ label: "Lien personnalisé", value: vanity.new ? `discord.gg/${vanity.new}` : "*retiré*" });
+      if (!fields.length) return null;
+      return { title: "Paramètres du serveur modifiés", fields };
+    },
+  },
+
   [AuditLogEvent.WebhookCreate]: {
     category: "channels",
     describe: (e) => ({ title: "Webhook créé", fields: [targetField(e)] }),
@@ -219,6 +253,11 @@ const CHANNEL_TYPE_LABELS = {
   [ChannelType.GuildStageVoice]: "Conférence",
   [ChannelType.GuildForum]: "Forum",
 };
+
+// Discord expose ces deux réglages comme un simple entier (0-4 / 0-2) —
+// mêmes libellés que l'interface Discord elle-même.
+const VERIFICATION_LEVEL_LABELS = ["Aucune", "Faible", "Moyenne", "Haute", "Très haute (téléphone requis)"];
+const EXPLICIT_CONTENT_FILTER_LABELS = ["Désactivé", "Membres sans rôle", "Tous les membres"];
 
 /** Champ générique pour une cible : mention Discord (ne ping jamais, voir index.js) + ID. */
 function targetField(entry, label = "Cible") {
