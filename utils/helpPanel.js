@@ -263,7 +263,7 @@ async function handleHelpInteraction(interaction) {
   const tier = kind === PAGE_SELECT_ID ? tierFromCustomId : interaction.values[0];
   const page = kind === PAGE_SELECT_ID ? parseInt(interaction.values[0], 10) || 0 : 0;
   const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
-  return interaction.update(panel).catch(() => {});
+  return interaction.update(panel).catch((err) => console.error("[helpPanel] interaction.update a échoué :", err));
 }
 
 module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID };
