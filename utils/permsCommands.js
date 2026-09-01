@@ -20,11 +20,20 @@ const { identityOf } = require("./helpPanel");
 
 const ALL_COMMANDS = commandCatalog.CATEGORIES.flatMap((c) => c.commands);
 
-/** @returns {{ index: number, keys: string[], roleIds: string[] }[]} */
+/**
+ * @returns {{ index: number, keys: string[], roleIds: string[] }[]}
+ *
+ * Les rôles marqués "exclusif" (voir &panel > Permissions) n'apparaissent
+ * PAS ici — ils sont affichés à part, dans leur propre section "Exclusives"
+ * (voir buildTierCard) — pas doublés entre un palier numéroté et cette
+ * section.
+ */
 function computeTiers(guildId) {
   const grants = permStore.listRoleGrants(guildId);
+  const exclusiveRoleIds = new Set(permStore.listExclusiveRoles(guildId));
   const bySignature = new Map();
   for (const [roleId, keys] of grants) {
+    if (exclusiveRoleIds.has(roleId)) continue;
     const signature = [...keys].sort().join("|");
     if (!bySignature.has(signature)) bySignature.set(signature, { keys: [...keys], roleIds: [] });
     bySignature.get(signature).roleIds.push(roleId);

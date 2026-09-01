@@ -109,6 +109,19 @@ function fakeMessage(guildId) {
     assert.ok(bodyHelpall.includes("<@&role-C>"), bodyHelpall);
   });
 
+  await cas("un rôle exclusif n'apparaît QU'une fois — plus sous un \"Permission N\" numéroté", async () => {
+    // role-C était seul sur son palier ("Permission 2") avant d'être marqué
+    // exclusif : signalé — il continuait à s'afficher aux deux endroits.
+    const msg = fakeMessage("g1");
+    await helpall(null, msg);
+    const json = msg._replies[0].components[0].toJSON();
+    const body = json.components[2].content;
+    const exclusivesIndex = body.indexOf("Exclusives");
+    const beforeExclusives = body.slice(0, exclusivesIndex);
+    assert.ok(!beforeExclusives.includes("<@&role-C>"), `role-C ne doit apparaître QUE dans "Exclusives" :\n${body}`);
+    assert.ok(!beforeExclusives.includes("Permission 2"), "le palier qui ne contenait QUE role-C doit disparaître entièrement une fois vide");
+  });
+
   await cas("plusieurs rôles exclusifs sont tous listés", async () => {
     permStore.setRoleExclusive("g1", "role-A", true);
     const msg = fakeMessage("g1");
