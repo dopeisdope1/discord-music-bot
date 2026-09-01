@@ -319,6 +319,40 @@ const bodyOf = (payload) => payload.components[0].toJSON().components[2]?.conten
     assert.ok(banned, "le ban doit avoir lieu même si le DM a échoué");
   });
 
+  await cas("un grand nombre de cibles (plusieurs lots) reçoit TOUTES le DM puis TOUTES le ban, sans en sauter une", async () => {
+    // 37 cibles avec BAN_BATCH_SIZE=5/DM_BATCH_SIZE=15 (utils/banAll.js) :
+    // couvre plusieurs lots incomplets pour les deux boucles à la fois.
+    banAllDmStore.setDmMessage("g10", "Nouveau serveur, dépêche-toi");
+    const members = Array.from({ length: 37 }, (_, i) => fakeMember(`u${i}`));
+    const guild = fakeGuild(members);
+    guild.id = "g10";
+    guild.ownerId = "owner-1";
+    const msg = fakeMessage(guild);
+    await handleBanAll(null, msg, []);
+
+    const confirmCard = msg._replies[1];
+    const goButton = confirmCard.components[0]
+      .toJSON()
+      .components.find((c) => c.type === 1)
+      .components.find((b) => b.label.startsWith("Bannir"));
+
+    const interaction = {
+      customId: goButton.custom_id,
+      user: { id: "owner-1", tag: "owner#0001" },
+      member: { id: "owner-1", guild, roles: { cache: new Collection() } },
+      guild,
+      client: {},
+      channelId: "chan-1",
+      update: async () => {},
+      message: { edit: async () => {} },
+    };
+    await handleBanAllInteraction(interaction);
+
+    for (const m of members) {
+      assert.deepStrictEqual(m._sent, ["Nouveau serveur, dépêche-toi"], `${m.id} devrait avoir reçu le DM`);
+    }
+  });
+
   await cas("sans message configuré, aucun DM n'est envoyé — juste le ban", async () => {
     const u1 = fakeMember("u1");
     const guild = fakeGuild([u1]);

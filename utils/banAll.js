@@ -4,10 +4,6 @@ const { refusalReason, card } = require("./banPanel");
 const { report } = require("./moderation/actions");
 const banAllDmStore = require("./banAllDmStore");
 
-// Le temps d'envoi des DM avant le ban : moins strict que les actions serveur
-// mais pas illimité non plus — Discord accepte cette cadence sans limiter.
-const DELAY_BETWEEN_DMS_MS = 350;
-
 const ID = "banall";
 
 // Même mécanique que le panneau de bannissement simple : la demande vit en
@@ -16,15 +12,18 @@ const ID = "banall";
 const pending = new Map();
 const PENDING_TTL_MS = 15 * 60 * 1000;
 
-// Discord bannit jusqu'à 200 membres par requête via son API de masse. C'est
-// l'écart entre quelques secondes et plusieurs heures : bannir un par un
-// impose une pause d'environ une seconde à chaque fois pour ne pas se faire
-// limiter.
+// Discord bannit jusqu'à 200 membres par requête via son API de masse.
 const BULK_CHUNK = 200;
 
-// Repli quand l'API de masse n'est pas utilisable (voir canBulkBan) : on
-// bannit un par un, avec une pause pour rester sous la limite de débit.
-const DELAY_BETWEEN_BANS_MS = 1100;
+// Repli quand l'API de masse n'est pas utilisable (voir canBulkBan), et
+// envoi des DM avant le ban : par LOTS CONCURRENTS plutôt qu'un par un avec
+// une pause fixe — discord.js respecte déjà les limites de débit de Discord
+// en interne (file d'attente par route), une pause manuelle entre chaque
+// appel ne faisait que ralentir sans rien protéger de plus. Les bans
+// individuels restent plus prudents (lot plus petit) que les DM : l'endpoint
+// de ban a toujours été plus strictement limité côté Discord.
+const BAN_BATCH_SIZE = 5;
+const DM_BATCH_SIZE = 15;
 const PROGRESS_EVERY = 25;
 
 // "Configurer le message" (bouton sur la carte de confirmation) : réponds
@@ -33,7 +32,12 @@ const PROGRESS_EVERY = 25;
 const pendingMessageCapture = new Set();
 const TEXT_CAPTURE_TIMEOUT_MS = 2 * 60 * 1000;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Traite `items` par lots concurrents (voir commentaire ci-dessus sur pourquoi pas un par un). */
+async function runBatched(items, batchSize, worker) {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(worker));
+  }
+}
 
 /**
  * L'API de masse exige "Bannir des membres" ET "Gérer le serveur", là où le
@@ -99,15 +103,17 @@ async function handleBanAllMessage(message, args) {
 /** Carte de confirmation, reconstruite après un "Configurer le message" pour refléter le nouveau statut du DM. */
 function buildConfirmCard(guild, targets, reason, token) {
   // L'estimation dépend entièrement de la méthode disponible : 200 membres
-  // par requête contre un seul par seconde, l'écart se compte en heures.
+  // par requête contre des lots concurrents de BAN_BATCH_SIZE.
   const bulk = canBulkBan(guild);
   const estimate = bulk
     ? `environ **${Math.max(1, Math.ceil((targets.length / BULK_CHUNK) * 2))} seconde(s)**, par lots de ${BULK_CHUNK}`
-    : `environ **${Math.ceil((targets.length * DELAY_BETWEEN_BANS_MS) / 60000)} minute(s)** — ` +
+    : `environ **${Math.max(1, Math.ceil((targets.length / BAN_BATCH_SIZE) * 0.6))} seconde(s)**, par lots de ${BAN_BATCH_SIZE} — ` +
       "donne-moi la permission **Gérer le serveur** pour que ce soit quasi instantané";
 
   const dmMessage = banAllDmStore.getDmMessage(guild.id);
-  const dmEstimate = dmMessage ? ` + environ **${Math.ceil((targets.length * DELAY_BETWEEN_DMS_MS) / 1000)} seconde(s)** pour les DM avant le ban` : "";
+  const dmEstimate = dmMessage
+    ? ` + environ **${Math.max(1, Math.ceil((targets.length / DM_BATCH_SIZE) * 0.6))} seconde(s)** pour les DM avant le ban (lots de ${DM_BATCH_SIZE})`
+    : "";
 
   return card(
     "Confirmer le ban de masse",
@@ -255,7 +261,7 @@ async function handleBanAllInteraction(interaction) {
   if (dmMessage) {
     await interaction.update(card("Ban de masse en cours", `Envoi des messages en DM… 0 / ${targets.length}`));
     let sent = 0;
-    for (const member of targets) {
+    await runBatched(targets, DM_BATCH_SIZE, async (member) => {
       await member.send(dmMessage).catch(() => {});
       sent += 1;
       if (sent % PROGRESS_EVERY === 0) {
@@ -263,8 +269,7 @@ async function handleBanAllInteraction(interaction) {
           .edit(card("Ban de masse en cours", `Envoi des messages en DM… ${sent} / ${targets.length}`))
           .catch(() => {});
       }
-      await sleep(DELAY_BETWEEN_DMS_MS);
-    }
+    });
   } else {
     await interaction.update(card("Ban de masse en cours", `0 / ${targets.length}…`));
   }
@@ -290,11 +295,12 @@ async function handleBanAllInteraction(interaction) {
       }
     }
   } else {
-    // Repli sans "Gérer le serveur" : un par un, donc bien plus lent.
-    for (const member of targets) {
+    // Repli sans "Gérer le serveur" : plus lent que l'API de masse, mais
+    // par lots concurrents plutôt qu'un par un (voir BAN_BATCH_SIZE).
+    await runBatched(targets, BAN_BATCH_SIZE, async (member) => {
       if (refusalReason(guild, member) !== null) {
         failed += 1;
-        continue;
+        return;
       }
       try {
         await member.ban({ reason });
@@ -309,8 +315,7 @@ async function handleBanAllInteraction(interaction) {
           .edit(card("Ban de masse en cours", `${done} / ${targets.length}…`))
           .catch(() => {});
       }
-      await sleep(DELAY_BETWEEN_BANS_MS);
-    }
+    });
   }
 
   console.log(`[banall] ${done} banni(s), ${failed} échec(s) par ${interaction.user.tag} sur "${guild.name}"`);
