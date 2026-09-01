@@ -2,6 +2,11 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, Messa
 const { can } = require("./permissions/engine");
 const { refusalReason, card } = require("./banPanel");
 const { report } = require("./moderation/actions");
+const banAllDmStore = require("./banAllDmStore");
+
+// Le temps d'envoi des DM avant le ban : moins strict que les actions serveur
+// mais pas illimité non plus — Discord accepte cette cadence sans limiter.
+const DELAY_BETWEEN_DMS_MS = 350;
 
 const ID = "banall";
 
@@ -67,8 +72,30 @@ function bannableMembers(guild, actorId) {
   );
 }
 
+/** &banall message <texte> — configure ce qui est envoyé en DM à chaque membre AVANT de le bannir (aucun DM si rien n'est configuré). */
+async function handleBanAllMessage(message, args) {
+  const text = args.join(" ").trim();
+  if (!text) {
+    const current = banAllDmStore.getDmMessage(message.guild.id);
+    return message.reply(
+      card(
+        "Message DM du ban de masse",
+        current
+          ? `Message actuel, envoyé à chacun avant d'être banni :\n\n${current}`
+          : "*Aucun message configuré — personne ne reçoit de DM avant d'être banni. `&banall message <texte>` pour en définir un.*"
+      )
+    );
+  }
+  banAllDmStore.setDmMessage(message.guild.id, text);
+  return message.reply(card("Message DM du ban de masse enregistré", text));
+}
+
 async function handleBanAll(client, message, args) {
   if (!canBanAll(message.guild, message.member)) return;
+
+  if ((args[0] || "").toLowerCase() === "message") {
+    return handleBanAllMessage(message, args.slice(1));
+  }
 
   const reason = args.join(" ").trim();
 
@@ -91,6 +118,9 @@ async function handleBanAll(client, message, args) {
     : `environ **${Math.ceil((targets.length * DELAY_BETWEEN_BANS_MS) / 60000)} minute(s)** — ` +
       "donne-moi la permission **Gérer le serveur** pour que ce soit quasi instantané";
 
+  const dmMessage = banAllDmStore.getDmMessage(message.guild.id);
+  const dmEstimate = dmMessage ? ` + environ **${Math.ceil((targets.length * DELAY_BETWEEN_DMS_MS) / 1000)} seconde(s)** pour les DM avant le ban` : "";
+
   const token = rememberRequest({ actorId: message.author.id, reason, count: targets.length });
 
   await message.channel.send(
@@ -100,7 +130,10 @@ async function handleBanAll(client, message, args) {
         `**${targets.length}** membre(s) seront bannis de **${message.guild.name}**.`,
         `Raison : ${reason || "*aucune*"}`,
         "",
-        `Durée estimée : ${estimate}.`,
+        `Durée estimée : ${estimate}${dmEstimate}.`,
+        dmMessage
+          ? "**Chacun recevra ce message en DM avant d'être banni** (voir `&banall message`)."
+          : "*Aucun message configuré — `&banall message <texte>` pour en envoyer un avant le ban.*",
         "Sont épargnés : toi, le propriétaire du serveur, les bots, les propriétaires du bot,",
         "les membres de rang sys, et ceux dont le rôle dépasse le mien.",
         "",
@@ -151,7 +184,28 @@ async function handleBanAllInteraction(interaction) {
   // Revérifié maintenant : la liste affichée peut dater de plusieurs minutes,
   // des rôles ont pu changer entre-temps.
   const targets = bannableMembers(guild, request.actorId);
-  await interaction.update(card("Ban de masse en cours", `0 / ${targets.length}…`));
+
+  // DM AVANT le ban (une fois banni, on perd le lien commun avec le
+  // serveur nécessaire pour lui écrire) — voir "&banall message". Best
+  // effort : les DM fermés échouent silencieusement, ça n'empêche jamais
+  // le ban derrière.
+  const dmMessage = banAllDmStore.getDmMessage(guild.id);
+  if (dmMessage) {
+    await interaction.update(card("Ban de masse en cours", `Envoi des messages en DM… 0 / ${targets.length}`));
+    let sent = 0;
+    for (const member of targets) {
+      await member.send(dmMessage).catch(() => {});
+      sent += 1;
+      if (sent % PROGRESS_EVERY === 0) {
+        await interaction.message
+          .edit(card("Ban de masse en cours", `Envoi des messages en DM… ${sent} / ${targets.length}`))
+          .catch(() => {});
+      }
+      await sleep(DELAY_BETWEEN_DMS_MS);
+    }
+  } else {
+    await interaction.update(card("Ban de masse en cours", `0 / ${targets.length}…`));
+  }
 
   let done = 0;
   let failed = 0;

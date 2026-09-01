@@ -617,6 +617,7 @@ async function handleMusicTextCommand(client, message) {
 const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
+  banall: ["message"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],

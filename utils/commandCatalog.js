@@ -100,6 +100,12 @@ const CATEGORIES = [
         permission: "moderation.banall",
         description: "Bannit tout le serveur (confirmation obligatoire)",
       },
+      {
+        name: "banall message <texte>",
+        prefix: "mod",
+        permission: "moderation.banall",
+        description: "Définit le message envoyé en DM à chacun avant d'être banni par &banall (aucun DM si rien n'est configuré)",
+      },
       { name: "modlogs [@membre|id]", prefix: "mod", permission: "logs.view", description: "Consulte l'historique de modération" },
       { name: "lock [#salon]", prefix: "mod", permission: "channels.lock", description: "Empêche @everyone d'écrire dans le salon" },
       { name: "unlock [#salon]", prefix: "mod", permission: "channels.lock", description: "Rétablit l'écriture" },
