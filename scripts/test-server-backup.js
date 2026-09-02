@@ -143,6 +143,16 @@ function extractConfirmToken(reply) {
     assert.ok(backupStore.getBackup("masave"));
   });
 
+  await cas("backup <nom> refuse d'écraser un nom de préréglage (piège : &backup yunara au lieu de &backup load yunara)", async () => {
+    const guild = fakeGuild("g-shadow");
+    guild.channels.cache.set("t1", { id: "t1", name: "chat", type: ChannelType.GuildText, parentId: null, rawPosition: 0 });
+    const message = fakeMessage(guild);
+    await backup(null, message, ["yunara"]);
+    assert.ok(embedText(message._replies[0]).includes("préréglage"), embedText(message._replies[0]));
+    assert.strictEqual(backupStore.getBackup("yunara"), null, "le préréglage ne doit jamais être masqué par le store");
+    assert.strictEqual(resolveBackup("yunara").categories.length, PRESET_BACKUPS.yunara.categories.length, "le vrai préréglage doit rester intact");
+  });
+
   await cas("backup list montre les préréglages ET les sauvegardes enregistrées", async () => {
     const guild = fakeGuild("g-list");
     const message = fakeMessage(guild);

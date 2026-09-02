@@ -250,6 +250,13 @@ async function backup(client, message, args) {
 
   // Pas un mot-clé connu : c'est le NOM sous lequel sauvegarder l'état actuel.
   const name = args[0];
+  if (PRESET_BACKUPS[name.toLowerCase()] && !backupStore.getBackup(name)) {
+    return reply(
+      message,
+      "error",
+      `**${name}** est un préréglage intégré au code — l'écraser masquerait la structure d'origine. Utilise \`backup load ${name}\` pour le restaurer, ou choisis un autre nom pour sauvegarder l'état actuel.`
+    );
+  }
   const structure = captureGuildStructure(message.guild);
   backupStore.saveBackup(name, structure);
   return reply(message, "success", `Sauvegarde **${name}** enregistrée (${countChannels(structure)} salon(s) dans ${structure.categories.length} catégorie(s)).`);
