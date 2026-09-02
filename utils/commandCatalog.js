@@ -201,10 +201,10 @@ const CATEGORIES = [
       // embedPrompt) — corrige la classification plutôt que d'inventer une
       // deuxième clé qui ferait doublon.
       { name: "embed", prefix: "mod", permission: "server.channels.manage", description: "Ouvre un constructeur d'embed pour poster un message personnalisé" },
-      { name: "backup <serveur/emoji> <nom>", prefix: "mod", permission: "sys", description: "Crée une sauvegarde du serveur ou des emojis" },
-      { name: "backup list <serveur/emoji>", prefix: "mod", permission: "sys", description: "Liste les sauvegardes disponibles" },
-      { name: "backup delete <serveur/emoji> <nom>", prefix: "mod", permission: "sys", description: "Supprime une sauvegarde" },
-      { name: "backup load <serveur/emoji> <nom>", prefix: "mod", permission: "sys", description: "Restaure une sauvegarde (confirmation obligatoire)" },
+      { name: "backup <nom>", prefix: "mod", permission: "sys", description: "Sauvegarde la structure du serveur (catégories, salons, ordre, limites de places vocales — pas les permissions ni les messages)" },
+      { name: "backup list", prefix: "mod", permission: "sys", description: "Liste les sauvegardes disponibles" },
+      { name: "backup delete <nom>", prefix: "mod", permission: "sys", description: "Supprime une sauvegarde" },
+      { name: "backup load <nom>", prefix: "mod", permission: "sys", description: "Restaure une sauvegarde dans ce serveur (confirmation obligatoire)" },
       { name: "autobackup <serveur/emoji> <jours>", prefix: "mod", permission: "sys", description: "Programme une sauvegarde automatique périodique" },
       { name: "loading <durée> <message>", prefix: "mod", permission: null, description: "Affiche une barre de chargement animée" },
       { name: "create [émoji] [nom]", prefix: "mod", permission: "server.channels.manage", description: "Crée un émoji sur le serveur à partir d'un lien ou d'une pièce jointe" },

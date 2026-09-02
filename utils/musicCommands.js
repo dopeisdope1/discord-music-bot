@@ -27,6 +27,7 @@ const { logHandlers } = require("./logCommands");
 const { guardHandlers } = require("./guardCommands");
 const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
+const { backup } = require("./serverBackup");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
 const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
@@ -377,6 +378,7 @@ const modHandlers = {
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,
   antinuke: serverAdmin.antinuke,
+  backup,
   voicehub: serverAdmin.voicehub,
   voc: serverAdmin.vc,
   vc: utilityHandlers.vc,
@@ -620,6 +622,7 @@ const MOD_SUBCOMMANDS = {
   channel: ["create", "delete", "rename", "topic"],
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit"],
+  backup: ["list", "delete", "load"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],
