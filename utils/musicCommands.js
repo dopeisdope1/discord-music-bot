@@ -36,6 +36,7 @@ const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
 const { autoroleHandlers } = require("./autoroleCommands");
 const { setupVerification } = require("./verification");
+const statusDiagnostic = require("./statusDiagnostic");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -384,7 +385,11 @@ const modHandlers = {
   voicehub: serverAdmin.voicehub,
   voc: serverAdmin.vc,
   vc: utilityHandlers.vc,
-  stats: utilityHandlers.stats,
+  stats: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "history") return utilityHandlers.statsHistory(client, message, args.slice(1));
+    return utilityHandlers.stats(client, message, args);
+  },
+  status: statusDiagnostic.status,
 
   // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
   // utils/giveaways.js.
@@ -680,6 +685,7 @@ const MOD_SUBCOMMANDS = {
   leave: ["settings"],
   autorole: ["add", "del", "list"],
   verify: ["setup"],
+  stats: ["history"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond

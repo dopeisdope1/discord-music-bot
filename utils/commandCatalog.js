@@ -39,6 +39,8 @@ const CATEGORIES = [
       },
       { name: "vc", prefix: "mod", permission: "server.stats.view", description: "Affiche le nombre de personnes actuellement en vocal" },
       { name: "stats", prefix: "mod", permission: "server.stats.view", description: "Affiche les statistiques du serveur (membres, en ligne, en vocal, en stream, actifs, mute)" },
+      { name: "stats history [jours]", prefix: "mod", permission: "server.stats.view", description: "Évolution messages/arrivées/départs sur les N derniers jours (7 par défaut, 30 max)" },
+      { name: "status", prefix: "mod", permission: "sys", description: "Diagnostics techniques du bot (uptime, latence, mémoire, versions, état des nœuds Lavalink)" },
       { name: "changelogs", prefix: "mod", permission: null, description: "Affiche les dernières notes de mise à jour" },
       { name: "alladmins", prefix: "mod", permission: "server.members.list", description: "Affiche la liste des membres (hors bots) ayant la permission administrateur" },
       { name: "botadmins", prefix: "mod", permission: "server.members.list", description: "Affiche la liste des bots ayant la permission administrateur" },

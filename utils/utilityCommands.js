@@ -6,6 +6,7 @@ const { moderationHandlers } = require("./moderationCommands");
 const { can } = require("./permissions/engine");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
+const statsStore = require("./statsStore");
 
 // Commandes utilitaires en LECTURE SEULE : les fiches d'info individuelles
 // (&pic/&server/&userinfo...) n'exigent aucune permission (`permission:
@@ -181,6 +182,17 @@ const handlers = {
         { name: "Mute", value: muted.toLocaleString("fr-FR"), inline: true },
       ],
     });
+  },
+
+  /** &stats history [jours] — évolution messages/arrivées/départs, 7 jours par défaut (max 30). */
+  async statsHistory(client, message, args) {
+    if (!can(message.member, "server.stats.view")) return;
+    const days = Math.min(30, Math.max(1, parseInt(args[0], 10) || 7));
+    const range = statsStore.getRange(message.guild.id, days);
+    const lines = range.map(
+      (d) => `> **${d.date}** — 💬 ${d.messages} · 🟢 ${d.joins} arrivée(s) · 🔴 ${d.leaves} départ(s)`
+    );
+    await reply(message, "info", lines.join("\n"), { title: `Statistiques des ${days} derniers jours` });
   },
 
   /** &vocinfo — état vocal du serveur, salon par salon. */

@@ -53,6 +53,7 @@ const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
 const { applyAutoroles } = require("./utils/autoroleCommands");
 const { handleVerifyButton } = require("./utils/verification");
+const statsStore = require("./utils/statsStore");
 const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
@@ -262,6 +263,12 @@ setInterval(() => {
   checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
   checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
 }, 30_000);
+
+// Écrit sur disque les compteurs de &stats history (voir utils/statsStore.js)
+// — en mémoire entre-temps, jamais à chaque message.
+setInterval(() => {
+  statsStore.flush();
+}, 60_000);
 
 // Fait tourner les activités configurées (&playto/&listen/&watch/&compet/
 // &stream, voir utils/botProfileCommands.js) si plusieurs phrases ont été
@@ -717,6 +724,9 @@ client.on("interactionCreate", async (interaction) => {
 
 // ---- Commandes textuelles préfixées ----
 client.on("messageCreate", (message) => {
+  // &stats history (voir utils/statsStore.js) : compteur en mémoire, écrit
+  // sur disque périodiquement plus bas — jamais à chaque message.
+  if (message.guild && !message.author.bot) statsStore.record(message.guild.id, "messages");
   handleMusicTextCommand(client, message).catch((err) => {
     console.error(err);
     message
@@ -1063,6 +1073,10 @@ client.on("guildMemberAdd", (member) => {
   applyAutoroles(member).catch((err) => console.error("[autorole]", err));
 });
 
+// Statistiques historiques (&stats history, voir utils/statsStore.js).
+client.on("guildMemberAdd", (member) => statsStore.record(member.guild.id, "joins"));
+client.on("guildMemberRemove", (member) => statsStore.record(member.guild.id, "leaves"));
+
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée
 // d'audit Discord — ban, kick, timeout, salon/rôle supprimé, etc. — est
 // relayée vers le salon configuré via &panel > Logs, quel qu'en soit
@@ -1104,6 +1118,7 @@ async function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`[shutdown] Signal ${signal} reçu, arrêt dans 3s...`);
+  statsStore.flush(); // sinon jusqu'à 60s de &stats history perdues à chaque redéploiement
 
   // Les lecteurs sont détruits explicitement. Depuis que la reprise est
   // activée, Lavalink garde en vie les lecteurs d'un client qui s'en va, le
