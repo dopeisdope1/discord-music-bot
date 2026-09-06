@@ -631,7 +631,7 @@ const MOD_SUBCOMMANDS = {
   end: ["giveaway"],
   search: ["wiki"],
   badwords: ["on", "off", "add", "del", "clear", "list"],
-  autoreact: ["list", "add"],
+  autoreact: ["list", "add", "del"],
   remove: ["activity"],
   modlog: ["on", "off"],
   memberlog: ["on", "off"],
@@ -657,6 +657,7 @@ const MOD_SUBCOMMANDS = {
   punition: ["all"],
   antispam: ["on", "off"],
   spam: ["allow", "deny", "reset"],
+  link: ["allow", "deny", "reset"],
   join: ["settings"],
 };
 

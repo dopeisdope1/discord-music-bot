@@ -21,8 +21,9 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
+const { buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("../utils/permissions/store");
 
@@ -405,6 +406,100 @@ function render(section, state) {
   await cas("l'avertissement du ban de masse est conservé", () => {
     // Seule exception assumée : un mauvais clic y bannit le serveur entier.
     assert.ok(render("banall").texte.includes("bannit tout le serveur"));
+  });
+
+  console.log("\nRecherche d'historique — cible/modérateur en sélecteur natif, plus en texte libre :");
+
+  const TARGET_ID = "111111111111111111";
+  const MODERATOR_ID = "222222222222222222";
+  historyStore.deleteAllForGuild("g1");
+  historyStore.record({ guildId: "g1", targetId: TARGET_ID, moderatorId: MODERATOR_ID, action: "ban" });
+
+  await cas("par défaut, juste le bouton \"Rechercher\" — pas encore de sélecteur", () => {
+    const json = buildConfigPanel(guild, "history", member).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1 && c.components[0]?.type === 2).flatMap((r) => r.components);
+    const selects = json.components.filter((c) => c.type === 1 && c.components[0]?.type === 5); // 5 = UserSelectMenu
+    assert.ok(boutons.some((b) => b.custom_id === `${ID}:history:search`));
+    assert.strictEqual(selects.length, 0);
+  });
+
+  await cas("cliquer \"Rechercher\" ouvre la carte avec DEUX UserSelectMenu natifs (cible + modérateur)", async () => {
+    let panel = null;
+    await handleConfigInteraction(fakeInteraction("history:search", { update: async (p) => { panel = p; } }));
+    const json = panel.components[0].toJSON();
+    const selects = json.components.filter((c) => c.type === 1 && c.components[0]?.type === 5);
+    assert.strictEqual(selects.length, 2, "cible ET modérateur doivent être des UserSelectMenu natifs");
+  });
+
+  await cas("choisir une cible garde le modérateur déjà choisi (état porté par le customId, sans mémoire serveur)", async () => {
+    let panel = null;
+    await handleConfigInteraction(
+      fakeInteraction(`historytarget:${MODERATOR_ID}`, { values: [TARGET_ID], update: async (p) => { panel = p; } })
+    );
+    const json = panel.components[0].toJSON();
+    const targetSelect = json.components.find((c) => c.type === 1 && c.components[0]?.custom_id?.startsWith(`${ID}:historytarget:`))
+      ?.components[0];
+    const modSelect = json.components.find((c) => c.type === 1 && c.components[0]?.custom_id?.startsWith(`${ID}:historymoderator:`))
+      ?.components[0];
+    assert.deepStrictEqual(targetSelect.default_values?.map((d) => d.id), [TARGET_ID]);
+    assert.ok(modSelect.custom_id.endsWith(`:${TARGET_ID}`), "le sélecteur modérateur doit porter la cible dans son customId");
+  });
+
+  await cas("\"Rechercher\" (carte) trouve bien l'entrée par cible ET modérateur, répond en Components V2 (plus d'embed classique)", async () => {
+    let panel = null;
+    const followUps = [];
+    await handleConfigInteraction(
+      fakeInteraction(`historyrun:${TARGET_ID}:${MODERATOR_ID}`, {
+        update: async (p) => { panel = p; },
+        followUp: async (p) => { followUps.push(p); return {}; },
+      })
+    );
+    assert.ok(panel, "le panneau (carte de critères) doit être rafraîchi via update()");
+    assert.strictEqual(followUps.length, 1, "les résultats doivent arriver en followUp, pas en second update()");
+    assert.ok(followUps[0].flags & MessageFlags.IsComponentsV2, "les résultats doivent être en Components V2, pas un embed classique");
+    assert.ok(followUps[0].flags & MessageFlags.Ephemeral);
+    const texte = followUps[0].components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("ban"), texte);
+  });
+
+  await cas("aucune correspondance (mauvaise cible) : le dit clairement, ne plante pas", async () => {
+    const followUps = [];
+    await handleConfigInteraction(
+      fakeInteraction(`historyrun:${"999999999999999999"}:_`, {
+        update: async () => {},
+        followUp: async (p) => { followUps.push(p); return {}; },
+      })
+    );
+    const texte = followUps[0].components[0].toJSON().components[0].content;
+    assert.ok(texte.length > 0);
+  });
+
+  await cas("le bouton \"Filtrer par type/ID...\" ouvre un Modal RÉDUIT (2 champs, plus cible/modérateur en texte)", async () => {
+    let modal = null;
+    await handleConfigInteraction(
+      fakeInteraction(`historytextopen:${TARGET_ID}:${MODERATOR_ID}`, { showModal: (m) => { modal = m; } })
+    );
+    const json = modal.toJSON();
+    assert.strictEqual(json.components.length, 2, "seuls type/ID doivent rester en Modal");
+    assert.strictEqual(json.custom_id, `${ID}:historytextsubmit:${TARGET_ID}:${MODERATOR_ID}`, "cible/modérateur doivent être portés par le Modal, pas perdus");
+  });
+
+  await cas("soumettre le Modal réduit combine type/ID tapés AVEC la cible/le modérateur choisis avant (via la carte)", async () => {
+    const fields = { action: "ban", id: "" };
+    const modalInteraction = {
+      customId: `${ID}:historytextsubmit:${TARGET_ID}:${MODERATOR_ID}`,
+      member,
+      guild,
+      fields: { getTextInputValue: (k) => fields[k] },
+      reply: async (p) => {
+        modalInteraction._reply = p;
+        return {};
+      },
+    };
+    await handleConfigInteraction(modalInteraction);
+    assert.ok(modalInteraction._reply.flags & MessageFlags.IsComponentsV2);
+    const texte = modalInteraction._reply.components[0].toJSON().components[0].content;
+    assert.ok(texte.includes("ban"));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

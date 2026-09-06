@@ -240,6 +240,192 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(interaction._targetMember.roles._removed?.length > 0);
   });
 
+  console.log("\nGénéralisation des sélecteurs natifs à des commandes existantes :");
+
+  await cas("del_sanction_member supprime bien la sanction visée par son numéro", async () => {
+    const historyStore = require("../utils/moderationHistoryStore");
+    historyStore.deleteAllForGuild("g1");
+    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "ban" });
+    const interaction = makeInteraction();
+    await commandForms.FORMS.del_sanction_member.run(client, interaction, { userId: TARGET_ID, text: { index: "1" } });
+    assert.strictEqual(historyStore.search("g1", { targetId: TARGET_ID }).length, 0);
+  });
+
+  await cas("role_admin_grant réutilise le VRAI &role admin, donc demande confirmation (jamais immédiat)", async () => {
+    const { PermissionsBitField } = require("discord.js");
+    const interaction = makeInteraction();
+    const role = interaction.guild.roles.cache.get(TEST_ROLE_ID);
+    role.permissions = new PermissionsBitField([]);
+    const followUps = [];
+    interaction.followUp = async (p) => {
+      followUps.push(p);
+      return {};
+    };
+    await commandForms.FORMS.role_admin_grant.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.ok(!role.permissions.has(PermissionsBitField.Flags.Administrator), "Administrateur ne doit jamais être donné sans confirmation");
+    assert.ok(followUps.length > 0, "une confirmation aurait dû être demandée");
+  });
+
+  await cas("voicehub_set règle le salon générateur choisi", async () => {
+    const voiceChannels = require("../utils/voiceChannels");
+    const interaction = makeInteraction();
+    interaction.guild.channels.cache.set("vc1", { id: "vc1", type: ChannelType.GuildVoice, name: "Vocal" });
+    await commandForms.FORMS.voicehub_set.run(client, interaction, { channelId: "vc1" });
+    assert.strictEqual(voiceChannels.getHub("g1"), "vc1");
+  });
+
+  await cas("set_muterole_grant enregistre le rôle de mute choisi", async () => {
+    const muteStore = require("../utils/muteStore");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.set_muterole_grant.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.strictEqual(muteStore.getMuteRoleId("g1"), TEST_ROLE_ID);
+  });
+
+  await cas("autoreact_add puis autoreact_del sur le même salon/émoji", async () => {
+    const autoReactStore = require("../utils/autoReactStore");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.autoreact_add.run(client, interaction, { channelId: "c1", text: { emoji: "👍" } });
+    assert.ok(autoReactStore.getForChannel("c1").includes("👍"));
+    await commandForms.FORMS.autoreact_del.run(client, interaction, { channelId: "c1", text: { emoji: "👍" } });
+    assert.ok(!autoReactStore.getForChannel("c1").includes("👍"));
+  });
+
+  await cas("link_channel_exempt exempte le salon choisi de l'anti-lien", async () => {
+    const antiLink = require("../utils/automod/antiLink");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.link_channel_exempt.run(client, interaction, { channelId: "c1", text: { action: "allow" } });
+    assert.ok(antiLink.getAllowedChannels("g1").includes("c1"));
+  });
+
+  await cas("link_channel_exempt sans salon choisi exempte le salon COURANT (comportement inchangé de &link)", async () => {
+    const antiLink = require("../utils/automod/antiLink");
+    antiLink.setChannelAllowed("g1", "c1", false);
+    const interaction = makeInteraction();
+    await commandForms.FORMS.link_channel_exempt.run(client, interaction, { text: { action: "allow" } });
+    assert.ok(antiLink.getAllowedChannels("g1").includes("c1"));
+  });
+
+  await cas("spam_channel_exempt exempte le salon choisi de l'anti-spam", async () => {
+    const antiSpam = require("../utils/automod/antiSpam");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.spam_channel_exempt.run(client, interaction, { channelId: "c1", text: { action: "allow" } });
+    assert.ok(antiSpam.getExemptChannels("g1").includes("c1"));
+  });
+
+  await cas("antinuke_wluser bascule le membre dans la whitelist anti-nuke", async () => {
+    const guardWhitelist = require("../utils/guard/whitelist");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.antinuke_wluser.run(client, interaction, { userId: TARGET_ID });
+    assert.ok(guardWhitelist.getWhitelist("g1").users.includes(TARGET_ID));
+  });
+
+  await cas("antinuke_wlrole bascule le rôle dans la whitelist anti-nuke", async () => {
+    const guardWhitelist = require("../utils/guard/whitelist");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.antinuke_wlrole.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.ok(guardWhitelist.getWhitelist("g1").roles.includes(TEST_ROLE_ID));
+  });
+
+  await cas("antinuke_ping règle le rôle pingé quand un rôle est choisi", async () => {
+    const guardConfig = require("../utils/guard/config");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.antinuke_ping.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.strictEqual(guardConfig.getConfig("g1").pingRoleId, TEST_ROLE_ID);
+  });
+
+  await cas("antinuke_ping désactive le ping quand aucun rôle n'est choisi (équivaut à &antinuke ping off)", async () => {
+    const guardConfig = require("../utils/guard/config");
+    guardConfig.setPingRole("g1", TEST_ROLE_ID);
+    const interaction = makeInteraction();
+    await commandForms.FORMS.antinuke_ping.run(client, interaction, {});
+    assert.strictEqual(guardConfig.getConfig("g1").pingRoleId, null);
+  });
+
+  await cas("set_perm_grant accorde la clé choisie au RÔLE choisi (mentionable = rôle)", async () => {
+    const permStore = require("../utils/permissions/store");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.set_perm_grant.run(client, interaction, {
+      mentionableId: TEST_ROLE_ID,
+      mentionableType: "role",
+      text: { category: "moderation", key: "moderation.kick" },
+    });
+    assert.ok(permStore.getRoleGrants("g1", TEST_ROLE_ID).includes("moderation.kick"));
+  });
+
+  await cas("set_perm_grant accorde la clé choisie au MEMBRE choisi (mentionable = membre)", async () => {
+    const permStore = require("../utils/permissions/store");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.set_perm_grant.run(client, interaction, {
+      mentionableId: TARGET_ID,
+      mentionableType: "user",
+      text: { category: "moderation", key: "moderation.kick" },
+    });
+    assert.ok(permStore.getUserGrants("g1", TARGET_ID).includes("moderation.kick"));
+  });
+
+  await cas("del_perm_grant retire la clé du membre choisi", async () => {
+    const permStore = require("../utils/permissions/store");
+    permStore.grantToUser("g1", TARGET_ID, "moderation.kick");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.del_perm_grant.run(client, interaction, {
+      mentionableId: TARGET_ID,
+      mentionableType: "user",
+      text: { category: "moderation", key: "moderation.kick" },
+    });
+    assert.ok(!permStore.getUserGrants("g1", TARGET_ID).includes("moderation.kick"));
+  });
+
+  await cas("la carte set_perm_grant n'affiche le sélecteur de clé qu'une fois une catégorie choisie", () => {
+    const emptyJson = commandForms.buildFormCard("set_perm_grant", { id: "staff-1" }).components[0].toJSON();
+    // type 3 = StringSelectMenu (catégorie/clé) ; le mentionable est un type 7 à part.
+    const selectRows = emptyJson.components.filter((c) => c.type === 1 && c.components[0]?.type === 3);
+    // Sans catégorie choisie : uniquement le menu de catégorie, pas encore la clé.
+    assert.strictEqual(selectRows.length, 1, "le menu de clé ne doit pas apparaître avant qu'une catégorie soit choisie");
+
+    commandForms.setFormState("staff-1", "set_perm_grant", { text: { category: "moderation" } });
+    const filledJson = commandForms.buildFormCard("set_perm_grant", { id: "staff-1" }).components[0].toJSON();
+    const filledSelectRows = filledJson.components.filter((c) => c.type === 1 && c.components[0]?.type === 3);
+    assert.strictEqual(filledSelectRows.length, 2, "le menu de clé doit apparaître une fois la catégorie choisie");
+    commandForms.clearFormState("staff-1", "set_perm_grant");
+  });
+
+  await cas("le champ mentionable résout correctement un RÔLE choisi dans le menu natif", async () => {
+    const { Collection } = require("discord.js");
+    const role = { id: TEST_ROLE_ID, name: "Testeur" };
+    const interaction = {
+      customId: `${commandForms.CARD_ID}:mentionable:kick_member`,
+      user: { id: "staff-1" },
+      member: { id: "staff-1", guild: { id: "g1" }, permissions: new (require("discord.js").PermissionsBitField)(require("discord.js").PermissionsBitField.All) },
+      guild: { id: "g1", roles: { cache: new Collection([[TEST_ROLE_ID, role]]) }, channels: { cache: new Collection() } },
+      values: [TEST_ROLE_ID],
+      roles: new Collection([[TEST_ROLE_ID, role]]),
+      members: new Collection(),
+      users: new Collection(),
+      update: async () => {},
+    };
+    // kick_member n'a pas de champ "mentionable" mais handleFormCardInteraction
+    // ne valide que l'action générique de sélection avant de router — on vise
+    // ici uniquement la résolution rôle/membre, pas le formulaire réel.
+    await commandForms.handleFormCardInteraction(interaction);
+    assert.strictEqual(commandForms.getFormState("staff-1", "kick_member")?.mentionableType, "role");
+    assert.strictEqual(commandForms.getFormState("staff-1", "kick_member")?.mentionableId, TEST_ROLE_ID);
+    commandForms.clearFormState("staff-1", "kick_member");
+  });
+
+  console.log("\nCommandes volontairement NON interceptées (raccourci zéro-argument déjà utile, voir le commentaire dans commandForms.js) :");
+
+  await cas("aucune de ces commandes n'a de carte : leur comportement direct reste inchangé", () => {
+    for (const bare of ["clear", "modlogs", "sync", "wl", "unwl", "cleanup", "modlog", "voicehub off"]) {
+      assert.ok(!commandForms.BARE_COMMAND_FORMS[bare], `"${bare}" ne doit pas avoir de carte (regression de raccourci)`);
+    }
+  });
+
+  await cas("les commandes non implémentées du catalogue n'ont pas non plus de carte fictive", () => {
+    for (const fake of ["openmodmail", "restrict", "nolog", "noderank", "piconly", "public", "boostlog", "ticket add", "ticket del"]) {
+      assert.ok(!commandForms.BARE_COMMAND_FORMS[fake], `"${fake}" n'a pas de vrai handler, ne doit pas avoir de carte`);
+    }
+  });
+
   console.log("\nÉtat de formulaire (par personne ET par commande) :");
 
   await cas("setFormState fusionne sans écraser les autres champs texte", () => {

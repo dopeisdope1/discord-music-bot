@@ -629,11 +629,42 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       );
     }
   } else if (meta.key === "history") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:history:search`).setLabel("Rechercher").setStyle(ButtonStyle.Secondary)
-      )
-    );
+    if (!state.historySearchOpen) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:history:search`).setLabel("Rechercher").setStyle(ButtonStyle.Secondary)
+        )
+      );
+    } else {
+      const targetId = state.historySearchTarget || null;
+      const moderatorId = state.historySearchModerator || null;
+      const targetSelect = new UserSelectMenuBuilder()
+        .setCustomId(`${ID}:historytarget:${moderatorId || "_"}`)
+        .setPlaceholder("Filtrer par cible")
+        .setMinValues(0)
+        .setMaxValues(1);
+      if (targetId) targetSelect.setDefaultUsers([targetId]);
+      const moderatorSelect = new UserSelectMenuBuilder()
+        .setCustomId(`${ID}:historymoderator:${targetId || "_"}`)
+        .setPlaceholder("Filtrer par modérateur")
+        .setMinValues(0)
+        .setMaxValues(1);
+      if (moderatorId) moderatorSelect.setDefaultUsers([moderatorId]);
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(targetSelect));
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(moderatorSelect));
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:historytextopen:${targetId || "_"}:${moderatorId || "_"}`)
+            .setLabel("Filtrer par type/ID...")
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`${ID}:historyrun:${targetId || "_"}:${moderatorId || "_"}`)
+            .setLabel("Rechercher")
+            .setStyle(ButtonStyle.Success)
+        )
+      );
+    }
   } else if (meta.key === "protection") {
     const words = badWords.getWords(guild.id);
 
@@ -1087,17 +1118,34 @@ async function handleConfigInteraction(interaction) {
     return goto("logs");
   }
 
+  // Recherche d'historique : cible/modérateur se choisissent désormais via
+  // UserSelectMenu natif (chips + avatars) au lieu d'un ID/mention tapé à la
+  // main — un Modal Discord ne pouvant pas contenir de select menu, le
+  // bouton "Rechercher" ouvre maintenant une carte dans le panel lui-même
+  // plutôt qu'un Modal direct. Le type d'événement/l'ID précis restent du
+  // texte libre (aucun équivalent natif) via un Modal réduit, ouvert depuis
+  // cette carte et qui porte cible/modérateur dans son propre customId pour
+  // ne pas les perdre.
   if (action === "history" && extra === "search") {
     if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) return handleHistorySearchModal(interaction);
-    const modal = new ModalBuilder().setCustomId(`${ID}:history:search`).setTitle("Rechercher dans l'historique");
+    return goto("history", { historySearchOpen: true });
+  }
+
+  if (action === "historytarget" || action === "historymoderator") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const other = extra !== "_" ? extra : null;
+    const chosen = interaction.values[0] || null;
+    return goto("history", {
+      historySearchOpen: true,
+      historySearchTarget: action === "historytarget" ? chosen : other,
+      historySearchModerator: action === "historymoderator" ? chosen : other,
+    });
+  }
+
+  if (action === "historytextopen") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const modal = new ModalBuilder().setCustomId(`${ID}:historytextsubmit:${extra}:${extra2}`).setTitle("Filtrer par type/ID");
     modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("target").setLabel("Cible (ID ou mention)").setStyle(TextInputStyle.Short).setRequired(false)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("moderator").setLabel("Modérateur (ID ou mention)").setStyle(TextInputStyle.Short).setRequired(false)
-      ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("action")
@@ -1110,6 +1158,28 @@ async function handleConfigInteraction(interaction) {
       )
     );
     return interaction.showModal(modal);
+  }
+
+  if (action === "historytextsubmit") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return handleHistorySearchModal(interaction, {
+      targetId: extra !== "_" ? extra : null,
+      moderatorId: extra2 !== "_" ? extra2 : null,
+    });
+  }
+
+  if (action === "historyrun") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const targetId = extra !== "_" ? extra : null;
+    const moderatorId = extra2 !== "_" ? extra2 : null;
+    const results = historyStore.search(guildId, { targetId: targetId || undefined, moderatorId: moderatorId || undefined, limit: 10 });
+    await interaction.update(
+      buildConfigPanel(guild, "history", member, { historySearchOpen: true, historySearchTarget: targetId, historySearchModerator: moderatorId })
+    );
+    const resultContainer = new ContainerBuilder().addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`## Résultats de recherche\n${formatHistoryResults(results).slice(0, 3800)}`)
+    );
+    return interaction.followUp({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
   }
 
   if (action === "protectionaction") {
@@ -1452,30 +1522,31 @@ async function handleConfigInteraction(interaction) {
   }
 }
 
-/** Traite la soumission de la modale de recherche d'historique (voir index.js). */
-async function handleHistorySearchModal(interaction) {
+/**
+ * Traite la soumission du Modal réduit (type d'événement + ID précis, voir
+ * index.js) — cible/modérateur viennent de la carte (UserSelectMenu natif),
+ * portés dans le customId du Modal, pas retapés ici.
+ * @param {{ targetId: string|null, moderatorId: string|null }} [carried]
+ */
+async function handleHistorySearchModal(interaction, carried = {}) {
   if (!can(interaction.member, "logs.view")) {
     return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
   }
-  const targetRaw = interaction.fields.getTextInputValue("target").trim();
-  const moderatorRaw = interaction.fields.getTextInputValue("moderator").trim();
   const actionRaw = interaction.fields.getTextInputValue("action").trim();
   const idRaw = interaction.fields.getTextInputValue("id").trim();
 
-  const extractId = (s) => s.match(/\d{15,25}/)?.[0] || null;
-
   const results = historyStore.search(interaction.guild.id, {
-    targetId: extractId(targetRaw) || undefined,
-    moderatorId: extractId(moderatorRaw) || undefined,
+    targetId: carried.targetId || undefined,
+    moderatorId: carried.moderatorId || undefined,
     action: actionRaw || undefined,
     id: idRaw || undefined,
     limit: 10,
   });
 
-  await interaction.reply({
-    embeds: [{ title: "Résultats de recherche", description: formatHistoryResults(results).slice(0, 4000) }],
-    flags: MessageFlags.Ephemeral,
-  });
+  const resultContainer = new ContainerBuilder().addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`## Résultats de recherche\n${formatHistoryResults(results).slice(0, 3800)}`)
+  );
+  return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
 }
 
 module.exports = { buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };

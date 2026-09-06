@@ -11,6 +11,7 @@ const {
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
   UserSelectMenuBuilder,
+  MentionableSelectMenuBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   ChannelType,
@@ -26,6 +27,9 @@ const { handleBan, handleUnban } = require("./banPanel");
 const serverAdmin = require("./serverAdminCommands");
 const serverExtra = require("./serverExtra");
 const botProfileCommands = require("./botProfileCommands");
+const { automodHandlers } = require("./automodCommands");
+const { configHandlers } = require("./configCommands");
+const permCatalog = require("./permissions/catalog");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -44,6 +48,30 @@ const botProfileCommands = require("./botProfileCommands");
  * @param {import('discord.js').Interaction} interaction
  * @param {{ channel?, channels?, user?, role?, roles?, text?: string }} [opts]
  */
+/**
+ * Construit le faux message pour un champ "mentionable" déjà résolu (rôle OU
+ * membre, voir extractFormValues/handleFormCardInteraction) — factorisé car
+ * utilisé par plusieurs formulaires (set_perm_grant, del_perm_grant).
+ * @returns {Promise<object|null>} null si la cible n'existe plus (réponse
+ *   d'erreur déjà envoyée dans ce cas).
+ */
+async function resolveMentionableMessage(interaction, v) {
+  if (v.mentionableType === "role") {
+    const role = interaction.guild.roles.cache.get(v.mentionableId);
+    if (!role) {
+      await interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      return null;
+    }
+    return fakeMessage(interaction, { role });
+  }
+  const member = await interaction.guild.members.fetch(v.mentionableId).catch(() => null);
+  if (!member) {
+    await interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+    return null;
+  }
+  return fakeMessage(interaction, { user: member });
+}
+
 function fakeMessage(interaction, { channel, channels, user, role, roles: roleList, text = "" } = {}) {
   const users = new Collection();
   const members = new Collection();
@@ -75,6 +103,7 @@ const CATEGORIES = {
   server: "Gestion du serveur",
   voice: "Vocal",
   botcontrol: "Contrôle du bot",
+  protection: "Protection",
 };
 
 const FORMS = {
@@ -851,6 +880,275 @@ const FORMS = {
       await botProfileCommands.botProfileHandlers.remove(client, msg, ["activity"]);
     },
   },
+
+  // --- Généralisation des sélecteurs natifs à des commandes déjà existantes
+  // qui manipulent un rôle/membre/salon mais n'avaient pas encore de carte.
+  // Volontairement PAS toutes les commandes du catalogue : exclues celles
+  // qui ont déjà un raccourci utile sans argument — &modlogs (derniers logs),
+  // &sync (synchronise le salon courant), &wl/&unwl (affichent la whitelist),
+  // les commandes &xlog (affichent l'état actuel ET retombent sur le salon
+  // courant avec juste "on") — leur donner une carte remplacerait ce
+  // raccourci par un clic en plus au lieu d'améliorer quoi que ce soit,
+  // même logique que le tri déjà fait plus haut ("on a abusé"). &clear reste
+  // muet sans cible pour laisser la main au CrowBot, jamais intercepté ici.
+  // &cleanup/&openmodmail/&restrict/&nolog/&noderank/&piconly/&public
+  // n'ont PAS de vrai handler câblé (catalogue documenté mais pas
+  // implémenté, voir utils/implementedCommands.js) : aucune carte n'est
+  // ajoutée pour des commandes qui ne répondraient de toute façon rien.
+
+  del_sanction_member: {
+    label: "Supprimer une sanction précise",
+    category: "moderation",
+    permission: "logs.manage",
+    fields: ["user"],
+    textFields: [{ key: "index", label: "Numéro de la sanction (voir &sanctions)", max: 5 }],
+    ready: (v) => Boolean(v.userId && v.text?.index),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.delSanction(client, msg, [member.id, v.text.index]);
+    },
+  },
+
+  role_admin_grant: {
+    label: "Donner/retirer Administrateur à un rôle",
+    category: "server",
+    permission: "server.roles.admin_grant",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.roleAdmin(client, msg, ["admin"]);
+    },
+  },
+
+  voicehub_set: {
+    label: "Configurer le salon générateur de vocaux",
+    category: "voice",
+    permission: "server.voice.manage",
+    fields: ["channel"],
+    ready: (v) => Boolean(v.channelId),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverAdmin.voicehub(client, msg, []);
+    },
+  },
+
+  set_muterole_grant: {
+    label: "Régler le rôle de mute",
+    category: "protection",
+    permission: "protection.automod",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await moderationExtra.setMuteRole(client, msg, []);
+    },
+  },
+
+  autoreact_add: {
+    label: "Ajouter une réaction automatique",
+    category: "server",
+    permission: "server.channels.manage",
+    fields: ["channel"],
+    textFields: [{ key: "emoji", label: "Émoji", max: 50 }],
+    ready: (v) => Boolean(v.channelId && v.text?.emoji),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverExtra.autoreact(client, msg, ["add", v.text.emoji]);
+    },
+  },
+
+  autoreact_del: {
+    label: "Retirer une réaction automatique",
+    category: "server",
+    permission: "server.channels.manage",
+    fields: ["channel"],
+    textFields: [{ key: "emoji", label: "Émoji", max: 50 }],
+    ready: (v) => Boolean(v.channelId && v.text?.emoji),
+    run: async (client, interaction, v) => {
+      const channel = interaction.guild.channels.cache.get(v.channelId);
+      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { channels: [channel] });
+      await serverExtra.autoreact(client, msg, ["del", v.text.emoji]);
+    },
+  },
+
+  link_channel_exempt: {
+    label: "Exempter un salon de l'anti-lien",
+    category: "protection",
+    permission: "protection.automod",
+    fields: ["channel"],
+    optionalFields: ["channel"],
+    fieldLabels: { channel: "Salon (optionnel, sinon le salon courant)" },
+    choiceFields: [
+      {
+        key: "action",
+        label: "Action",
+        placeholder: "Choisir allow / deny / reset",
+        noCustom: true,
+        options: [
+          { label: "Exempter (allow)", value: "allow" },
+          { label: "Surveiller à nouveau (deny)", value: "deny" },
+          { label: "Réinitialiser (reset)", value: "reset" },
+        ],
+      },
+    ],
+    ready: (v) => Boolean(v.text?.action),
+    run: async (client, interaction, v) => {
+      const channel = v.channelId ? interaction.guild.channels.cache.get(v.channelId) : null;
+      const msg = fakeMessage(interaction, { channels: channel ? [channel] : [] });
+      await automodHandlers.link(client, msg, [v.text.action]);
+    },
+  },
+
+  spam_channel_exempt: {
+    label: "Exempter un salon de l'anti-spam",
+    category: "protection",
+    permission: "protection.automod",
+    fields: ["channel"],
+    optionalFields: ["channel"],
+    fieldLabels: { channel: "Salon (optionnel, sinon le salon courant)" },
+    choiceFields: [
+      {
+        key: "action",
+        label: "Action",
+        placeholder: "Choisir allow / deny / reset",
+        noCustom: true,
+        options: [
+          { label: "Exempter (allow)", value: "allow" },
+          { label: "Surveiller à nouveau (deny)", value: "deny" },
+          { label: "Réinitialiser (reset)", value: "reset" },
+        ],
+      },
+    ],
+    ready: (v) => Boolean(v.text?.action),
+    run: async (client, interaction, v) => {
+      const channel = v.channelId ? interaction.guild.channels.cache.get(v.channelId) : null;
+      const msg = fakeMessage(interaction, { channels: channel ? [channel] : [] });
+      await automodHandlers.spam(client, msg, [v.text.action]);
+    },
+  },
+
+  antinuke_wluser: {
+    label: "Whitelist anti-nuke : (dé)exempter un membre",
+    category: "protection",
+    permission: "protection.guard.manage",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await serverAdmin.antinuke(client, msg, ["wluser", member.id]);
+    },
+  },
+
+  antinuke_wlrole: {
+    label: "Whitelist anti-nuke : (dé)exempter un rôle",
+    category: "protection",
+    permission: "protection.guard.manage",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.antinuke(client, msg, ["wlrole"]);
+    },
+  },
+
+  antinuke_ping: {
+    label: "Régler le rôle pingé par l'anti-nuke",
+    category: "protection",
+    permission: "protection.guard.manage",
+    fields: ["role"],
+    optionalFields: ["role"],
+    fieldLabels: { role: "Rôle à pinguer (aucun = désactivé)" },
+    ready: () => true,
+    run: async (client, interaction, v) => {
+      const role = v.roleId ? interaction.guild.roles.cache.get(v.roleId) : null;
+      const msg = fakeMessage(interaction, { role });
+      await serverAdmin.antinuke(client, msg, role ? ["ping"] : ["ping", "off"]);
+    },
+  },
+
+  set_perm_grant: {
+    label: "Accorder une permission à un rôle ou un membre",
+    category: "server",
+    permission: "panel.permissions.manage",
+    fields: ["mentionable"],
+    choiceFields: [
+      {
+        key: "category",
+        label: "Catégorie",
+        placeholder: "Choisir une catégorie de permissions",
+        noCustom: true,
+        resets: ["key"],
+        options: permCatalog.byCategory().map((c) => ({ label: c.label, value: c.category })),
+      },
+      {
+        key: "key",
+        label: "Permission",
+        placeholder: "Choisir une clé de permission",
+        noCustom: true,
+        showIf: (active) => Boolean(active.text?.category),
+        options: (active) => {
+          const cat = permCatalog.byCategory().find((c) => c.category === active.text?.category);
+          return (cat?.permissions || []).map((p) => ({ label: p.label.slice(0, 100), value: p.key }));
+        },
+      },
+    ],
+    ready: (v) => Boolean(v.mentionableId && v.text?.key),
+    run: async (client, interaction, v) => {
+      const msg = await resolveMentionableMessage(interaction, v);
+      if (!msg) return;
+      await configHandlers.setPerm(client, msg, [v.text.key]);
+    },
+  },
+
+  del_perm_grant: {
+    label: "Retirer une permission d'un rôle ou d'un membre",
+    category: "server",
+    permission: "panel.permissions.manage",
+    fields: ["mentionable"],
+    choiceFields: [
+      {
+        key: "category",
+        label: "Catégorie",
+        placeholder: "Choisir une catégorie de permissions",
+        noCustom: true,
+        resets: ["key"],
+        options: permCatalog.byCategory().map((c) => ({ label: c.label, value: c.category })),
+      },
+      {
+        key: "key",
+        label: "Permission",
+        placeholder: "Choisir une clé de permission",
+        noCustom: true,
+        showIf: (active) => Boolean(active.text?.category),
+        options: (active) => {
+          const cat = permCatalog.byCategory().find((c) => c.category === active.text?.category);
+          return (cat?.permissions || []).map((p) => ({ label: p.label.slice(0, 100), value: p.key }));
+        },
+      },
+    ],
+    ready: (v) => Boolean(v.mentionableId && v.text?.key),
+    run: async (client, interaction, v) => {
+      const msg = await resolveMentionableMessage(interaction, v);
+      if (!msg) return;
+      await configHandlers.delPerm(client, msg, [v.text.key]);
+    },
+  },
 };
 
 /**
@@ -894,6 +1192,26 @@ function extractFormValues(form, message, args) {
     const mentioned = message.mentions.channels?.first();
     if (mentioned) values.channelId = mentioned.id;
   }
+  if (form.fields.includes("mentionable")) {
+    const mentionedRole = message.mentions.roles?.first();
+    const mentionedUser = message.mentions.members?.first() || message.mentions.users?.first();
+    if (mentionedRole) {
+      values.mentionableId = mentionedRole.id;
+      values.mentionableType = "role";
+    } else if (mentionedUser) {
+      values.mentionableId = mentionedUser.id;
+      values.mentionableType = "user";
+    } else {
+      // Un ID brut seul est ambigu (rôle ou membre) : on tranche en
+      // vérifiant s'il correspond à un rôle du serveur, sinon on suppose un
+      // membre — même logique que &wl/&unwl (utils/guardCommands.js).
+      const idArg = args.find((a) => /^\d{15,25}$/.test(a) && !used.has(a));
+      if (idArg) {
+        values.mentionableId = idArg;
+        values.mentionableType = message.guild.roles.cache.has(idArg) ? "role" : "user";
+      }
+    }
+  }
   return values;
 }
 
@@ -919,11 +1237,12 @@ function extractFormValues(form, message, args) {
 function structuralFieldsSatisfied(form, values) {
   const optional = new Set(form.optionalFields || []);
   return form.fields
-    .filter((f) => ["user", "role", "roles"].includes(f) && !optional.has(f))
+    .filter((f) => ["user", "role", "roles", "mentionable"].includes(f) && !optional.has(f))
     .every((f) => {
       if (f === "user") return Boolean(values.userId);
       if (f === "role") return Boolean(values.roleId);
       if (f === "roles") return Boolean(values.roleIds?.length);
+      if (f === "mentionable") return Boolean(values.mentionableId);
       return true;
     });
 }
@@ -996,7 +1315,12 @@ function buildFormCard(formKey, member) {
     lines.push(`> **Rôle(s)** : ${active.roleIds?.length ? active.roleIds.map((id) => `<@&${id}>`).join(", ") : "*non choisis*"}`);
   }
   if (form.fields.includes("user")) lines.push(`> **Membre** : ${active.userId ? `<@${active.userId}>` : "*non choisi*"}`);
+  if (form.fields.includes("mentionable")) {
+    const mention = active.mentionableId ? (active.mentionableType === "role" ? `<@&${active.mentionableId}>` : `<@${active.mentionableId}>`) : null;
+    lines.push(`> **${labelFor("mentionable", "Membre ou rôle")}** : ${mention || "*non choisi*"}`);
+  }
   for (const cf of form.choiceFields || []) {
+    if (cf.showIf && !cf.showIf(active)) continue;
     const value = active.text?.[cf.key];
     lines.push(`> **${cf.label}** : ${value ? `\`${value}\`` : cf.required === false ? "*non choisi (optionnel)*" : "*non choisi*"}`);
   }
@@ -1052,18 +1376,38 @@ function buildFormCard(formKey, member) {
       new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CARD_ID}:user:${formKey}`).setPlaceholder("Choisir un membre"))
     );
   }
+  if (form.fields.includes("mentionable")) {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new MentionableSelectMenuBuilder()
+          .setCustomId(`${CARD_ID}:mentionable:${formKey}`)
+          .setPlaceholder(labelFor("mentionable", "Choisir un membre ou un rôle"))
+      )
+    );
+  }
 
   for (const cf of form.choiceFields || []) {
+    // showIf : n'affiche ce menu qu'une fois un choix précédent fait (ex : la
+    // clé de permission dépend de la catégorie choisie juste avant, voir
+    // set_perm_grant/del_perm_grant). Sans condition, toujours affiché.
+    if (cf.showIf && !cf.showIf(active)) continue;
     const current = active.text?.[cf.key];
-    const options = cf.options.map((o) =>
+    // Les options peuvent dépendre de l'état courant (ex : la liste des clés
+    // change selon la catégorie déjà choisie) — tableau statique sinon.
+    const rawOptions = typeof cf.options === "function" ? cf.options(active) : cf.options;
+    const options = rawOptions.map((o) =>
       new StringSelectMenuOptionBuilder().setLabel(o.label).setValue(o.value).setDefault(current === o.value)
     );
-    options.push(
-      new StringSelectMenuOptionBuilder()
-        .setLabel(cf.customLabel || "Autre…")
-        .setValue(CUSTOM_CHOICE)
-        .setDescription("Répondre à l'écrit dans le salon")
-    );
+    // "Autre…" (saisie libre) n'a pas de sens pour un choix fermé comme une
+    // clé de permission — cf.noCustom le supprime.
+    if (!cf.noCustom) {
+      options.push(
+        new StringSelectMenuOptionBuilder()
+          .setLabel(cf.customLabel || "Autre…")
+          .setValue(CUSTOM_CHOICE)
+          .setDescription("Répondre à l'écrit dans le salon")
+      );
+    }
     rows.push(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -1181,17 +1525,21 @@ async function handleFormCardInteraction(interaction) {
     return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
   }
 
-  if (["channel", "channel2", "role", "roles", "user"].includes(action)) {
-    const patch =
-      action === "channel"
-        ? { channelId: interaction.values[0] || null }
-        : action === "channel2"
-        ? { channelId2: interaction.values[0] || null }
-        : action === "role"
-        ? { roleId: interaction.values[0] || null }
-        : action === "roles"
-        ? { roleIds: interaction.values }
-        : { userId: interaction.values[0] || null };
+  if (["channel", "channel2", "role", "roles", "user", "mentionable"].includes(action)) {
+    let patch;
+    if (action === "channel") patch = { channelId: interaction.values[0] || null };
+    else if (action === "channel2") patch = { channelId2: interaction.values[0] || null };
+    else if (action === "role") patch = { roleId: interaction.values[0] || null };
+    else if (action === "roles") patch = { roleIds: interaction.values };
+    else if (action === "mentionable") {
+      const roleHit = interaction.roles?.first();
+      const userHit = interaction.members?.first() || interaction.users?.first();
+      patch = roleHit
+        ? { mentionableId: roleHit.id, mentionableType: "role" }
+        : userHit
+        ? { mentionableId: userHit.id, mentionableType: "user" }
+        : { mentionableId: null, mentionableType: null };
+    } else patch = { userId: interaction.values[0] || null };
     setFormState(interaction.user.id, formKey, patch);
     return interaction.update(buildFormCard(formKey, interaction.member));
   }
@@ -1211,7 +1559,11 @@ async function handleFormCardInteraction(interaction) {
       ]);
     }
 
-    setFormState(interaction.user.id, formKey, { text: { [fieldKey]: interaction.values[0] } });
+    // Un champ peut invalider un choix suivant (ex : changer de catégorie de
+    // permission doit oublier la clé déjà choisie dans l'ancienne).
+    const resetPatch = {};
+    for (const key of field.resets || []) resetPatch[key] = undefined;
+    setFormState(interaction.user.id, formKey, { text: { [fieldKey]: interaction.values[0], ...resetPatch } });
     return interaction.update(buildFormCard(formKey, interaction.member));
   }
 
@@ -1278,6 +1630,16 @@ const BARE_COMMAND_FORMS = {
   temprole: "temprole_action",
   untemprole: "untemprole_action",
   end: "giveaway_end",
+  // &cmute/&uncmute/&tempcmute sont des ALIAS texte de &mute/&unmute/&tempmute
+  // (dispatchés séparément dans utils/musicCommands.js) — la table ci-dessus
+  // est indexée sur le mot RÉELLEMENT tapé, donc chaque alias a besoin de sa
+  // propre entrée vers la même carte que son équivalent non-"c".
+  cmute: "mute_member",
+  uncmute: "unmute_member",
+  tempcmute: "tempmute_member",
+  voicehub: "voicehub_set",
+  link: "link_channel_exempt",
+  spam: "spam_channel_exempt",
   // Clés à deux mots : commandes dont le premier mot est un dispatcher
   // partagé (&role/&channel/&clear gèrent plusieurs sous-commandes) —
   // voir utils/musicCommands.js pour la logique de correspondance.
@@ -1285,11 +1647,21 @@ const BARE_COMMAND_FORMS = {
   "role delete": "role_delete",
   "role rename": "role_rename",
   "role color": "role_color",
+  "role admin": "role_admin_grant",
   "channel delete": "channel_delete",
   "channel rename": "channel_rename",
   "channel topic": "channel_topic",
   "clear sanctions": "clear_sanctions_member",
   "giveaway reroll": "giveaway_reroll",
+  "del sanction": "del_sanction_member",
+  "del perm": "del_perm_grant",
+  "set perm": "set_perm_grant",
+  "set muterole": "set_muterole_grant",
+  "autoreact add": "autoreact_add",
+  "autoreact del": "autoreact_del",
+  "antinuke wluser": "antinuke_wluser",
+  "antinuke wlrole": "antinuke_wlrole",
+  "antinuke ping": "antinuke_ping",
 };
 
 module.exports = {
