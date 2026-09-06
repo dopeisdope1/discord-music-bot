@@ -30,6 +30,7 @@ const botProfileCommands = require("./botProfileCommands");
 const { automodHandlers } = require("./automodCommands");
 const { configHandlers } = require("./configCommands");
 const permCatalog = require("./permissions/catalog");
+const { autoroleHandlers } = require("./autoroleCommands");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -1173,6 +1174,34 @@ const FORMS = {
     },
   },
 
+  autorole_add: {
+    label: "Ajouter un rôle automatique",
+    category: "server",
+    permission: "members.autorole.manage",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await autoroleHandlers.add(client, msg, []);
+    },
+  },
+
+  autorole_del: {
+    label: "Retirer un rôle automatique",
+    category: "server",
+    permission: "members.autorole.manage",
+    fields: ["role"],
+    ready: (v) => Boolean(v.roleId),
+    run: async (client, interaction, v) => {
+      const role = interaction.guild.roles.cache.get(v.roleId);
+      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { role });
+      await autoroleHandlers.del(client, msg, []);
+    },
+  },
+
   del_perm_grant: {
     label: "Retirer une permission d'un rôle ou d'un membre",
     category: "server",
@@ -1698,6 +1727,8 @@ const BARE_COMMAND_FORMS = {
   warnings: "warnings_view",
   unwarn: "unwarn_member",
   case: "case_view",
+  "autorole add": "autorole_add",
+  "autorole del": "autorole_del",
   voicehub: "voicehub_set",
   link: "link_channel_exempt",
   spam: "spam_channel_exempt",

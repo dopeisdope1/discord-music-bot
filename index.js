@@ -50,6 +50,9 @@ const {
   setPanelAccess,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
+const leaveStore = require("./utils/leaveStore");
+const { applyAutoroles } = require("./utils/autoroleCommands");
+const { handleVerifyButton } = require("./utils/verification");
 const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
@@ -491,6 +494,10 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId?.startsWith("giveaway:")) {
     await handleGiveawayButton(interaction).catch((err) => console.error("[giveaways]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith("verify:")) {
+    await handleVerifyButton(interaction).catch((err) => console.error("[verification]", err));
     return;
   }
 
@@ -982,6 +989,31 @@ client.on("guildMemberRemove", (member) => {
   }
 });
 
+// Message de départ (voir &panel > Bienvenue, utils/leaveStore.js) — même
+// principe que le message de bienvenue ci-dessous, listener séparé de la
+// révocation d'accès ci-dessus (aucun rapport entre les deux).
+client.on("guildMemberRemove", async (member) => {
+  const config = leaveStore.getConfig(member.guild.id);
+  if (!config.channelId) return;
+  const text = leaveStore.pickRandomMessage(member.guild.id);
+  if (!text) return;
+
+  const channel = member.guild.channels.cache.get(config.channelId);
+  if (!channel?.isTextBased()) return;
+
+  // Contrairement à l'arrivée, la personne n'est plus mentionnable une fois
+  // partie : "{user}" est remplacé par son pseudo brut, jamais une mention.
+  const content = text.replace(/\{user\}/g, member.user.tag);
+
+  const sent = await channel.send({ content }).catch((err) => {
+    console.error("[leave] échec d'envoi :", err.message);
+    return null;
+  });
+  if (sent && config.autoDeleteSeconds > 0) {
+    setTimeout(() => sent.delete().catch(() => {}), config.autoDeleteSeconds * 1000);
+  }
+});
+
 // Dero automatique (voir &dero, utils/serverAdminCommands.js) : applique les
 // permissions configurées aux rôles concernés sur chaque nouveau salon créé,
 // sans action manuelle. Ne fait rien si aucun rôle n'est configuré.
@@ -1024,6 +1056,11 @@ client.on("guildMemberAdd", async (member) => {
 client.on("guildMemberAdd", (member) => {
   checkJoinFlood(client, member).catch((err) => console.error("[guard:antijoin]", err));
   checkNewAccount(client, member).catch((err) => console.error("[guard:creationlimit]", err));
+});
+
+// Rôles automatiques à l'arrivée (voir &panel > Membres, utils/autoroleCommands.js).
+client.on("guildMemberAdd", (member) => {
+  applyAutoroles(member).catch((err) => console.error("[autorole]", err));
 });
 
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée

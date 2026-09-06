@@ -480,6 +480,22 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(texte.includes(`Case #${caseNumber}`) && texte.includes("kick") && texte.includes("raid"));
   });
 
+  console.log("\n&autorole add/del — cartes natives :");
+
+  await cas("autorole_add whiteliste le rôle choisi", async () => {
+    const autoroleStore = require("../utils/autoroleStore");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.autorole_add.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.ok(autoroleStore.getRoleIds("g1").includes(TEST_ROLE_ID));
+  });
+
+  await cas("autorole_del retire le rôle choisi", async () => {
+    const autoroleStore = require("../utils/autoroleStore");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.autorole_del.run(client, interaction, { roleId: TEST_ROLE_ID });
+    assert.ok(!autoroleStore.getRoleIds("g1").includes(TEST_ROLE_ID));
+  });
+
   console.log("\nÉtat de formulaire (par personne ET par commande) :");
 
   await cas("setFormState fusionne sans écraser les autres champs texte", () => {

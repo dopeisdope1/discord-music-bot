@@ -41,6 +41,8 @@ const PERMISSIONS = [
   // --- Membres ---
   { key: "members.nick", category: "members", label: "Modifier un pseudo (&nick, &resetnick)" },
   { key: "members.role", category: "members", label: "Ajouter/retirer un rôle (&addrole, &delrole)" },
+  { key: "members.autorole.manage", category: "members", label: "Configurer les rôles automatiques à l'arrivée (&autorole, panel)" },
+  { key: "members.verification.manage", category: "members", label: "Configurer la vérification (&verify setup, panel)" },
   // Pas de clé pour &userinfo/&avatar/&serverinfo : ce sont des commandes
   // publiques de lecture seule, comme &pic/&banner/&server déjà existantes.
 

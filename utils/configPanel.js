@@ -29,6 +29,9 @@ const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const { LOG_CHANNEL_NAMES, createLogChannelsAutomatically, deleteLogChannelsAutomatically } = require("./logChannels");
 const historyStore = require("./moderationHistoryStore");
+const leaveStore = require("./leaveStore");
+const autoroleStore = require("./autoroleStore");
+const verificationStore = require("./verificationStore");
 const automod = require("./automod/antiSpam");
 const antiLink = require("./automod/antiLink");
 const antiMention = require("./automod/antiMention");
@@ -88,6 +91,9 @@ const SECTIONS = [
   { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
   { key: "guard", label: "Anti-nuke", description: "Détection de rafales destructrices et sanction automatique", permission: "protection.guard.manage" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
+  { key: "leave", label: "Départ", description: "Message envoyé quand un membre quitte le serveur", permission: "server.welcome.manage" },
+  { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés automatiquement à l'arrivée", permission: "members.autorole.manage" },
+  { key: "verification", label: "Vérification", description: "Rôle et salon du bouton \"Se vérifier\"", permission: "members.verification.manage" },
   { key: "mute", label: "Mute", description: "Rôle utilisé par &mute/&tempmute/&cmute", permission: "protection.automod" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
   { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
@@ -131,7 +137,8 @@ const FAMILIES = [
   { key: "acces", label: "Permissions et accès", description: "Qui a le droit de quoi", sections: ["permissions", "access", "sys", "banall"] },
   { key: "protection", label: "Protection", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
   { key: "journal", label: "Logs et historique", description: "Salons de logs, recherche dans l'historique", sections: ["logs", "history"] },
-  { key: "communaute", label: "Communauté", description: "Bienvenue, tickets, vocaux temporaires", sections: ["welcome", "tickets", "voice"] },
+  { key: "communaute", label: "Communauté", description: "Bienvenue, tickets, vocaux temporaires", sections: ["welcome", "leave", "tickets", "voice"] },
+  { key: "membres", label: "Membres", description: "Rôles automatiques, vérification", sections: ["autorole", "verification"] },
   { key: "bot", label: "Réglages du bot", description: "Préfixes, dispenses", sections: ["prefixes", "moderation"] },
 ];
 
@@ -355,6 +362,37 @@ function sectionBody(section, guild, member, state) {
       "",
       "**Messages** (un est tiré au hasard à chaque arrivée) :",
       lines,
+    ].join("\n");
+  }
+
+  if (section === "leave") {
+    const config = leaveStore.getConfig(guildId);
+    const lines = config.messages.length
+      ? config.messages.map((m, i) => `${i + 1}. *${m}*`).join("\n")
+      : "*Aucun message configuré — le message de départ reste désactivé tant qu'il n'y en a pas au moins un.*";
+    return [
+      `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
+      `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "jamais"}`,
+      "",
+      "**Messages** (un est tiré au hasard à chaque départ, \"{user}\" = pseudo de la personne) :",
+      lines,
+    ].join("\n");
+  }
+
+  if (section === "autorole") {
+    const roles = autoroleStore.getRoleIds(guildId).map((id) => guild.roles.cache.get(id)).filter(Boolean);
+    return [
+      "**Rôles donnés automatiquement à chaque arrivée :**",
+      roles.length ? roles.map((r) => `> ${r}`).join("\n") : "*Aucun rôle configuré.*",
+    ].join("\n");
+  }
+
+  if (section === "verification") {
+    const config = verificationStore.getConfig(guildId);
+    const role = config.roleId && guild.roles.cache.get(config.roleId);
+    return [
+      `> **Rôle donné** : ${role ? role : "*aucun — non configuré*"}`,
+      `> **Salon du bouton** : ${config.channelId ? `<#${config.channelId}>` : "*pas encore posté*"}`,
     ].join("\n");
   }
 
@@ -848,6 +886,82 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
             .addOptions(
               config.messages.map((m, i) => new StringSelectMenuOptionBuilder().setLabel(`${i + 1}. ${m}`.slice(0, 100)).setValue(String(i)))
             )
+        )
+      );
+    }
+  } else if (meta.key === "leave") {
+    const config = leaveStore.getConfig(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:leavechannel`)
+          .setPlaceholder("Envoyer le message de départ à ce salon")
+          .addChannelTypes(ChannelType.GuildText)
+          .setMinValues(0)
+          .setMaxValues(1)
+          .setDefaultChannels(config.channelId ? [config.channelId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:leavedelete`)
+          .setPlaceholder("Suppression automatique")
+          .addOptions(
+            WELCOME_DELETE_OPTIONS.map((opt) =>
+              new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(String(opt.seconds)).setDefault(config.autoDeleteSeconds === opt.seconds)
+            )
+          )
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:leaveadd`).setLabel("Ajouter un message").setStyle(ButtonStyle.Secondary)
+      )
+    );
+    if (config.messages.length) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:leavedel`)
+            .setPlaceholder("Retirer un message")
+            .addOptions(
+              config.messages.map((m, i) => new StringSelectMenuOptionBuilder().setLabel(`${i + 1}. ${m}`.slice(0, 100)).setValue(String(i)))
+            )
+        )
+      );
+    }
+  } else if (meta.key === "autorole") {
+    const roleIds = autoroleStore.getRoleIds(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`${ID}:autoroleset`)
+          .setPlaceholder("Choisir les rôles donnés à l'arrivée")
+          .setMinValues(0)
+          .setMaxValues(25)
+          .setDefaultRoles(roleIds.filter((id) => guild.roles.cache.has(id)))
+      )
+    );
+  } else if (meta.key === "verification") {
+    const config = verificationStore.getConfig(guild.id);
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`${ID}:verifyrole`)
+          .setPlaceholder("Rôle donné une fois vérifié")
+          .setMinValues(0)
+          .setMaxValues(1)
+          .setDefaultRoles(config.roleId && guild.roles.cache.has(config.roleId) ? [config.roleId] : [])
+      )
+    );
+    if (config.roleId) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:verifypost`)
+            .setLabel("Poster le bouton dans ce salon")
+            .setStyle(ButtonStyle.Success)
         )
       );
     }
@@ -1371,6 +1485,80 @@ async function handleConfigInteraction(interaction) {
       )
     );
     return interaction.showModal(modal);
+  }
+
+  if (action === "leavechannel") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    leaveStore.setChannel(guildId, interaction.values[0] || null);
+    return goto("leave");
+  }
+
+  if (action === "leavedelete") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    leaveStore.setAutoDelete(guildId, parseInt(interaction.values[0], 10) || 0);
+    return goto("leave");
+  }
+
+  if (action === "leavedel") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    leaveStore.removeMessage(guildId, parseInt(interaction.values[0], 10));
+    return goto("leave");
+  }
+
+  if (action === "leaveadd") {
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const text = interaction.fields.getTextInputValue("value").trim();
+      if (!text) return interaction.reply({ content: "Message vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
+      leaveStore.addMessage(guildId, text);
+      await interaction.reply({ content: "Message de départ ajouté.", flags: MessageFlags.Ephemeral });
+      return interaction.message?.edit(buildConfigPanel(guild, "leave", member)).catch(() => {});
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:leaveadd`).setTitle("Ajouter un message de départ");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("value")
+          .setLabel('Message ("{user}" = pseudo de la personne)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setMaxLength(1000)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "autoroleset") {
+    if (!can(member, "members.autorole.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    autoroleStore.setRoleIds(guildId, interaction.values);
+    return goto("autorole");
+  }
+
+  if (action === "verifyrole") {
+    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    verificationStore.setRole(guildId, interaction.values[0] || null);
+    return goto("verification");
+  }
+
+  if (action === "verifypost") {
+    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const config = verificationStore.getConfig(guildId);
+    if (!config.roleId || !guild.roles.cache.has(config.roleId)) {
+      return interaction.reply({ content: "Choisis d'abord un rôle valide.", flags: MessageFlags.Ephemeral });
+    }
+    verificationStore.setChannel(guildId, interaction.channel.id);
+    const verifyContainer = new ContainerBuilder();
+    verifyContainer.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("## Vérification\nClique ci-dessous pour accéder au reste du serveur.")
+    );
+    verifyContainer.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("verify:claim").setLabel("Se vérifier").setStyle(ButtonStyle.Success)
+      )
+    );
+    await interaction.channel.send({ flags: MessageFlags.IsComponentsV2, components: [verifyContainer] });
+    await interaction.reply({ content: "Message de vérification envoyé dans ce salon.", flags: MessageFlags.Ephemeral });
+    return goto("verification");
   }
 
   if (action === "access" && extra === "sweep") {

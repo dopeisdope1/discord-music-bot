@@ -34,6 +34,8 @@ const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
 const { noteManualSkip } = require("./deadTrack");
 const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
+const { autoroleHandlers } = require("./autoroleCommands");
+const { setupVerification } = require("./verification");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -418,6 +420,18 @@ const modHandlers = {
   join: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "settings") return configHandlers.joinSettings(client, message, args.slice(1));
   },
+  leave: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "settings") return configHandlers.leaveSettings(client, message, args.slice(1));
+  },
+  autorole: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "add") return autoroleHandlers.add(client, message, args.slice(1));
+    if (sub === "del") return autoroleHandlers.del(client, message, args.slice(1));
+    if (sub === "list") return autoroleHandlers.list(client, message, args.slice(1));
+  },
+  verify: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "setup") return setupVerification(client, message, args.slice(1));
+  },
   antispam: automodHandlers.antispam,
   spam: automodHandlers.spam,
   antilink: automodHandlers.antilink,
@@ -663,6 +677,9 @@ const MOD_SUBCOMMANDS = {
   spam: ["allow", "deny", "reset"],
   link: ["allow", "deny", "reset"],
   join: ["settings"],
+  leave: ["settings"],
+  autorole: ["add", "del", "list"],
+  verify: ["setup"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond

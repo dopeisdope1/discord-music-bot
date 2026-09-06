@@ -4,6 +4,7 @@ const { getPrefixes, setPrefix } = require("./prefixStore");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
 const welcomeStore = require("./welcomeStore");
+const leaveStore = require("./leaveStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
 const accessStore = require("./accessStore");
@@ -130,6 +131,24 @@ const handlers = {
         `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
         `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds}s` : "jamais"}`,
         `> **Messages** : ${config.messages.length} (tirés au hasard à chaque arrivée)`,
+        ...config.messages.map((m, i) => `> ${i + 1}. *${m}*`),
+        "",
+        "Modification dans `&panel` > Bienvenue.",
+      ].join("\n")
+    );
+  },
+
+  /** &leave settings — réglages de départ (rubrique Bienvenue). */
+  async leaveSettings(client, message) {
+    if (!can(message.member, "server.welcome.manage")) return;
+    const config = leaveStore.getConfig(message.guild.id);
+    await reply(
+      message,
+      "info",
+      [
+        `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
+        `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds}s` : "jamais"}`,
+        `> **Messages** : ${config.messages.length} (tirés au hasard à chaque départ)`,
         ...config.messages.map((m, i) => `> ${i + 1}. *${m}*`),
         "",
         "Modification dans `&panel` > Bienvenue.",
