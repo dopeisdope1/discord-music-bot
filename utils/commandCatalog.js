@@ -58,6 +58,12 @@ const CATEGORIES = [
       { name: "search wiki <mot-clé>", prefix: "mod", permission: "server.tools.use", description: "Permet de voir tous les articles wikipedia relatifs au mot-clé donné" },
       { name: "calc <calcul>", prefix: "mod", permission: null, description: "Résout un calcul (parenthèses, puissances, sqrt/abs/ln/sin...) ou une équation du premier degré en `x`" },
       { name: "support", prefix: "mod", permission: null, description: "Donne un lien d'invitation vers le serveur de support du bot" },
+      {
+        name: "class",
+        prefix: "mod",
+        permission: null,
+        description: "Ouvre le sélecteur de classe (menu déroulant parmi les rôles configurés via &classes)",
+      },
     ],
   },
   {
@@ -209,6 +215,19 @@ const CATEGORIES = [
       { name: "loading <durée> <message>", prefix: "mod", permission: null, description: "Affiche une barre de chargement animée" },
       { name: "create [émoji] [nom]", prefix: "mod", permission: "server.channels.manage", description: "Crée un émoji sur le serveur à partir d'un lien ou d'une pièce jointe" },
       { name: "newsticker [nom]", prefix: "mod", permission: "server.channels.manage", description: "Crée un sticker sur le serveur" },
+      {
+        name: "classes add @rôle",
+        prefix: "mod",
+        permission: "server.classes.manage",
+        description: "Ajoute un rôle déjà existant à la liste des classes sélectionnables via &class",
+      },
+      {
+        name: "classes del @rôle",
+        prefix: "mod",
+        permission: "server.classes.manage",
+        description: "Retire un rôle de la liste des classes sélectionnables",
+      },
+      { name: "classes list", prefix: "mod", permission: "server.classes.manage", description: "Liste les classes actuellement configurées" },
       { name: "massiverole [rôle] [rôle]", prefix: "mod", permission: "server.roles.manage", description: "Ajoute un ou plusieurs rôles à tous les membres" },
       { name: "unmassiverole [rôle] [rôle]", prefix: "mod", permission: "server.roles.manage", description: "Retire un ou plusieurs rôles à tous les membres" },
       { name: "voicemove [salon] [salon]", prefix: "mod", permission: "server.voice.moveall", description: "Déplace tous les membres d'un salon vocal vers un autre" },
