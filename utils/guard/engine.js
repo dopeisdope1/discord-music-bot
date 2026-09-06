@@ -1,3 +1,4 @@
+const { ChannelType, PermissionFlagsBits } = require("discord.js");
 const accessStore = require("../accessStore");
 const { botAndRankRefusal } = require("../moderation/actions");
 const { postModerationEntry } = require("../moderationLog");
@@ -54,6 +55,56 @@ function recordPunishment(guildId) {
   const list = punishmentLog.get(guildId) || [];
   list.push(Date.now());
   punishmentLog.set(guildId, list);
+}
+
+// Un seul verrouillage automatique par rafale : sans ce garde-fou, CHAQUE
+// entrée d'audit qui arrive une fois le plafond atteint retenterait de
+// verrouiller (déjà verrouillé) tous les salons en boucle. Remis à zéro par
+// &unlockdown (voir moderationCommands.js) pour qu'un futur vrai raid
+// puisse à nouveau déclencher le verrouillage.
+const autoLockedDown = new Set();
+
+/**
+ * "&antinuke autolockdown on" (voir utils/guard/config.js) : au lieu de se
+ * contenter d'ignorer les sanctions une fois le plafond atteint, verrouille
+ * tout le serveur une fois — le signal qu'un vrai raid est en cours, pas
+ * juste un guard isolé qui se déclenche.
+ */
+async function autoLockdownIfNeeded(client, guild, config) {
+  if (!config.autoLockdownOnCap || autoLockedDown.has(guild.id)) return;
+  autoLockedDown.add(guild.id);
+
+  const everyone = guild.roles.everyone;
+  const channels = guild.channels.cache.filter(
+    (c) => (c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement) && c.manageable
+  );
+  let locked = 0;
+  for (const channel of channels.values()) {
+    const already = channel.permissionOverwrites.cache.get(everyone.id)?.deny.has(PermissionFlagsBits.SendMessages);
+    if (already) continue;
+    await channel.permissionOverwrites
+      .edit(everyone, { SendMessages: false }, { reason: "Anti-nuke : verrouillage automatique (plafond de sanctions atteint)" })
+      .catch(() => {});
+    locked += 1;
+  }
+
+  await postModerationEntry(client, guild.id, "moderation", {
+    title: "Anti-nuke — Verrouillage automatique",
+    fields: [{ label: "Salons verrouillés", value: String(locked) }],
+    moderatorTag: "Anti-nuke (automatique)",
+  });
+  historyStore.record({
+    guildId: guild.id,
+    action: "lockdown",
+    moderatorId: client.user.id,
+    moderatorTag: client.user.tag,
+    reason: "Anti-nuke : plafond de sanctions atteint",
+    source: "bot",
+  });
+}
+
+function clearAutoLockdown(guildId) {
+  autoLockedDown.delete(guildId);
 }
 
 /** Vrai si `member` doit être totalement ignoré par le moteur (pas seulement épargné de la sanction). */
@@ -114,7 +165,10 @@ async function handleAuditEntry(client, guild, entry, guardDef) {
   }
 
   const capped = punishmentCapReached(guild.id);
-  if (capped) console.warn(`[guard] plafond de sanctions atteint sur "${guild.name}", "${guardDef.key}" ignoré cette fois (log conservé).`);
+  if (capped) {
+    console.warn(`[guard] plafond de sanctions atteint sur "${guild.name}", "${guardDef.key}" ignoré cette fois (log conservé).`);
+    await autoLockdownIfNeeded(client, guild, config).catch((err) => console.error("[guard] échec du verrouillage automatique :", err.message));
+  }
   const punished = capped ? false : await applyPunishment(client, guild, executorMember, config, `Anti-nuke : ${guardDef.label}`);
   if (punished) recordPunishment(guild.id);
 
@@ -151,4 +205,6 @@ module.exports = {
   clearOccurrences,
   punishmentCapReached,
   recordPunishment,
+  autoLockdownIfNeeded,
+  clearAutoLockdown,
 };

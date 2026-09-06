@@ -345,6 +345,7 @@ function sectionBody(section, guild, member, state) {
       `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
       `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
       `> **Compte minimum** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
+      `> **Verrouillage auto si plafond atteint** : ${config.autoLockdownOnCap ? "activé" : "désactivé"}`,
       `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
       "",
       ...guardLines,
@@ -772,6 +773,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       { value: "guard_wl_role_remove", label: "Whitelist : retirer un rôle" },
       { value: "guard_ping", label: "Changer le rôle pingé" },
       { value: "guard_creationlimit", label: "Changer le seuil de compte" },
+      { value: "guard_autolockdown_toggle", label: config.autoLockdownOnCap ? "Verrouillage auto : désactiver" : "Verrouillage auto : activer" },
     ];
 
     container.addActionRowComponents(
@@ -1376,6 +1378,10 @@ async function handleConfigInteraction(interaction) {
     if (choice === "guard_punishment") {
       const next = { timeout: "kick", kick: "ban", ban: "timeout" }[guardConfig.getConfig(guildId).punishment];
       guardConfig.setPunishment(guildId, next);
+      return goto("guard");
+    }
+    if (choice === "guard_autolockdown_toggle") {
+      guardConfig.setAutoLockdown(guildId, !guardConfig.getConfig(guildId).autoLockdownOnCap);
       return goto("guard");
     }
     // guard_pick / guard_wl_add / guard_wl_remove : révèle le contrôle correspondant.

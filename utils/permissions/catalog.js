@@ -89,6 +89,7 @@ const PERMISSIONS = [
   },
   { key: "server.info.view", category: "server", label: "Voir les fiches d'info détaillées (&vocinfo, &user, &emoji)" },
   { key: "server.tools.use", category: "server", label: "Utiliser les outils annexes (&choose, &wiki, &search wiki)" },
+  { key: "server.security.scan", category: "server", label: "Lancer un audit de sécurité (&security scan)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

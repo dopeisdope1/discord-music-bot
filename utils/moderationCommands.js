@@ -593,6 +593,12 @@ async function unlockdown(client, message) {
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
   if (botPerm) return reply(message, "error", botPerm);
 
+  // Sans ça, un serveur verrouillé automatiquement par l'anti-nuke (voir
+  // utils/guard/engine.js::autoLockdownIfNeeded) resterait bloqué en
+  // "déjà verrouillé" pour l'anti-nuke même après un &unlockdown manuel —
+  // un futur vrai raid ne redéclencherait alors plus le verrouillage.
+  require("./guard/engine").clearAutoLockdown(message.guild.id);
+
   const everyone = message.guild.roles.everyone;
   const channels = message.guild.channels.cache.filter(
     (c) => (c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement) && c.manageable

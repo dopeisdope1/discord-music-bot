@@ -37,6 +37,7 @@ const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
 const { autoroleHandlers } = require("./autoroleCommands");
 const { setupVerification } = require("./verification");
 const statusDiagnostic = require("./statusDiagnostic");
+const { securityScan } = require("./securityScan");
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -390,6 +391,9 @@ const modHandlers = {
     return utilityHandlers.stats(client, message, args);
   },
   status: statusDiagnostic.status,
+  security: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "scan") return securityScan(client, message, args.slice(1));
+  },
 
   // Tickets/sondages/giveaways — voir utils/tickets.js, utils/polls.js,
   // utils/giveaways.js.
@@ -644,7 +648,7 @@ const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
   banall: ["message"],
-  antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit"],
+  antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],
   backup: ["list", "delete", "load"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
@@ -686,6 +690,7 @@ const MOD_SUBCOMMANDS = {
   autorole: ["add", "del", "list"],
   verify: ["setup"],
   stats: ["history"],
+  security: ["scan"],
 };
 
 // MOD_COMMAND_NAMES est la LISTE DE VÉRITÉ de ce à quoi le bot répond

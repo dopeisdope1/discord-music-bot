@@ -641,6 +641,21 @@ async function antinuke(client, message, args) {
     return reply(message, "success", `**${role.name}** sera pingé à chaque déclenchement de l'anti-nuke.`);
   }
 
+  if (sub === "autolockdown") {
+    const value = (args[1] || "").toLowerCase();
+    if (value !== "on" && value !== "off") {
+      return reply(message, "error", "Utilise : `antinuke autolockdown on` ou `antinuke autolockdown off`.");
+    }
+    guardConfig.setAutoLockdown(guildId, value === "on");
+    return reply(
+      message,
+      "success",
+      value === "on"
+        ? "Verrouillage automatique activé : le serveur entier se verrouillera si l'anti-nuke atteint son plafond de sanctions."
+        : "Verrouillage automatique désactivé."
+    );
+  }
+
   if (sub === "creationlimit") {
     if ((args[1] || "").toLowerCase() === "off") {
       guardConfig.setCreationLimit(guildId, 0);

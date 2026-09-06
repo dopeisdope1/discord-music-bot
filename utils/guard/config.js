@@ -24,6 +24,12 @@ const DEFAULT_CONFIG = {
   // Âge minimum du compte pour pouvoir rejoindre sans être sanctionné —
   // "&antinuke creationlimit <durée>". 0 = désactivé (comportement d'avant).
   creationLimitMs: 0,
+  // "&antinuke autolockdown on/off" — au lieu de simplement ignorer les
+  // sanctions une fois le plafond atteint (voir utils/guard/engine.js,
+  // MAX_PUNISHMENTS_PER_MINUTE), verrouille tout le serveur une fois :
+  // le signal qu'un vrai raid est en cours, pas juste un guard isolé.
+  // Désactivé par défaut (action drastique, opt-in explicite).
+  autoLockdownOnCap: false,
 };
 
 let cache = null;
@@ -57,6 +63,7 @@ function guildEntry(guildId) {
   if (!Array.isArray(entry.disabledGuards)) entry.disabledGuards = [];
   if (typeof entry.pingRoleId !== "string") entry.pingRoleId = null;
   if (typeof entry.creationLimitMs !== "number") entry.creationLimitMs = 0;
+  if (typeof entry.autoLockdownOnCap !== "boolean") entry.autoLockdownOnCap = false;
   return entry;
 }
 
@@ -120,6 +127,11 @@ function setCreationLimit(guildId, ms) {
   save();
 }
 
+function setAutoLockdown(guildId, enabled) {
+  guildEntry(guildId).autoLockdownOnCap = enabled;
+  save();
+}
+
 module.exports = {
   getConfig,
   setEnabled,
@@ -129,5 +141,6 @@ module.exports = {
   setGuardEnabled,
   setPingRole,
   setCreationLimit,
+  setAutoLockdown,
   PUNISHMENTS,
 };
