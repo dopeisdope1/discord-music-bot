@@ -15,6 +15,7 @@ const PERMISSIONS = [
   { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
   { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
   { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout, &mute, &unmute)" },
+  { key: "moderation.warn", category: "moderation", label: "Avertir un membre (&warn, &unwarn)" },
   // Séparée de moderation.timeout : démuter TOUT LE MONDE d'un coup n'a pas
   // à suivre automatiquement le droit de (dé)muter une personne précise.
   { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },

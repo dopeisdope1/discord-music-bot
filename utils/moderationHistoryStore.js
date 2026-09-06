@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const caseCounterStore = require("./caseCounterStore");
 
 // Historique de modération centralisé (section 20 du cahier des charges).
 // JSON append-only : suffisant à l'échelle d'un serveur Discord (quelques
@@ -34,7 +35,31 @@ function load() {
   } catch {
     cache = [];
   }
+  migrateCaseNumbers();
   return cache;
+}
+
+/**
+ * Migration ponctuelle (une seule fois, au premier chargement) : les
+ * entrées créées avant l'introduction du numéro de case reçoivent le leur
+ * rétroactivement, dans l'ordre chronologique — pour que "Case #12" raconte
+ * vraiment l'historique plutôt que de partir de zéro pour tout le monde. Une
+ * entrée qui a déjà un caseNumber n'est jamais retouchée ; le compteur
+ * (utils/caseCounterStore.js) n'avance donc jamais deux fois pour la même entrée.
+ */
+function migrateCaseNumbers() {
+  const missing = cache.filter((e) => e.targetId && e.caseNumber == null);
+  if (!missing.length) return;
+  missing.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const lastByGuild = new Map();
+  for (const entry of missing) {
+    const last = lastByGuild.get(entry.guildId) ?? caseCounterStore.getLastCaseNumber(entry.guildId);
+    const next = last + 1;
+    entry.caseNumber = next;
+    lastByGuild.set(entry.guildId, next);
+  }
+  for (const [guildId, last] of lastByGuild) caseCounterStore.ensureAtLeast(guildId, last);
+  save();
 }
 
 function save() {
@@ -63,7 +88,7 @@ function save() {
 function record(entry) {
   const list = load();
   const id = crypto.randomUUID();
-  list.push({
+  const full = {
     id,
     createdAt: new Date().toISOString(),
     reason: null,
@@ -71,8 +96,15 @@ function record(entry) {
     moderatorTag: null,
     channelId: null,
     extra: null,
+    caseNumber: null,
     ...entry,
-  });
+  };
+  // Un "case" désigne toujours une action sur une personne précise — les
+  // entrées de gestion serveur (rôle/salon créé, ticket...) n'en ont pas.
+  if (full.targetId && full.caseNumber == null) {
+    full.caseNumber = caseCounterStore.nextCaseNumber(full.guildId);
+  }
+  list.push(full);
   if (list.length > MAX_ENTRIES) list.splice(0, list.length - MAX_ENTRIES);
   save();
   return id;
@@ -81,16 +113,17 @@ function record(entry) {
 /**
  * Recherche filtrée, la plus récente en premier.
  * @param {string} guildId
- * @param {{ targetId?: string, moderatorId?: string, action?: string, id?: string, since?: Date, limit?: number }} [filters]
+ * @param {{ targetId?: string, moderatorId?: string, action?: string, id?: string, caseNumber?: number, since?: Date, limit?: number }} [filters]
  */
 function search(guildId, filters = {}) {
-  const { targetId, moderatorId, action, id, since, limit = 25 } = filters;
+  const { targetId, moderatorId, action, id, caseNumber, since, limit = 25 } = filters;
   const results = load()
     .filter((e) => e.guildId === guildId)
     .filter((e) => !targetId || e.targetId === targetId)
     .filter((e) => !moderatorId || e.moderatorId === moderatorId)
     .filter((e) => !action || e.action === action)
     .filter((e) => !id || e.id === id)
+    .filter((e) => caseNumber == null || e.caseNumber === caseNumber)
     .filter((e) => !since || new Date(e.createdAt) >= since)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   return limit ? results.slice(0, limit) : results;

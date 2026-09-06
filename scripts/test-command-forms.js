@@ -246,8 +246,12 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     const historyStore = require("../utils/moderationHistoryStore");
     historyStore.deleteAllForGuild("g1");
     historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "ban" });
+    // Numéro de case PERMANENT (attribué par utils/caseCounterStore.js) —
+    // jamais "1" en dur : d'autres cas de ce fichier ont déjà pu faire
+    // avancer le compteur de "g1" avant celui-ci.
+    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
     const interaction = makeInteraction();
-    await commandForms.FORMS.del_sanction_member.run(client, interaction, { userId: TARGET_ID, text: { index: "1" } });
+    await commandForms.FORMS.del_sanction_member.run(client, interaction, { userId: TARGET_ID, text: { index: caseNumber } });
     assert.strictEqual(historyStore.search("g1", { targetId: TARGET_ID }).length, 0);
   });
 
@@ -424,6 +428,56 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     for (const fake of ["openmodmail", "restrict", "nolog", "noderank", "piconly", "public", "boostlog", "ticket add", "ticket del"]) {
       assert.ok(!commandForms.BARE_COMMAND_FORMS[fake], `"${fake}" n'a pas de vrai handler, ne doit pas avoir de carte`);
     }
+  });
+
+  console.log("\n&warn/&warnings/&unwarn/&case — cartes natives :");
+
+  await cas("warn_member enregistre l'avertissement avec la raison saisie", async () => {
+    const historyStore = require("../utils/moderationHistoryStore");
+    historyStore.deleteAllForGuild("g1");
+    const interaction = makeInteraction();
+    await commandForms.FORMS.warn_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "comportement toxique" } });
+    const entries = historyStore.search("g1", { targetId: TARGET_ID, action: "warn" });
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].reason, "comportement toxique");
+  });
+
+  await cas("warnings_view répond \"membre introuvable\" plutôt que de planter sur un ID invalide", async () => {
+    const interaction = makeInteraction();
+    interaction.guild.members.fetch = async () => null;
+    const followUps = [];
+    interaction.followUp = async (p) => {
+      followUps.push(p);
+      return {};
+    };
+    await commandForms.FORMS.warnings_view.run(client, interaction, { userId: "999999999999999999" });
+    assert.ok(followUps.some((p) => p.content?.includes("introuvable")));
+  });
+
+  await cas("unwarn_member retire bien l'avertissement visé par son numéro de case", async () => {
+    const historyStore = require("../utils/moderationHistoryStore");
+    historyStore.deleteAllForGuild("g1");
+    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "warn", reason: "à retirer" });
+    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
+    const interaction = makeInteraction();
+    await commandForms.FORMS.unwarn_member.run(client, interaction, { userId: TARGET_ID, text: { caseNumber } });
+    assert.strictEqual(historyStore.search("g1", { targetId: TARGET_ID, action: "warn" }).length, 0);
+  });
+
+  await cas("case_view affiche le détail de la case demandée (fonctionne pour n'importe quel type de sanction)", async () => {
+    const historyStore = require("../utils/moderationHistoryStore");
+    historyStore.deleteAllForGuild("g1");
+    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "kick", reason: "raid" });
+    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
+    const interaction = makeInteraction();
+    const followUps = [];
+    interaction.followUp = async (p) => {
+      followUps.push(p);
+      return {};
+    };
+    await commandForms.FORMS.case_view.run(client, interaction, { text: { number: caseNumber } });
+    const texte = followUps[0]?.embeds?.[0]?.data?.description || "";
+    assert.ok(texte.includes(`Case #${caseNumber}`) && texte.includes("kick") && texte.includes("raid"));
   });
 
   console.log("\nÉtat de formulaire (par personne ET par commande) :");

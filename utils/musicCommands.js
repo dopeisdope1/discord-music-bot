@@ -459,6 +459,10 @@ const modHandlers = {
   mutelist: moderationExtra.mutelist,
   unmuteall: moderationExtra.unmuteall,
   sanctions: moderationExtra.sanctions,
+  warn: moderationExtra.warn,
+  warnings: moderationExtra.warnings,
+  unwarn: moderationExtra.unwarn,
+  case: moderationExtra.caseView,
   del: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));

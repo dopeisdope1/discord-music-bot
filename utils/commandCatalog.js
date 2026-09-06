@@ -121,7 +121,10 @@ const CATEGORIES = [
       { name: "del sanction <membre> <nombre>", prefix: "mod", permission: "logs.manage", description: "Supprime une sanction précise de l'historique d'un membre" },
       { name: "clear sanctions <membre>", prefix: "mod", permission: "logs.manage", description: "Supprime toutes les sanctions d'un membre" },
       { name: "clear all sanctions", prefix: "mod", permission: "logs.manage", description: "Supprime toutes les sanctions de tout le serveur" },
-      { name: "warn <membre> [raison]", prefix: "mod", permission: null, description: "Avertit un membre (non implémentée — aucun système de warns, exclusion volontaire)" },
+      { name: "warn <membre> [raison]", prefix: "mod", permission: "moderation.warn", description: "Avertit un membre (enregistré dans son historique, sans autre effet automatique)" },
+      { name: "warnings <membre>", prefix: "mod", permission: "logs.view", description: "Affiche les avertissements d'un membre" },
+      { name: "unwarn <membre> <numéro>", prefix: "mod", permission: "logs.manage", description: "Supprime un avertissement précis (voir `&warnings`)" },
+      { name: "case <numéro>", prefix: "mod", permission: "logs.view", description: "Affiche le détail complet d'une sanction par son numéro de case" },
       {
         name: "mute <membre> [raison]",
         prefix: "mod",

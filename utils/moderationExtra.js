@@ -9,9 +9,6 @@ const tempBanStore = require("./tempBanStore");
 
 // Extensions du catalogue Modération/Paramètres de modération documentées
 // dans le panel mais pas encore câblées — voir utils/commandCatalog.js.
-// AUCUN système de warns ici (&warn/&warnings/&unwarn) : exclusion
-// explicite et permanente du cahier des charges d'origine, &warn reste donc
-// non implémentée volontairement, contrairement au reste de cette liste.
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -237,9 +234,9 @@ async function sanctions(client, message, args) {
   const entries = historyStore.search(message.guild.id, { targetId: target.id, limit: 15 });
   if (!entries.length) return reply(message, "info", `Aucune sanction enregistrée pour **${target.user.tag}**.`);
 
-  const lines = entries.map((e, i) => {
+  const lines = entries.map((e) => {
     const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
-    return `**${i + 1}.** \`${e.action}\` — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
+    return `**Case #${e.caseNumber}** \`${e.action}\` — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
   });
   return reply(message, "info", `**Sanctions de ${target.user.tag}** (${entries.length}) :\n${lines.join("\n")}`);
 }
@@ -250,15 +247,18 @@ async function delSanction(client, message, args) {
   const target = await fetchTargetOrReply(message, targetId);
   if (!target) return;
 
-  const index = parseInt(args[1], 10);
-  if (!Number.isInteger(index) || index < 1) return reply(message, "error", "Indique un numéro : `del sanction @membre <nombre>` (voir `&sanctions`).");
+  // Numéro de CASE permanent (utils/moderationHistoryStore.js), pas une
+  // position recalculée à chaque appel — avant, ajouter/supprimer une
+  // sanction entre deux `&sanctions` pouvait faire viser `<n>` sur la
+  // mauvaise entrée.
+  const caseNumber = parseInt(args[1], 10);
+  if (!Number.isInteger(caseNumber) || caseNumber < 1) return reply(message, "error", "Indique un numéro : `del sanction @membre <nombre>` (voir `&sanctions`).");
 
-  const entries = historyStore.search(message.guild.id, { targetId: target.id, limit: 15 });
-  const entry = entries[index - 1];
+  const entry = historyStore.search(message.guild.id, { targetId: target.id, caseNumber })[0];
   if (!entry) return reply(message, "error", "Aucune sanction à ce numéro.");
 
   historyStore.deleteById(message.guild.id, entry.id);
-  return reply(message, "success", `Sanction \`${entry.action}\` supprimée de l'historique de **${target.user.tag}**.`);
+  return reply(message, "success", `Sanction \`${entry.action}\` (case #${entry.caseNumber}) supprimée de l'historique de **${target.user.tag}**.`);
 }
 
 async function clearSanctions(client, message, args) {
@@ -275,6 +275,94 @@ async function clearAllSanctions(client, message) {
   if (!can(message.member, "logs.manage")) return;
   const removed = historyStore.deleteAllForGuild(message.guild.id);
   return reply(message, "success", `${removed} sanction(s) supprimée(s) sur tout le serveur.`);
+}
+
+// --- Avertissements (&warn, &warnings, &unwarn) — même historique que les
+// sanctions ci-dessus (utils/moderationHistoryStore.js), juste une valeur
+// d'action différente ("warn") : pas de nouveau store. ---
+
+async function warn(client, message, args) {
+  if (!can(message.member, "moderation.warn")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const reason = args.slice(1).join(" ") || null;
+  const tag = target.user.tag;
+  await report(client, {
+    guildId: message.guild.id,
+    category: "moderation",
+    title: "Avertissement",
+    fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
+    action: "warn",
+    targetId: target.id,
+    targetTag: tag,
+    moderator: message.author,
+    reason,
+    channelId: message.channel.id,
+  });
+  return reply(message, "success", `**${tag}** a été averti.${reason ? `\nRaison : ${reason}` : ""}`);
+}
+
+async function warnings(client, message, args) {
+  if (!can(message.member, "logs.view")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const entries = historyStore.search(message.guild.id, { targetId: target.id, action: "warn", limit: 15 });
+  if (!entries.length) return reply(message, "info", `Aucun avertissement enregistré pour **${target.user.tag}**.`);
+
+  const lines = entries.map((e) => {
+    const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
+    return `**Case #${e.caseNumber}** — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
+  });
+  return reply(message, "info", `**Avertissements de ${target.user.tag}** (${entries.length}) :\n${lines.join("\n")}`);
+}
+
+async function unwarn(client, message, args) {
+  if (!can(message.member, "logs.manage")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const caseNumber = parseInt(args[1], 10);
+  if (!Number.isInteger(caseNumber) || caseNumber < 1) {
+    return reply(message, "error", "Indique un numéro de case : `unwarn @membre <numéro>` (voir `&warnings`).");
+  }
+
+  const entry = historyStore.search(message.guild.id, { targetId: target.id, action: "warn", caseNumber })[0];
+  if (!entry) return reply(message, "error", "Aucun avertissement à ce numéro.");
+
+  historyStore.deleteById(message.guild.id, entry.id);
+  return reply(message, "success", `**Case #${entry.caseNumber}** (avertissement) supprimée de l'historique de **${target.user.tag}**.`);
+}
+
+// --- Fiche détaillée d'une case (&case <numéro>), tous types de sanction confondus ---
+
+async function caseView(client, message, args) {
+  if (!can(message.member, "logs.view")) return;
+  const caseNumber = parseInt(args[0], 10);
+  if (!Number.isInteger(caseNumber) || caseNumber < 1) {
+    return reply(message, "error", "Indique un numéro de case : `case <numéro>`.");
+  }
+
+  const entry = historyStore.search(message.guild.id, { caseNumber, limit: 1 })[0];
+  if (!entry) return reply(message, "error", `Aucune case #${caseNumber} sur ce serveur.`);
+
+  const when = `<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:F>`;
+  return reply(
+    message,
+    "info",
+    [
+      `**Case #${entry.caseNumber}**`,
+      `> **Type** : \`${entry.action}\``,
+      `> **Cible** : ${entry.targetTag || entry.targetId} (${entry.targetId})`,
+      `> **Modérateur** : ${entry.moderatorTag || entry.moderatorId}`,
+      `> **Date** : ${when}`,
+      `> **Raison** : ${entry.reason || "*aucune*"}`,
+    ].join("\n")
+  );
 }
 
 // --- &tempban / &banlist ---
@@ -447,6 +535,10 @@ module.exports = {
   delSanction,
   clearSanctions,
   clearAllSanctions,
+  warn,
+  warnings,
+  unwarn,
+  caseView,
   tempban,
   checkExpiredTempbans,
   banlist,

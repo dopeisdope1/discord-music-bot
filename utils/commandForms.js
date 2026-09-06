@@ -1116,6 +1116,63 @@ const FORMS = {
     },
   },
 
+  warn_member: {
+    label: "Avertir un membre",
+    category: "moderation",
+    permission: "moderation.warn",
+    fields: ["user"],
+    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.warn(client, msg, [member.id, ...(v.text?.reason ? [v.text.reason] : [])]);
+    },
+  },
+
+  warnings_view: {
+    label: "Voir les avertissements d'un membre",
+    category: "moderation",
+    permission: "logs.view",
+    fields: ["user"],
+    ready: (v) => Boolean(v.userId),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.warnings(client, msg, [member.id]);
+    },
+  },
+
+  unwarn_member: {
+    label: "Retirer un avertissement",
+    category: "moderation",
+    permission: "logs.manage",
+    fields: ["user"],
+    textFields: [{ key: "caseNumber", label: "Numéro de case (voir &warnings)", max: 10 }],
+    ready: (v) => Boolean(v.userId && v.text?.caseNumber),
+    run: async (client, interaction, v) => {
+      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
+      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
+      const msg = fakeMessage(interaction, { user: member });
+      await moderationExtra.unwarn(client, msg, [member.id, v.text.caseNumber]);
+    },
+  },
+
+  case_view: {
+    label: "Voir le détail d'une case",
+    category: "moderation",
+    permission: "logs.view",
+    fields: [],
+    textFields: [{ key: "number", label: "Numéro de case", max: 10 }],
+    ready: (v) => Boolean(v.text?.number),
+    run: async (client, interaction, v) => {
+      const msg = fakeMessage(interaction, {});
+      await moderationExtra.caseView(client, msg, [v.text.number]);
+    },
+  },
+
   del_perm_grant: {
     label: "Retirer une permission d'un rôle ou d'un membre",
     category: "server",
@@ -1637,6 +1694,10 @@ const BARE_COMMAND_FORMS = {
   cmute: "mute_member",
   uncmute: "unmute_member",
   tempcmute: "tempmute_member",
+  warn: "warn_member",
+  warnings: "warnings_view",
+  unwarn: "unwarn_member",
+  case: "case_view",
   voicehub: "voicehub_set",
   link: "link_channel_exempt",
   spam: "spam_channel_exempt",
