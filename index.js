@@ -779,6 +779,15 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   const player = client.kazagumo.players.get(oldState.guild.id);
   if (!player || oldState.channelId !== player.voiceId) return;
 
+  // voiceStateUpdate se déclenche pour TOUT changement d'état vocal, pas
+  // seulement les allées et venues : micro coupé, casque coupé, mise en sourdine
+  // par un modérateur, partage d'écran, caméra, prise de parole en salon de
+  // conférence... Dans tous ces cas le salon ne change pas, personne n'est parti,
+  // et il n'y a donc rien à nettoyer. Sans ce filtre, une simple sourdine serveur
+  // sur le bot passait dans la branche ci-dessous et coupait la lecture avec un
+  // « Je ne suis plus dans le salon vocal » alors qu'il n'avait pas bougé.
+  if (oldState.channelId === newState.channelId) return;
+
   const textChannel = client.channels.cache.get(player.textId);
 
   // Le bot a quitté le salon suivi par le player sans passer par nos propres
@@ -1095,25 +1104,55 @@ client.login(process.env.DISCORD_TOKEN).catch((err) => {
 // Même principe que le catch ci-dessus, pour un cas vécu en production :
 // process vivant, AUCUNE erreur/déconnexion journalisée, mais la session
 // gateway bien morte en silence — &online (et tout le reste) ne répondait
-// plus rien après ~1h30. Discord.js n'a rien signalé lui-même dans ce cas
-// précis, donc on suit l'activité RÉELLE du websocket à la main : "raw"
-// arrive à CHAQUE paquet gateway, y compris les simples accusés de battement
-// de cœur (bien plus fréquent qu'un vrai message/interaction sur un serveur
-// calme). Rien pendant GATEWAY_STALE_MS => on force la sortie plutôt que de
-// tenter une reconnexion incertaine en place ; l'hébergeur relance un
-// process tout neuf avec une session propre (mêmes garanties de restart que
-// le login raté ci-dessus).
+// plus rien après ~1h30.
+//
+// Ce qu'on surveille doit être un signe de vie du WEBSOCKET, pas l'activité
+// des serveurs. La première version guettait l'événement "raw" en le croyant
+// émis à chaque paquet gateway, accusés de battement de cœur compris : c'est
+// faux. Discord.js n'émet "raw" que sur les paquets DISPATCH (message,
+// présence, interaction, entrée/sortie vocale...) ; les accusés de battement
+// de cœur (opcode 11) sont traités en interne et n'arrivent jamais jusqu'à
+// "raw". Sur un serveur calme — la nuit, ou simplement quelques minutes sans
+// personne — trois minutes sans le moindre DISPATCH sont parfaitement
+// normales, et le garde-fou tuait alors un bot en parfaite santé, en boucle :
+// le bot se déconnectait puis revenait sans arrêt.
+//
+// On lit donc l'horodatage du dernier battement de cœur ACQUITTÉ, que
+// discord.js tient à jour sur chaque shard (`lastPingTimestamp`). Il avance
+// à chaque acquittement, soit environ toutes les 41 s, qu'il se passe quelque
+// chose ou non sur les serveurs — un silence de 3 minutes là-dessus veut donc
+// bien dire que la connexion est figée. "raw" reste pris en compte comme
+// signal d'appoint. Rien pendant GATEWAY_STALE_MS => on force la sortie
+// plutôt que de tenter une reconnexion incertaine en place ; l'hébergeur
+// relance un process tout neuf avec une session propre (mêmes garanties de
+// restart que le login raté ci-dessus).
 const GATEWAY_WATCHDOG_MS = 60_000;
 const GATEWAY_STALE_MS = 3 * 60_000;
 let lastGatewayActivity = Date.now();
 client.on("raw", () => {
   lastGatewayActivity = Date.now();
 });
+
+/**
+ * Date du dernier battement de cœur acquitté, tous shards confondus.
+ * Vaut 0 tant qu'aucun acquittement n'est revenu (shard en cours de
+ * connexion : `lastPingTimestamp` vaut -1), auquel cas seul le compteur
+ * "raw" ci-dessus fait foi — on ne veut pas qu'un bot en train de démarrer
+ * se fasse tuer par son propre garde-fou.
+ */
+function lastHeartbeatAck() {
+  let last = 0;
+  for (const shard of client.ws?.shards?.values() ?? []) {
+    if (shard.lastPingTimestamp > last) last = shard.lastPingTimestamp;
+  }
+  return last;
+}
+
 setInterval(() => {
-  const silence = Date.now() - lastGatewayActivity;
+  const silence = Date.now() - Math.max(lastGatewayActivity, lastHeartbeatAck());
   if (silence < GATEWAY_STALE_MS) return;
   console.error(
-    `[gateway] garde-fou : aucune activité depuis ${Math.round(silence / 1000)}s — connexion probablement figée, redémarrage forcé.`
+    `[gateway] garde-fou : aucun battement de cœur depuis ${Math.round(silence / 1000)}s — connexion probablement figée, redémarrage forcé.`
   );
   process.exit(1);
 }, GATEWAY_WATCHDOG_MS);
