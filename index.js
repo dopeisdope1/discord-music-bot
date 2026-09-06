@@ -59,7 +59,6 @@ const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationE
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
 const { handleHelpInteraction } = require("./utils/helpPanel");
-const { handleClassInteraction } = require("./utils/classSelect");
 const { playbackErrorMessage } = require("./utils/musicErrors");
 const { handleJoinSpotify } = require("./utils/joinSpotify");
 const { findSpotifyActivity, getSpotifyActivity, spotifyActivityQuery, spotifyActivityElapsedMs } = require("./utils/spotifyPresence");
@@ -492,13 +491,6 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId?.startsWith("giveaway:")) {
     await handleGiveawayButton(interaction).catch((err) => console.error("[giveaways]", err));
-    return;
-  }
-
-  // Sélection de classe par menu déroulant (&class / &classes, voir
-  // utils/classSelect.js) : menu ET boutons Cancel/Submit passent tous par là.
-  if (interaction.customId?.startsWith("class:")) {
-    await handleClassInteraction(interaction).catch((err) => console.error("[classSelect]", err));
     return;
   }
 

@@ -27,7 +27,6 @@ const { logHandlers } = require("./logCommands");
 const { guardHandlers } = require("./guardCommands");
 const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
-const classSelect = require("./classSelect");
 const { backup } = require("./serverBackup");
 const { setupTickets } = require("./tickets");
 const { createPoll } = require("./polls");
@@ -475,17 +474,6 @@ const modHandlers = {
   choose: serverExtra.choose,
   embed: serverExtra.embedPrompt,
   create: serverExtra.createEmoji,
-  // Sélection de classe par menu déroulant — voir utils/classSelect.js.
-  // "class" ouvre le panneau (public, aucune permission requise) ;
-  // "classes add/del/list" gère la whitelist de rôles éligibles.
-  class: classSelect.openClassSelect,
-  classes: (client, message, args) => {
-    const sub = (args[0] || "").toLowerCase();
-    if (sub === "add") return classSelect.classesAdd(client, message, args.slice(1));
-    if (sub === "del") return classSelect.classesDel(client, message, args.slice(1));
-    if (sub === "list") return classSelect.classesList(client, message, args.slice(1));
-  },
-
   massiverole: serverExtra.massiverole,
   unmassiverole: serverExtra.unmassiverole,
   voicemove: serverExtra.voicemove,
@@ -635,7 +623,6 @@ const MOD_SUBCOMMANDS = {
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit"],
   backup: ["list", "delete", "load"],
-  classes: ["add", "del", "list"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],
