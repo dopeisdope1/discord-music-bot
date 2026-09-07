@@ -49,6 +49,8 @@ const { parseDuration } = require("./moderationCommands");
 const { computeSecurityScan } = require("./securityScan");
 const { computeStatus, formatUptime } = require("./statusDiagnostic");
 const { FORMS, setFormState, buildFormCard } = require("./commandForms");
+const { fakeMessage } = require("./fakeMessage");
+const { utilityHandlers } = require("./utilityCommands");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -705,6 +707,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
               .setLabel("Voir les commandes débloquées")
               .setStyle(ButtonStyle.Secondary),
       ];
+      if (can(member, "server.members.list")) {
+        boutons.push(
+          new ButtonBuilder().setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`).setLabel("Voir les membres").setStyle(ButtonStyle.Secondary)
+        );
+      }
       if (peutModifier) {
         boutons.push(
           exclusif
@@ -1295,6 +1302,18 @@ async function handleConfigInteraction(interaction) {
       return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     }
     return goto("permissions", { permissionsRoleId: extra, permissionsShowCommands: action === "permshowcmds" });
+  }
+
+  // Réutilise TEL QUEL &rolemembers (utils/utilityCommands.js), jamais
+  // exposé dans le panel jusqu'ici — même liste paginée qu'en tapant la
+  // commande, juste ouverte depuis la fiche du rôle.
+  if (action === "rolemembers") {
+    if (!can(member, "server.members.list")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const role = guild.roles.cache.get(extra);
+    await goto("permissions", { permissionsRoleId: extra });
+    if (!role) return;
+    await utilityHandlers.rolemembers(interaction.client, fakeMessage(interaction, { role }), []);
+    return;
   }
 
   // Création/suppression de rôle depuis le panel : réutilise TEL QUEL

@@ -33,7 +33,12 @@ function fakeMessage(interaction, { channel, channels, user, role, roles: roleLi
     content: text,
     attachments: { first: () => null },
     mentions: { users, members, roles, channels: channelsColl, everyone: false },
-    reply: (payload) => interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral }).catch(() => {}),
+    // Combiné en OU avec les flags déjà posés par le payload (ex :
+    // MessageFlags.IsComponentsV2) — un simple écrasement perdrait ce bit sur
+    // toute réponse Components V2 (ban_member/softban_member, entre autres),
+    // que Discord refuserait alors puisque `components` contient des
+    // builders V2 sans le flag qui les autorise.
+    reply: (payload) => interaction.followUp({ ...payload, flags: (payload.flags || 0) | MessageFlags.Ephemeral }).catch(() => {}),
   };
 }
 

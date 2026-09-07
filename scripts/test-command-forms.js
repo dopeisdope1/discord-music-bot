@@ -16,7 +16,7 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "commandforms-test-"));
 process.env.BOT_OWNER_IDS = "staff-1";
 
-const { Collection, PermissionsBitField, ChannelType } = require("discord.js");
+const { Collection, PermissionsBitField, ChannelType, MessageFlags } = require("discord.js");
 const commandForms = require("../utils/commandForms");
 
 let reussis = 0;
@@ -182,6 +182,15 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     await commandForms.FORMS.ban_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "raid" } });
     assert.strictEqual(interaction._targetMember._banned, undefined, "&ban ne bannit jamais sans confirmation explicite, même depuis le panel");
     assert.ok(followUps.length > 0, "un panneau de confirmation aurait dû être renvoyé");
+    // fakeMessage.reply COMBINE ses flags avec ceux du payload (bitwise OR) —
+    // un simple écrasement par MessageFlags.Ephemeral perdrait IsComponentsV2
+    // et Discord refuserait ce message (des builders V2 sans le flag qui les
+    // autorise). Régression réelle trouvée en réutilisant fakeMessage pour
+    // &rolemembers (module 5 de la refonte du panel).
+    assert.ok(
+      (followUps[0].flags & MessageFlags.IsComponentsV2) === MessageFlags.IsComponentsV2,
+      "le panneau de confirmation doit rester en Components V2 même envoyé via fakeMessage"
+    );
   });
 
   await cas("softban_member bannit avec deleteMessageSeconds (purge) puis prévoit le débannissement", async () => {
