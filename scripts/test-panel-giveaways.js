@@ -17,7 +17,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-giveaways-te
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const giveawayStore = require("../utils/giveawayStore");
 const permStore = require("../utils/permissions/store");
 
@@ -39,6 +39,9 @@ const CHANNEL_ID = "chan-giveaway";
 function makeChannel() {
   return {
     id: CHANNEL_ID,
+    // Un vrai salon a un nom : la rubrique est dessinée, et c'est ce nom qui
+    // s'affiche à la place de `<#id>` (utils/sectionDashboard.js).
+    name: "concours",
     isTextBased: () => true,
     messages: { fetch: async () => null },
     send: async () => ({}),
@@ -71,10 +74,25 @@ function mkMember(id, roleId) {
   };
 }
 
+/**
+ * Le corps de la rubrique est DESSINÉ (tableau de bord) : son contenu se lit
+ * sur la spec passée au moteur de rendu, pas sur les composants texte, qui ne
+ * portent plus que l'en-tête.
+ */
+function texteDessine(guild, member, state) {
+  const spec = buildSectionSpec(guild, "giveaways", member, state);
+  const morceaux = [spec.titre, spec.pied || ""];
+  for (const carte of spec.cartes) {
+    morceaux.push(carte.titre || "", carte.vide || "");
+    for (const item of carte.items) morceaux.push(item.nom, item.description || "");
+  }
+  return morceaux.join("\n");
+}
+
 function render(guild, member, state) {
   const json = buildConfigPanel(guild, "giveaways", member, state).components[0].toJSON();
   return {
-    texte: json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n"),
+    texte: [...json.components.filter((c) => c.type === 10).map((c) => c.content), texteDessine(guild, member, state)].join("\n"),
     boutons: json.components.filter((c) => c.type === 1).flatMap((r) => r.components),
   };
 }
@@ -108,8 +126,11 @@ function render(guild, member, state) {
 
   await cas("le giveaway en cours (Nitro) apparaît avec son salon et son nombre de participants", () => {
     const { texte } = render(guild, member, {});
-    assert.ok(texte.includes("**Nitro**"), texte);
-    assert.ok(texte.includes(`<#${CHANNEL_ID}>`), texte);
+    assert.ok(texte.includes("Nitro"), texte);
+    // Le salon apparaît par son NOM : une mention brute dessinée sur l'image
+    // afficherait « <#chan-giveaway> », illisible.
+    assert.ok(texte.includes("#concours"), texte);
+    assert.ok(!texte.includes(`<#${CHANNEL_ID}>`), `aucune mention brute ne doit rester : ${texte}`);
     assert.ok(texte.includes("0 participant"), texte);
   });
 

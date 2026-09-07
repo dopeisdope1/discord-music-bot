@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "guardpanel-test-")
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const guardConfig = require("../utils/guard/config");
 const guardWhitelist = require("../utils/guard/whitelist");
 const muteStore = require("../utils/muteStore");
@@ -45,7 +45,10 @@ const guild = {
   id: "g1",
   name: "Serveur",
   ownerId: "owner-1",
-  roles: { cache: new Collection() },
+  // Le rôle existe vraiment dans le cache : le corps de la rubrique est
+  // dessiné, et une image ne sait pas résoudre `<@&id>` toute seule — c'est
+  // utils/sectionDashboard.js qui le fait, en lisant ce cache.
+  roles: { cache: new Collection([["role-staff", { id: "role-staff", name: "Staff" }]]) },
   channels: { cache: new Collection() },
   members: { cache: new Collection(), me: { roles: { highest: { position: 9 } } } },
 };
@@ -89,9 +92,13 @@ function baseInteraction(customId, extra = {}) {
 
   await cas("la rubrique affiche bien le rôle pingé courant", () => {
     guardConfig.setPingRole("g1", "role-staff");
-    const json = buildConfigPanel(guild, "guard", member).components[0].toJSON();
-    const texte = json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("<@&role-staff>"), texte);
+    // La rubrique étant dessinée, on lit la spec — et on vérifie que le rôle
+    // apparaît par son NOM : un « <@&role-staff> » brut sur l'image serait
+    // illisible, c'est exactement ce que la résolution évite.
+    const spec = buildSectionSpec(guild, "guard", member);
+    const texte = spec.cartes.flatMap((c) => c.items.map((i) => `${i.nom} ${i.description || ""}`)).join("\n");
+    assert.ok(texte.includes("@Staff"), texte);
+    assert.ok(!texte.includes("<@&"), `aucune mention brute ne doit rester sur l'image : ${texte}`);
     guardConfig.setPingRole("g1", null);
   });
 

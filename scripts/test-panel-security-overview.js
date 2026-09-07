@@ -17,7 +17,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-secoverview-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const guardConfig = require("../utils/guard/config");
 const permStore = require("../utils/permissions/store");
 
@@ -55,9 +55,29 @@ function mkMember(id, roleId) {
   };
 }
 
+/**
+ * L'en-tête (encore du texte) PLUS ce qui est dessiné sur l'image de la
+ * rubrique : le corps des rubriques est un tableau de bord dessiné depuis
+ * qu'elles le sont toutes, on lit donc la spec passée au moteur de rendu.
+ */
 function render(section, member) {
   const json = buildConfigPanel(guild, section, member).components[0].toJSON();
-  return json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+  const entete = json.components.filter((c) => c.type === 10).map((c) => c.content);
+  const spec = buildSectionSpec(guild, section, member);
+  for (const carte of spec.cartes) {
+    entete.push(carte.titre || "", carte.vide || "");
+    for (const item of carte.items) entete.push(item.nom, item.description || "");
+  }
+  return entete.join("\n");
+}
+
+/** Les couleurs de pastille dessinées sur la rubrique (les emojis 🟠/🔴 du
+ *  texte deviennent des pastilles : la police embarquée n'a aucun glyphe
+ *  emoji, ils sortiraient en carrés vides). */
+function pastilles(section, member) {
+  return buildSectionSpec(guild, section, member)
+    .cartes.flatMap((c) => c.items.map((i) => i.couleurPastille))
+    .filter(Boolean);
 }
 
 function titre(section, member) {
@@ -96,7 +116,8 @@ function titre(section, member) {
   await cas("la vue d'ensemble reflète le VRAI état (anti-nuke désactivé -> avertissement listé)", () => {
     guardConfig.setEnabled("gsec", false);
     const texte = render("securityOverview", member);
-    assert.ok(texte.includes("🟠") || texte.includes("🔴"), texte);
+    const teintes = pastilles("securityOverview", member);
+    assert.ok(teintes.includes("#fb923c") || teintes.includes("#ff6b6b"), `une pastille d'alerte est attendue : ${teintes}`);
     assert.ok(texte.includes("Anti-nuke désactivé"), texte);
   });
 

@@ -19,7 +19,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-backups-bot-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField, ChannelType } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const backupStore = require("../utils/serverBackupStore");
 const botProfileStore = require("../utils/botProfileStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
@@ -112,7 +112,12 @@ function titre(guild, section, member, state) {
 
   await cas("la rubrique liste bien cette sauvegarde après création", () => {
     // serverBackupStore stocke les noms en minuscules (voir getBackup/saveBackup).
-    const texte = buildConfigPanel(guild, "backups", owner).components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    // Le corps de la rubrique est DESSINÉ : son contenu se lit sur la spec
+    // passée au moteur de rendu (utils/configPanel.js::buildSectionSpec).
+    const spec = buildSectionSpec(guild, "backups", owner);
+    const texte = spec.cartes
+      .flatMap((c) => [c.titre || "", c.vide || "", ...c.items.map((i) => `${i.nom} ${i.description || ""}`)])
+      .join("\n");
     assert.ok(texte.includes("masauvegarde"), texte);
   });
 

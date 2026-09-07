@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-music-test-"
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, hasAnyPanelAccess, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, hasAnyPanelAccess, ID } = require("../utils/configPanel");
 const favoritesStore = require("../utils/favoritesStore");
 const permStore = require("../utils/permissions/store");
 
@@ -64,8 +64,16 @@ function mkMember(id, roleId) {
 
 function render(guild, member) {
   const json = buildConfigPanel(guild, "musicPlayer", member).components[0].toJSON();
+  // Le corps de la rubrique est DESSINÉ : on lit la spec passée au moteur de
+  // rendu en plus de l'en-tête, qui seul reste du texte Discord.
+  const spec = buildSectionSpec(guild, "musicPlayer", member);
+  const dessine = [spec.titre, spec.pied || ""];
+  for (const carte of spec.cartes) {
+    dessine.push(carte.titre || "", carte.vide || "");
+    for (const item of carte.items) dessine.push(item.nom, item.description || "");
+  }
   return {
-    texte: json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n"),
+    texte: [...json.components.filter((c) => c.type === 10).map((c) => c.content), ...dessine].join("\n"),
     boutons: json.components.filter((c) => c.type === 1).flatMap((r) => r.components),
   };
 }

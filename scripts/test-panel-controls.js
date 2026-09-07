@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
-const { buildConfigPanel, buildHomeSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { buildConfigPanel, buildHomeSpec, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
 const { ACCENT_COLOR } = require("../utils/helpPanel");
 const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
@@ -66,6 +66,24 @@ const guild = {
  * `rangees` compte donc les deux formes — une carte cliquable est bien un
  * contrôle offert par l'écran.
  */
+/**
+ * Tout le texte réellement AFFICHÉ sur une rubrique : l'en-tête (encore du
+ * texte Discord) plus ce qui est DESSINÉ sur l'image du tableau de bord. Le
+ * corps des rubriques est une image depuis qu'elles sont toutes en tableau de
+ * bord — on lit donc la spec passée au moteur de rendu
+ * (utils/configPanel.js::buildSectionSpec), c'est-à-dire la même donnée en
+ * structuré, comme le fait déjà scripts/test-help-honesty.js pour &help.
+ */
+function texteDessine(section, state) {
+  const spec = buildSectionSpec(guild, section, member, state);
+  const morceaux = [spec.titre, spec.sousTitre, spec.pied || ""];
+  for (const carte of spec.cartes) {
+    morceaux.push(carte.titre || "", carte.vide || "");
+    for (const item of carte.items) morceaux.push(item.nom, item.description || "");
+  }
+  return morceaux.join("\n");
+}
+
 function render(section, state) {
   const json = buildConfigPanel(guild, section, member, state).components[0].toJSON();
   const textes = [];
@@ -73,6 +91,7 @@ function render(section, state) {
     if (c.type === 10) textes.push(c.content);
     else if (c.type === 9) textes.push(...c.components.filter((t) => t.type === 10).map((t) => t.content));
   }
+  textes.push(texteDessine(section, state));
   return {
     texte: textes.join("\n"),
     rangees: json.components.filter((c) => c.type === 1).length + json.components.filter((c) => c.type === 9 && c.accessory).length,
@@ -220,9 +239,15 @@ function render(section, state) {
     await handleConfigInteraction(
       fakeInteraction(`permshowcmds:${roleId}`, { update: async (p) => { panel = p; } })
     );
-    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    // Le clic a bien mené à l'écran "commandes affichées" : son bouton bascule
+    // vers "Masquer".
+    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    assert.ok(boutons.some((b) => b.custom_id === `${ID}:permhidecmds:${roleId}`), "le bouton doit basculer vers \"Masquer\"");
+    // Ce que cet écran AFFICHE se lit sur la spec dessinée (le corps des
+    // rubriques est une image) — même état que celui produit par le clic.
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: true });
     assert.ok(texte.includes("Commandes débloquées par ce rôle"), texte);
-    assert.ok(texte.includes("`vc`") || texte.includes("`stats`"), `attendu vc/stats (server.stats.view) : ${texte}`);
+    assert.ok(texte.includes("vc") || texte.includes("stats"), `attendu vc/stats (server.stats.view) : ${texte}`);
   });
 
   await cas("un second clic (déjà affiché) bascule vers \"Masquer\" et referme la liste", async () => {
@@ -230,7 +255,7 @@ function render(section, state) {
     await handleConfigInteraction(
       fakeInteraction(`permhidecmds:${roleId}`, { update: async (p) => { panel = p; } })
     );
-    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: false });
     assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "la liste devrait être repliée après un second clic");
     const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
     const bouton = boutons.find((b) => b.custom_id === `${ID}:permshowcmds:${roleId}`);
@@ -425,8 +450,8 @@ function render(section, state) {
     let panel = null;
     await handleConfigInteraction(fakeInteraction(`roleexclusive:${roleId}`, { update: async (p) => { panel = p; } }));
     assert.ok(permStore.isRoleExclusive("g1", roleId), "le rôle doit être marqué exclusif");
-    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("**Exclusif** : oui"), texte);
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
+    assert.ok(/Exclusif[\s\S]{0,12}oui/.test(texte), texte);
     const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
     assert.ok(boutons.some((b) => b.custom_id === `${ID}:roleexclusiveoff:${roleId}`), "le bouton doit basculer vers \"Retirer de l'exclusif\"");
   });
@@ -436,8 +461,8 @@ function render(section, state) {
     let panel = null;
     await handleConfigInteraction(fakeInteraction(`roleexclusiveoff:${roleId}`, { update: async (p) => { panel = p; } }));
     assert.ok(!permStore.isRoleExclusive("g1", roleId));
-    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("**Exclusif** : non"), texte);
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
+    assert.ok(/Exclusif[\s\S]{0,12}non/.test(texte), texte);
   });
 
   console.log("\nNavigation regroupée par famille :");

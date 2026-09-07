@@ -20,7 +20,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-monitoring-t
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec } = require("../utils/configPanel");
 const statsStore = require("../utils/statsStore");
 const permStore = require("../utils/permissions/store");
 
@@ -60,8 +60,24 @@ function mkMember(id, roleId) {
   };
 }
 
+/**
+ * Tout ce qui s'affiche sur la rubrique : l'en-tête (texte Discord) et le
+ * corps, qui est désormais DESSINÉ — on lit donc la spec passée au moteur de
+ * rendu, la même donnée en structuré.
+ */
 function body(guild, section, member) {
-  return buildConfigPanel(guild, section, member).components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+  const entete = buildConfigPanel(guild, section, member).components[0].toJSON()
+    .components.filter((c) => c.type === 10).map((c) => c.content);
+  const spec = buildSectionSpec(guild, section, member);
+  for (const carte of spec.cartes) {
+    entete.push(carte.titre || "", carte.vide || "");
+    // "libellé : valeur" sur une seule ligne, comme la carte les dessine :
+    // les marqueurs `**` du markdown n'existent plus, ce sont des attributs
+    // de rendu (taille, couleur), pas du texte.
+    for (const item of carte.items) entete.push(item.description ? `${item.nom} : ${item.description}` : item.nom);
+  }
+  if (spec.pied) entete.push(spec.pied);
+  return entete.join("\n");
 }
 
 (async () => {
@@ -82,8 +98,8 @@ function body(guild, section, member) {
     permStore.setRoleGrants("gmon", "role-stats", ["server.stats.view"]);
     const member = mkMember("u-stats", "role-stats");
     const texte = body(guild, "stats", member);
-    assert.ok(texte.includes("**Membres** : 250"), texte);
-    assert.ok(texte.includes("en vocal** : 2"), texte);
+    assert.ok(texte.includes("Membres : 250"), texte);
+    assert.ok(texte.includes("en vocal : 2"), texte);
     assert.ok(texte.includes(today), texte);
   });
 
@@ -98,7 +114,7 @@ function body(guild, section, member) {
     const texte = body(guild, "diagnostics", owner);
     assert.ok(texte.includes("37ms"), texte);
     assert.ok(texte.includes("3h"), texte);
-    assert.ok(texte.includes("**Serveurs** : 1"), texte);
+    assert.ok(texte.includes("Serveurs : 1"), texte);
     assert.ok(texte.includes("aucun nœud déclaré"), texte);
   });
 

@@ -25,6 +25,7 @@ const {
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
 const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
+const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
@@ -220,6 +221,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // "attachment://" dans le composant MediaGallery.
 const NOM_IMAGE_PANEL = "centre-de-gestion.png";
 const NOM_IMAGE_FICHE = "fiche-membre.png";
+const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 
 // Une couleur par famille — c'est tout l'intérêt de l'image : un Container
 // Components V2 n'a qu'UNE couleur d'accent pour tout le message.
@@ -483,7 +485,12 @@ function sectionBody(section, guild, member, state) {
     const lastDays = range.slice(-3);
     if (lastDays.length) {
       lines.push("", "**Détail (3 derniers jours) :**");
-      for (const d of lastDays) lines.push(`> **${d.date}** — 💬 ${d.messages} · 🟢 ${d.joins} · 🔴 ${d.leaves}`);
+      // Libellés en toutes lettres, pas en emojis : la rubrique est DESSINÉE
+      // (utils/sectionDashboard.js) et la police embarquée n'a aucun glyphe
+      // emoji — « 💬 0 · 🟢 0 · 🔴 0 » sortirait en « 0 · 0 · 0 » entre des
+      // carrés vides. Même formulation que la ligne « 7 derniers jours »
+      // juste au-dessus, qui était déjà en mots.
+      for (const d of lastDays) lines.push(`> **${d.date}** : ${d.messages} message(s) · ${d.joins} arrivée(s) · ${d.leaves} départ(s)`);
     }
     return lines.join("\n");
   }
@@ -909,6 +916,26 @@ function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) 
 }
 
 /**
+ * Ce qui est réellement DESSINÉ sur la rubrique `section` : la même donnée que
+ * le corps texte, en structuré. Exporté pour que les tests vérifient le
+ * contenu affiché sans avoir à lire une image — même approche que
+ * utils/helpPanel.js::buildHelpSpec, et garantie plus solide qu'une
+ * expression régulière sur du markdown.
+ * @param {string} [corps] sortie de sectionBody(), recalculée si absente
+ */
+function buildSectionSpec(guild, section, member, state = {}, corps) {
+  const meta = SECTIONS.find((s) => s.key === section) || SECTIONS[0];
+  return sectionDashboard.enSpec(corps ?? sectionBody(meta.key, guild, member, state), {
+    titre: meta.label,
+    couleur: FAMILY_COLORS[familyOf(meta.key).key] || "#94a3b8",
+    sousTitre: `${member.displayName || member.user?.username || meta.label} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
+    guild,
+    // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle
+    // des lignes (deux colonnes seulement si rien n'y serait tronqué).
+  });
+}
+
+/**
  * @param {{sansImage?: boolean}} [options] `sansImage` force le repli TEXTE —
  *   posé après un envoi refusé par Discord (voir utils/musicCommands.js) :
  *   le salon qui refuse une pièce jointe refusera aussi la suivante.
@@ -992,7 +1019,26 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_FICHE}`))
     );
   } else {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
+    // TOUTES les rubriques sont dessinées, pas seulement l'accueil : demande
+    // explicite d'un bot "rempli de tableaux de bord". Le contenu reste
+    // EXACTEMENT celui de sectionBody — une seule source de vérité, la même
+    // que lisent les commandes texte équivalentes — simplement converti en
+    // grille de cartes (utils/sectionDashboard.js) au lieu d'être empilé en
+    // lignes de citation.
+    const corps = sectionBody(meta.key, guild, member, state);
+    const specRubrique = buildSectionSpec(guild, meta.key, member, state, corps);
+    const pngRubrique = sansImage ? null : rendreEnCache(specRubrique);
+    if (pngRubrique) {
+      fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE }));
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
+      );
+    } else {
+      // Le corps d'origine, pas enTexte(spec) : ici le texte Discord est
+      // MEILLEUR que sa transposition (il résout les mentions et les dates
+      // tout seul). Le repli rend donc la rubrique telle qu'elle était.
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(corps));
+    }
   }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
@@ -2602,4 +2648,4 @@ async function handleHistorySearchModal(interaction, carried = {}) {
 
 module.exports = {
   buildHomeSpec,
-  buildFicheMembreSpec, buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
+  buildFicheMembreSpec, buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };

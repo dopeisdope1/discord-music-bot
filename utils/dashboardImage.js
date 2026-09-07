@@ -107,9 +107,9 @@ function hauteurCarte(items, avecTitre = true, avecSousTitre = false) {
  * toute la largeur disponible (1 carte pleine largeur, 2 cartes à mi-largeur)
  * pour ne pas laisser un trou béant dans la grille.
  */
-function disposer(cartes) {
+function disposer(cartes, colonnes = COLONNES) {
   const rangees = [];
-  for (let i = 0; i < cartes.length; i += COLONNES) rangees.push(cartes.slice(i, i + COLONNES));
+  for (let i = 0; i < cartes.length; i += colonnes) rangees.push(cartes.slice(i, i + colonnes));
   return rangees;
 }
 
@@ -203,7 +203,12 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
  * @returns {Buffer} PNG
  */
 function rendre(spec) {
-  const rangees = disposer(spec.cartes);
+  // Une rubrique de réglages (5 lignes « Label : valeur ») se lit bien mieux
+  // sur UNE colonne pleine largeur que coupée en deux demi-colonnes où chaque
+  // valeur se fait tronquer. L'appelant décide ; deux colonnes restent la
+  // valeur par défaut, celle des grilles de &help et de l'accueil du panel.
+  const colonnes = Math.max(1, spec.colonnes || COLONNES);
+  const rangees = disposer(spec.cartes, colonnes);
 
   // Hauteur totale calculée AVANT de créer le canvas : la grille doit finir
   // au ras de la dernière carte, sinon l'image traîne une bande vide.
@@ -250,10 +255,10 @@ function rendre(spec) {
   let y = HAUT_ENTETE;
   for (const rangee of rangees) {
     const pleineLargeur = LARGEUR - MARGE * 2;
-    const largeurCarte = (pleineLargeur - GOUTTIERE * (COLONNES - 1)) / COLONNES;
+    const largeurCarte = (pleineLargeur - GOUTTIERE * (colonnes - 1)) / colonnes;
     // Une rangée incomplète s'étale pour remplir la largeur, plutôt que de
     // laisser un vide à droite.
-    const largeur = rangee.length === COLONNES ? largeurCarte : (pleineLargeur - GOUTTIERE * (rangee.length - 1)) / rangee.length;
+    const largeur = rangee.length === colonnes ? largeurCarte : (pleineLargeur - GOUTTIERE * (rangee.length - 1)) / rangee.length;
 
     const hauteurRangee = Math.max(...rangee.map((c) => hauteurCarte(c.items, Boolean(c.titre), Boolean(c.sousTitre))));
     let x = MARGE;
