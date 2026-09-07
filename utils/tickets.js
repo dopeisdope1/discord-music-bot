@@ -11,6 +11,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { EMOJI } = require("./emojis");
 const { can } = require("./permissions/engine");
 const { checkBotPermission, report } = require("./moderation/actions");
 const ticketStore = require("./ticketStore");
@@ -47,7 +48,7 @@ async function setupTickets(client, message, args) {
         : "Besoin d'aide ? Ouvre un ticket ci-dessous.",
       [
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:open`).setLabel("Ouvrir un ticket").setStyle(ButtonStyle.Primary)
+          new ButtonBuilder().setCustomId(`${ID}:open`).setLabel("Ouvrir un ticket").setStyle(ButtonStyle.Primary).setEmoji(EMOJI.TICKET)
         ),
       ]
     )
@@ -93,7 +94,7 @@ async function handleTicketButton(interaction) {
       card(
         "Ticket ouvert",
         `<@${interaction.user.id}>${staffRoleId ? ` — <@&${staffRoleId}>` : ""}\nDécris ta demande, le staff te répondra ici.`,
-        [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:close`).setLabel("Fermer").setStyle(ButtonStyle.Danger))]
+        [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:close`).setLabel("Fermer").setStyle(ButtonStyle.Danger).setEmoji(EMOJI.LOCK))]
       )
     );
 

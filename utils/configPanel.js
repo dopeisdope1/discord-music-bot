@@ -19,6 +19,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
+const { EMOJI } = require("./emojis");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
@@ -209,31 +210,39 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // famille sans jamais partager le même écran : l'un donne accès à tout le bot,
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
 const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", sections: ["home"] },
-  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", sections: ["securityOverview", "protection", "guard", "mute"] },
-  { key: "moderation", label: "Modération", description: "Fiche membre, sanctions, historique", sections: ["modCenter", "history"] },
+  { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", emoji: EMOJI.MEMBERS, sections: ["home"] },
+  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", emoji: EMOJI.LOCK, sections: ["securityOverview", "protection", "guard", "mute"] },
+  { key: "moderation", label: "Modération", description: "Fiche membre, sanctions, historique", emoji: EMOJI.BAN, sections: ["modCenter", "history"] },
   {
     key: "serveur",
     label: "Serveur",
     description: "Rôles, permissions, rôles automatiques, vérification",
+    emoji: EMOJI.PENCIL,
     sections: ["permissions", "autorole", "verification"],
   },
-  { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires, giveaways", sections: ["welcome", "leave", "voice", "giveaways"] },
-  { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
-  { key: "communication", label: "Communication", description: "Embed, sondages", sections: ["embedBuilder", "polls"] },
-  { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", sections: ["musicPlayer"] },
+  {
+    key: "communaute",
+    label: "Communauté",
+    description: "Bienvenue, départ, vocaux temporaires, giveaways",
+    emoji: EMOJI.MAIL,
+    sections: ["welcome", "leave", "voice", "giveaways"],
+  },
+  { key: "support", label: "Support", description: "Tickets", emoji: EMOJI.TICKET, sections: ["tickets"] },
+  { key: "communication", label: "Communication", description: "Embed, sondages", emoji: EMOJI.RULES, sections: ["embedBuilder", "polls"] },
+  { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", emoji: EMOJI.VOICE, sections: ["musicPlayer"] },
   // Historique reste sous Modération (module 4) : la fiche membre y renvoie
   // déjà directement, un aller-retour de famille en plus n'aurait rien
   // apporté. Pas de rubrique "Scan de sécurité" séparée non plus : Sécurité >
   // Vue d'ensemble (module 3) affiche déjà exactement computeSecurityScan en
   // entier — une deuxième rubrique identique aurait été une redite, pas un
   // vrai regroupement.
-  { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", sections: ["logs", "stats", "diagnostics"] },
-  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", sections: ["backups"] },
+  { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", emoji: EMOJI.ONLINE, sections: ["logs", "stats", "diagnostics"] },
+  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", emoji: EMOJI.ARROW, sections: ["backups"] },
   {
     key: "bot",
     label: "Bot",
     description: "Préfixes, profil du bot, accès au panel, rang sys, ban de masse, dispenses",
+    emoji: EMOJI.DISCORD,
     sections: ["prefixes", "botProfile", "access", "sys", "banall", "moderation"],
   },
 ];
@@ -259,6 +268,7 @@ function buildNav(current, member, isOwner) {
           .setDescription(f.description.slice(0, 100))
           .setValue(f.key)
           .setDefault(f.key === famille.key)
+          .setEmoji(f.emoji)
       )
     );
 }

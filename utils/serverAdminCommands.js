@@ -16,6 +16,7 @@ const {
   TextInputStyle,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { EMOJI } = require("./emojis");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
@@ -188,8 +189,8 @@ function requestConfirmation(message, { title, body, confirmLabel, permission, e
   return message.reply(
     card(title, body, [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(EMOJI.CHECK),
+        new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROSS)
       ),
     ])
   );
