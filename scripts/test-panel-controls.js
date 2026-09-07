@@ -233,66 +233,57 @@ function actionsDe(json) {
     ...extra,
   });
 
-  await cas("sans rôle choisi, aucun bouton \"voir les commandes débloquées\"", () => {
+  await cas("sans rôle choisi, le sélecteur de rôle est proposé", () => {
     const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(!boutons.some((b) => b.custom_id?.includes("permshowcmds")), "le bouton ne devrait apparaître qu'une fois un rôle choisi");
+    const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    assert.ok(composants.some((c) => c.custom_id === `${ID}:permrole`), "le sélecteur de rôle doit apparaître tant qu'aucun rôle n'est choisi");
   });
 
-  await cas("un rôle choisi propose l'action \"Voir les commandes débloquées\"", () => {
+  await cas("une fois le rôle choisi, le sélecteur DISPARAÎT au profit d'une action pour en changer", () => {
+    // Il ne servait plus à rien à ce moment-là et repoussait les vrais
+    // réglages hors de l'écran.
     const json = buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON();
-    const action = actionsDe(json).find((a) => a.custom_id === `${ID}:permshowcmds:${roleId}`);
-    assert.ok(action, "l'action \"voir les commandes débloquées\" est absente du menu");
-    assert.strictEqual(action.label, "Voir les commandes débloquées");
-  });
-
-  await cas("le comptage par catégorie ne dit QUE le nombre, jamais les commandes elles-mêmes", () => {
-    const { texte } = render("permissions", { permissionsRoleId: roleId });
-    assert.ok(texte.includes("Permissions du bot accordées"), texte);
-    assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "sans avoir cliqué sur le bouton, la liste ne doit pas apparaître");
-    assert.ok(!texte.includes("`vc`"), "sans le bouton cliqué, aucune commande nommée ne doit apparaître");
-  });
-
-  await cas("cliquer sur le bouton révèle les VRAIES commandes débloquées, pas juste un compte", async () => {
-    let panel = null;
-    await handleConfigInteraction(
-      fakeInteraction(`permshowcmds:${roleId}`, { update: async (p) => { panel = p; } })
-    );
-    // Le clic a bien mené à l'écran "commandes affichées" : son bouton bascule
-    // vers "Masquer".
+    const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    assert.ok(!composants.some((c) => c.custom_id === `${ID}:permrole`), "le sélecteur de rôle doit disparaître une fois un rôle choisi");
     assert.ok(
-      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:permhidecmds:${roleId}`),
-      "l'action doit basculer vers \"Masquer\""
+      actionsDe(json).some((a) => a.custom_id === `${ID}:permrolereset`),
+      "une action doit permettre de changer de rôle"
     );
-    // Ce que cet écran AFFICHE se lit sur la spec dessinée (le corps des
-    // rubriques est une image) — même état que celui produit par le clic.
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: true });
-    assert.ok(texte.includes("Commandes débloquées par ce rôle"), texte);
+  });
+
+  await cas("les commandes débloquées sont TOUJOURS affichées, plus derrière un bouton", () => {
+    // Elles arrivaient auparavant dans un message éphémère ouvert à côté du
+    // panneau ; elles font maintenant partie de l'écran lui-même.
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
+    assert.ok(texte.includes("Commandes débloquées"), texte);
     assert.ok(texte.includes("vc") || texte.includes("stats"), `attendu vc/stats (server.stats.view) : ${texte}`);
+    assert.ok(!actionsDe(buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON()).some((a) => /permshowcmds|permhidecmds/.test(a.custom_id)), "plus de bascule Voir/Masquer");
   });
 
-  await cas("un second clic (déjà affiché) bascule vers \"Masquer\" et referme la liste", async () => {
+  await cas("\"Voir les membres\" affiche la liste DANS l'écran, pas dans un message à côté", async () => {
     let panel = null;
-    await handleConfigInteraction(
-      fakeInteraction(`permhidecmds:${roleId}`, { update: async (p) => { panel = p; } })
-    );
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: false });
-    assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "la liste devrait être repliée après un second clic");
+    await handleConfigInteraction(fakeInteraction(`rolemembers:${roleId}`, { update: async (p) => { panel = p; } }));
+    assert.ok(panel, "le panneau doit être réaffiché");
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowMembers: true });
+    assert.ok(texte.includes("Membres ayant ce rôle"), texte);
+    // Et de quoi refermer la liste.
     assert.ok(
-      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:permshowcmds:${roleId}`),
-      "l'action doit repasser à \"Voir les commandes débloquées\" une fois repliée"
+      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:rolemembershide:${roleId}`),
+      "l'action doit basculer vers \"Masquer les membres\""
     );
   });
 
   await cas("une permission accordée SANS commande dédiée (ex. accès à une rubrique du panel) reste visible — pas juste \"0 : aucune\"", () => {
     const roleId2 = "role-2";
-    guild.roles.cache.set(roleId2, { id: roleId2, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
+    // `members` est une Collection sur un vrai rôle : le mock la reproduit,
+    // la liste des membres étant désormais affichée dans l'écran.
+    guild.roles.cache.set(roleId2, { id: roleId2, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
     // panel.roles.manage donne accès à une rubrique du panel, pas à une
     // commande tapée : reproduit le cas "1 permission accordée" affichant
     // "0 commande débloquée" sans explication.
     permStore.setRoleGrants("g1", roleId2, ["panel.roles.manage"]);
-    const { texte } = render("permissions", { permissionsRoleId: roleId2, permissionsShowCommands: true });
-    assert.ok(texte.includes("Commandes débloquées par ce rôle (0)"), texte);
+    const texte = texteDessine("permissions", { permissionsRoleId: roleId2 });
+    assert.ok(texte.includes("Commandes débloquées (0)"), texte);
     assert.ok(texte.includes("Accès sans commande dédiée (1)"), texte);
     assert.ok(!texte.includes("panel.roles.manage"), "la clé technique ne doit pas apparaître, seulement son libellé");
   });

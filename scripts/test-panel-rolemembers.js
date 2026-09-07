@@ -16,7 +16,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-rolemembers-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const permStore = require("../utils/permissions/store");
 
 let reussis = 0;
@@ -111,12 +111,14 @@ function buttons(guild, member, state) {
       },
     });
     assert.ok(updated, "le panel doit rester sur la rubrique Rôles et permissions");
-    const texte = followedUp.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("Membres du rôle Modérateur"), texte);
-    // Régression fakeMessage (module 5) : le flag Ephemeral ne doit pas
-    // écraser IsComponentsV2, sinon Discord refuserait ce message.
-    const { MessageFlags } = require("discord.js");
-    assert.ok((followedUp.flags & MessageFlags.IsComponentsV2) === MessageFlags.IsComponentsV2, followedUp.flags);
+    // La liste s'affiche DANS l'écran, plus dans un message éphémère ouvert à
+    // côté : on la lit donc sur la spec réellement dessinée.
+    assert.strictEqual(followedUp, null, "aucun message séparé ne doit être posté");
+    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: ROLE_ID, permissionsShowMembers: true });
+    const texte = spec.cartes
+      .flatMap((carte) => [carte.titre || "", ...carte.items.map((i) => `${i.nom} ${i.description || ""}`)])
+      .join("\n");
+    assert.ok(texte.includes("Membres ayant ce rôle"), texte);
   });
 
   await cas("sans server.members.list, actionner directement le bouton reste refusé", async () => {

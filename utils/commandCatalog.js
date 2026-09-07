@@ -42,7 +42,7 @@ const CATEGORIES = [
         name: "uo clear",
         prefix: null,
         permission: null,
-        description: "Sans préfixe, efface tes propres messages du salon. Variantes : `anas clear`, `yanis clear`",
+        description: "Sans préfixe, efface tes propres messages du salon",
       },
       {
         name: "clear <@membre|id> [nombre]",
@@ -53,10 +53,10 @@ const CATEGORIES = [
       },
       { name: "kick @membre [raison]", prefix: "mod", permission: "moderation.kick", description: "Expulse un membre" },
       {
-        name: "ban [@membre] [raison]",
+        name: "ban <@membre|id> [raison]",
         prefix: "mod",
         permission: "moderation.ban",
-        description: "Bannit un membre (confirmation obligatoire). Sans cible, propose un menu",
+        description: "Bannit un membre. La cible se donne par mention ou par identifiant",
       },
       {
         name: "unban [id]",

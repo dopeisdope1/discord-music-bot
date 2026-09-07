@@ -3,15 +3,17 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
 const accessStore = require("./accessStore");
 
-// Déclencheurs texte exacts (insensibles à la casse, pas de préfixe requis,
-// accessibles à tout le monde) — chacun supprime les messages de son propre
-// auteur dans le salon. Format de confirmation minimal (embed classique, pas
-// de carte Components V2).
-const TRIGGERS = new Set(["uo clear", "anas clear", "yanis clear"]);
+// Déclencheur texte exact (insensible à la casse, pas de préfixe requis,
+// accessible à tout le monde) : supprime les messages de son propre auteur
+// dans le salon. Format de confirmation minimal (embed classique, pas de
+// carte Components V2).
+//
+// Les variantes "anas clear" et "yanis clear" ont été retirées sur demande :
+// elles n'étaient que des synonymes du même effet.
+const TRIGGERS = new Set(["uo clear"]);
 
-// Le quota est PAR MEMBRE et couvre les trois déclencheurs ensemble (le
-// limiteur est indexé sur l'auteur, pas sur le mot tapé) : on ne peut donc
-// pas contourner la limite en alternant "uo clear" et "anas clear".
+// Le quota est PAR MEMBRE (le limiteur est indexé sur l'auteur, pas sur le
+// mot tapé).
 const MAX_USES = 2;
 const WINDOW_MS = 25 * 60_000;
 const limiter = createRateLimiter(MAX_USES, WINDOW_MS);

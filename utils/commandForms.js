@@ -1571,7 +1571,11 @@ function buildFormCard(formKey, member) {
       )
     );
   }
-  if (form.fields.includes("user")) {
+  // Le sélecteur de membre n'apparaît QUE si la cible manque encore : quand
+  // elle a été donnée par mention ou par identifiant (« &addrole @untel »),
+  // la carte n'a plus à redemander qui viser — elle l'affiche déjà, avatar
+  // compris, sur son aperçu.
+  if (form.fields.includes("user") && !active.userId) {
     rows.push(
       new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CARD_ID}:user:${formKey}`).setPlaceholder("Choisir un membre"))
     );

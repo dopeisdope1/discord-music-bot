@@ -83,7 +83,7 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
     const menu = menuActionsDe("permissions", { permissionsRoleId: ROLE_ID });
     assert.ok(menu, "un menu d'actions doit exister");
     const labels = menu.options.map((o) => o.label);
-    for (const attendu of ["Créer un rôle", "Voir les commandes débloquées", "Voir les membres"]) {
+    for (const attendu of ["Créer un rôle", "Choisir un autre rôle", "Voir les membres"]) {
       assert.ok(labels.includes(attendu), `${attendu} manque : ${labels.join(", ")}`);
     }
   });
@@ -98,7 +98,7 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
 
   await cas("choisir une action déclenche le MÊME handler que le bouton d'origine", async () => {
     const menu = menuActionsDe("permissions", { permissionsRoleId: ROLE_ID });
-    const voirCommandes = menu.options.find((o) => o.label === "Voir les commandes débloquées");
+    const voirCommandes = menu.options.find((o) => o.label === "Voir les membres");
     let misAJour = null;
     await handleConfigInteraction({
       customId: `${ID}:action`,

@@ -102,7 +102,7 @@ const ID = "cfg";
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
   { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
-  { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage, ancien accès aux salons", permission: "sys" },
+  { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage", permission: "sys" },
   {
     key: "permissions",
     label: "Rôles et permissions",
@@ -180,9 +180,8 @@ function hasAnyPanelAccess(member) {
   return sectionsFor(member, isOwner).some((s) => s.ownerOnly || s.visible || s.permission != null);
 }
 
-// Rubrique à rouvrir après avoir modifié une portée legacy (accessStore) :
-// "clear" et "salon" vivent toutes deux sous "moderation" ici.
-const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys", banall: "banall" };
+// Rubrique à rouvrir après avoir modifié une portée legacy (accessStore).
+const SECTION_OF_SCOPE = { clear: "moderation", sys: "sys", banall: "banall" };
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
@@ -368,8 +367,9 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "moderation") {
     return [
-      `> **Dispensés du quota de nettoyage** : ${mentions(accessStore.list("clear"))}`,
-      `> **Accès legacy aux commandes de salon** : ${mentions(accessStore.list("salon"))}`,
+      // La dispense « accès legacy aux salons » a été retirée sur demande :
+      // il ne reste que celle qui sert vraiment, le quota de `uo clear`.
+      `> **Dispensés du quota de \`uo clear\`** : ${mentions(accessStore.list("clear"))}`,
     ].join("\n");
   }
 
@@ -410,20 +410,36 @@ function sectionBody(section, guild, member, state) {
       ...parCategorie,
     ];
 
-    // Le nombre par catégorie ne dit pas QUELLES commandes ça débloque —
-    // bouton "Voir les commandes débloquées" plus bas pour l'afficher en clair.
-    if (state.permissionsShowCommands) {
-      const commands = commandsForKeys(granted);
-      lines.push("", `**Commandes débloquées par ce rôle (${commands.length})** :`);
-      lines.push(commands.length ? commands.map((c) => `\`${c}\``).join(", ") : "*aucune*");
-      // Une clé accordée peut donner accès à une rubrique du panel plutôt
-      // qu'à une commande tapée — sans cette section, "0 commande" donnait
-      // l'impression fausse que rien n'était accordé du tout.
-      const autres = nonCommandGrants(granted);
-      if (autres.length) {
-        lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
-        lines.push(autres.map((l) => `\`${l}\``).join(", "));
-      }
+    // Les commandes débloquées sont affichées d'office : un compte par
+    // catégorie ne dit pas CE que le rôle peut faire. L'ancien bouton "Voir
+    // les commandes débloquées" renvoyait la liste dans un message éphémère,
+    // à côté du panneau au lieu d'être dedans.
+    const commands = commandsForKeys(granted);
+    lines.push("", `**Commandes débloquées (${commands.length})** :`);
+    lines.push(commands.length ? commands.map((c) => `\`${c}\``).join(", ") : "*aucune*");
+    // Une clé accordée peut donner accès à une rubrique du panel plutôt
+    // qu'à une commande tapée — sans cette section, "0 commande" donnait
+    // l'impression fausse que rien n'était accordé du tout.
+    const autres = nonCommandGrants(granted);
+    if (autres.length) {
+      lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
+      lines.push(autres.map((l) => `\`${l}\``).join(", "));
+    }
+
+    // Les membres du rôle, eux aussi dans l'image plutôt que dans un message
+    // éphémère qu'il fallait ouvrir à côté.
+    if (state.permissionsShowMembers) {
+      // `role.members` est une Collection sur un vrai rôle, mais l'objet reçu
+      // peut être partiel selon l'appelant : on ne suppose pas sa forme.
+      const tous = typeof role.members?.values === "function" ? [...role.members.values()] : [];
+      const membres = tous.slice(0, 30);
+      const reste = (role.members?.size || 0) - membres.length;
+      lines.push("", `**Membres ayant ce rôle (${role.members.size})** :`);
+      lines.push(
+        membres.length
+          ? membres.map((m) => m.user?.username || m.id).join(", ") + (reste > 0 ? `, +${reste}` : "")
+          : "*personne*"
+      );
     }
 
     return lines.join("\n");
@@ -1012,18 +1028,23 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
-    for (const row of accessRows("salon", "accès legacy aux salons")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
     const peutModifier = can(member, "panel.permissions.manage");
     // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
     // toutes les clés : Discord plafonne un menu à 25 options, et le
     // catalogue (utils/permissions/catalog.js) a vocation à grandir —
     // chaque catégorie reste largement sous la limite, indéfiniment.
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
-      )
-    );
+    // Le sélecteur de rôle DISPARAÎT une fois un rôle choisi : il ne sert
+    // plus à rien à ce moment-là et poussait les vrais réglages hors de
+    // l'écran. Pour en changer, l'action "Choisir un autre rôle" plus bas.
+    const roleChoisi = state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId);
+    if (!roleChoisi) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
+        )
+      );
+    }
     if (peutModifier) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -1036,24 +1057,28 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       // serveur entre deux interactions) : le libellé/l'action reflètent ce
       // que CE rendu affiche déjà, donc un clic fait toujours l'inverse.
       const exclusif = permStore.isRoleExclusive(guild.id, state.permissionsRoleId);
+      // Les commandes débloquées sont maintenant TOUJOURS dans l'image : plus
+      // de bascule "Voir / Masquer". Ne reste que de quoi changer de rôle.
       const boutons = [
-        state.permissionsShowCommands
-          ? new ButtonBuilder()
-              .setCustomId(`${ID}:permhidecmds:${state.permissionsRoleId}`)
-              .setLabel("Masquer les commandes débloquées")
-              .setStyle(ButtonStyle.Secondary)
-          : new ButtonBuilder()
-              .setCustomId(`${ID}:permshowcmds:${state.permissionsRoleId}`)
-              .setLabel("Voir les commandes débloquées")
-              .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`${ID}:permrolereset`)
+          .setLabel("Choisir un autre rôle")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji(EMOJI.PENCIL),
       ];
       if (can(member, "server.members.list")) {
         boutons.push(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`)
-            .setLabel("Voir les membres")
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji(EMOJI.MEMBERS)
+          state.permissionsShowMembers
+            ? new ButtonBuilder()
+                .setCustomId(`${ID}:rolemembershide:${state.permissionsRoleId}`)
+                .setLabel("Masquer les membres")
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji(EMOJI.MEMBERS)
+            : new ButtonBuilder()
+                .setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`)
+                .setLabel("Voir les membres")
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji(EMOJI.MEMBERS)
         );
       }
       if (peutModifier) {
@@ -1773,23 +1798,18 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
 
-  if (action === "permshowcmds" || action === "permhidecmds") {
-    if (!can(member, "panel.permissions.manage") && !can(member, "panel.roles.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    return goto("permissions", { permissionsRoleId: extra, permissionsShowCommands: action === "permshowcmds" });
+  // Revenir au sélecteur de rôle : il disparaît une fois un rôle choisi, donc
+  // il faut un moyen d'en changer sans quitter la rubrique.
+  if (action === "permrolereset") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", {});
   }
 
-  // Réutilise TEL QUEL &rolemembers (utils/utilityCommands.js), jamais
-  // exposé dans le panel jusqu'ici — même liste paginée qu'en tapant la
-  // commande, juste ouverte depuis la fiche du rôle.
-  if (action === "rolemembers") {
+  // Les membres du rôle s'affichent DANS l'image du panneau, plus dans un
+  // message éphémère ouvert à côté.
+  if (action === "rolemembers" || action === "rolemembershide") {
     if (!can(member, "server.members.list")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const role = guild.roles.cache.get(extra);
-    await goto("permissions", { permissionsRoleId: extra });
-    if (!role) return;
-    await utilityHandlers.rolemembers(interaction.client, fakeMessage(interaction, { role }), []);
-    return;
+    return goto("permissions", { permissionsRoleId: extra, permissionsShowMembers: action === "rolemembers" });
   }
 
   // Giveaways : démarrer réutilise la carte de formulaire existante
