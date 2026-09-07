@@ -15,7 +15,7 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const { rendreEnCache, resumer } = require("./dashboardImage");
+const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
 
 // Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
 // identité visuelle pour les deux "pages" du même système, demande
@@ -416,15 +416,25 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
  * @param {string|null} [tier] catégorie active (une clé de CATEGORIES, ou null pour l'accueil)
  * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
  * @param {number} [page] page de commandes affichée dans la catégorie active
+ * @param {{sansImage?: boolean}} [options] `sansImage` force le repli TEXTE —
+ *   utilisé après un envoi refusé par Discord (voir utils/musicCommands.js) :
+ *   inutile de redessiner une image que le salon n'acceptera pas davantage.
  */
-function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
+function buildHelpPanel(guildId, member, tier = null, authorId, page = 0, { sansImage = false } = {}) {
   const { spec, availableTiers, activeTier, clampedPage, totalPages } = buildHelpSpec(guildId, member, tier, authorId, page);
-  const png = rendreEnCache(spec);
+  // `null` = le dessin a échoué (rendreEnCache journalise le motif). &help
+  // est la seule porte d'entrée du bot pour qui ne le connaît pas : elle
+  // repasse en texte plutôt que de ne rien répondre.
+  const png = sansImage ? null : rendreEnCache(spec);
 
   const container = new ContainerBuilder().setAccentColor(ACCENT_COLOR);
-  container.addMediaGalleryComponents(
-    new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
-  );
+  if (png) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
+    );
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enTexte(spec)));
+  }
 
   if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -434,10 +444,12 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
     }
   }
 
+  // Sans image, PAS de `files` : un MediaGallery pointant sur une pièce
+  // jointe absente ferait refuser tout le message par Discord.
   return {
     flags: MessageFlags.IsComponentsV2,
     components: [container],
-    files: [new AttachmentBuilder(png, { name: NOM_IMAGE })],
+    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE })] } : {}),
   };
 }
 
@@ -462,15 +474,24 @@ async function handleHelpInteraction(interaction) {
   const estPagination = kind === PAGE_SELECT_ID;
   const page = estPagination ? parseInt(interaction.values?.[0], 10) || 0 : 0;
   const tier = estPagination ? tierDuCustomId : interaction.values?.[0] || null;
-  const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
   // `attachments: []` UNIQUEMENT ici : sur une ÉDITION, Discord conserve les
   // pièces jointes existantes quand le champ est absent — le message
   // accumulerait une image de plus à chaque clic. À la création (message.reply
   // dans musicCommands.js), au contraire, ce champ écraserait la liste que
   // discord.js construit pour l'upload et l'image ne s'afficherait pas.
-  return interaction
-    .update({ ...panel, attachments: [] })
-    .catch((err) => console.error("[helpPanel] interaction.update a échoué :", err));
+  const editer = (sansImage) =>
+    interaction.update({
+      ...buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page, { sansImage }),
+      attachments: [],
+    });
+  // Une édition refusée (pièce jointe interdite dans le salon) laissait le
+  // clic sans réponse : la personne voit « Échec de l'interaction » et &help
+  // reste bloqué sur la page précédente. On rejoue alors la même page en
+  // texte, comme le fait le premier envoi (utils/musicCommands.js).
+  return editer(false).catch((err) => {
+    console.error("[helpPanel] interaction.update a échoué :", err);
+    return editer(true).catch((err2) => console.error("[helpPanel] repli texte refusé lui aussi :", err2));
+  });
 }
 
 module.exports = { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID, ACCENT_COLOR };

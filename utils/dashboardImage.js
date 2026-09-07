@@ -315,7 +315,19 @@ function rendreEnCache(spec) {
     cache.set(cle, connu);
     return connu;
   }
-  const png = rendre(spec);
+  let png;
+  try {
+    png = rendre(spec);
+  } catch (err) {
+    // Un dessin raté ne doit pas SUPPRIMER la commande : &help et &panel
+    // sont la seule façon de découvrir ce que fait le bot, et leur contenu
+    // existe déjà entièrement dans la spec. L'appelant retombe donc sur
+    // enTexte() plutôt que de ne rien afficher — même principe que les
+    // cartes de sanction (utils/actionCard.js), où le rendu qui échoue rend
+    // la main au message texte.
+    console.error("[dashboardImage] rendu impossible :", err);
+    return null;
+  }
   cache.set(cle, png);
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
   return png;
@@ -334,4 +346,62 @@ function resumer(texte) {
   return texte.split(" (")[0].split(/\.\s/)[0].split(" : ")[0].trim();
 }
 
-module.exports = { rendre, rendreEnCache, resumer, LARGEUR };
+// Discord plafonne le texte affichable de TOUS les composants d'un message
+// CUMULÉ à 4000 caractères (voir le commentaire de MAX_CHUNKS_PER_PAGE dans
+// utils/helpPanel.js, où la vraie erreur d'API est recopiée). Le repli tient
+// dans un seul TextDisplay : on vise sous ce plafond, avec de la marge pour
+// l'en-tête et la navigation qui partagent le même budget.
+const BUDGET_TEXTE = 3600;
+
+/**
+ * La MÊME spec, en texte Discord. Sert de repli quand l'image ne peut pas
+ * être dessinée (rendreEnCache a renvoyé null) ou pas être envoyée (le bot
+ * n'a pas « Joindre des fichiers » dans le salon). C'est moins joli — pas de
+ * grille, pas de couleur par catégorie, c'est justement pour ça que l'image
+ * existe — mais la commande reste utilisable, ce qui compte davantage.
+ *
+ * Les pastilles de palier ne sont PAS transposées : leur sens vient de la
+ * légende dessinée, et rendre les deux en texte doublerait la longueur pour
+ * une information que la vue détaillée d'une catégorie donne déjà.
+ *
+ * Défensive de bout en bout : elle est justement appelée quand quelque chose
+ * a déjà mal tourné, un champ absent ne doit pas la faire échouer à son tour.
+ */
+function enTexte(spec, budget = BUDGET_TEXTE) {
+  const s = spec || {};
+  const lignes = [`## 「 ${String(s.titre || "Tableau de bord").toUpperCase()} 」`];
+  if (s.sousTitre) lignes.push(`> ${s.sousTitre}`);
+
+  let coupe = false;
+  const longueur = () => lignes.join("\n").length;
+  const ajouter = (ligne) => {
+    if (coupe) return;
+    // -80 : de quoi loger la mention de coupe et le pied sans repasser au-dessus.
+    if (longueur() + ligne.length + 1 > budget - 80) {
+      coupe = true;
+      return;
+    }
+    lignes.push(ligne);
+  };
+
+  for (const carte of s.cartes || []) {
+    ajouter("");
+    if (carte.titre) ajouter(`### ${carte.titre}`);
+    if (carte.sousTitre) ajouter(`-# ${carte.sousTitre}`);
+    if (!carte.items?.length) {
+      ajouter(carte.vide || "—");
+      continue;
+    }
+    for (const item of carte.items) {
+      ajouter(item.description ? `\`${item.nom}\` — ${item.description}` : `\`${item.nom}\``);
+    }
+  }
+
+  // Dire que la liste est tronquée, plutôt que de la laisser s'arrêter net :
+  // sans ça, une catégorie absente passerait pour une catégorie inexistante.
+  if (coupe) lignes.push("", "-# Liste raccourcie — ouvre une catégorie dans le menu pour la voir en entier.");
+  if (s.pied) lignes.push("", `-# ${s.pied}`);
+  return lignes.join("\n");
+}
+
+module.exports = { rendre, rendreEnCache, resumer, enTexte, LARGEUR };

@@ -236,6 +236,24 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
 moteur de permissions que les commandes et que `&panel`, jamais une liste
 séparée qui pourrait diverger (voir section 6ter).
 
+Le tableau de bord de `&help` et de l'accueil de `&panel` est une **image**
+(`utils/dashboardImage.js`), pas du texte : Discord ne sait disposer aucun
+composant en colonnes, et c'est la seule façon d'obtenir une vraie grille de
+cartes avec une couleur par catégorie — un Container Components V2 n'a qu'UNE
+couleur d'accent pour tout le message. La navigation, elle, reste faite de
+vrais composants Discord (menu déroulant), donc elle ne dépend pas de l'image.
+
+**Si l'image ne peut pas être affichée, la commande n'est pas perdue pour
+autant** : le même contenu repart en texte. Deux cas, tous deux réels sur un
+petit VPS — le dessin échoue, ou Discord refuse le message parce que le bot
+n'a pas la permission « Joindre des fichiers » dans le salon. Avant ce repli,
+`&help` ne répondait alors qu'un « Une erreur est survenue » (et un clic de
+navigation, « Échec de l'interaction »), alors que tout son contenu était
+disponible en texte. Le menu de navigation survit au repli, l'écran reste donc
+pilotable. Même principe que les cartes de sanction, qui retombent sur leur
+message texte plutôt que de laisser croire que l'action a échoué (section
+7ter). Vérifié par `scripts/test-dashboard-fallback.js`.
+
 Il distingue aussi les commandes **actives** de celles qui sont seulement
 **documentées**. Le catalogue liste volontairement des commandes sans backend
 (demande explicite : "intègre tout, même sans backend"), mais les afficher à

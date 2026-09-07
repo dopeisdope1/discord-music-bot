@@ -24,7 +24,7 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
-const { rendreEnCache, resumer } = require("./dashboardImage");
+const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
@@ -908,7 +908,12 @@ function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) 
   };
 }
 
-function buildConfigPanel(guild, current = "home", member, state = {}) {
+/**
+ * @param {{sansImage?: boolean}} [options] `sansImage` force le repli TEXTE —
+ *   posé après un envoi refusé par Discord (voir utils/musicCommands.js) :
+ *   le salon qui refuse une pièce jointe refusera aussi la suivante.
+ */
+function buildConfigPanel(guild, current = "home", member, state = {}, { sansImage = false } = {}) {
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
   const meta = available.find((s) => s.key === current) || available[0];
@@ -939,16 +944,26 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     // Components V2. Les familles, leurs rubriques et leurs droits restent
     // ceux du panel réel — aucune fonction inventée, seulement une mise en
     // page.
-    const png = rendreEnCache(buildHomeSpec(guild, member, isOwner));
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_PANEL}`))
-    );
+    const homeSpec = buildHomeSpec(guild, member, isOwner);
+    // `null` = le dessin a échoué (rendreEnCache journalise le motif) : on
+    // repasse sur la MÊME grille en texte plutôt que de laisser &panel sans
+    // rien afficher. Le menu de navigation, lui, ne dépend pas de l'image.
+    const png = sansImage ? null : rendreEnCache(homeSpec);
+    if (png) {
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_PANEL}`))
+      );
+    } else {
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enTexte(homeSpec)));
+    }
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
     return {
       flags: MessageFlags.IsComponentsV2,
       components: [container],
-      files: [new AttachmentBuilder(png, { name: NOM_IMAGE_PANEL })],
+      // Sans image, PAS de `files` : un MediaGallery qui pointe sur une pièce
+      // jointe absente ferait refuser tout le message par Discord.
+      ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE_PANEL })] } : {}),
     };
   }
 
@@ -958,8 +973,21 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   // casier valent mieux qu'une liste de lignes. Les autres écrans restent en
   // texte — ce sont des réglages, pas des fiches.
   const cibleFiche = meta.key === "modCenter" && state.modTargetId ? guild.members.cache.get(state.modTargetId) : null;
-  if (cibleFiche) {
-    fichiers.push(new AttachmentBuilder(rendreCarteActionSync(buildFicheMembreSpec(guild, cibleFiche)), { name: NOM_IMAGE_FICHE }));
+  // Une fiche qui ne se dessine pas ne doit pas emporter TOUT le centre de
+  // modération : sans ce garde-fou, l'exception remonte avant l'appel à
+  // interaction.update() et le clic reste sans réponse ("Échec de
+  // l'interaction"), boutons d'action compris. On retombe alors sur le texte
+  // de la rubrique, comme quand aucun membre n'est sélectionné.
+  let ficheImage = null;
+  if (cibleFiche && !sansImage) {
+    try {
+      ficheImage = rendreCarteActionSync(buildFicheMembreSpec(guild, cibleFiche));
+    } catch (err) {
+      console.error("[configPanel] fiche membre non rendue :", err);
+    }
+  }
+  if (ficheImage) {
+    fichiers.push(new AttachmentBuilder(ficheImage, { name: NOM_IMAGE_FICHE }));
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_FICHE}`))
     );
@@ -1742,7 +1770,17 @@ async function handleConfigInteraction(interaction) {
   // l'accueil, fiche membre). Sans ce champ, Discord conserve les pièces
   // jointes précédentes et le message accumule une image de plus à chaque
   // clic — y compris en revenant sur un écran qui n'en a aucune.
-  const goto = (section, state) => interaction.update({ ...buildConfigPanel(guild, section, member, state), attachments: [] });
+  // Une édition refusée (pièce jointe interdite dans le salon, écran à image)
+  // laissait le clic sans réponse — « Échec de l'interaction », panel figé sur
+  // l'écran précédent. On rejoue alors le même écran en texte, comme le fait
+  // le premier envoi (utils/musicCommands.js::repondreAvecTableauDeBord).
+  const editer = (section, state, sansImage) =>
+    interaction.update({ ...buildConfigPanel(guild, section, member, state, { sansImage }), attachments: [] });
+  const goto = (section, state) =>
+    editer(section, state, false).catch((err) => {
+      console.error("[configPanel] interaction.update a échoué :", err);
+      return editer(section, state, true).catch((err2) => console.error("[configPanel] repli texte refusé lui aussi :", err2));
+    });
 
   if (action === "nav") {
     // Le bouton de navigation donne une famille (clé dans le customId,

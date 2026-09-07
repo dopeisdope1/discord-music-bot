@@ -290,11 +290,40 @@ function requirePermission(key, handler) {
   };
 }
 
+/**
+ * Poste un tableau de bord (&help, &panel), et retombe sur sa version TEXTE
+ * si Discord refuse le message.
+ *
+ * Le cas qui arrive vraiment : le bot n'a pas la permission « Joindre des
+ * fichiers » dans le salon. Le tableau de bord est une IMAGE jointe et rien
+ * d'autre — sans ce garde-fou, l'exception remonte jusqu'au filet de
+ * index.js et la personne ne reçoit qu'un « Une erreur est survenue », alors
+ * que tout le contenu de &help était disponible en texte. Même principe que
+ * utils/actionCard.js::repondreAvecCarte pour les cartes de sanction.
+ * @param {import('discord.js').Message} message
+ * @param {(sansImage: boolean) => object} construire
+ */
+async function repondreAvecTableauDeBord(message, construire) {
+  // Construit AVANT le try : seul un ENVOI refusé doit déclencher le repli.
+  // Une erreur de construction, elle, doit remonter telle quelle au filet de
+  // index.js — la rejouer en texte ne la corrigerait pas et la ferait passer
+  // pour un problème de permission dans les logs.
+  const avecImage = construire(false);
+  try {
+    return await message.reply(avecImage);
+  } catch (err) {
+    console.error(`[dashboard] envoi de l'image refusé (permission « Joindre des fichiers » ?) : ${err.message}`);
+    return message.reply(construire(true));
+  }
+}
+
 const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
   // de la personne (voir utils/helpPanel.js).
   async help(client, message) {
-    await message.reply(buildHelpPanel(message.guild.id, message.member, null, message.author.id));
+    await repondreAvecTableauDeBord(message, (sansImage) =>
+      buildHelpPanel(message.guild.id, message.member, null, message.author.id, 0, { sansImage })
+    );
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne
@@ -306,7 +335,9 @@ const modHandlers = {
 
   async panel(client, message) {
     if (!hasAnyPanelAccess(message.member)) return;
-    await message.reply(buildConfigPanel(message.guild, "home", message.member));
+    await repondreAvecTableauDeBord(message, (sansImage) =>
+      buildConfigPanel(message.guild, "home", message.member, {}, { sansImage })
+    );
   },
 
   // Dit d'où le son peut encore venir (voir utils/sourcesDiagnostic.js) : la
