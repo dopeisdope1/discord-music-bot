@@ -973,28 +973,38 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       // deuxième implémentation de l'action, juste un raccourci vers celle qui
       // existe déjà (voir utils/commandForms.js).
       const actions = [];
-      if (can(member, "moderation.warn")) actions.push(["warn_member", "Warn", ButtonStyle.Secondary]);
-      if (can(member, "moderation.timeout")) actions.push(["timeout_member", "Timeout", ButtonStyle.Secondary]);
-      if (can(member, "moderation.kick")) actions.push(["kick_member", "Kick", ButtonStyle.Danger]);
-      if (can(member, "moderation.ban")) actions.push(["ban_member", "Ban", ButtonStyle.Danger]);
-      if (can(member, "logs.view")) actions.push([null, "Historique complet", ButtonStyle.Secondary]);
+      if (can(member, "moderation.warn")) actions.push(["warn_member", "Warn", ButtonStyle.Secondary, EMOJI.INFO]);
+      if (can(member, "moderation.timeout")) actions.push(["timeout_member", "Timeout", ButtonStyle.Secondary, EMOJI.MUTE]);
+      if (can(member, "moderation.kick")) actions.push(["kick_member", "Kick", ButtonStyle.Danger, EMOJI.KICK]);
+      if (can(member, "moderation.ban")) actions.push(["ban_member", "Ban", ButtonStyle.Danger, EMOJI.BAN]);
+      if (can(member, "logs.view")) actions.push([null, "Historique complet", ButtonStyle.Secondary, null]);
       if (actions.length) {
         container.addActionRowComponents(
           new ActionRowBuilder().addComponents(
-            actions.slice(0, 5).map(([formKey, label, style]) =>
-              new ButtonBuilder()
+            actions.slice(0, 5).map(([formKey, label, style, emoji]) => {
+              const button = new ButtonBuilder()
                 .setCustomId(formKey ? `${ID}:modaction:${formKey}:${targetMember.id}` : `${ID}:modhistory:${targetMember.id}`)
                 .setLabel(label)
-                .setStyle(style)
-            )
+                .setStyle(style);
+              if (emoji) button.setEmoji(emoji);
+              return button;
+            })
           )
         );
       }
       if (can(member, "members.role")) {
         container.addActionRowComponents(
           new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:modaction:addrole_member:${targetMember.id}`).setLabel("Ajouter un rôle").setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`${ID}:modaction:delrole_member:${targetMember.id}`).setLabel("Retirer un rôle").setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder()
+              .setCustomId(`${ID}:modaction:addrole_member:${targetMember.id}`)
+              .setLabel("Ajouter un rôle")
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji(EMOJI.CHECK),
+            new ButtonBuilder()
+              .setCustomId(`${ID}:modaction:delrole_member:${targetMember.id}`)
+              .setLabel("Retirer un rôle")
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji(EMOJI.CROSS)
           )
         );
       }

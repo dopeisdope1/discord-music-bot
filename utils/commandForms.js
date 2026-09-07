@@ -16,6 +16,7 @@ const {
   ChannelType,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
+const { EMOJI } = require("./emojis");
 const { startGiveaway, rerollGiveaway, endGiveaway, MAX_WINNERS } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
@@ -191,6 +192,7 @@ const FORMS = {
     label: "Expulser un membre",
     category: "moderation",
     permission: "moderation.kick",
+    emoji: EMOJI.KICK,
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -206,6 +208,7 @@ const FORMS = {
     label: "Timeout un membre",
     category: "moderation",
     permission: "moderation.timeout",
+    emoji: EMOJI.MUTE,
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
@@ -238,6 +241,7 @@ const FORMS = {
     label: "Bannir un membre",
     category: "moderation",
     permission: "moderation.ban",
+    emoji: EMOJI.BAN,
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -253,6 +257,7 @@ const FORMS = {
     label: "Softban un membre",
     category: "moderation",
     permission: "moderation.softban",
+    emoji: EMOJI.BAN,
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -268,6 +273,7 @@ const FORMS = {
     label: "Débannir (par ID)",
     category: "moderation",
     permission: "moderation.unban",
+    emoji: EMOJI.CHECK,
     fields: [],
     textFields: [{ key: "id", label: "Identifiant Discord du membre banni", max: 25 }],
     ready: (v) => Boolean(v.text?.id),
@@ -354,6 +360,7 @@ const FORMS = {
     label: "Mute un membre",
     category: "moderation",
     permission: "moderation.timeout",
+    emoji: EMOJI.MUTE,
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -372,6 +379,7 @@ const FORMS = {
     label: "Derank un membre (retire tous ses rôles)",
     category: "moderation",
     permission: "members.role",
+    emoji: EMOJI.DELETE,
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -386,6 +394,7 @@ const FORMS = {
     label: "Lever un timeout",
     category: "moderation",
     permission: "moderation.timeout",
+    emoji: EMOJI.UNMUTE,
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -400,6 +409,7 @@ const FORMS = {
     label: "Lever un mute",
     category: "moderation",
     permission: "moderation.timeout",
+    emoji: EMOJI.UNMUTE,
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -414,6 +424,7 @@ const FORMS = {
     label: "Tempmute un membre",
     category: "moderation",
     permission: "moderation.timeout",
+    emoji: EMOJI.MUTE,
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
@@ -432,6 +443,7 @@ const FORMS = {
     label: "Tempban un membre",
     category: "moderation",
     permission: "moderation.ban",
+    emoji: EMOJI.BAN,
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 1d, 12h, 1w)", max: 20 },
@@ -1092,6 +1104,7 @@ const FORMS = {
     label: "Avertir un membre",
     category: "moderation",
     permission: "moderation.warn",
+    emoji: EMOJI.INFO,
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -1121,6 +1134,7 @@ const FORMS = {
     label: "Retirer un avertissement",
     category: "moderation",
     permission: "logs.manage",
+    emoji: EMOJI.CROSS,
     fields: ["user"],
     textFields: [{ key: "caseNumber", label: "Numéro de case (voir &warnings)", max: 10 }],
     ready: (v) => Boolean(v.userId && v.text?.caseNumber),
@@ -1486,9 +1500,13 @@ function buildFormCard(formKey, member) {
         .setDisabled(capturing)
     );
   }
-  buttons.push(
-    new ButtonBuilder().setCustomId(`${CARD_ID}:launch:${formKey}`).setLabel("Lancer").setStyle(ButtonStyle.Success).setDisabled(!form.ready(active))
-  );
+  const launchButton = new ButtonBuilder()
+    .setCustomId(`${CARD_ID}:launch:${formKey}`)
+    .setLabel("Lancer")
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(!form.ready(active));
+  if (form.emoji) launchButton.setEmoji(form.emoji);
+  buttons.push(launchButton);
   rows.push(new ActionRowBuilder().addComponents(...buttons));
 
   // Un Container Components V2 accepte 10 composants au maximum, et on en garde
