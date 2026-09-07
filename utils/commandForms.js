@@ -1,5 +1,4 @@
 const {
-  Collection,
   MessageFlags,
   ContainerBuilder,
   TextDisplayBuilder,
@@ -31,6 +30,7 @@ const { automodHandlers } = require("./automodCommands");
 const { configHandlers } = require("./configCommands");
 const permCatalog = require("./permissions/catalog");
 const { autoroleHandlers } = require("./autoroleCommands");
+const { fakeMessage } = require("./fakeMessage");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -45,10 +45,6 @@ const { autoroleHandlers } = require("./autoroleCommands");
 // utils/commandCatalog.js). Complété au fil des prochaines commandes qui
 // gagnent un vrai backend.
 
-/**
- * @param {import('discord.js').Interaction} interaction
- * @param {{ channel?, channels?, user?, role?, roles?, text?: string }} [opts]
- */
 /**
  * Construit le faux message pour un champ "mentionable" déjà résolu (rôle OU
  * membre, voir extractFormValues/handleFormCardInteraction) — factorisé car
@@ -71,31 +67,6 @@ async function resolveMentionableMessage(interaction, v) {
     return null;
   }
   return fakeMessage(interaction, { user: member });
-}
-
-function fakeMessage(interaction, { channel, channels, user, role, roles: roleList, text = "" } = {}) {
-  const users = new Collection();
-  const members = new Collection();
-  const roles = new Collection();
-  const channelsColl = new Collection();
-  if (user) {
-    users.set(user.id, user.user || user);
-    if (user.roles) members.set(user.id, user); // un GuildMember complet (a .roles.cache) alimente aussi mentions.members
-  }
-  if (role) roles.set(role.id, role);
-  for (const r of roleList || []) roles.set(r.id, r);
-  for (const c of channels || []) channelsColl.set(c.id, c); // ordre d'insertion préservé, important pour &voicemove (from -> to)
-
-  return {
-    author: interaction.user,
-    member: interaction.member,
-    guild: interaction.guild,
-    channel: channel || interaction.channel,
-    content: text,
-    attachments: { first: () => null },
-    mentions: { users, members, roles, channels: channelsColl, everyone: false },
-    reply: (payload) => interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral }).catch(() => {}),
-  };
 }
 
 const CATEGORIES = {

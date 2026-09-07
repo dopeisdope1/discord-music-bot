@@ -123,23 +123,38 @@ const SECTION_OF_SCOPE = { clear: "moderation", salon: "moderation", sys: "sys",
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
-// Seize rubriques dans un seul menu, c'était une liste à faire défiler dont on
-// ne retenait rien. Elles sont regroupées par FAMILLE : le menu principal en
-// propose sept, et un second menu n'apparaît que pour choisir dans la famille
-// ouverte.
+// Rubriques regroupées par FAMILLE (centre de contrôle, refonte du panel) :
+// le menu principal ne montre que les familles, un second menu n'apparaît
+// que pour choisir une rubrique dans la famille ouverte. Onze familles
+// cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
+// Communication/Musique/Monitoring/Sauvegardes/Bot) — celles encore vides
+// aujourd'hui (Communication, Musique, Sauvegardes) n'apparaissent pas
+// encore dans ce tableau : elles arrivent avec le module qui leur donne un
+// vrai contenu plutôt que d'exposer un onglet qui ne fait rien.
 //
 // Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
 // ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
 // famille sans jamais partager le même écran : l'un donne accès à tout le bot,
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
 const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Vue d'ensemble", sections: ["home"] },
-  { key: "acces", label: "Permissions et accès", description: "Qui a le droit de quoi", sections: ["permissions", "access", "sys", "banall"] },
-  { key: "protection", label: "Protection", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
-  { key: "journal", label: "Logs et historique", description: "Salons de logs, recherche dans l'historique", sections: ["logs", "history"] },
-  { key: "communaute", label: "Communauté", description: "Bienvenue, tickets, vocaux temporaires", sections: ["welcome", "leave", "tickets", "voice"] },
-  { key: "membres", label: "Membres", description: "Rôles automatiques, vérification", sections: ["autorole", "verification"] },
-  { key: "bot", label: "Réglages du bot", description: "Préfixes, dispenses", sections: ["prefixes", "moderation"] },
+  { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", sections: ["home"] },
+  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
+  { key: "moderation", label: "Modération", description: "Historique des sanctions", sections: ["history"] },
+  {
+    key: "serveur",
+    label: "Serveur",
+    description: "Rôles, permissions, rôles automatiques, vérification",
+    sections: ["permissions", "autorole", "verification"],
+  },
+  { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires", sections: ["welcome", "leave", "voice"] },
+  { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
+  { key: "monitoring", label: "Monitoring", description: "Salons de logs", sections: ["logs"] },
+  {
+    key: "bot",
+    label: "Bot",
+    description: "Préfixes, accès au panel, rang sys, ban de masse, dispenses",
+    sections: ["prefixes", "access", "sys", "banall", "moderation"],
+  },
 ];
 
 const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
