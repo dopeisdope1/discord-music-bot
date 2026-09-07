@@ -106,8 +106,7 @@ function buttons(guild, section, member, state) {
     const member = mkMember("u-logs", "role-logs");
     let panel = null;
     await handleConfigInteraction({
-      customId: `${ID}:nav`,
-      values: ["moderation"],
+      customId: `${ID}:nav:moderation`,
       member,
       guild,
       update: async (p) => {

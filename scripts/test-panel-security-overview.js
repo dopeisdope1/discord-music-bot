@@ -81,8 +81,7 @@ function titre(section, member) {
   await cas("choisir la famille Sécurité ouvre d'abord la Vue d'ensemble, pas Protection directement", async () => {
     let panel = null;
     const interaction = {
-      customId: `${ID}:nav`,
-      values: ["securite"],
+      customId: `${ID}:nav:securite`,
       member,
       guild,
       update: async (p) => {

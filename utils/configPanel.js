@@ -286,22 +286,29 @@ function familySections(family, member, isOwner) {
   return family.sections.map((key) => visibles.find((s) => s.key === key)).filter(Boolean);
 }
 
+/**
+ * Boutons de navigation entre familles — même logique que le menu de
+ * catégories de &help (identité visuelle partagée, "Centre de commandes" /
+ * "Centre de gestion") : la famille active ressort en style Primary, les
+ * autres en Secondary, réparties sur autant de rangées de 5 que nécessaire
+ * (limite Discord par ActionRow). Remplace l'ancien menu déroulant.
+ * @returns {import('discord.js').ActionRowBuilder[]}
+ */
 function buildNav(current, member, isOwner) {
   const famille = familyOf(current);
   const disponibles = FAMILIES.filter((f) => familySections(f, member, isOwner).length);
-  return new StringSelectMenuBuilder()
-    .setCustomId(`${ID}:nav`)
-    .setPlaceholder("Que veux-tu gérer aujourd'hui ?")
-    .addOptions(
-      disponibles.map((f) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(f.label)
-          .setDescription(f.description.slice(0, 100))
-          .setValue(f.key)
-          .setDefault(f.key === famille.key)
-          .setEmoji(f.emoji)
-      )
-    );
+  const buttons = disponibles.map((f) =>
+    new ButtonBuilder()
+      .setCustomId(`${ID}:nav:${f.key}`)
+      .setLabel(f.label)
+      .setEmoji(f.emoji)
+      .setStyle(f.key === famille.key ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
+  return rows;
 }
 
 /**
@@ -814,15 +821,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
   const meta = available.find((s) => s.key === current) || available[0];
-  const container = new ContainerBuilder();
+  const famille = familyOf(meta.key);
+  // Même couleur que utils/helpPanel.js::ACCENT_COLOR (valeur dupliquée
+  // volontairement, pas importée : configPanel.js <-> helpPanel.js sont déjà
+  // reliés par un require différé dans l'autre sens — un import direct ici
+  // fermerait la boucle, voir le commentaire de hasAnyPanelAccessLazy).
+  const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
 
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## Configuration\n### ${meta.label}`)
+    new TextDisplayBuilder().setContent(
+      ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``, `### ${famille.emoji} ${meta.label}`].join(
+        "\n"
+      )
+    )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
+  for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);
   const subNav = buildSubNav(meta.key, member, isOwner);
   if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
 
@@ -1595,9 +1611,11 @@ async function handleConfigInteraction(interaction) {
   const goto = (section, state) => interaction.update(buildConfigPanel(guild, section, member, state));
 
   if (action === "nav") {
-    // Le menu principal donne une famille : on ouvre sa première rubrique
-    // accessible, celle qui a le plus de chances d'être celle qu'on cherche.
-    const famille = FAMILIES.find((f) => f.key === interaction.values[0]);
+    // Le bouton de navigation donne une famille (clé dans le customId,
+    // "cfg:nav:<clé>" — plus un menu déroulant) : on ouvre sa première
+    // rubrique accessible, celle qui a le plus de chances d'être celle
+    // qu'on cherche.
+    const famille = FAMILIES.find((f) => f.key === extra);
     const rubriques = famille ? familySections(famille, member, isOwner) : [];
     return goto(rubriques[0]?.key || "home");
   }

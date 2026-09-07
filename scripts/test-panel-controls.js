@@ -366,14 +366,17 @@ function render(section, state) {
 
   console.log("\nNavigation regroupée par famille :");
 
-  await cas("le menu principal propose des familles, pas les 16 rubriques", () => {
+  await cas("le menu principal propose des familles (en boutons), pas les 16 rubriques", () => {
     const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
-    const nav = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":nav"));
-    assert.ok(nav, "le menu de navigation doit exister");
+    const boutonsNav = json.components
+      .filter((c) => c.type === 1)
+      .flatMap((r) => r.components)
+      .filter((c) => c.custom_id?.startsWith("cfg:nav:"));
+    assert.ok(boutonsNav.length, "les boutons de navigation par famille doivent exister");
     // Onze familles cibles au maximum (voir le plan de refonte du panel) —
     // le plafond suit ce nombre, pas un chiffre arbitraire.
-    assert.ok(nav.components[0].options.length <= 11, `${nav.components[0].options.length} entrées — c'est de nouveau une liste à faire défiler`);
-    assert.ok(nav.components[0].options.length < SECTIONS.length, "il doit y avoir moins de familles que de rubriques");
+    assert.ok(boutonsNav.length <= 11, `${boutonsNav.length} boutons — c'est de nouveau une liste à faire défiler`);
+    assert.ok(boutonsNav.length < SECTIONS.length, "il doit y avoir moins de familles que de rubriques");
   });
 
   await cas("un second menu apparaît pour choisir dans une famille qui en contient plusieurs", () => {

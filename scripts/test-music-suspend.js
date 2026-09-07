@@ -101,8 +101,11 @@ const owner = { id: "owner-1", guild: { id: "gmusicoff", ownerId: "owner-1" }, r
 
   await cas("la famille Musique disparaît du menu principal du panel", () => {
     const json = buildConfigPanel(guild, "home", owner).components[0].toJSON();
-    const nav = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":nav"));
-    const labels = nav.components[0].options.map((o) => o.label);
+    const labels = json.components
+      .filter((c) => c.type === 1)
+      .flatMap((r) => r.components)
+      .filter((c) => c.custom_id?.startsWith("cfg:nav:"))
+      .map((b) => b.label);
     assert.ok(!labels.includes("Musique"), labels.join(", "));
   });
 
