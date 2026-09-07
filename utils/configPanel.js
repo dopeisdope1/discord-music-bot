@@ -51,6 +51,8 @@ const { computeStatus, formatUptime } = require("./statusDiagnostic");
 const { FORMS, setFormState, buildFormCard } = require("./commandForms");
 const { fakeMessage } = require("./fakeMessage");
 const { utilityHandlers } = require("./utilityCommands");
+const giveawayStore = require("./giveawayStore");
+const { endGiveaway, rerollGiveaway } = require("./giveaways");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -128,6 +130,7 @@ const SECTIONS = [
   { key: "mute", label: "Mute", description: "Rôle utilisé par &mute/&tempmute/&cmute", permission: "protection.automod" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
   { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
+  { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
@@ -177,7 +180,7 @@ const FAMILIES = [
     description: "Rôles, permissions, rôles automatiques, vérification",
     sections: ["permissions", "autorole", "verification"],
   },
-  { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires", sections: ["welcome", "leave", "voice"] },
+  { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires, giveaways", sections: ["welcome", "leave", "voice", "giveaways"] },
   { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
   { key: "monitoring", label: "Monitoring", description: "Salons de logs", sections: ["logs"] },
   {
@@ -536,6 +539,20 @@ function sectionBody(section, guild, member, state) {
         ? "Configuré manuellement ou via \"Créer la configuration\" — le bouton ci-dessous ne recrée rien tant que c'est actif."
         : "\"Créer la configuration\" crée en un clic les deux catégories, le salon générateur et le salon-panneau.",
     ].join("\n");
+  }
+
+  if (section === "giveaways") {
+    const active = giveawayStore
+      .listForGuild(guildId)
+      .filter((g) => !g.ended)
+      .sort((a, b) => a.endsAt - b.endsAt);
+    if (!active.length) return "> *Aucun giveaway en cours.*";
+    const lines = active.slice(0, 5).map((g) => {
+      const when = `<t:${Math.floor(g.endsAt / 1000)}:R>`;
+      const gagnants = (g.winnersCount || 1) > 1 ? ` — ${g.winnersCount} gagnants` : "";
+      return `> **${g.prize}** — <#${g.channelId}> — se termine ${when} — ${g.participants.length} participant(s)${gagnants}`;
+    });
+    return ["**Giveaways en cours :**", ...lines].join("\n");
   }
 
   if (section === "banall") {
@@ -1229,6 +1246,46 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           .setDisabled(!(hubConfig.panelChannelId && guild.channels.cache.has(hubConfig.panelChannelId)))
       )
     );
+  } else if (meta.key === "giveaways") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success)
+      )
+    );
+    const active = giveawayStore
+      .listForGuild(guild.id)
+      .filter((g) => !g.ended)
+      .sort((a, b) => a.endsAt - b.endsAt)
+      .slice(0, 5);
+    if (active.length) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:giveawaypick`)
+            .setPlaceholder("Choisir un giveaway en cours")
+            .addOptions(
+              active.map((g) =>
+                new StringSelectMenuOptionBuilder()
+                  .setLabel(g.prize.slice(0, 100))
+                  .setDescription(`Se termine le ${new Date(g.endsAt).toLocaleString("fr-FR")}`.slice(0, 100))
+                  .setValue(g.messageId)
+                  .setDefault(g.messageId === state.giveawaySelected)
+              )
+            )
+        )
+      );
+      if (state.giveawaySelected && active.some((g) => g.messageId === state.giveawaySelected)) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:giveawayend:${state.giveawaySelected}`).setLabel("Terminer maintenant").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId(`${ID}:giveawayreroll:${state.giveawaySelected}`)
+              .setLabel("Retirer un gagnant (reroll)")
+              .setStyle(ButtonStyle.Secondary)
+          )
+        );
+      }
+    }
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -1313,6 +1370,33 @@ async function handleConfigInteraction(interaction) {
     await goto("permissions", { permissionsRoleId: extra });
     if (!role) return;
     await utilityHandlers.rolemembers(interaction.client, fakeMessage(interaction, { role }), []);
+    return;
+  }
+
+  // Giveaways : démarrer réutilise la carte de formulaire existante
+  // (utils/commandForms.js::FORMS.giveaway_start, celle que &giveaway ouvre
+  // déjà bare) ; terminer/reroll appellent directement utils/giveaways.js
+  // avec l'ID du message ciblé, jamais un second tirage réimplémenté.
+  if (action === "giveawaystart") {
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return interaction.reply(buildFormCard("giveaway_start", member));
+  }
+
+  if (action === "giveawaypick") {
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("giveaways", { giveawaySelected: interaction.values[0] || null });
+  }
+
+  if (action === "giveawayend" || action === "giveawayreroll") {
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const messageId = extra;
+    const giveaway = giveawayStore.get(messageId);
+    await goto("giveaways", { giveawaySelected: null });
+    const channel = giveaway && guild.channels.cache.get(giveaway.channelId);
+    if (!channel) return;
+    const msg = fakeMessage(interaction, { channel });
+    if (action === "giveawayend") await endGiveaway(interaction.client, msg, [messageId]);
+    else await rerollGiveaway(interaction.client, msg, [messageId]);
     return;
   }
 

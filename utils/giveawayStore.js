@@ -90,4 +90,9 @@ function getLatestInChannel(channelId) {
   return all.sort((a, b) => b.endsAt - a.endsAt)[0] || null;
 }
 
-module.exports = { create, get, toggleParticipant, markEnded, getExpiredActive, getLatestInChannel };
+/** Tous les giveaways (terminés ou non) d'un serveur — panel > Communauté > Giveaways. */
+function listForGuild(guildId) {
+  return Object.values(load()).filter((g) => g.guildId === guildId);
+}
+
+module.exports = { create, get, toggleParticipant, markEnded, getExpiredActive, getLatestInChannel, listForGuild };
