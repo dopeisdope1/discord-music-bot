@@ -132,6 +132,63 @@ Ce chemin de reprise est couvert par `node scripts/test-deadtrack.js` (il ne se
 déclenche qu'en cas de panne réelle, impossible à provoquer à la main sans
 casser une lecture en cours).
 
+## 2ter. Déploiement automatique sur le VPS
+
+Le bot tourne en **Docker Compose** sur un VPS. Le déploiement est automatisé
+par `.github/workflows/deploy.yml` : à chaque push sur `main`, la CI
+(`tests.yml`) s'exécute, et **seulement si elle est verte**, le VPS est mis à
+jour et les conteneurs redémarrés. Un build rouge ne part jamais en
+production.
+
+Le workflow déploie la révision **exactement testée** par la CI, pas « le
+dernier commit sur `main` » : entre les deux, un autre push a pu arriver sans
+avoir été validé.
+
+### Les secrets à créer
+
+Dans *Settings → Secrets and variables → Actions* du dépôt :
+
+| Secret | Obligatoire | Rôle |
+|---|---|---|
+| `VPS_HOST` | oui | Adresse ou nom d'hôte du VPS. |
+| `VPS_USER` | oui | Utilisateur SSH (celui qui peut lancer `docker compose`). |
+| `VPS_SSH_KEY` | oui | Clé privée SSH **dédiée au déploiement**, au format OpenSSH complet. |
+| `VPS_PATH` | non | Chemin du dépôt sur le VPS (défaut : `/opt/discord-music-bot`). |
+| `VPS_PORT` | non | Port SSH (défaut : `22`). |
+| `VPS_KNOWN_HOSTS` | recommandé | Empreinte du serveur, via `ssh-keyscan -H <hôte>`. |
+
+Sans `VPS_KNOWN_HOSTS`, l'empreinte est acceptée au premier contact : ça
+fonctionne, mais rien ne distingue alors le VPS d'une machine qui
+s'interposerait. Le workflow le signale par un avertissement.
+
+Crée une clé **dédiée**, jamais ta clé personnelle — un secret de dépôt est
+lisible par quiconque peut modifier les workflows :
+
+```bash
+ssh-keygen -t ed25519 -f deploy_key -N "" -C "deploy discord-music-bot"
+ssh-copy-id -i deploy_key.pub <utilisateur>@<hôte>   # autorise la clé sur le VPS
+ssh-keyscan -H <hôte>                                # -> VPS_KNOWN_HOSTS
+cat deploy_key                                       # -> VPS_SSH_KEY
+```
+
+### Ce que fait le déploiement
+
+`git fetch` puis `git reset --hard` sur la révision testée, `docker compose up
+-d --build --remove-orphans`, puis vérification que des conteneurs tournent
+vraiment. **Un déploiement qui laisse le bot éteint échoue bruyamment** au
+lieu de finir en vert : sinon une image qui ne démarre plus passerait
+inaperçue jusqu'au premier message sur Discord.
+
+Le `reset --hard` ne touche NI `data/` NI `.env` : tous deux sont ignorés par
+git (voir `.gitignore`), donc jamais suivis. La configuration du serveur et
+l'historique de modération survivent à chaque déploiement — c'est aussi
+pourquoi `DATA_DIR` doit pointer vers un volume persistant du conteneur.
+
+### Déclencher un déploiement à la main
+
+Onglet *Actions* → *Déploiement VPS* → *Run workflow*. Utile après une
+intervention directe sur le VPS, ou pour redéployer sans nouveau commit.
+
 ## 3. Intents & permissions à activer
 
 Sur le portail développeur Discord, dans l'onglet **Bot** :

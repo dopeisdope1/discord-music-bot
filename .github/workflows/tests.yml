@@ -1,6 +1,7 @@
-# Le déploiement est automatique depuis que le service Railway est branché sur
-# ce dépôt : tout ce qui atteint `main` part en production. Cette CI est donc
-# le dernier endroit où une régression peut encore être arrêtée.
+# Le déploiement en production se fait sur le VPS via
+# .github/workflows/deploy.yml, qui ne se déclenche QUE si ce workflow-ci est
+# vert sur `main`. Cette CI est donc le dernier endroit où une régression peut
+# encore être arrêtée avant la prod.
 name: Tests
 
 on:
@@ -16,8 +17,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Même version que le service Railway (node@22), pour qu'un test ne
-          # puisse pas passer ici et échouer là-bas.
+          # À garder alignée sur la version de Node de l'image Docker de
+          # production : un écart de version majeure ferait passer un test ici
+          # et échouer le bot là-bas.
           node-version: "22"
           cache: npm
 

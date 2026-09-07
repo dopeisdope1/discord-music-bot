@@ -1,0 +1,119 @@
+# Déploiement automatique sur le VPS (Docker Compose).
+#
+# Ne se déclenche QU'APRÈS une CI verte sur `main` : le workflow "Tests" est
+# le dernier endroit où une régression peut être arrêtée, déployer en
+# parallèle reviendrait à s'en passer. Un `workflow_dispatch` permet en plus
+# de relancer un déploiement à la main (bouton "Run workflow"), par exemple
+# après une intervention sur le VPS.
+name: Déploiement VPS
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Jamais deux déploiements en même temps sur la même machine. `cancel-in-progress`
+# reste à false : interrompre un déploiement à mi-chemin laisserait le VPS
+# dans un état indéterminé, mieux vaut faire la queue.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Sur workflow_run, GitHub déclenche AUSSI quand la CI a échoué : sans ce
+    # garde-fou, un build rouge partirait en production.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vérifier que les secrets nécessaires existent
+        env:
+          HOTE: ${{ secrets.VPS_HOST }}
+          UTILISATEUR: ${{ secrets.VPS_USER }}
+          CLE: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          manquants=""
+          [ -n "$HOTE" ] || manquants="$manquants VPS_HOST"
+          [ -n "$UTILISATEUR" ] || manquants="$manquants VPS_USER"
+          [ -n "$CLE" ] || manquants="$manquants VPS_SSH_KEY"
+          if [ -n "$manquants" ]; then
+            echo "::error::Secrets manquants :$manquants — voir la section 2ter du README."
+            exit 1
+          fi
+
+      - name: Préparer la clé SSH
+        env:
+          CLE: ${{ secrets.VPS_SSH_KEY }}
+          HOTES_CONNUS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOTE: ${{ secrets.VPS_HOST }}
+          PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$CLE" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "$HOTES_CONNUS" ]; then
+            # Empreinte fournie : le serveur est authentifié, une machine qui
+            # s'interposerait serait refusée.
+            printf '%s\n' "$HOTES_CONNUS" > ~/.ssh/known_hosts
+          else
+            # Repli : on découvre l'empreinte à la volée. Ça marche, mais ça
+            # fait confiance au réseau au premier contact — renseigne
+            # VPS_KNOWN_HOSTS (`ssh-keyscan -H <hôte>`) pour fermer ce trou.
+            echo "::warning::VPS_KNOWN_HOSTS absent — empreinte du serveur acceptée sans vérification."
+            ssh-keyscan -p "${PORT:-22}" -H "$HOTE" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Déployer et redémarrer les conteneurs
+        env:
+          HOTE: ${{ secrets.VPS_HOST }}
+          UTILISATEUR: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_PORT }}
+          CHEMIN: ${{ secrets.VPS_PATH }}
+          # Le commit RÉELLEMENT validé par la CI, pas "le dernier sur main" :
+          # entre-temps un autre push a pu arriver, et il n'a pas été testé.
+          REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_deploy -p "${PORT:-22}" -o StrictHostKeyChecking=yes \
+            "$UTILISATEUR@$HOTE" \
+            "CHEMIN='${CHEMIN:-/opt/discord-music-bot}' REVISION='$REVISION' bash -s" <<'DISTANT'
+          set -euo pipefail
+
+          cd "$CHEMIN" || { echo "Chemin introuvable sur le VPS : $CHEMIN (secret VPS_PATH)"; exit 1; }
+          git rev-parse --git-dir >/dev/null 2>&1 || { echo "$CHEMIN n'est pas un dépôt git."; exit 1; }
+
+          echo "== Mise à jour du code =="
+          git fetch --prune origin
+          # `reset --hard` sur la révision testée : `data/` et `.env` sont
+          # ignorés par git (voir .gitignore), la configuration du bot et ses
+          # données ne sont donc pas touchées.
+          git reset --hard "$REVISION"
+          git log --oneline -1
+
+          echo "== Reconstruction et redémarrage =="
+          # `--build` est sans effet si les services n'ont pas de section
+          # `build:` ; `--remove-orphans` nettoie un service supprimé du
+          # compose. `docker compose` trouve seul compose.yaml ou
+          # docker-compose.yml.
+          docker compose up -d --build --remove-orphans
+
+          echo "== État des conteneurs =="
+          docker compose ps
+          # Un déploiement qui laisse le bot éteint doit ÉCHOUER bruyamment,
+          # pas se terminer en vert : sans ça, une image qui ne démarre plus
+          # passerait inaperçue jusqu'au prochain message sur Discord.
+          if [ -z "$(docker compose ps --status running --quiet)" ]; then
+            echo "Aucun conteneur en cours d'exécution après le déploiement."
+            docker compose logs --tail 50
+            exit 1
+          fi
+          DISTANT
+
+      - name: Effacer la clé
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
