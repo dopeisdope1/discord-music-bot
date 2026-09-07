@@ -1,5 +1,6 @@
 const { PermissionFlagsBits, ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { carteActionMessage, carteSanctionMessage, avatarDe, nomDe } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { deleteMessages } = require("./deleteMessages");
@@ -141,6 +142,27 @@ async function roleMembership(client, message, args, sub) {
     channelId: message.channel.id,
     extra: sub === "add" ? { added: [mentionedRole.id] } : { removed: [mentionedRole.id] },
   });
+  // Carte d'action en image (utils/actionCard.js). Si le rendu échoue, on
+  // retombe sur le message texte : l'attribution a DÉJÀ eu lieu, ne rien
+  // répondre laisserait croire qu'elle a échoué.
+  const carte = await carteActionMessage(
+    {
+      titre: sub === "add" ? "Rôle ajouté" : "Rôle retiré",
+      couleur: sub === "add" ? "#4ade80" : "#ff6b6b",
+      membre: { nom: nomDe(mentionedMember), sousTitre: mentionedMember.id, avatarURL: avatarDe(mentionedMember) },
+      lignes: [
+        // La pastille reprend la couleur RÉELLE du rôle ; un rôle sans
+        // couleur vaut 0 chez Discord, ce qui donnerait un point noir
+        // invisible sur fond sombre.
+        { label: "Rôle", valeur: mentionedRole.name, couleur: mentionedRole.color ? `#${mentionedRole.color.toString(16).padStart(6, "0")}` : "#8b849f" },
+        { label: "Par", valeur: message.author.tag },
+      ],
+      pied: message.guild.name,
+    },
+    "role.png"
+  );
+  if (carte) return message.reply(carte);
+
   await reply(
     message,
     "success",
@@ -179,6 +201,10 @@ const handlers = {
       reason,
       channelId: message.channel.id,
     });
+    // Carte d'action en image ; le message texte reste le filet de sécurité
+    // si le rendu échoue — la sanction, elle, a déjà été appliquée.
+    const carteKick = await carteSanctionMessage({ action: "kick", cible: target, moderateur: message.author, raison: reason, serveur: message.guild.name });
+    if (carteKick) return message.reply(carteKick);
     await reply(message, "success", `**${tag}** a été expulsé.${reason ? `\nRaison : ${reason}` : ""}`);
   },
 
@@ -218,6 +244,8 @@ const handlers = {
       reason,
       channelId: message.channel.id,
     });
+    const carteSoftban = await carteSanctionMessage({ action: "softban", cible: target, moderateur: message.author, raison: reason, duree: "Messages des 24h purgés", serveur: message.guild.name });
+    if (carteSoftban) return message.reply(carteSoftban);
     await reply(message, "success", `**${tag}** a été softban (messages des dernières 24h purgés).${reason ? `\nRaison : ${reason}` : ""}`);
   },
 
@@ -262,6 +290,8 @@ const handlers = {
       channelId: message.channel.id,
       extra: { durationMs: ms },
     });
+    const carteTimeout = await carteSanctionMessage({ action: "timeout", cible: target, moderateur: message.author, raison: reason, duree: formatDuration(ms), serveur: message.guild.name });
+    if (carteTimeout) return message.reply(carteTimeout);
     await reply(message, "success", `**${tag}** est en timeout pour **${formatDuration(ms)}**.${reason ? `\nRaison : ${reason}` : ""}`);
   },
 
@@ -298,6 +328,8 @@ const handlers = {
       moderator: message.author,
       channelId: message.channel.id,
     });
+    const carteUntimeout = await carteSanctionMessage({ action: "untimeout", cible: target, moderateur: message.author, serveur: message.guild.name });
+    if (carteUntimeout) return message.reply(carteUntimeout);
     await reply(message, "success", `Timeout de **${tag}** levé.`);
   },
 

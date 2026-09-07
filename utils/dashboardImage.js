@@ -36,6 +36,20 @@ const MARGE = 40;
 const GOUTTIERE = 18;
 const COLONNES = 3;
 
+/**
+ * Ajoute une opacité à une couleur hex. Coller directement le suffixe
+ * ("#fff" + "26") produit "#fff26", que le moteur de rendu REFUSE en levant
+ * une erreur : on normalise donc en 6 chiffres d'abord. Toute valeur
+ * inattendue retombe sur un gris neutre plutôt que de faire planter un rendu
+ * déclenché par une action déjà exécutée.
+ */
+function avecAlpha(couleur, alpha) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(couleur || "").trim());
+  if (!m) return `#94a3b8${alpha}`;
+  const hex = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
+  return `#${hex}${alpha}`;
+}
+
 /** Rectangle à coins arrondis (chemin seulement — à remplir/tracer ensuite). */
 function cheminArrondi(ctx, x, y, l, h, r) {
   const rayon = Math.min(r, l / 2, h / 2);
@@ -151,7 +165,7 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     const teinte = item.couleurPastille || carte.couleur;
     ctx.beginPath();
     ctx.arc(x + 28, ligneY + 1, 9, 0, Math.PI * 2);
-    ctx.fillStyle = `${teinte}22`;
+    ctx.fillStyle = avecAlpha(teinte, "22");
     ctx.fill();
     ctx.beginPath();
     ctx.arc(x + 28, ligneY + 1, 3.2, 0, Math.PI * 2);

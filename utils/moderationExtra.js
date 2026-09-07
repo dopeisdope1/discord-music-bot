@@ -1,5 +1,6 @@
 const { PermissionFlagsBits, ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { carteSanctionMessage } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
@@ -119,6 +120,16 @@ async function muteMember(client, message, args, { temporary }) {
     channelId: message.channel.id,
   });
 
+  const carteMute = await carteSanctionMessage({
+    action: temporary ? "tempmute" : "mute",
+    cible: target,
+    moderateur: message.author,
+    raison: reason,
+    duree: temporary ? formatDuration(durationMs) : "Jusqu'à démute",
+    serveur: message.guild.name,
+  });
+  if (carteMute) return message.reply(carteMute);
+
   await reply(
     message,
     "success",
@@ -155,6 +166,8 @@ async function unmuteMember(client, message, args) {
     moderator: message.author,
     channelId: message.channel.id,
   });
+  const carteUnmute = await carteSanctionMessage({ action: "unmute", cible: target, moderateur: message.author, serveur: message.guild.name });
+  if (carteUnmute) return message.reply(carteUnmute);
   await reply(message, "success", `**${target.user.tag}** n'est plus mute.`);
 }
 
@@ -301,6 +314,8 @@ async function warn(client, message, args) {
     reason,
     channelId: message.channel.id,
   });
+  const carteWarn = await carteSanctionMessage({ action: "warn", cible: target, moderateur: message.author, raison: reason, serveur: message.guild.name });
+  if (carteWarn) return message.reply(carteWarn);
   return reply(message, "success", `**${tag}** a été averti.${reason ? `\nRaison : ${reason}` : ""}`);
 }
 
@@ -405,6 +420,8 @@ async function tempban(client, message, args) {
     reason,
     channelId: message.channel.id,
   });
+  const carteTempban = await carteSanctionMessage({ action: "tempban", cible: target, moderateur: message.author, raison: reason, duree: formatDuration(durationMs), serveur: message.guild.name });
+  if (carteTempban) return message.reply(carteTempban);
   await reply(message, "success", `**${tag}** banni pour ${formatDuration(durationMs)}.`);
 }
 

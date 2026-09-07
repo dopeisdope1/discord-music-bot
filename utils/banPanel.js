@@ -13,6 +13,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
+const { carteSanctionMessage } = require("./actionCard");
 const { botAndRankRefusal, checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 
 const ID = "ban";
@@ -313,6 +314,19 @@ async function handleBanInteraction(interaction) {
         reason,
         channelId: interaction.channelId,
       });
+      // Carte d'action en image ; `attachments: []` parce qu'on ÉDITE le
+      // message de confirmation — sans ça Discord garderait l'ancienne pièce
+      // jointe en plus. Repli sur la carte texte si le rendu échoue : le
+      // bannissement, lui, a déjà eu lieu.
+      const carte = await carteSanctionMessage({
+        action: "ban",
+        cible: target,
+        moderateur: interaction.user,
+        raison: reason,
+        duree: "Définitif",
+        serveur: interaction.guild.name,
+      });
+      if (carte) return interaction.update({ ...carte, components: [], embeds: [], content: "", attachments: [] });
       return interaction.update(
         card("Membre banni", `**${tag}** a été banni.${reason ? `\nRaison : ${reason}` : ""}`)
       );

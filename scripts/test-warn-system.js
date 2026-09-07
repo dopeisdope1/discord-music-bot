@@ -95,7 +95,13 @@ async function cas(nom, fn) {
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].reason, "spam répété");
     assert.strictEqual(typeof entries[0].caseNumber, "number");
-    assert.ok(lastReplyText(msg).includes("averti"));
+    // La confirmation est désormais une CARTE EN IMAGE (utils/actionCard.js)
+    // et non plus un embed de texte : on vérifie qu'un vrai PNG, nommé
+    // d'après l'action, est bien joint à la réponse.
+    const carte = msg._replies.at(-1);
+    assert.strictEqual(carte.files?.length, 1, "un avertissement doit répondre par sa carte");
+    assert.strictEqual(carte.files[0].name, "warn.png");
+    assert.strictEqual(carte.files[0].attachment.subarray(1, 4).toString(), "PNG");
   });
 
   await cas("&warn sans membre valide explique quoi taper, n'enregistre rien", async () => {
