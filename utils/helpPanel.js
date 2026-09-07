@@ -251,19 +251,23 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
     }
   } else {
-    // Toutes les cartes de catégorie dans UN SEUL bloc de texte (un
-    // ContainerBuilder Components V2 est plafonné à un petit nombre de
-    // composants, voir utils/commandForms.js::CONTAINER_BUDGET) — la
-    // séparation visuelle "bloc par bloc" façon dashboard vient d'un simple
-    // filet de texte entre chaque carte, pas d'un vrai composant Separator
-    // par catégorie (ça dépasserait vite le budget avec 7 catégories).
-    const cards = availableTiers.map((t) => `### ${TIER_EMOJI[t]} ${TIER_LABELS[t]}\n${TIER_DESCRIPTIONS[t]}`);
-    const body = cards.length
-      ? cards.join("\n\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n")
-      : "*Aucune commande accessible.*";
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Tape une commande pour commencer*"));
+    // Chaque catégorie tient sur DEUX lignes seulement (titre+description
+    // sur une ligne, aperçu de 4 commandes réelles sur l'autre) — pas de
+    // séparateur ni de bloc dédié par catégorie, qui gonflait inutilement
+    // l'accueil en hauteur. Un ContainerBuilder Components V2 reste de
+    // toute façon plafonné à un petit nombre de composants (voir
+    // utils/commandForms.js::CONTAINER_BUDGET) : tout tient donc dans UN
+    // SEUL bloc de texte, dense, façon tableau de bord compact.
+    const cards = availableTiers.map((t) => {
+      const preview = dedupeByIdentity(groups[t])
+        .slice(0, 4)
+        .map((e) => identityOf(e.cmd))
+        .join(" • ");
+      const ligneCommandes = preview ? `\n${preview}` : "";
+      return `${TIER_EMOJI[t]} **${TIER_LABELS[t]}** — ${TIER_DESCRIPTIONS[t]}${ligneCommandes}`;
+    });
+    const body = cards.length ? cards.join("\n\n") : "*Aucune commande accessible.*";
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`${body}\n\n*Tape une commande pour commencer*`));
   }
 
   if (availableTiers.length) {

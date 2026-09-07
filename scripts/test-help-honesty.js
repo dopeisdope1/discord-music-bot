@@ -154,6 +154,12 @@ function commandsText(member = owner, categorie) {
     assert.ok(/Préfixe : `&`/.test(fullText()), fullText());
   });
 
+  await cas("l'accueil est compact : aucun filet décoratif entre catégories, un aperçu de vraies commandes sous chaque titre", () => {
+    const body = fullText();
+    assert.ok(!body.includes("┈"), "les séparateurs décoratifs entre catégories doivent avoir disparu, ils créaient l'espace vide dénoncé");
+    assert.ok(/Modération.*—.*\n.* • /.test(body), `un aperçu de commandes séparées par " • " doit suivre le titre de chaque catégorie : ${body}`);
+  });
+
   await cas("aucune trace de la section \"documentées\" — plus de commandes muettes affichées du tout", () => {
     assert.ok(!fullText().includes("Documentées"), fullText());
   });
