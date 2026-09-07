@@ -54,6 +54,8 @@ const { utilityHandlers } = require("./utilityCommands");
 const giveawayStore = require("./giveawayStore");
 const { endGiveaway, rerollGiveaway } = require("./giveaways");
 const { handleEmbedButton } = require("./serverExtra");
+const { buildFavoritesPanel } = require("./favoritesPanel");
+const { LOOP_LABELS } = require("./nowPlayingPanel");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -134,6 +136,11 @@ const SECTIONS = [
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
   { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
   { key: "polls", label: "Sondages", description: "Créer un sondage (2 à 5 options)", permission: "server.polls.manage" },
+  // Pas de `permission` : &play/&pause... ne sont pas gated par le moteur de
+  // permissions (seule l'appartenance au même salon vocal compte, voir
+  // index.js::canControlPlayer) — cette rubrique reste donc publique elle
+  // aussi, comme les commandes qu'elle affiche/relie.
+  { key: "musicPlayer", label: "Musique", description: "Lecteur en cours et favoris" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
@@ -148,10 +155,18 @@ function sectionVisible(section, member, isOwner) {
 
 const sectionsFor = (member, isOwner) => SECTIONS.filter((s) => sectionVisible(s, member, isOwner));
 
-/** Vrai si la personne a accès à AU MOINS une rubrique au-delà de l'accueil — condition d'entrée de &panel. */
+/**
+ * Vrai si la personne a accès à AU MOINS une rubrique qui exige un vrai droit
+ * pour apparaître — condition d'entrée de &panel. Une rubrique sans
+ * `permission`/`visible`/`ownerOnly` (Accueil, Musique — ni l'une ni l'autre
+ * gated par le moteur de permissions, voir leurs commentaires dans SECTIONS)
+ * est visible à tout le monde et NE COMPTE PAS ici : sinon &panel
+ * deviendrait accessible à quiconque n'a strictement aucun droit, juste
+ * parce qu'une rubrique publique existe.
+ */
 function hasAnyPanelAccess(member) {
   const isOwner = accessStore.isOwner(member.id);
-  return sectionsFor(member, isOwner).some((s) => s.key !== "home");
+  return sectionsFor(member, isOwner).some((s) => s.ownerOnly || s.visible || s.permission != null);
 }
 
 // Rubrique à rouvrir après avoir modifié une portée legacy (accessStore) :
@@ -164,10 +179,10 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // le menu principal ne montre que les familles, un second menu n'apparaît
 // que pour choisir une rubrique dans la famille ouverte. Onze familles
 // cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
-// Communication/Musique/Monitoring/Sauvegardes/Bot) — celles encore vides
-// aujourd'hui (Musique, Sauvegardes) n'apparaissent pas encore dans ce
-// tableau : elles arrivent avec le module qui leur donne un vrai contenu
-// plutôt que d'exposer un onglet qui ne fait rien.
+// Communication/Musique/Monitoring/Sauvegardes/Bot) — celle encore vide
+// aujourd'hui (Sauvegardes) n'apparaît pas encore dans ce tableau : elle
+// arrive avec le module qui lui donne un vrai contenu plutôt que d'exposer
+// un onglet qui ne fait rien.
 //
 // Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
 // ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
@@ -186,6 +201,7 @@ const FAMILIES = [
   { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires, giveaways", sections: ["welcome", "leave", "voice", "giveaways"] },
   { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
   { key: "communication", label: "Communication", description: "Embed, sondages", sections: ["embedBuilder", "polls"] },
+  { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", sections: ["musicPlayer"] },
   { key: "monitoring", label: "Monitoring", description: "Salons de logs", sections: ["logs"] },
   {
     key: "bot",
@@ -565,6 +581,18 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "polls") {
     return "> *Sondages en mémoire, perdus au redémarrage du bot — le bouton ci-dessous ouvre le même formulaire que `&poll`.*";
+  }
+
+  if (section === "musicPlayer") {
+    const player = guild.client.kazagumo?.players?.get(guildId);
+    if (!player || !player.queue.current) return "> *Aucune lecture en cours.*";
+    const track = player.queue.current;
+    return [
+      `> **En cours** : [${track.title}](${track.uri})`,
+      `> **Demandé par** : <@${track.requester?.id || "?"}>`,
+      `> **État** : ${player.paused ? "en pause" : "lecture"} · **volume** : ${player.volume}% · **boucle** : ${LOOP_LABELS[player.loop] || "désactivée"}`,
+      `> **File d'attente** : ${player.queue.length} titre(s)`,
+    ].join("\n");
   }
 
   if (section === "banall") {
@@ -1310,6 +1338,20 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
       )
     );
+  } else if (meta.key === "musicPlayer") {
+    const player = guild.client.kazagumo?.players?.get(guild.id);
+    const npMessage = guild.client.nowPlayingMessages?.get(guild.id);
+    const boutons = [];
+    // Lien direct vers le VRAI panneau de lecture (déjà suivi/rafraîchi par
+    // utils/musicPlayer.js) plutôt qu'une copie de ses boutons ici : les
+    // customId music_* sont routés par index.js en supposant qu'ils vivent
+    // sur CE message précis (il l'édite en retour) — les dupliquer dans le
+    // panel désynchroniserait les deux affichages.
+    if (player?.queue?.current && npMessage) {
+      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url));
+    }
+    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary));
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -1433,6 +1475,15 @@ async function handleConfigInteraction(interaction) {
   if (action === "pollstart") {
     if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     return interaction.reply(buildFormCard("poll_create", member));
+  }
+
+  // Musique : mêmes deux lignes que le bouton "Mes favoris" du panneau de
+  // lecture (index.js) — pas une deuxième implémentation.
+  if (action === "musicfavlist") {
+    const { main } = getPrefixes(guildId);
+    const panel = buildFavoritesPanel(interaction.user.id, main);
+    if (!panel) return interaction.reply({ content: "Tu n'as encore aucun favori.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral });
   }
 
   // Création/suppression de rôle depuis le panel : réutilise TEL QUEL
