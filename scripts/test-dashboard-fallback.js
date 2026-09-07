@@ -212,7 +212,10 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.strictEqual(panel.files, undefined);
     assert.ok(!composantsDe(panel).some((c) => c.type === GALERIE));
     assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "le menu des familles doit rester utilisable");
-    assert.ok(texteDe(panel).includes("Modération"), texteDe(panel));
+    // "Modération" n'est plus une famille du panel : sanctionner un membre se
+    // fait par commande, avec une mention ou un identifiant. On vérifie donc
+    // une famille de configuration, qui est ce que le panel offre désormais.
+    assert.ok(texteDe(panel).includes("Sécurité"), texteDe(panel));
   });
 
   console.log("\nEnvoi refusé par Discord (pas de « Joindre des fichiers ») :");

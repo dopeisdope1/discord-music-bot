@@ -1863,6 +1863,26 @@ async function handleFormCardInteraction(interaction) {
 //  - lock/unlock — un seul salon possible dans l'immense majorité des cas
 //    (celui où on tape la commande), le sélecteur de salon n'apporte rien.
 // Ces commandes s'exécutent donc directement, comme avant.
+/**
+ * Commandes qui n'ouvrent PLUS de carte quand elles sont tapées toutes
+ * seules : celles qui visent un MEMBRE. Leur carte affichait un menu
+ * « Choisir un membre » ; la cible se donne désormais uniquement par mention
+ * ou par identifiant, et la commande sans argument se contente de rappeler la
+ * syntaxe (demande explicite : « je veux tout faire par mention ou id »).
+ *
+ * Leur carte reste utilisée quand la cible EST fournie mais qu'un autre
+ * argument manque — « &addrole @membre » propose encore de choisir le rôle,
+ * et c'est justement ce qu'on veut garder : plus de sélecteur de membre, mais
+ * pas de retour à un message d'erreur sec.
+ */
+const SANS_CARTE_SANS_ARGUMENT = new Set([
+  "addrole", "delrole", "kick", "ban", "softban", "timeout", "untimeout",
+  "mute", "unmute", "tempmute", "tempban", "derank", "sanctions", "voicekick",
+  "temprole", "untemprole", "cmute", "uncmute", "tempcmute", "warn",
+  "warnings", "unwarn", "clear sanctions", "del sanction", "del perm",
+  "set perm", "antinuke wluser",
+]);
+
 const BARE_COMMAND_FORMS = {
   giveaway: "giveaway_start",
   addrole: "addrole_member",
@@ -1935,6 +1955,7 @@ const BARE_COMMAND_FORMS = {
 
 module.exports = {
   FORMS,
+  SANS_CARTE_SANS_ARGUMENT,
   lignesResume,
   CATEGORIES,
   BARE_COMMAND_FORMS,

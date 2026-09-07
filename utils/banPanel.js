@@ -8,7 +8,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  UserSelectMenuBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   PermissionFlagsBits,
@@ -68,22 +67,6 @@ function card(title, body, rows = []) {
     for (const row of rows) container.addActionRowComponents(row);
   }
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-/** Panneau de sélection : aucune cible n'a été donnée dans le message. */
-function buildPickPanel(actorId, reason) {
-  const token = rememberRequest({ actorId, reason });
-  return card(
-    "Bannir un membre",
-    reason ? `Raison : ${reason}` : "Choisis le membre à bannir dans le menu ci-dessous.",
-    [
-      new ActionRowBuilder().addComponents(
-        new UserSelectMenuBuilder()
-          .setCustomId(`${ID}:pick:${token}`)
-          .setPlaceholder("Choisis le membre à bannir")
-      ),
-    ]
-  );
 }
 
 /** Panneau de confirmation pour une cible précise. */
@@ -159,7 +142,11 @@ async function handleBan(client, message, args) {
   const { targetId, reason } = parseTarget(message, args);
 
   if (!targetId) {
-    return message.reply(buildPickPanel(message.author.id, reason));
+    // Plus de menu « Choisis le membre à bannir » : la cible se donne par
+    // mention ou par identifiant, comme pour toutes les autres commandes de
+    // modération (demande explicite). La confirmation, elle, reste — c'est
+    // elle qui protège d'un bannissement involontaire, pas le sélecteur.
+    return message.reply(card("Bannir un membre", "Indique la cible : `ban @membre|id [raison]`."));
   }
 
   const target = await message.guild.members.fetch(targetId).catch(() => null);
@@ -297,18 +284,10 @@ async function handleBanInteraction(interaction) {
     return interaction.update(card("Bannissement annulé", null));
   }
 
-  if (action === "pick") {
-    const target = await interaction.guild.members.fetch(interaction.values[0]).catch(() => null);
-    if (!target) return interaction.update(card("Membre introuvable", "Ce membre n'est plus sur le serveur."));
-
-    const refusal =
-      checkBotPermission(interaction.guild, PermissionFlagsBits.BanMembers, "BanMembers") ||
-      checkHierarchy(interaction.guild, interaction.member, target);
-    if (refusal) return interaction.update(card("Bannissement impossible", refusal));
-
-    pending.delete(token);
-    return interaction.update(buildConfirmPanel(target, request.actorId, request.reason));
-  }
+  // Le choix du membre par menu n'existe plus : la cible se donne par mention
+  // ou identifiant. Un vieux message encore affiché peut toutefois envoyer un
+  // "pick" — on l'ignore plutôt que de rouvrir un chemin retiré.
+  if (action === "pick") return undefined;
 
   if (action === "go") {
     const target = await interaction.guild.members.fetch(request.targetId).catch(() => null);

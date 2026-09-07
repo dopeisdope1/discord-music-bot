@@ -79,17 +79,17 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
     }
   });
 
-  await cas("la fiche membre regroupe ses SEPT actions dans un seul menu", () => {
-    const menu = menuActionsDe("modCenter", { modTargetId: CIBLE_ID });
+  await cas("l'écran des permissions regroupe ses CINQ actions dans un seul menu", () => {
+    const menu = menuActionsDe("permissions", { permissionsRoleId: ROLE_ID });
     assert.ok(menu, "un menu d'actions doit exister");
     const labels = menu.options.map((o) => o.label);
-    for (const attendu of ["Warn", "Timeout", "Kick", "Ban", "Historique complet"]) {
+    for (const attendu of ["Créer un rôle", "Voir les commandes débloquées", "Voir les membres"]) {
       assert.ok(labels.includes(attendu), `${attendu} manque : ${labels.join(", ")}`);
     }
   });
 
   await cas("la valeur d'une option EST le customId du bouton d'origine — aucun handler n'a été réécrit", () => {
-    const menu = menuActionsDe("modCenter", { modTargetId: CIBLE_ID });
+    const menu = menuActionsDe("permissions", { permissionsRoleId: ROLE_ID });
     for (const option of menu.options) {
       assert.ok(option.value.startsWith(`${ID}:`), `${option.label} -> ${option.value}`);
       assert.ok(!option.value.startsWith(`${ID}:action`), "une option ne doit pas renvoyer vers le menu lui-même");
@@ -97,21 +97,21 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
   });
 
   await cas("choisir une action déclenche le MÊME handler que le bouton d'origine", async () => {
-    const menu = menuActionsDe("modCenter", { modTargetId: CIBLE_ID });
-    const historique = menu.options.find((o) => o.label === "Historique complet");
-    let suivi = null;
+    const menu = menuActionsDe("permissions", { permissionsRoleId: ROLE_ID });
+    const voirCommandes = menu.options.find((o) => o.label === "Voir les commandes débloquées");
+    let misAJour = null;
     await handleConfigInteraction({
       customId: `${ID}:action`,
-      values: [historique.value],
+      values: [voirCommandes.value],
       member: owner,
       guild,
-      update: async () => ({}),
-      followUp: async (p) => {
-        suivi = p;
+      update: async (p) => {
+        misAJour = p;
         return {};
       },
+      followUp: async () => ({}),
     });
-    assert.ok(suivi, "l'action choisie doit produire le même effet qu'un clic sur le bouton");
+    assert.ok(misAJour, "l'action choisie doit produire le même effet qu'un clic sur le bouton");
   });
 
   await cas("une valeur qui renvoie vers le menu lui-même ne provoque pas de boucle", async () => {

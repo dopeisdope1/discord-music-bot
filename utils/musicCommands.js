@@ -630,7 +630,10 @@ async function handleMusicTextCommand(client, message) {
     // voir utils/commandForms.js (BARE_COMMAND_FORMS).
     const secondWord = modArgs.length === 1 && /^[a-z]+$/i.test(modArgs[0]) ? modArgs[0].toLowerCase() : null;
     const bareKey = modArgs.length === 0 ? cmdLower : secondWord ? `${cmdLower} ${secondWord}` : null;
-    const bareFormKey = bareKey ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
+    // Une commande qui vise un membre n'ouvre PAS de carte à vide : sa cible
+    // se donne par mention ou identifiant, et sans argument elle rappelle
+    // simplement sa syntaxe (voir SANS_CARTE_SANS_ARGUMENT).
+    const bareFormKey = bareKey && !commandForms.SANS_CARTE_SANS_ARGUMENT.has(bareKey) ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
     if (bareFormKey) {
       const form = commandForms.FORMS[bareFormKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {
@@ -643,7 +646,9 @@ async function handleMusicTextCommand(client, message) {
     // PRÉ-REMPLIE avec ce qui a déjà été donné, au lieu d'un message
     // d'erreur "indique un membre ET un rôle". Avec tout le nécessaire déjà
     // fourni, l'exécution directe reste inchangée (habitudes acquises intactes).
-    const directFormKey = !bareFormKey ? commandForms.BARE_COMMAND_FORMS[cmdLower] : null;
+    // Ici, au contraire, la carte reste utile : la cible a DÉJÀ été donnée,
+    // il ne manque qu'un autre argument (le rôle, la durée...).
+    const directFormKey = !bareFormKey && modArgs.length ? commandForms.BARE_COMMAND_FORMS[cmdLower] : null;
     if (directFormKey) {
       const form = commandForms.FORMS[directFormKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {

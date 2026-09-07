@@ -92,19 +92,6 @@ const WELCOME_DELETE_OPTIONS = [
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
 
-// Droits qui donnent accès au centre de modération (fiche membre) : au moins
-// UNE action doit être possible, ou au moins la consultation de
-// l'historique — chaque bouton de la fiche reste ensuite gated séparément
-// par son propre droit (voir le rendu de "modCenter").
-const MOD_CENTER_PERMS = [
-  "moderation.warn",
-  "moderation.timeout",
-  "moderation.kick",
-  "moderation.ban",
-  "members.role",
-  "logs.view",
-];
-const canOpenModCenter = (member) => MOD_CENTER_PERMS.some((key) => can(member, key));
 
 // Chaque rubrique déclare comment décider si elle est visible : `ownerOnly`
 // (uniquement le propriétaire), `permission` (une clé du catalogue,
@@ -129,12 +116,6 @@ const SECTIONS = [
     label: "Logs",
     description: "Salon de logs par catégorie (modération/membres/serveur/bots)",
     visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
-  },
-  {
-    key: "modCenter",
-    label: "Recherche de membre",
-    description: "Fiche membre : sanctions, rôles, actions rapides",
-    visible: (member) => canOpenModCenter(member),
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "stats", label: "Statistiques", description: "Compteurs serveur et activité des 7 derniers jours", permission: "server.stats.view" },
@@ -220,7 +201,6 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // utils/dashboardImage.js) : nom de fichier fixe, référencé par
 // "attachment://" dans le composant MediaGallery.
 const NOM_IMAGE_PANEL = "centre-de-gestion.png";
-const NOM_IMAGE_FICHE = "fiche-membre.png";
 const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 
 // Une couleur par famille — c'est tout l'intérêt de l'image : un Container
@@ -246,13 +226,6 @@ const FAMILIES = [
     description: "Protection automatique contre le spam et les attaques",
     emoji: EMOJI.LOCK,
     sections: ["securityOverview", "protection", "guard", "mute"],
-  },
-  {
-    key: "moderation",
-    label: "Modération",
-    description: "Gérer un membre : avertir, sanctionner, consulter son historique",
-    emoji: EMOJI.BAN,
-    sections: ["modCenter", "history"],
   },
   {
     key: "serveur",
@@ -288,7 +261,7 @@ const FAMILIES = [
     label: "Monitoring",
     description: "Journaux d'activité et statistiques du serveur",
     emoji: EMOJI.ONLINE,
-    sections: ["logs", "stats", "diagnostics"],
+    sections: ["logs", "history", "stats", "diagnostics"],
   },
   {
     key: "bot",
@@ -507,32 +480,6 @@ function sectionBody(section, guild, member, state) {
       "**Lavalink :**",
       lavalink,
     ].join("\n");
-  }
-
-  if (section === "modCenter") {
-    const targetId = state.modTargetId;
-    if (!targetId) return "> *Choisis un membre dans le menu ci-dessous.*";
-    const targetMember = guild.members.cache.get(targetId);
-    if (!targetMember) return "> *Ce membre n'a pas pu être chargé (a-t-il quitté le serveur ?) — relance une recherche.*";
-
-    const entries = historyStore.search(guildId, { targetId, limit: 0 });
-    const roleNames = [...targetMember.roles.cache.values()].filter((r) => r.id !== guildId).map((r) => r.toString());
-    const lines = [
-      `> **Membre** : ${targetMember.toString()} — \`${targetMember.id}\``,
-      `> **Arrivé le** : ${targetMember.joinedTimestamp ? `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:D>` : "*inconnu*"}`,
-      `> **Compte créé le** : <t:${Math.floor(targetMember.user.createdTimestamp / 1000)}:D>`,
-      `> **Rôles (${roleNames.length})** : ${roleNames.length ? roleNames.slice(0, 8).join(", ") + (roleNames.length > 8 ? `, +${roleNames.length - 8}` : "") : "*aucun*"}`,
-      `> **Sanctions enregistrées** : ${entries.length}`,
-    ];
-    const recentEntries = entries.slice(0, 3);
-    if (recentEntries.length) {
-      lines.push("", "**Dernières sanctions :**");
-      for (const e of recentEntries) {
-        const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
-        lines.push(`> \`${e.action}\` — ${e.reason || "*sans raison*"} — ${when}`);
-      }
-    }
-    return lines.join("\n");
   }
 
   if (section === "history") {
@@ -862,39 +809,6 @@ function accessRows(scope, label) {
  * en lignes. Exporté pour que les tests vérifient le contenu de l'image —
  * autrement invérifiable une fois rendue en PNG.
  */
-/**
- * Ce qui est dessiné sur la fiche membre du centre de modération : identité,
- * ancienneté, rôles et casier. La teinte suit le nombre de sanctions — vert
- * = casier vierge, rouge = membre déjà lourdement sanctionné : l'information
- * la plus utile se lit avant même de lire les chiffres.
- * Exporté pour que les tests vérifient le contenu réel de l'image.
- */
-function buildFicheMembreSpec(guild, targetMember) {
-  const entries = historyStore.search(guild.id, { targetId: targetMember.id, limit: 0 });
-  const roles = [...targetMember.roles.cache.values()].filter((r) => r.id !== guild.id);
-  const dateFR = (ms) => (ms ? new Date(ms).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) : null);
-  const derniere = entries[0];
-
-  return {
-    titre: "Fiche membre",
-    couleur: entries.length === 0 ? "#4ade80" : entries.length < 3 ? "#fbbf24" : "#ff6b6b",
-    membre: { nom: nomDe(targetMember), sousTitre: targetMember.id, avatarURL: avatarDe(targetMember) },
-    lignes: [
-      { label: "Arrivé le", valeur: dateFR(targetMember.joinedTimestamp) },
-      { label: "Compte créé", valeur: dateFR(targetMember.user?.createdTimestamp) },
-      {
-        label: "Rôles",
-        valeur: roles.length ? `${roles.length} — ${roles.slice(0, 4).map((r) => r.name).join(", ")}${roles.length > 4 ? "…" : ""}` : "aucun",
-        // Pastille à la couleur du rôle le plus haut, comme Discord affiche
-        // la couleur d'un membre.
-        couleur: roles.find((r) => r.color)?.color ? `#${roles.find((r) => r.color).color.toString(16).padStart(6, "0")}` : undefined,
-      },
-      { label: "Sanctions", valeur: String(entries.length) },
-      { label: "Dernière", valeur: derniere ? `${derniere.action}${derniere.reason ? ` — ${derniere.reason}` : ""}` : null },
-    ],
-    pied: guild.name,
-  };
-}
 
 /**
  * Au plus deux alertes de sécurité, les plus graves d'abord — même détection
@@ -1062,51 +976,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     };
   }
 
-  // La fiche membre du centre de modération est dessinée en carte (même
-  // moteur que les cartes de sanction) plutôt qu'écrite : c'est le seul écran
-  // du panel dont le contenu est une IDENTITÉ, où l'avatar et la teinte du
-  // casier valent mieux qu'une liste de lignes. Les autres écrans restent en
-  // texte — ce sont des réglages, pas des fiches.
-  const cibleFiche = meta.key === "modCenter" && state.modTargetId ? guild.members.cache.get(state.modTargetId) : null;
-  // Une fiche qui ne se dessine pas ne doit pas emporter TOUT le centre de
-  // modération : sans ce garde-fou, l'exception remonte avant l'appel à
-  // interaction.update() et le clic reste sans réponse ("Échec de
-  // l'interaction"), boutons d'action compris. On retombe alors sur le texte
-  // de la rubrique, comme quand aucun membre n'est sélectionné.
-  let ficheImage = null;
-  if (cibleFiche && !sansImage) {
-    try {
-      ficheImage = rendreCarteActionSync(buildFicheMembreSpec(guild, cibleFiche));
-    } catch (err) {
-      console.error("[configPanel] fiche membre non rendue :", err);
-    }
-  }
-  if (ficheImage) {
-    fichiers.push(new AttachmentBuilder(ficheImage, { name: NOM_IMAGE_FICHE }));
+  // TOUTES les rubriques sont dessinées : demande explicite d'un bot "rempli
+  // de tableaux de bord". Le contenu reste EXACTEMENT celui de sectionBody —
+  // une seule source de vérité, la même que lisent les commandes texte
+  // équivalentes — simplement converti en grille de cartes
+  // (utils/sectionDashboard.js) au lieu d'être empilé en lignes de citation.
+  const corps = sectionBody(meta.key, guild, member, state);
+  const specRubrique = buildSectionSpec(guild, meta.key, member, state, corps);
+  const pngRubrique = sansImage ? null : rendreEnCache(specRubrique);
+  if (pngRubrique) {
+    fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE }));
     container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_FICHE}`))
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
     );
   } else {
-    // TOUTES les rubriques sont dessinées, pas seulement l'accueil : demande
-    // explicite d'un bot "rempli de tableaux de bord". Le contenu reste
-    // EXACTEMENT celui de sectionBody — une seule source de vérité, la même
-    // que lisent les commandes texte équivalentes — simplement converti en
-    // grille de cartes (utils/sectionDashboard.js) au lieu d'être empilé en
-    // lignes de citation.
-    const corps = sectionBody(meta.key, guild, member, state);
-    const specRubrique = buildSectionSpec(guild, meta.key, member, state, corps);
-    const pngRubrique = sansImage ? null : rendreEnCache(specRubrique);
-    if (pngRubrique) {
-      fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE }));
-      container.addMediaGalleryComponents(
-        new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
-      );
-    } else {
-      // Le corps d'origine, pas enTexte(spec) : ici le texte Discord est
-      // MEILLEUR que sa transposition (il résout les mentions et les dates
-      // tout seul). Le repli rend donc la rubrique telle qu'elle était.
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(corps));
-    }
+    // Le corps d'origine, pas enTexte(spec) : ici le texte Discord est
+    // MEILLEUR que sa transposition (il résout les mentions et les dates
+    // tout seul). Le repli rend donc la rubrique telle qu'elle était.
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(corps));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
@@ -1267,54 +1154,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             .setStyle(ButtonStyle.Danger)
         )
       );
-    }
-  } else if (meta.key === "modCenter") {
-    const targetSelect = new UserSelectMenuBuilder().setCustomId(`${ID}:modtarget`).setPlaceholder("Rechercher un membre").setMinValues(0).setMaxValues(1);
-    if (state.modTargetId) targetSelect.setDefaultUsers([state.modTargetId]);
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(targetSelect));
-
-    const targetMember = state.modTargetId && guild.members.cache.get(state.modTargetId);
-    if (targetMember) {
-      // Chaque bouton ouvre la MÊME carte de formulaire que la commande tapée
-      // à la main (&kick, &ban...), déjà pré-remplie avec ce membre — aucune
-      // deuxième implémentation de l'action, juste un raccourci vers celle qui
-      // existe déjà (voir utils/commandForms.js).
-      const actions = [];
-      if (can(member, "moderation.warn")) actions.push(["warn_member", "Warn", ButtonStyle.Secondary, EMOJI.INFO]);
-      if (can(member, "moderation.timeout")) actions.push(["timeout_member", "Timeout", ButtonStyle.Secondary, EMOJI.MUTE]);
-      if (can(member, "moderation.kick")) actions.push(["kick_member", "Kick", ButtonStyle.Danger, EMOJI.KICK]);
-      if (can(member, "moderation.ban")) actions.push(["ban_member", "Ban", ButtonStyle.Danger, EMOJI.BAN]);
-      if (can(member, "logs.view")) actions.push([null, "Historique complet", ButtonStyle.Secondary, null]);
-      if (actions.length) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            actions.slice(0, 5).map(([formKey, label, style, emoji]) => {
-              const button = new ButtonBuilder()
-                .setCustomId(formKey ? `${ID}:modaction:${formKey}:${targetMember.id}` : `${ID}:modhistory:${targetMember.id}`)
-                .setLabel(label)
-                .setStyle(style);
-              if (emoji) button.setEmoji(emoji);
-              return button;
-            })
-          )
-        );
-      }
-      if (can(member, "members.role")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`${ID}:modaction:addrole_member:${targetMember.id}`)
-              .setLabel("Ajouter un rôle")
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji(EMOJI.CHECK),
-            new ButtonBuilder()
-              .setCustomId(`${ID}:modaction:delrole_member:${targetMember.id}`)
-              .setLabel("Retirer un rôle")
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji(EMOJI.CROSS)
-          )
-        );
-      }
     }
   } else if (meta.key === "history") {
     if (!state.historySearchOpen) {
@@ -2176,50 +2015,12 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   }
 
   // Centre de modération : chercher un membre, puis agir sur sa fiche.
-  if (action === "modtarget") {
-    if (!canOpenModCenter(member)) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const targetId = interaction.values[0] || null;
-    // Un fetch ciblé (pas guild.members.fetch() complet) garantit une fiche à
-    // jour même si ce membre précis n'était pas déjà en cache — sectionBody
-    // reste lui synchrone et lit ensuite le cache tel quel.
-    if (targetId) {
-      const cible = await guild.members.fetch(targetId).catch(() => null);
-      // La fiche est dessinée en image par un rendu SYNCHRONE (buildConfigPanel
-      // l'est) : l'avatar doit donc être en cache AVANT, sinon la carte
-      // retombe sur les initiales. C'est le seul endroit qui connaît la cible
-      // et peut encore attendre.
-      if (cible) await prechargerAvatar(avatarDe(cible));
-    }
-    return goto("modCenter", { modTargetId: targetId });
-  }
-
-  // Chaque bouton de la fiche membre ouvre la carte de formulaire EXISTANTE
-  // (utils/commandForms.js, celle que &kick/&ban/&timeout/&warn/... ouvrent
-  // déjà) pré-remplie avec ce membre — jamais une deuxième exécution de
-  // l'action. La carte est posée comme nouveau message public, exactement
-  // comme quand on tape la commande à vide.
-  if (action === "modaction") {
-    const formKey = extra;
-    const targetId = extra2;
-    const form = FORMS[formKey];
-    if (!form) return;
-    if (form.permission !== undefined && !can(member, form.permission)) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    setFormState(member.id, formKey, { userId: targetId });
-    return interaction.reply(buildFormCard(formKey, member));
-  }
-
-  if (action === "modhistory") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const targetId = extra;
-    const results = historyStore.search(guildId, { targetId, limit: 10 });
-    await goto("modCenter", { modTargetId: targetId });
-    const resultContainer = new ContainerBuilder().addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## Historique complet\n${formatHistoryResults(results).slice(0, 3800)}`)
-    );
-    return interaction.followUp({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
-  }
+  // MODÉRATION RETIRÉE DU PANEL, volontairement : plus de recherche de membre,
+  // plus de boutons Warn/Timeout/Kick/Ban ni d'ajout de rôle ici. Le panel
+  // sert à la sécurité, aux outils et à la gestion du serveur ; sanctionner
+  // ou donner un rôle se fait par commande, avec une mention ou un
+  // identifiant. L'historique reste consultable sous Monitoring — c'est de la
+  // consultation, pas une action sur un membre.
 
   // Recherche d'historique : cible/modérateur se choisissent désormais via
   // UserSelectMenu natif (chips + avatars) au lieu d'un ID/mention tapé à la
@@ -2732,4 +2533,4 @@ async function handleHistorySearchModal(interaction, carried = {}) {
 
 module.exports = {
   buildHomeSpec,
-  buildFicheMembreSpec, buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
+  buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
