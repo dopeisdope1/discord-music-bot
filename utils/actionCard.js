@@ -132,7 +132,7 @@ function initiales(nom) {
  * @param {string} [spec.pied]
  * @returns {Promise<Buffer>} PNG
  */
-async function rendreCarteAction(spec) {
+function dessinerCarte(spec, image) {
   const lignes = (spec.lignes || []).filter((l) => l && l.valeur);
   const hauteur = Math.max(MARGE * 2 + AVATAR + 24, 132 + lignes.length * 34 + (spec.pied ? 30 : 0));
 
@@ -169,7 +169,6 @@ async function rendreCarteAction(spec) {
   // Avatar rond
   const ax = MARGE;
   const ay = (hauteur - AVATAR) / 2;
-  const image = await chargerAvatar(spec.membre.avatarURL);
   ctx.save();
   ctx.beginPath();
   ctx.arc(ax + AVATAR / 2, ay + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
@@ -245,6 +244,132 @@ async function rendreCarteAction(spec) {
 }
 
 /**
+ * Rendu asynchrone : télécharge l'avatar puis dessine.
+ * @returns {Promise<Buffer>} PNG
+ */
+async function rendreCarteAction(spec) {
+  return dessinerCarte(spec, await chargerAvatar(spec.membre.avatarURL));
+}
+
+/**
+ * Rendu SYNCHRONE : n'utilise l'avatar que s'il est déjà en cache, sinon
+ * dessine les initiales. Indispensable pour utils/configPanel.js, dont le
+ * buildConfigPanel est synchrone et appelé depuis des dizaines d'endroits —
+ * le rendre asynchrone pour une photo se paierait dans tout le fichier et
+ * tous ses tests. L'appelant précharge l'avatar avec `prechargerAvatar` au
+ * moment où il connaît déjà le membre (voir la recherche de membre du panel).
+ * @returns {Buffer} PNG
+ */
+function rendreCarteActionSync(spec) {
+  return dessinerCarte(spec, CACHE_AVATARS.get(spec.membre.avatarURL) || null);
+}
+
+/** Met un avatar en cache pour qu'un rendu synchrone ultérieur puisse l'utiliser. */
+async function prechargerAvatar(url) {
+  await chargerAvatar(url);
+}
+
+/**
+ * Carte de CONFIRMATION : « es-tu sûr ? ». Pas d'avatar — une confirmation ne
+ * porte pas toujours sur un membre (suppression d'un rôle, restauration d'une
+ * sauvegarde) — mais un triangle d'alerte dessiné, et une teinte d'avertissement.
+ * @param {object} spec
+ * @param {string} spec.titre
+ * @param {string} [spec.couleur]
+ * @param {{label: string, valeur: string, couleur?: string}[]} [spec.lignes]
+ * @param {string} [spec.avertissement] la phrase qui dit ce qui est irréversible
+ * @returns {Buffer} PNG
+ */
+function rendreCarteConfirmation(spec) {
+  const couleur = /^#[0-9a-f]{6}$/i.test(String(spec.couleur || "")) ? spec.couleur : "#fbbf24";
+  const lignes = (spec.lignes || []).filter((l) => l && l.valeur);
+  const hauteur = 96 + lignes.length * 32 + (spec.avertissement ? 34 : 0);
+
+  const canvas = createCanvas(LARGEUR, hauteur);
+  const ctx = canvas.getContext("2d");
+
+  const degrade = ctx.createLinearGradient(0, 0, LARGEUR, hauteur);
+  degrade.addColorStop(0, THEME.fondHaut);
+  degrade.addColorStop(1, THEME.fond);
+  ctx.fillStyle = degrade;
+  ctx.fillRect(0, 0, LARGEUR, hauteur);
+
+  cheminArrondi(ctx, 10, 10, LARGEUR - 20, hauteur - 20, 16);
+  ctx.strokeStyle = THEME.cadre;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.save();
+  cheminArrondi(ctx, 10, 10, LARGEUR - 20, hauteur - 20, 16);
+  ctx.clip();
+  ctx.fillStyle = couleur;
+  ctx.fillRect(10, 10, 5, hauteur - 20);
+  ctx.restore();
+
+  // Triangle d'alerte, dessiné : la police embarquée n'a aucun pictogramme.
+  const cx = 52;
+  const cy = 42;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 13);
+  ctx.lineTo(cx + 15, cy + 12);
+  ctx.lineTo(cx - 15, cy + 12);
+  ctx.closePath();
+  ctx.strokeStyle = couleur;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  ctx.fillStyle = couleur;
+  ctx.fillRect(cx - 1.5, cy - 6, 3, 10);
+  ctx.fillRect(cx - 1.5, cy + 7, 3, 3);
+
+  const tx = 84;
+  ctx.textBaseline = "middle";
+  ctx.font = "22px ChakraBold";
+  ctx.fillStyle = couleur;
+  texteEspace(ctx, tronquer(ctx, spec.titre.toUpperCase(), LARGEUR - tx - MARGE - 30), tx, cy, 1.6);
+
+  let y = 92;
+  for (const ligne of lignes) {
+    ctx.font = "13px ChakraRegular";
+    ctx.fillStyle = THEME.texteFaible;
+    ctx.fillText(tronquer(ctx, ligne.label.toUpperCase(), 165), MARGE, y);
+    let vx = MARGE + 178;
+    if (ligne.couleur) {
+      ctx.beginPath();
+      ctx.arc(vx + 5, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = ligne.couleur;
+      ctx.fill();
+      vx += 18;
+    }
+    ctx.font = "15px ChakraBold";
+    ctx.fillStyle = THEME.texte;
+    ctx.fillText(tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
+    y += 32;
+  }
+
+  if (spec.avertissement) {
+    ctx.font = "13px ChakraRegular";
+    ctx.fillStyle = couleur;
+    ctx.fillText(tronquer(ctx, spec.avertissement, LARGEUR - MARGE * 2), MARGE, y + 6);
+  }
+
+  return canvas.toBuffer("image/png");
+}
+
+/**
+ * Carte de confirmation prête à être jointe. `null` si le rendu échoue —
+ * l'appelant garde alors sa carte texte : une confirmation qui ne s'affiche
+ * pas empêcherait purement et simplement l'action.
+ */
+function carteConfirmationFichier(spec, nomFichier = "confirmation.png") {
+  try {
+    return new AttachmentBuilder(rendreCarteConfirmation(spec), { name: nomFichier });
+  } catch (err) {
+    console.error("[actionCard] confirmation non rendue :", err);
+    return null;
+  }
+}
+
+/**
  * Carte d'action prête à être postée. Renvoie `null` si le rendu échoue :
  * l'appelant retombe alors sur son message texte habituel plutôt que de ne
  * rien répondre du tout — l'action, elle, a déjà eu lieu.
@@ -307,4 +432,16 @@ async function carteSanctionMessage({ action, cible, moderateur, raison, duree, 
   );
 }
 
-module.exports = { rendreCarteAction, carteActionMessage, carteSanctionMessage, avatarDe, nomDe, SANCTIONS, LARGEUR };
+module.exports = {
+  rendreCarteAction,
+  rendreCarteConfirmation,
+  carteConfirmationFichier,
+  rendreCarteActionSync,
+  prechargerAvatar,
+  carteActionMessage,
+  carteSanctionMessage,
+  avatarDe,
+  nomDe,
+  SANCTIONS,
+  LARGEUR,
+};

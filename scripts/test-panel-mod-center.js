@@ -19,7 +19,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-modcenter-te
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, buildFicheMembreSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const historyStore = require("../utils/moderationHistoryStore");
 const permStore = require("../utils/permissions/store");
 
@@ -43,7 +43,9 @@ function makeTargetMember() {
     id: TARGET_ID,
     user: { tag: "Cible#0001", createdTimestamp: Date.now() - 1000 * 86400 * 400 },
     joinedTimestamp: Date.now() - 1000 * 86400 * 30,
-    roles: { cache: new Collection([["role-a", { id: "role-a", toString: () => "@RoleA" }]]) },
+    // `name` et `color` comme un vrai rôle Discord : la fiche est dessinée en
+    // image, où `toString()` afficherait le brut "<@&id>" au lieu du nom.
+    roles: { cache: new Collection([["role-a", { id: "role-a", name: "RoleA", color: 0x5865f2, toString: () => "@RoleA" }]]) },
     toString: () => `<@${TARGET_ID}>`,
   };
 }
@@ -132,10 +134,29 @@ function buttons(guild, section, member, state) {
       },
     });
     assert.deepStrictEqual(fetchedIds, [TARGET_ID]);
-    const texte = panel.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes(`\`${TARGET_ID}\``), texte);
-    assert.ok(texte.includes("@RoleA"), texte);
-    assert.ok(texte.includes("**Sanctions enregistrées** : 0"), texte);
+    // La fiche est désormais une CARTE EN IMAGE : on vérifie qu'elle est bien
+    // jointe, puis son contenu réel via la spec dessinée
+    // (buildFicheMembreSpec) — un PNG n'est pas inspectable autrement.
+    const json = panel.components[0].toJSON();
+    assert.ok(json.components.some((c) => c.type === 12), "la fiche doit être affichée en image");
+    assert.strictEqual(panel.files[0].name, "fiche-membre.png");
+    assert.strictEqual(panel.files[0].attachment.subarray(1, 4).toString(), "PNG");
+    assert.deepStrictEqual(panel.attachments, [], "l'édition doit remplacer l'image, pas l'empiler");
+
+    const fiche = buildFicheMembreSpec(guild, guild.members.cache.get(TARGET_ID));
+    assert.strictEqual(fiche.membre.sousTitre, TARGET_ID);
+    assert.ok(fiche.lignes.find((l) => l.label === "Rôles").valeur.includes("RoleA"), JSON.stringify(fiche.lignes));
+    assert.strictEqual(fiche.lignes.find((l) => l.label === "Sanctions").valeur, "0");
+    assert.strictEqual(fiche.couleur, "#4ade80", "casier vierge = teinte verte");
+  });
+
+  await cas("la teinte de la fiche suit le casier — un membre sanctionné ne se lit pas comme un membre vierge", () => {
+    const vierge = buildFicheMembreSpec(guild, guild.members.cache.get(TARGET_ID));
+    historyStore.record({ guildId: "gmod", targetId: TARGET_ID, moderatorId: "mod-1", action: "warn", reason: "test teinte" });
+    const sanctionne = buildFicheMembreSpec(guild, guild.members.cache.get(TARGET_ID));
+    assert.notStrictEqual(sanctionne.couleur, vierge.couleur, "la couleur doit refléter le nombre de sanctions");
+    assert.strictEqual(sanctionne.lignes.find((l) => l.label === "Sanctions").valeur, "1");
+    assert.ok(sanctionne.lignes.find((l) => l.label === "Dernière").valeur.includes("warn"), "la dernière sanction doit apparaître");
   });
 
   await cas("avec seulement logs.view, la fiche ne propose QUE \"Historique complet\", aucun bouton punitif", () => {

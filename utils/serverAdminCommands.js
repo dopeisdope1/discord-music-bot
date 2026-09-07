@@ -7,6 +7,8 @@ const {
   UserSelectMenuBuilder,
   RoleSelectMenuBuilder,
   ContainerBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
@@ -17,6 +19,7 @@ const {
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { EMOJI } = require("./emojis");
+const { carteConfirmationFichier } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
@@ -184,16 +187,32 @@ function rememberConfirm(data) {
   return token;
 }
 
-function requestConfirmation(message, { title, body, confirmLabel, permission, execute }) {
+/**
+ * Demande une confirmation à deux temps. `carte` (facultatif) remplace le
+ * corps texte par une carte dessinée (utils/actionCard.js) : même monde
+ * visuel que les cartes de sanction. Le repli sur le texte est délibéré — une
+ * confirmation qui ne s'affiche pas rendrait l'action impossible à lancer.
+ */
+function requestConfirmation(message, { title, body, confirmLabel, permission, execute, carte }) {
   const token = rememberConfirm({ actorId: message.author.id, permission, execute });
-  return message.reply(
-    card(title, body, [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(EMOJI.CHECK),
-        new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROSS)
-      ),
-    ])
+  const boutons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(EMOJI.CHECK),
+    new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROSS)
   );
+
+  if (carte) {
+    const fichier = carteConfirmationFichier(carte, "confirmation.png");
+    if (fichier) {
+      const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
+      container.addMediaGalleryComponents(
+        new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL("attachment://confirmation.png"))
+      );
+      container.addActionRowComponents(boutons);
+      return message.reply({ flags: MessageFlags.IsComponentsV2, components: [container], files: [fichier] });
+    }
+  }
+
+  return message.reply(card(title, body, [boutons]));
 }
 
 async function handleConfirmInteraction(interaction) {
@@ -261,6 +280,18 @@ async function roleAdmin(client, message, args) {
     return requestConfirmation(message, {
       title: `Supprimer le rôle ${name} ?`,
       body: `**${name}** (${roleId})\n\nCette action est définitive et ne peut pas être annulée.`,
+      carte: {
+        titre: `Supprimer le rôle ${name} ?`,
+        couleur: "#ff6b6b",
+        lignes: [
+          { label: "Rôle", valeur: name, couleur: role.color ? `#${role.color.toString(16).padStart(6, "0")}` : undefined },
+          { label: "Identifiant", valeur: roleId },
+          // Le nombre de membres qui perdront ce rôle est l'information qui
+          // fait vraiment hésiter : elle manquait au message texte.
+          { label: "Membres concernés", valeur: String(role.members?.size ?? 0) },
+        ],
+        avertissement: "Cette action est définitive et ne peut pas être annulée.",
+      },
       confirmLabel: "Supprimer",
       permission: "server.roles.manage",
       execute: async (interaction) => {

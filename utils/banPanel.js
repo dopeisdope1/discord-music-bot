@@ -1,5 +1,7 @@
 const {
   ContainerBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
@@ -13,7 +15,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
-const { carteSanctionMessage } = require("./actionCard");
+const { carteSanctionMessage, carteConfirmationFichier } = require("./actionCard");
 const { botAndRankRefusal, checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 
 const ID = "ban";
@@ -87,6 +89,37 @@ function buildPickPanel(actorId, reason) {
 /** Panneau de confirmation pour une cible précise. */
 function buildConfirmPanel(target, actorId, reason) {
   const token = rememberRequest({ actorId, reason, targetId: target.id });
+  const boutons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${ID}:go:${token}`).setLabel("Bannir").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`${ID}:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
+  );
+
+  // Carte dessinée plutôt qu'un pavé de texte : c'est la confirmation la plus
+  // lourde de conséquences du bot, elle doit se lire d'un coup d'œil. Repli
+  // sur le texte si le rendu échoue — sans confirmation affichée, le
+  // bannissement deviendrait impossible à lancer.
+  const fichier = carteConfirmationFichier(
+    {
+      titre: "Confirmer le bannissement",
+      couleur: "#ff6b6b",
+      lignes: [
+        { label: "Membre", valeur: target.user.tag },
+        { label: "Identifiant", valeur: target.id },
+        { label: "Raison", valeur: reason || "aucune" },
+      ],
+      avertissement: "Irréversible depuis Discord sans débannissement manuel.",
+    },
+    "confirmation-ban.png"
+  );
+  if (fichier) {
+    const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL("attachment://confirmation-ban.png"))
+    );
+    container.addActionRowComponents(boutons);
+    return { flags: MessageFlags.IsComponentsV2, components: [container], files: [fichier] };
+  }
+
   return card(
     "Confirmer le bannissement",
     [
@@ -95,12 +128,7 @@ function buildConfirmPanel(target, actorId, reason) {
       "",
       "Cette action est irréversible depuis Discord sans débannissement manuel.",
     ].join("\n"),
-    [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:go:${token}`).setLabel("Bannir").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId(`${ID}:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
-      ),
-    ]
+    [boutons]
   );
 }
 

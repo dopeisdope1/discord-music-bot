@@ -360,8 +360,14 @@ function render(section, state) {
     };
     await handleConfigInteraction(interaction);
     assert.strictEqual(replies.length, 1);
-    const texte = replies[0].components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("Supprimer le rôle"), texte);
+    // La confirmation est désormais une carte EN IMAGE (utils/actionCard.js),
+    // avec les deux issues en boutons dessous.
+    const json = replies[0].components[0].toJSON();
+    assert.ok(json.components.some((c) => c.type === 12), "la confirmation doit être affichée en image");
+    assert.strictEqual(replies[0].files[0].name, "confirmation.png");
+    assert.strictEqual(replies[0].files[0].attachment.subarray(1, 4).toString(), "PNG");
+    const labels = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
+    assert.deepStrictEqual(labels, ["Supprimer", "Annuler"], "les deux issues doivent rester proposées");
     assert.ok(g.roles.cache.has(role.id), "le rôle ne doit pas encore être supprimé avant confirmation");
   });
 

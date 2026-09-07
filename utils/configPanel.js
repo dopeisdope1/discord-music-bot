@@ -25,6 +25,7 @@ const {
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
 const { rendreEnCache, resumer } = require("./dashboardImage");
+const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
@@ -218,6 +219,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // utils/dashboardImage.js) : nom de fichier fixe, référencé par
 // "attachment://" dans le composant MediaGallery.
 const NOM_IMAGE_PANEL = "centre-de-gestion.png";
+const NOM_IMAGE_FICHE = "fiche-membre.png";
 
 // Une couleur par famille — c'est tout l'intérêt de l'image : un Container
 // Components V2 n'a qu'UNE couleur d'accent pour tout le message.
@@ -848,6 +850,40 @@ function accessRows(scope, label) {
  * en lignes. Exporté pour que les tests vérifient le contenu de l'image —
  * autrement invérifiable une fois rendue en PNG.
  */
+/**
+ * Ce qui est dessiné sur la fiche membre du centre de modération : identité,
+ * ancienneté, rôles et casier. La teinte suit le nombre de sanctions — vert
+ * = casier vierge, rouge = membre déjà lourdement sanctionné : l'information
+ * la plus utile se lit avant même de lire les chiffres.
+ * Exporté pour que les tests vérifient le contenu réel de l'image.
+ */
+function buildFicheMembreSpec(guild, targetMember) {
+  const entries = historyStore.search(guild.id, { targetId: targetMember.id, limit: 0 });
+  const roles = [...targetMember.roles.cache.values()].filter((r) => r.id !== guild.id);
+  const dateFR = (ms) => (ms ? new Date(ms).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) : null);
+  const derniere = entries[0];
+
+  return {
+    titre: "Fiche membre",
+    couleur: entries.length === 0 ? "#4ade80" : entries.length < 3 ? "#fbbf24" : "#ff6b6b",
+    membre: { nom: nomDe(targetMember), sousTitre: targetMember.id, avatarURL: avatarDe(targetMember) },
+    lignes: [
+      { label: "Arrivé le", valeur: dateFR(targetMember.joinedTimestamp) },
+      { label: "Compte créé", valeur: dateFR(targetMember.user?.createdTimestamp) },
+      {
+        label: "Rôles",
+        valeur: roles.length ? `${roles.length} — ${roles.slice(0, 4).map((r) => r.name).join(", ")}${roles.length > 4 ? "…" : ""}` : "aucun",
+        // Pastille à la couleur du rôle le plus haut, comme Discord affiche
+        // la couleur d'un membre.
+        couleur: roles.find((r) => r.color)?.color ? `#${roles.find((r) => r.color).color.toString(16).padStart(6, "0")}` : undefined,
+      },
+      { label: "Sanctions", valeur: String(entries.length) },
+      { label: "Dernière", valeur: derniere ? `${derniere.action}${derniere.reason ? ` — ${derniere.reason}` : ""}` : null },
+    ],
+    pied: guild.name,
+  };
+}
+
 function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) {
   const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
   return {
@@ -874,6 +910,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   // reliés par un require différé dans l'autre sens — un import direct ici
   // fermerait la boucle, voir le commentaire de hasAnyPanelAccessLazy).
   const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
+  // Pièces jointes accumulées par l'écran courant (fiche membre en image).
+  const fichiers = [];
 
   const enteteLignes = ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
   // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
@@ -906,7 +944,20 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     };
   }
 
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
+  // La fiche membre du centre de modération est dessinée en carte (même
+  // moteur que les cartes de sanction) plutôt qu'écrite : c'est le seul écran
+  // du panel dont le contenu est une IDENTITÉ, où l'avatar et la teinte du
+  // casier valent mieux qu'une liste de lignes. Les autres écrans restent en
+  // texte — ce sont des réglages, pas des fiches.
+  const cibleFiche = meta.key === "modCenter" && state.modTargetId ? guild.members.cache.get(state.modTargetId) : null;
+  if (cibleFiche) {
+    fichiers.push(new AttachmentBuilder(rendreCarteActionSync(buildFicheMembreSpec(guild, cibleFiche)), { name: NOM_IMAGE_FICHE }));
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_FICHE}`))
+    );
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
+  }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);
   const subNav = buildSubNav(meta.key, member, isOwner);
@@ -1631,7 +1682,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     );
   }
 
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
 
 const PREFIX_FIELDS = {
@@ -1678,7 +1729,12 @@ async function handleConfigInteraction(interaction) {
   const guildId = guild.id;
   const isOwner = accessStore.isOwner(member.id);
 
-  const goto = (section, state) => interaction.update(buildConfigPanel(guild, section, member, state));
+  // `attachments: []` à CHAQUE édition : le panel est un message unique édité
+  // en place, et certains écrans portent une image (tableau de bord de
+  // l'accueil, fiche membre). Sans ce champ, Discord conserve les pièces
+  // jointes précédentes et le message accumule une image de plus à chaque
+  // clic — y compris en revenant sur un écran qui n'en a aucune.
+  const goto = (section, state) => interaction.update({ ...buildConfigPanel(guild, section, member, state), attachments: [] });
 
   if (action === "nav") {
     // Le bouton de navigation donne une famille (clé dans le customId,
@@ -1950,7 +2006,14 @@ async function handleConfigInteraction(interaction) {
     // Un fetch ciblé (pas guild.members.fetch() complet) garantit une fiche à
     // jour même si ce membre précis n'était pas déjà en cache — sectionBody
     // reste lui synchrone et lit ensuite le cache tel quel.
-    if (targetId) await guild.members.fetch(targetId).catch(() => {});
+    if (targetId) {
+      const cible = await guild.members.fetch(targetId).catch(() => null);
+      // La fiche est dessinée en image par un rendu SYNCHRONE (buildConfigPanel
+      // l'est) : l'avatar doit donc être en cache AVANT, sinon la carte
+      // retombe sur les initiales. C'est le seul endroit qui connaît la cible
+      // et peut encore attendre.
+      if (cible) await prechargerAvatar(avatarDe(cible));
+    }
     return goto("modCenter", { modTargetId: targetId });
   }
 
@@ -2492,4 +2555,5 @@ async function handleHistorySearchModal(interaction, carried = {}) {
 }
 
 module.exports = {
-  buildHomeSpec, buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
+  buildHomeSpec,
+  buildFicheMembreSpec, buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
