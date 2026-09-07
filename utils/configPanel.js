@@ -90,6 +90,12 @@ const SECTIONS = [
     visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
+  {
+    key: "securityOverview",
+    label: "Vue d'ensemble",
+    description: "État global : anti-spam, anti-nuke, mute, logs, permissions dangereuses",
+    visible: (member) => can(member, "protection.automod") || can(member, "protection.guard.manage"),
+  },
   { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
   { key: "guard", label: "Anti-nuke", description: "Détection de rafales destructrices et sanction automatique", permission: "protection.guard.manage" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
@@ -140,7 +146,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
 const FAMILIES = [
   { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", sections: ["home"] },
-  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", sections: ["protection", "guard", "mute"] },
+  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", sections: ["securityOverview", "protection", "guard", "mute"] },
   { key: "moderation", label: "Modération", description: "Historique des sanctions", sections: ["history"] },
   {
     key: "serveur",
@@ -321,6 +327,16 @@ function sectionBody(section, guild, member, state) {
       "**5 dernières actions :**",
       lines.length ? lines.join("\n") : "*Aucune entrée pour l'instant.*",
     ].join("\n");
+  }
+
+  if (section === "securityOverview") {
+    const { critical, warnings, ok } = computeSecurityScan(guild);
+    const emoji = critical.length ? "🔴" : warnings.length ? "🟠" : "🟢";
+    const lines = [`${emoji} **${ok.length}** OK · **${warnings.length}** avertissement(s) · **${critical.length}** critique(s)`];
+    if (critical.length) lines.push("", "**🔴 Critique :**", ...critical.map((l) => `> ${l}`));
+    if (warnings.length) lines.push("", "**🟠 Avertissements :**", ...warnings.map((l) => `> ${l}`));
+    if (!critical.length && !warnings.length) lines.push("", "*Tout est en ordre — voir le détail dans Protection/Anti-nuke/Mute.*");
+    return lines.join("\n");
   }
 
   if (section === "protection") {
