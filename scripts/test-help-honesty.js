@@ -515,11 +515,27 @@ function menuNavigation(json) {
     assert.deepStrictEqual(manquantes, [], `commandes de Sécurité jamais affichées : ${manquantes.join(", ")}`);
   });
 
-  await cas("chaque page se répartit en TROIS colonnes — la grille que Discord ne sait pas faire en texte", () => {
+  await cas("chaque page se répartit en colonnes — la grille que Discord ne sait pas faire en texte", () => {
+    // Deux colonnes et non trois : Discord réduit l'image à ~500 px de large,
+    // et trois colonnes y rendaient le texte illisible sans zoomer.
     const cartes = spec(owner, "securite", 0).cartes;
-    assert.strictEqual(cartes.length, 3, `${cartes.length} colonnes au lieu de 3`);
-    const tailles = cartes.map((c) => c.items.length);
-    assert.ok(Math.max(...tailles) - Math.min(...tailles) <= 1, `colonnes déséquilibrées : ${tailles.join(", ")}`);
+    assert.strictEqual(cartes.length, 2, `${cartes.length} colonnes au lieu de 2`);
+    for (const carte of cartes) {
+      assert.ok(carte.items.length, `la colonne "${carte.titre}" ne doit pas être vide`);
+    }
+  });
+
+  await cas("les libellés restent courts pour ne pas être tronqués à l'affichage", () => {
+    for (const cat of CATEGORIES) {
+      const total = buildHelpSpec("g1", owner, cat.key, owner.id, 0).totalPages;
+      for (let page = 0; page < total; page++) {
+        for (const carte of spec(owner, cat.key, page).cartes) {
+          for (const item of carte.items) {
+            assert.ok(item.nom.length <= 46, `"${item.nom}" (${item.nom.length}) sera coupé`);
+          }
+        }
+      }
+    }
   });
 
   await cas("un menu de pagination dédié apparaît sur la catégorie dense, avec \"Page suivante\"", () => {

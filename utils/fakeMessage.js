@@ -38,7 +38,14 @@ function fakeMessage(interaction, { channel, channels, user, role, roles: roleLi
     // toute réponse Components V2 (ban_member/softban_member, entre autres),
     // que Discord refuserait alors puisque `components` contient des
     // builders V2 sans le flag qui les autorise.
-    reply: (payload) => interaction.followUp({ ...payload, flags: (payload.flags || 0) | MessageFlags.Ephemeral }).catch(() => {}),
+    // L'échec était avalé en silence (`.catch(() => {})`) : quand une réponse
+    // ne partait pas — pièce jointe refusée, interaction expirée — rien ne
+    // l'indiquait nulle part, ni à l'utilisateur ni dans les logs, alors que
+    // l'action avait bien eu lieu. On journalise donc le motif.
+    reply: (payload) =>
+      interaction
+        .followUp({ ...payload, flags: (payload.flags || 0) | MessageFlags.Ephemeral })
+        .catch((err) => console.error(`[fakeMessage] réponse non envoyée : ${err.message}`)),
   };
 }
 

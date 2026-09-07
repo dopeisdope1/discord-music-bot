@@ -31,10 +31,15 @@ const THEME = {
   texteFaible: "#635c78",
 };
 
-const LARGEUR = 1200;
-const MARGE = 40;
-const GOUTTIERE = 18;
-const COLONNES = 3;
+// Discord réduit une image jointe à ~500 px de large dans le fil : plus
+// l'image est large, plus le texte est écrasé à l'affichage. Une image de
+// 1200 px sur 3 colonnes rendait des libellés de 12 px à ~5 px — illisible
+// sans zoomer. On dessine donc PLUS ÉTROIT avec de PLUS GROSSES polices :
+// c'est le rapport texte/largeur qui décide de la lisibilité finale.
+const LARGEUR = 880;
+const MARGE = 34;
+const GOUTTIERE = 16;
+const COLONNES = 2;
 
 /**
  * Ajoute une opacité à une couleur hex. Coller directement le suffixe
@@ -92,9 +97,9 @@ function largeurEspacee(ctx, texte, espacement) {
  * colonnes de commandes d'une catégorie ouverte) n'a pas de bandeau d'en-tête.
  */
 function hauteurCarte(items, avecTitre = true, avecSousTitre = false) {
-  const ENTETE = avecTitre ? 58 : 16;
-  const LIGNE = 40;
-  return ENTETE + (avecSousTitre ? 20 : 0) + Math.max(1, items.length) * LIGNE + 14;
+  const ENTETE = avecTitre ? 64 : 20;
+  const LIGNE = 50;
+  return ENTETE + (avecSousTitre ? 24 : 0) + Math.max(1, items.length) * LIGNE + 16;
 }
 
 /**
@@ -133,22 +138,22 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     cheminArrondi(ctx, x, y, largeur, hauteur, 12);
     ctx.clip();
     ctx.fillStyle = THEME.carteEntete;
-    ctx.fillRect(x, y, largeur, 44);
+    ctx.fillRect(x, y, largeur, 50);
     ctx.fillStyle = carte.couleur;
-    ctx.fillRect(x, y, 4, 44);
+    ctx.fillRect(x, y, 5, 50);
     ctx.restore();
 
-    ctx.font = "17px ChakraBold";
+    ctx.font = "21px ChakraBold";
     ctx.fillStyle = carte.couleur;
-    texteEspace(ctx, tronquer(ctx, carte.titre.toUpperCase(), largeur - 34), x + 18, y + 23, 1.1);
+    texteEspace(ctx, tronquer(ctx, carte.titre.toUpperCase(), largeur - 36), x + 18, y + 26, 1.1);
   }
 
-  let ligneY = y + (avecTitre ? 44 + 26 : 30);
+  let ligneY = y + (avecTitre ? 50 + 30 : 32);
   if (carte.sousTitre) {
-    ctx.font = "12px ChakraRegular";
+    ctx.font = "14px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 60);
-    ligneY += 20;
+    ctx.fillText(tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 68);
+    ligneY += 24;
   }
   if (!carte.items.length) {
     ctx.font = "13px ChakraRegular";
@@ -164,26 +169,26 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     // palier de permission), sinon la pastille reprend la teinte de la carte.
     const teinte = item.couleurPastille || carte.couleur;
     ctx.beginPath();
-    ctx.arc(x + 28, ligneY + 1, 9, 0, Math.PI * 2);
+    ctx.arc(x + 30, ligneY + 1, 10, 0, Math.PI * 2);
     ctx.fillStyle = avecAlpha(teinte, "22");
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x + 28, ligneY + 1, 3.2, 0, Math.PI * 2);
+    ctx.arc(x + 30, ligneY + 1, 3.6, 0, Math.PI * 2);
     ctx.fillStyle = teinte;
     ctx.fill();
 
-    const texteX = x + 46;
+    const texteX = x + 52;
     const dispo = largeur - (texteX - x) - 16;
-    ctx.font = "15px ChakraBold";
+    ctx.font = "18px ChakraBold";
     ctx.fillStyle = THEME.texte;
-    ctx.fillText(tronquer(ctx, item.nom, dispo), texteX, ligneY - 6);
+    ctx.fillText(tronquer(ctx, item.nom, dispo), texteX, ligneY - 8);
 
     if (item.description) {
-      ctx.font = "12px ChakraRegular";
+      ctx.font = "14px ChakraRegular";
       ctx.fillStyle = THEME.texteDoux;
-      ctx.fillText(tronquer(ctx, item.description, dispo), texteX, ligneY + 10);
+      ctx.fillText(tronquer(ctx, item.description, dispo), texteX, ligneY + 12);
     }
-    ligneY += 40;
+    ligneY += 50;
   }
   return hauteur;
 }
@@ -202,7 +207,7 @@ function rendre(spec) {
 
   // Hauteur totale calculée AVANT de créer le canvas : la grille doit finir
   // au ras de la dernière carte, sinon l'image traîne une bande vide.
-  const HAUT_ENTETE = 118;
+  const HAUT_ENTETE = 132;
   let hauteurGrille = 0;
   for (const rangee of rangees) {
     hauteurGrille += Math.max(...rangee.map((c) => hauteurCarte(c.items, Boolean(c.titre), Boolean(c.sousTitre)))) + GOUTTIERE;
@@ -226,21 +231,21 @@ function rendre(spec) {
   ctx.textBaseline = "middle";
 
   // Titre encadré
-  ctx.font = "27px ChakraBold";
+  ctx.font = "30px ChakraBold";
   const largeurTitre = largeurEspacee(ctx, spec.titre.toUpperCase(), 2.4);
-  const boiteL = largeurTitre + 40;
-  cheminArrondi(ctx, MARGE, 44, boiteL, 46, 9);
+  const boiteL = largeurTitre + 44;
+  cheminArrondi(ctx, MARGE, 42, boiteL, 52, 10);
   ctx.fillStyle = "#191327";
   ctx.fill();
   ctx.strokeStyle = "#332a4d";
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.fillStyle = THEME.texte;
-  texteEspace(ctx, spec.titre.toUpperCase(), MARGE + 20, 68, 2.4);
+  texteEspace(ctx, spec.titre.toUpperCase(), MARGE + 22, 68, 2.4);
 
-  ctx.font = "14px ChakraRegular";
+  ctx.font = "16px ChakraRegular";
   ctx.fillStyle = THEME.texteDoux;
-  ctx.fillText(tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 106);
+  ctx.fillText(tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
 
   let y = HAUT_ENTETE;
   for (const rangee of rangees) {
@@ -266,8 +271,8 @@ function rendre(spec) {
   // Légende : les pastilles sont DESSINÉES, pas écrites — la police
   // embarquée n'a pas de glyphe rond ("●" sortirait en carré vide).
   if (spec.legende?.length) {
-    ctx.font = "13px ChakraRegular";
-    const ESPACE = 26;
+    ctx.font = "14px ChakraRegular";
+    const ESPACE = 24;
     const largeurTotale = spec.legende.reduce((somme, e) => somme + 12 + 6 + ctx.measureText(e.texte).width + ESPACE, 0) - ESPACE;
     let lx = (LARGEUR - largeurTotale) / 2;
     for (const entree of spec.legende) {
@@ -283,7 +288,7 @@ function rendre(spec) {
   }
 
   if (spec.pied) {
-    ctx.font = "13px ChakraRegular";
+    ctx.font = "14px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     const l = ctx.measureText(spec.pied).width;
     ctx.fillText(spec.pied, (LARGEUR - l) / 2, y + 6);

@@ -77,7 +77,12 @@ async function chargerAvatar(url) {
   if (!url) return null;
   if (CACHE_AVATARS.has(url)) return CACHE_AVATARS.get(url);
   try {
-    const reponse = await fetch(url);
+    // TIMEOUT OBLIGATOIRE : sans lui, un CDN qui ne répond pas laisse la
+    // promesse en suspens pour toujours. La commande n'affiche alors RIEN —
+    // ni carte, ni message de repli, ni erreur dans les logs — alors que la
+    // sanction a bien été appliquée. Une photo ne vaut pas ce risque : au
+    // bout de 3 secondes on dessine les initiales et on passe à la suite.
+    const reponse = await fetch(url, { signal: AbortSignal.timeout(3000) });
     if (!reponse.ok) return null;
     const image = await loadImage(Buffer.from(await reponse.arrayBuffer()));
     CACHE_AVATARS.set(url, image);

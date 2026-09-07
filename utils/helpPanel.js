@@ -62,7 +62,7 @@ function palierDe(cmd) {
 
 // Commandes par colonne, et colonnes par page, dans une catégorie ouverte.
 const PAR_COLONNE = 9;
-const COLONNES_PAR_PAGE = 3;
+const COLONNES_PAR_PAGE = 2;
 
 /**
  * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
@@ -346,9 +346,11 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
         couleur: c.couleur,
         items: c.entries.map((e) => ({
           nom: `${prefixePour(e.cmd, prefixes)}${e.cmd.name}`,
+          // Description ramenée à sa première proposition : en deux colonnes,
+          // la version longue se faisait couper en plein milieu d'une phrase.
           // Les alias restent visibles : sans eux, `&avatar` semblerait ne
           // pas exister.
-          description: e.aliases.length ? `${e.cmd.description} · alias : ${e.aliases.join(", ")}` : e.cmd.description,
+          description: e.aliases.length ? `${resumer(e.cmd.description)} · alias : ${e.aliases.join(", ")}` : resumer(e.cmd.description),
         })),
       })),
       pied: totalPages > 1 ? `Page ${clampedPage + 1} / ${totalPages}` : undefined,

@@ -784,10 +784,16 @@ const CATEGORIES = [
         description: "Publie automatiquement les messages dans les salons d'annonces",
       },
       {
-        name: "voc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre",
+        // Les actions vivent dans la description, plus dans le nom : la
+        // syntaxe complète faisait 72 caractères et se retrouvait tronquée
+        // à l'affichage, ce qui masquait justement la liste des actions.
+        name: "voc <action> [valeur]",
         prefix: "mod",
         permission: null,
-        description: "Gère TON salon vocal temporaire (voir &voicehub) — ouvert à tous, réservé au propriétaire du salon",
+        // Formulée SANS " : " ni parenthèse : `resumer()` coupe la
+        // description à la première des deux, ce qui escamoterait la liste
+        // des actions — c'est-à-dire l'information utile de cette entrée.
+        description: "lock, unlock, limit <n>, rename <nom>, kick, add, remove, transfer @membre — sur TON salon vocal temporaire",
       },
       {
         name: "voicehub #salon-vocal|off",

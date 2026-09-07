@@ -91,6 +91,24 @@ function membre(id, tag, { avatar = true } = {}) {
     assert.ok(estPNG(png), "la carte doit être produite même sans photo");
   });
 
+  await cas("un CDN qui ne répond pas ne bloque PAS la commande — la carte sort quand même", async () => {
+    // Le pire scénario, et le plus discret : sans délai maximum sur le
+    // téléchargement de l'avatar, la promesse reste en suspens pour toujours.
+    // La commande n'affiche alors rien du tout — ni carte, ni repli texte, ni
+    // erreur dans les logs — alors que la sanction a bien été appliquée.
+    // 10.255.255.1 est une adresse privée non routée : la connexion pend.
+    const debut = Date.now();
+    const png = await rendreCarteAction({
+      titre: "Membre banni",
+      couleur: "#ff6b6b",
+      membre: { nom: "Zoe", avatarURL: "https://10.255.255.1/avatar.png" },
+      lignes: [{ label: "Par", valeur: "uo067" }],
+    });
+    const duree = Date.now() - debut;
+    assert.ok(estPNG(png), "la carte doit être produite malgré le CDN injoignable");
+    assert.ok(duree < 8000, `${duree} ms — le rendu doit abandonner l'avatar, pas attendre indéfiniment`);
+  });
+
   console.log("\nLecture d'un membre, quelle que soit la forme reçue :");
 
   await cas("le nom est lu sur un GuildMember comme sur un User ou un objet partiel", () => {

@@ -901,7 +901,10 @@ function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) 
       couleur: FAMILY_COLORS[f.key] || "#94a3b8",
       items: familySections(f, member, isOwner).map((r) => ({ nom: r.label, description: resumer(r.description) })),
     })),
-    pied: "Choisis une rubrique avec les boutons ci-dessous",
+    pied: "Choisis une famille dans le menu ci-dessous",
+    // Chaque carte prend sa hauteur réelle : les familles à une seule
+    // rubrique laissaient sinon un grand rectangle vide à côté des autres.
+    hauteursLibres: true,
   };
 }
 
