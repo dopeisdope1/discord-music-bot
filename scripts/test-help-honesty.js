@@ -33,7 +33,7 @@ const { Collection, MessageFlags } = require("discord.js");
 // musicCommands pour casser la boucle de dépendances. S'il était rompu, la
 // première ligne du test planterait.
 const { isImplemented } = require("../utils/implementedCommands");
-const { buildHelpPanel, handleHelpInteraction, identityOf } = require("../utils/helpPanel");
+const { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
 const { can } = require("../utils/permissions/engine");
 
@@ -80,23 +80,39 @@ const CATEGORIES_GARDEES = ["securite", "communaute", "bot"];
 const CATEGORIES_PARTIELLEMENT_PUBLIQUES = ["moderation", "serveurroles", "informations", "outils"];
 
 /**
- * Concatène TOUS les textes du panneau : les blocs simples (type 10) ET ceux
- * nichés dans une carte (type 9 = Section, la carte de catégorie de
- * l'accueil, dont le texte est un enfant et pas un composant de premier
- * niveau).
+ * Le tableau de bord de &help est rendu en IMAGE (utils/dashboardImage.js) :
+ * son contenu n'est donc plus du texte Discord inspectable. On vérifie ce
+ * qui est réellement dessiné, c'est-à-dire la SPEC passée au moteur de rendu
+ * (utils/helpPanel.js::buildHelpSpec) — la même donnée, en structuré, ce qui
+ * rend les garanties (droits respectés, aucune commande fantôme, identités
+ * distinctes) plus solides à vérifier qu'une expression régulière sur du
+ * texte.
  */
-function textesDe(json) {
-  const morceaux = [];
-  for (const c of json.components) {
-    if (c.type === 10) morceaux.push(c.content);
-    else if (c.type === 9) morceaux.push(...c.components.filter((t) => t.type === 10).map((t) => t.content));
-  }
-  return morceaux;
+function spec(member = owner, categorie = null, page = 0) {
+  return buildHelpSpec("g1", member, categorie, member.id, page).spec;
 }
+/** Tout le texte dessiné sur l'image (titres de cartes, noms, descriptions). */
 function fullText(member = owner, categorie = null) {
-  return textesDe(buildHelpPanel("g1", member, categorie, member.id).components[0].toJSON()).join("\n\n");
+  const s = spec(member, categorie);
+  const morceaux = [s.titre, s.sousTitre, s.pied || ""];
+  for (const carte of s.cartes) {
+    morceaux.push(carte.titre || "");
+    for (const item of carte.items) morceaux.push(item.nom, item.description || "");
+  }
+  return morceaux.join("\n");
 }
-/** Tous les boutons du panneau, y compris ceux ancrés à droite d'une carte (accessory). */
+/** Les commandes listées dans une catégorie, TOUTES PAGES confondues. */
+function commandsText(member = owner, categorie) {
+  const morceaux = [];
+  const total = buildHelpSpec("g1", member, categorie, member.id, 0).totalPages;
+  for (let page = 0; page < total; page++) {
+    for (const carte of spec(member, categorie, page).cartes) {
+      for (const item of carte.items) morceaux.push(`${item.nom} — ${item.description || ""}`);
+    }
+  }
+  return morceaux.join("\n");
+}
+/** Tous les boutons du panneau (rangées de navigation). */
 function tousLesBoutons(json) {
   const boutons = [];
   for (const c of json.components) {
@@ -104,25 +120,6 @@ function tousLesBoutons(json) {
     else if (c.type === 9 && c.accessory) boutons.push(c.accessory);
   }
   return boutons;
-}
-/** Le détail des commandes d'une catégorie, TOUTES PAGES confondues (une catégorie dense est paginée). */
-function commandsText(member = owner, categorie) {
-  const pieces = [];
-  let page = 0;
-  for (;;) {
-    const json = buildHelpPanel("g1", member, categorie, member.id, page).components[0].toJSON();
-    pieces.push(
-      ...json.components
-        .filter((c) => c.type === 10)
-        .slice(1) // titre+légende fusionnés dans un seul bloc désormais
-        .map((c) => c.content)
-    );
-    const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
-    const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
-    if (!hasNext) break;
-    page++;
-  }
-  return pieces.join("\n\n");
 }
 
 (async () => {
@@ -177,41 +174,56 @@ function commandsText(member = owner, categorie) {
 
   console.log("\nAccueil épuré (emoji + nom + description courte, JAMAIS de compteur) :");
 
-  await cas("l'accueil affiche AU PLUS 7 catégories, chacune avec son emoji et sa description, sans compteur de commandes", () => {
+  await cas("l'accueil affiche AU PLUS 7 catégories, chacune avec sa description, sans compteur de commandes", () => {
     assert.ok(CATEGORIES.length <= 7, `${CATEGORIES.length} catégories — demande explicite : maximum 7`);
-    const body = fullText();
-    assert.ok(!/\d+ commande\(s\)/.test(body), `un compteur de commandes traîne encore : ${body}`);
+    const s = spec();
+    assert.ok(!/\d+ commande\(s\)/.test(fullText()), "un compteur de commandes traîne encore");
     for (const cat of CATEGORIES) {
-      assert.ok(body.includes(cat.emoji), `l'emoji de "${cat.label}" doit apparaître`);
-      assert.ok(body.includes(cat.description), `la description de "${cat.label}" doit apparaître`);
+      const carte = s.cartes.find((c) => c.titre === cat.label);
+      assert.ok(carte, `la carte "${cat.label}" doit être dessinée`);
+      assert.strictEqual(carte.sousTitre, cat.description, `la description de "${cat.label}" doit apparaître sur sa carte`);
     }
-    assert.ok(!body.includes("Usage :"), "aucun détail de commande avant d'avoir choisi une catégorie");
+  });
+
+  await cas("chaque catégorie a SA couleur — ce qu'un Container Components V2 ne sait pas faire (une seule teinte par message)", () => {
+    const couleurs = spec().cartes.map((c) => c.couleur);
+    assert.strictEqual(new Set(couleurs).size, couleurs.length, `deux catégories partagent la même couleur : ${couleurs.join(", ")}`);
+    for (const c of couleurs) assert.ok(/^#[0-9a-f]{6}$/i.test(c), `couleur invalide : ${c}`);
   });
 
   await cas("le préfixe est indiqué clairement, une seule fois, à l'accueil", () => {
-    assert.ok(/Préfixe : `&`/.test(fullText()), fullText());
+    assert.ok(/Préfixe : &/.test(spec().sousTitre), spec().sousTitre);
   });
 
-  await cas("l'accueil est une GRILLE DE CARTES : une carte par catégorie, texte à gauche et bouton d'ouverture à droite", () => {
-    const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
-    const cartes = json.components.filter((c) => c.type === 9);
-    assert.strictEqual(cartes.length, CATEGORIES.length, "une carte (Section) par catégorie accessible");
-    for (const carte of cartes) {
-      assert.ok(carte.accessory?.custom_id?.startsWith("help_tier:"), "chaque carte porte son bouton d'ouverture ancré à droite");
-      const texte = carte.components.map((t) => t.content).join("\n");
-      assert.ok(/^### /.test(texte), `la carte doit s'ouvrir sur un titre fort : ${texte}`);
-    }
-    assert.ok(!fullText().includes("┈"), "plus de filet décoratif en texte : les blocs sont de vrais composants Separator");
+  await cas("le tableau de bord est bien une IMAGE affichée DANS un Container Components V2, pas un embed", () => {
+    const panneau = buildHelpPanel("g1", owner, null, owner.id);
+    const json = panneau.components[0].toJSON();
+    assert.strictEqual(json.type, 17, "le conteneur Components V2 doit rester la racine");
+    assert.ok(json.accent_color, "la couleur d'accent partagée avec &panel doit rester");
+    const galerie = json.components.find((c) => c.type === 12);
+    assert.ok(galerie, "une MediaGallery doit porter l'image du tableau de bord");
+    assert.strictEqual(galerie.items[0].media.url, "attachment://centre-de-commandes.png");
+    assert.strictEqual(panneau.files.length, 1, "l'image doit être jointe au message");
+    assert.strictEqual(panneau.files[0].name, "centre-de-commandes.png", "le nom doit correspondre au attachment://");
+    assert.ok(Buffer.isBuffer(panneau.files[0].attachment), "un vrai PNG doit être rendu");
+    assert.strictEqual(panneau.files[0].attachment.subarray(1, 4).toString(), "PNG", "l'en-tête PNG doit être valide");
   });
 
-  await cas("chaque carte met en avant de VRAIES commandes du thème, en pastilles (Modération -> kick/ban/mute/warn)", () => {
+  await cas("une carte par catégorie accessible, et la navigation reste en vrais boutons Discord", () => {
+    const s = spec();
+    assert.strictEqual(s.cartes.length, CATEGORIES.length, "une carte par catégorie accessible");
     const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
-    const modo = json.components
-      .filter((c) => c.type === 9)
-      .map((c) => c.components.map((t) => t.content).join("\n"))
-      .find((t) => t.includes("MODÉRATION"));
-    for (const attendu of ["`kick`", "`ban`", "`mute`", "`warn`"]) {
-      assert.ok(modo.includes(attendu), `${attendu} doit être mis en avant sur la carte Modération : ${modo}`);
+    const boutons = tousLesBoutons(json);
+    assert.strictEqual(boutons.length, CATEGORIES.length + 1, "un bouton par catégorie, plus Accueil");
+    assert.ok(boutons.some((b) => b.label === "Accueil"), "le retour à l'accueil doit rester possible");
+  });
+
+  await cas("chaque carte met en avant de VRAIES commandes du thème (Modération -> kick/ban/mute/warn)", () => {
+    const modo = spec().cartes.find((c) => c.titre === "Modération");
+    const noms = modo.items.map((i) => i.nom);
+    assert.deepStrictEqual(noms, ["kick", "ban", "mute", "warn"], `mises en avant réelles : ${noms.join(", ")}`);
+    for (const item of modo.items) {
+      assert.ok(item.description, `"${item.nom}" doit porter sa description du catalogue`);
     }
   });
 
@@ -258,7 +270,7 @@ function commandsText(member = owner, categorie) {
   });
 
   await cas("&panel n'apparaît (dans \"Bot & Accès\") que pour qui a vraiment accès au panel", () => {
-    assert.ok(commandsText(owner, "bot").includes("**panel**"), "le propriétaire a accès au panel, la commande doit apparaître");
+    assert.ok(commandsText(owner, "bot").includes("&panel"), "le propriétaire a accès au panel, la commande doit apparaître");
     assert.ok(!fullText(plain).includes("panel"), "un membre sans aucun droit ne doit voir &panel dans aucune catégorie");
   });
 
@@ -266,20 +278,21 @@ function commandsText(member = owner, categorie) {
 
   await cas("chaque commande affiche son nom en gras, sa description, et la vraie syntaxe à taper", () => {
     const body = commandsText(owner, "informations");
-    assert.ok(body.includes("**banner**"), body);
-    assert.ok(body.includes("— Affiche la bannière d'un membre"), body);
-    assert.ok(body.includes("`&banner [@membre]`"), body);
+    // La carte affiche la SYNTAXE complète à taper : une image ne se copie
+    // pas, elle doit donc montrer exactement quoi écrire.
+    assert.ok(body.includes("&banner [@membre]"), body);
+    assert.ok(body.includes("Affiche la bannière d'un membre"), body);
   });
 
   await cas("des commandes du même thème atterrissent bien dans la MÊME catégorie (antilink et badwords -> Sécurité)", () => {
     const body = commandsText(owner, "securite");
-    assert.ok(body.includes("**antilink"), body);
-    assert.ok(body.includes("**badwords"), body);
+    assert.ok(body.includes("&antilink"), body);
+    assert.ok(body.includes("&badwords"), body);
   });
 
   await cas("des commandes de thèmes différents n'atterrissent PAS dans la même catégorie (role create -> Serveur & Rôles, pas Sécurité)", () => {
-    assert.ok(!commandsText(owner, "securite").includes("**role create**"));
-    assert.ok(commandsText(owner, "serveurroles").includes("**role create**"));
+    assert.ok(!commandsText(owner, "securite").includes("&role create"));
+    assert.ok(commandsText(owner, "serveurroles").includes("&role create"));
   });
 
   /** Fabrique un faux clic de bouton de navigation &help (catégorie ou Accueil), lancé par `clicker` sur la commande de `authorId`. */
@@ -308,9 +321,13 @@ function commandsText(member = owner, categorie) {
     await handleHelpInteraction(interaction);
     assert.strictEqual(interaction.replies.length, 0, "aucun nouveau message ne doit être créé");
     assert.ok(interaction.updated, "le message existant doit être édité en place");
-    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(body.includes("pic/avatar"), body);
-    assert.ok(!body.includes("role create"), "la catégorie Serveur & Rôles ne doit plus apparaître");
+    // Sur une ÉDITION, la liste des pièces jointes doit être remise à zéro,
+    // sinon Discord empile une image de plus à chaque clic.
+    assert.deepStrictEqual(interaction.updated.attachments, [], "les anciennes images doivent être remplacées, pas accumulées");
+    assert.strictEqual(interaction.updated.files.length, 1, "la nouvelle image doit être jointe");
+    const contenu = commandsText(owner, "informations");
+    assert.ok(contenu.includes("&pic"), contenu);
+    assert.ok(!contenu.includes("&role create"), "la catégorie Serveur & Rôles ne doit pas déborder ici");
   });
 
   await cas("le bouton \"Accueil\" est toujours présent dans la navigation — le chemin retour sans retaper &help", () => {
@@ -325,11 +342,12 @@ function commandsText(member = owner, categorie) {
     const interaction = fakeCategoryClick("home", owner, owner.id);
     await handleHelpInteraction(interaction);
     const json = interaction.updated.components[0].toJSON();
-    const body = textesDe(json).join("\n");
+    const body = fullText();
     assert.ok(!/\d+ commande\(s\)/.test(body), body);
-    assert.ok(body.includes("MODÉRATION"), body);
-    assert.ok(json.components.some((c) => c.type === 9), "l'accueil doit bien être fait de cartes");
-    assert.ok(!body.includes("└ `&"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
+    assert.ok(body.includes("Modération"), body);
+    assert.ok(json.components.some((c) => c.type === 12), "l'accueil doit bien réafficher l'image du tableau de bord");
+    const accueil = tousLesBoutons(json).find((b) => b.label === "Accueil");
+    assert.strictEqual(accueil.style, 1, "de retour à l'accueil, c'est Accueil qui est mis en avant (Primary)");
   });
 
   console.log("\nMessage public unique, réservé à qui a lancé &help :");
@@ -400,10 +418,12 @@ function commandsText(member = owner, categorie) {
   });
 
   await cas("les alias restent visibles, collés au nom de la commande", () => {
+    // Les alias sont rappelés dans la description de la commande : sans eux,
+    // `&avatar` semblerait ne pas exister.
     const body = commandsText(owner, "informations");
-    assert.ok(body.includes("pic/avatar"), body);
-    assert.ok(body.includes("server/serverinfo"));
-    assert.ok(body.includes("userinfo/member"));
+    assert.ok(body.includes("alias : avatar"), body);
+    assert.ok(body.includes("alias : serverinfo"), body);
+    assert.ok(body.includes("alias : member"), body);
   });
 
   await cas("chaque alias déclaré répond réellement", () => {
@@ -419,7 +439,7 @@ function commandsText(member = owner, categorie) {
   await cas("une identité n'apparaît jamais dans deux catégories à la fois", () => {
     const vus = new Set();
     for (const cat of CATEGORIES) {
-      const noms = [...commandsText(owner, cat.key).matchAll(/\*\*([^*]+)\*\*/g)].map((m) => m[1]);
+      const noms = buildHelpSpec("g1", owner, cat.key, owner.id, 0).spec.cartes.flatMap((c) => c.items.map((i) => i.nom));
       for (const n of noms) {
         assert.ok(!vus.has(n), `${n} listé dans deux catégories`);
         vus.add(n);
@@ -432,66 +452,37 @@ function commandsText(member = owner, categorie) {
   await cas("role create/delete/rename/color/admin sont CINQ identités distinctes, pas fusionnées sous \"role\"", () => {
     const body = commandsText(owner, "serveurroles");
     for (const sub of ["role create", "role delete", "role rename", "role color", "role admin"]) {
-      assert.ok(body.includes(`**${sub}**`), `"${sub}" doit apparaître comme identité distincte`);
+      assert.ok(body.includes(`&${sub}`), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
   await cas("channel create/delete/rename/topic sont des identités distinctes elles aussi", () => {
     const body = commandsText(owner, "serveurroles");
     for (const sub of ["channel create", "channel delete", "channel rename", "channel topic"]) {
-      assert.ok(body.includes(`**${sub}**`), `"${sub}" doit apparaître comme identité distincte`);
+      assert.ok(body.includes(`&${sub}`), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
-  console.log("\nRépartition sur plusieurs blocs ET plusieurs pages (une catégorie dense ne tient pas dans un seul Container) :");
+  console.log("\nPagination d'une catégorie dense (toutes ses commandes ne tiennent pas sur une image) :");
 
-  /** Chaque bloc de commandes de la catégorie, brut (pas joint), TOUTES PAGES confondues. */
-  function allChunks(member, categorie) {
-    const chunks = [];
-    let page = 0;
-    for (;;) {
-      const json = buildHelpPanel("g1", member, categorie, member.id, page).components[0].toJSON();
-      chunks.push(...json.components.filter((c) => c.type === 10).slice(1));
-      const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
-      const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
-      if (!hasNext) break;
-      page++;
+  await cas("une catégorie dense (\"Sécurité\") est répartie sur PLUSIEURS pages, aucune commande perdue", () => {
+    const { totalPages } = buildHelpSpec("g1", owner, "securite", owner.id, 0);
+    assert.ok(totalPages > 1, "la catégorie dense doit avoir besoin de plusieurs pages");
+    const vues = [];
+    for (let page = 0; page < totalPages; page++) {
+      for (const carte of spec(owner, "securite", page).cartes) vues.push(...carte.items.map((i) => i.nom));
     }
-    return chunks;
-  }
-
-  await cas("une catégorie dense (\"Sécurité\") est répartie sur PLUSIEURS blocs de texte, chacun sous la limite Discord", () => {
-    const parts = allChunks(owner, "securite");
-    assert.ok(parts.length > 1, "une seule commande par bloc rendrait ça bien trop long pour un seul bloc de texte");
-    for (const p of parts) assert.ok(p.content.length < 4000, `bloc de ${p.content.length} caractères`);
+    assert.strictEqual(new Set(vues).size, vues.length, "une commande ne doit pas apparaître sur deux pages");
+    const attenduesSecurite = CATEGORIES.find((c) => c.key === "securite").commands.filter((cmd) => isImplemented(cmd)).map((cmd) => identityOf(cmd));
+    const manquantes = [...new Set(attenduesSecurite)].filter((id) => !vues.some((v) => v.startsWith(`&${id}`)));
+    assert.deepStrictEqual(manquantes, [], `commandes de Sécurité jamais affichées : ${manquantes.join(", ")}`);
   });
 
-  await cas("chaque page de la catégorie \"Sécurité\" reste sous 4000 caractères affichables AU TOTAL (titre+légende compris)", () => {
-    // La vraie cause du plantage prod ("l'application n'a pas répondu") :
-    // DiscordAPIError[50035] COMPONENT_DISPLAYABLE_TEXT_SIZE_EXCEEDED — ce
-    // n'est PAS une limite par composant (chacun peut déjà aller jusqu'à
-    // 4000) mais le total CUMULÉ de tout le texte affichable du message.
-    let page = 0;
-    let sawMultiplePages = false;
-    for (;;) {
-      const json = buildHelpPanel("g1", owner, "securite", owner.id, page).components[0].toJSON();
-      const totalText = json.components.filter((c) => c.type === 10).reduce((sum, c) => sum + c.content.length, 0);
-      assert.ok(totalText < 4000, `page ${page} : ${totalText} caractères affichables au total — Discord refuse au-delà de 4000`);
-      const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
-      const hasNext = pageRow?.components[0].options.some((o) => o.label === "Page suivante");
-      if (!hasNext) break;
-      sawMultiplePages = true;
-      page++;
-    }
-    assert.ok(sawMultiplePages, "la catégorie dense doit avoir besoin de plusieurs pages pour ce test d'être significatif");
-  });
-
-  await cas("la coupe entre deux blocs ne tombe jamais AU MILIEU d'une commande", () => {
-    const parts = allChunks(owner, "securite");
-    for (const p of parts) {
-      assert.ok(p.content.trimStart().startsWith("🔹 **"), "chaque bloc doit commencer par le nom d'une commande");
-      assert.ok(p.content.includes("└ `"), "chaque bloc doit contenir au moins une commande complète");
-    }
+  await cas("chaque page se répartit en TROIS colonnes — la grille que Discord ne sait pas faire en texte", () => {
+    const cartes = spec(owner, "securite", 0).cartes;
+    assert.strictEqual(cartes.length, 3, `${cartes.length} colonnes au lieu de 3`);
+    const tailles = cartes.map((c) => c.items.length);
+    assert.ok(Math.max(...tailles) - Math.min(...tailles) <= 1, `colonnes déséquilibrées : ${tailles.join(", ")}`);
   });
 
   await cas("un menu de pagination dédié apparaît sur la catégorie dense, avec \"Page suivante\"", () => {
@@ -503,8 +494,16 @@ function commandsText(member = owner, categorie) {
     assert.ok(!pageRow.components[0].options.some((o) => o.label === "Page précédente"), "page 0 : pas de \"page précédente\"");
   });
 
+  await cas("l'accueil, lui, n'a aucun menu de pagination — tout tient sur une seule image", () => {
+    const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
+    assert.ok(!json.components.some((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:")));
+  });
+
   await cas("cliquer \"Page suivante\" affiche bien la suite des commandes, sans jamais créer de nouveau message", async () => {
-    const page0 = commandsText(owner, "securite").split("\n\n")[0];
+    const page0 = spec(owner, "securite", 0).cartes.flatMap((c) => c.items.map((i) => i.nom));
+    const page1 = spec(owner, "securite", 1).cartes.flatMap((c) => c.items.map((i) => i.nom));
+    assert.notDeepStrictEqual(page1, page0, "la page 1 doit montrer d'autres commandes que la page 0");
+
     const interaction = {
       guild: { id: "g1" },
       member: owner,
@@ -524,8 +523,25 @@ function commandsText(member = owner, categorie) {
     };
     await handleHelpInteraction(interaction);
     assert.strictEqual(interaction.replies.length, 0, "aucun nouveau message ne doit être créé");
-    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).slice(1).map((c) => c.content).join("\n\n");
-    assert.ok(!body.startsWith(page0), "la page 1 doit montrer d'autres commandes que la page 0");
+    assert.strictEqual(interaction.updated.files.length, 1, "la page suivante doit être une nouvelle image");
+    const menu = interaction.updated.components[0]
+      .toJSON()
+      .components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
+    assert.ok(menu.components[0].options.some((o) => o.label === "Page précédente"), "sur la page 1, le retour arrière doit être proposé");
+  });
+
+  console.log("\nCoût de rendu maîtrisé (le VPS n'a que 458 Mo de RAM) :");
+
+  await cas("deux appels identiques réutilisent l'image en cache au lieu de la redessiner", () => {
+    const a = buildHelpPanel("g1", owner, null, owner.id).files[0].attachment;
+    const b = buildHelpPanel("g1", owner, null, owner.id).files[0].attachment;
+    assert.strictEqual(a, b, "le même tableau de bord doit renvoyer exactement le même tampon, sans re-rendu");
+  });
+
+  await cas("un membre aux droits DIFFÉRENTS obtient une image différente (le cache ne fuite pas entre droits)", () => {
+    const a = buildHelpPanel("g1", owner, null, owner.id).files[0].attachment;
+    const b = buildHelpPanel("g1", plain, null, plain.id).files[0].attachment;
+    assert.notStrictEqual(a, b, "deux membres aux droits différents ne doivent jamais partager la même image");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

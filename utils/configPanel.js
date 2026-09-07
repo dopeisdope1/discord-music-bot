@@ -2,6 +2,9 @@ const {
   ContainerBuilder,
   TextDisplayBuilder,
   SectionBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  AttachmentBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
@@ -21,6 +24,7 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
+const { rendreEnCache, resumer } = require("./dashboardImage");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
@@ -210,6 +214,26 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
 // famille sans jamais partager le même écran : l'un donne accès à tout le bot,
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
+// L'accueil du panel est rendu en image (même moteur que &help, voir
+// utils/dashboardImage.js) : nom de fichier fixe, référencé par
+// "attachment://" dans le composant MediaGallery.
+const NOM_IMAGE_PANEL = "centre-de-gestion.png";
+
+// Une couleur par famille — c'est tout l'intérêt de l'image : un Container
+// Components V2 n'a qu'UNE couleur d'accent pour tout le message.
+const FAMILY_COLORS = {
+  securite: "#4ade80",
+  moderation: "#ff6b6b",
+  serveur: "#a78bfa",
+  communaute: "#fbbf24",
+  support: "#38bdf8",
+  communication: "#f472b6",
+  musique: "#2dd4bf",
+  monitoring: "#60a5fa",
+  bot: "#94a3b8",
+  sauvegardes: "#fb923c",
+};
+
 const FAMILIES = [
   { key: "accueil", label: "Accueil", description: "Vue d'ensemble : statut, alertes et accès rapides", emoji: EMOJI.MEMBERS, sections: ["home"] },
   {
@@ -818,6 +842,28 @@ function accessRows(scope, label) {
  * @param {import('discord.js').GuildMember} member qui consulte/modifie le panneau
  * @param {{ permissionsRoleId?: string, rolesRoleId?: string }} [state]
  */
+/**
+ * Ce qui est réellement DESSINÉ sur le tableau de bord de l'accueil du panel
+ * (utils/dashboardImage.js) : une carte par famille, ses rubriques réelles
+ * en lignes. Exporté pour que les tests vérifient le contenu de l'image —
+ * autrement invérifiable une fois rendue en PNG.
+ */
+function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) {
+  const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
+  return {
+    titre: "Centre de gestion",
+    sousTitre: `${member.displayName || member.user?.username || `Membre ${member.id}`} · ${guild.name} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
+    cartes: familles.map((f) => ({
+      cle: f.key,
+      titre: f.label,
+      sousTitre: resumer(f.description),
+      couleur: FAMILY_COLORS[f.key] || "#94a3b8",
+      items: familySections(f, member, isOwner).map((r) => ({ nom: r.label, description: resumer(r.description) })),
+    })),
+    pied: "Choisis une rubrique avec les boutons ci-dessous",
+  };
+}
+
 function buildConfigPanel(guild, current = "home", member, state = {}) {
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
@@ -841,41 +887,23 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   if (meta.key === "home") {
-    // Accueil = tableau de bord en CARTES, exactement comme l'accueil de
-    // &help (utils/helpPanel.js) : même en-tête, même couleur, même
-    // structure carte = SectionBuilder (texte à gauche, bouton d'ouverture
-    // ancré à droite) séparée par un filet. Les familles, leurs rubriques et
-    // leurs droits restent ceux du panel réel — aucune fonction inventée,
-    // seulement une mise en page.
-    const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
-    if (familles.length) {
-      // Un message Components V2 est plafonné à 40 composants AU TOTAL,
-      // imbriqués compris : chaque carte en coûte 3 (Section + TextDisplay +
-      // bouton) et chaque filet 1. Avec beaucoup de familles visibles (le
-      // propriétaire les voit toutes, et la famille Musique revient si
-      // MUSIC_ENABLED repasse à true) les filets sont les premiers sacrifiés
-      // — les cartes, elles, ne doivent jamais sauter. On vise 38 et non 40
-      // pour garder une marge : frôler le plafond ferait planter tout le
-      // panel d'un coup si une famille gagnait une rubrique.
-      const COUT_FIXE = 3; // container + en-tête (statut inclus) + filet sous l'en-tête
-      const filetsEntreCartes = COUT_FIXE + familles.length * 3 + (familles.length - 1) <= 38;
-      familles.forEach((f, index) => {
-        const rubriques = familySections(f, member, isOwner)
-          .map((s) => `\`${s.label}\``)
-          .join(" ");
-        container.addSectionComponents(
-          new SectionBuilder()
-            .addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(`### ${f.emoji} ${f.label.toUpperCase()}\n${f.description}\n${rubriques}`)
-            )
-            .setButtonAccessory(new ButtonBuilder().setCustomId(`${ID}:nav:${f.key}`).setLabel("Ouvrir").setStyle(ButtonStyle.Secondary))
-        );
-        if (filetsEntreCartes && index < familles.length - 1) {
-          container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true));
-        }
-      });
-    }
-    return { flags: MessageFlags.IsComponentsV2, components: [container] };
+    // Accueil = le MÊME tableau de bord en image que l'accueil de &help
+    // (utils/dashboardImage.js) : Discord ne sait pas disposer du texte en
+    // colonnes, donc la grille est dessinée puis affichée dans le Container
+    // Components V2. Les familles, leurs rubriques et leurs droits restent
+    // ceux du panel réel — aucune fonction inventée, seulement une mise en
+    // page.
+    const png = rendreEnCache(buildHomeSpec(guild, member, isOwner));
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_PANEL}`))
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);
+    return {
+      flags: MessageFlags.IsComponentsV2,
+      components: [container],
+      files: [new AttachmentBuilder(png, { name: NOM_IMAGE_PANEL })],
+    };
   }
 
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
@@ -2463,4 +2491,5 @@ async function handleHistorySearchModal(interaction, carried = {}) {
   return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
 }
 
-module.exports = { buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
+module.exports = {
+  buildHomeSpec, buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };

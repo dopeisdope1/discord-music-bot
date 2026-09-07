@@ -22,7 +22,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
-const { buildConfigPanel, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { buildConfigPanel, buildHomeSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { ACCENT_COLOR } = require("../utils/helpPanel");
 const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("../utils/permissions/store");
@@ -93,14 +94,48 @@ function render(section, state) {
     }
   });
 
-  await cas("sur le tableau de bord, aucune carte ne devient un paragraphe (200 caractères max)", () => {
-    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
-    const cartes = json.components.filter((c) => c.type === 9);
-    assert.ok(cartes.length, "l'accueil doit être fait de cartes");
-    for (const carte of cartes) {
-      const texte = carte.components.map((t) => t.content).join("\n");
-      assert.ok(texte.length <= 200, `une carte affiche ${texte.length} caractères : ${texte}`);
+  await cas("sur le tableau de bord, aucune LIGNE ne devient un paragraphe (elle serait coupée à l'affichage)", () => {
+    // L'accueil est rendu en IMAGE : on vérifie la spec réellement dessinée
+    // (buildHomeSpec), pas du texte Discord qui n'existe plus. Ce qui compte
+    // ici n'est pas le total de la carte mais la longueur de CHAQUE ligne :
+    // au-delà, le rendu la tronque avec une ellipse et l'information est
+    // perdue pour le lecteur.
+    const s = buildHomeSpec(guild, member);
+    assert.ok(s.cartes.length, "l'accueil doit être fait de cartes");
+    for (const carte of s.cartes) {
+      assert.ok(carte.sousTitre.length <= 60, `la description de "${carte.titre}" est trop longue : ${carte.sousTitre}`);
+      for (const item of carte.items) {
+        const ligne = `${item.nom} ${item.description || ""}`.trim();
+        assert.ok(ligne.length <= 90, `la ligne "${ligne}" (${ligne.length}) sera tronquée sur la carte "${carte.titre}"`);
+      }
     }
+  });
+
+  await cas("chaque carte ne liste que de VRAIES rubriques du panel, jamais une fonction inventée", () => {
+    const vraisLabels = new Set(SECTIONS_META.map((sec) => sec.label));
+    for (const carte of buildHomeSpec(guild, member).cartes) {
+      assert.ok(carte.items.length, `la carte "${carte.titre}" ne doit pas être vide`);
+      for (const item of carte.items) {
+        assert.ok(vraisLabels.has(item.nom), `"${item.nom}" n'est pas une rubrique réelle de SECTIONS`);
+      }
+    }
+  });
+
+  await cas("chaque famille a SA couleur — ce qu'un Container Components V2 ne sait pas faire", () => {
+    const couleurs = buildHomeSpec(guild, member).cartes.map((c) => c.couleur);
+    assert.strictEqual(new Set(couleurs).size, couleurs.length, `deux familles partagent la même couleur : ${couleurs.join(", ")}`);
+  });
+
+  await cas("l'accueil du panel est une IMAGE dans un Container Components V2, avec la MÊME identité que &help", () => {
+    const panneau = buildConfigPanel(guild, "home", member);
+    const json = panneau.components[0].toJSON();
+    assert.strictEqual(json.type, 17, "le Container Components V2 reste la racine");
+    assert.strictEqual(json.accent_color, ACCENT_COLOR, "la couleur d'accent doit être celle partagée avec &help");
+    const galerie = json.components.find((c) => c.type === 12);
+    assert.ok(galerie, "une MediaGallery doit porter l'image du tableau de bord");
+    assert.strictEqual(galerie.items[0].media.url, "attachment://centre-de-gestion.png");
+    assert.strictEqual(panneau.files[0].name, "centre-de-gestion.png");
+    assert.strictEqual(panneau.files[0].attachment.subarray(1, 4).toString(), "PNG");
   });
 
   await cas("le tableau de bord reste sous le plafond Discord (40 composants, 4000 caractères)", () => {

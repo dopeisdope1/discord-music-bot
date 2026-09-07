@@ -1,7 +1,6 @@
 const {
   ContainerBuilder,
   TextDisplayBuilder,
-  SectionBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
@@ -9,12 +8,16 @@ const {
   ButtonStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  AttachmentBuilder,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
+const { rendreEnCache, resumer } = require("./dashboardImage");
 
 // Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
 // identité visuelle pour les deux "pages" du même système, demande
@@ -23,6 +26,37 @@ const ACCENT_COLOR = 0x2c2f5c;
 
 const SELECT_ID = "help_tier";
 const PAGE_SELECT_ID = "help_page";
+
+// Le tableau de bord est rendu en image (voir utils/dashboardImage.js) et
+// affiché DANS le Container Components V2. Le nom du fichier est fixe : il
+// est référencé par "attachment://" dans le composant MediaGallery.
+const NOM_IMAGE = "centre-de-commandes.png";
+
+// Une couleur par catégorie — impossible en texte Discord (un Container n'a
+// qu'UNE couleur d'accent), c'est justement ce que l'image permet.
+const TIER_COLORS = {
+  moderation: "#ff6b6b",
+  securite: "#4ade80",
+  serveurroles: "#a78bfa",
+  communaute: "#fbbf24",
+  informations: "#38bdf8",
+  outils: "#f472b6",
+  bot: "#94a3b8",
+};
+const COULEUR_PAR_DEFAUT = "#94a3b8";
+
+// Commandes affichées par page dans une catégorie ouverte : 3 colonnes de 8.
+const PAR_PAGE = 24;
+
+/**
+ * Ligne d'identité de l'image. Une image ne sait pas résoudre une mention
+ * Discord (`<@id>` s'afficherait littéralement) : on prend donc le pseudo
+ * réellement affiché quand on l'a, et on retombe sur l'identifiant sinon —
+ * jamais un pseudo inventé.
+ */
+function identiteAffichee(member, authorId) {
+  return member?.displayName || member?.user?.username || member?.user?.tag || `Membre ${authorId}`;
+}
 
 // Confirmé en prod via le vrai message d'erreur Discord (avant, avalé
 // silencieusement par un .catch vide — la vraie cause n'était pas celle
@@ -236,91 +270,113 @@ function buildPageSelect(tier, page, totalPages, authorId) {
  * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
  * @param {number} [page] page de commandes affichée dans la catégorie active
  */
-function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
+function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
   const prefixes = getPrefixes(guildId);
   const groups = groupByTier(member);
   const availableTiers = TIER_ORDER.filter((t) => groups[t].length);
   const activeTier = availableTiers.includes(tier) ? tier : null;
 
-  const container = new ContainerBuilder().setAccentColor(ACCENT_COLOR);
-
-  // En-tête partagé avec &panel ("Centre de commandes" / "Centre de
-  // gestion") : titre + uniquement le pseudo (pas de niveau/rang, ce bot n'a
-  // pas ce système) — <@id> reste valide même si le membre n'a jamais été
-  // mis en cache, pas besoin de résoudre un pseudo affichable.
-  const headerLines = [
-    "## 🖥️ 「 CENTRE DE COMMANDES 」",
-    `> <@${authorId}> · Préfixe : \`${prefixes.musicMod}\``,
-  ];
-  if (activeTier) {
-    headerLines.push(`### ${TIER_EMOJI[activeTier]} ${TIER_LABELS[activeTier]}`);
-    headerLines.push("Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**");
-  }
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headerLines.join("\n")));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
   let clampedPage = 0;
   let totalPages = 1;
+  let spec;
+
   if (activeTier) {
+    // Catégorie ouverte : ses commandes réparties en TROIS colonnes de
+    // cartes sans en-tête (le titre de l'image porte déjà le nom de la
+    // catégorie). Le nom affiché est la syntaxe complète à taper — une image
+    // ne se copie pas, autant qu'elle montre exactement quoi écrire.
     const entries = dedupeByIdentity(groups[activeTier]);
-    const blocks = entries.map((e) => formatCommandBlock(e, prefixes.musicMod));
-    const chunks = chunkBlocks(blocks);
-    totalPages = Math.max(1, Math.ceil(chunks.length / MAX_CHUNKS_PER_PAGE));
+    totalPages = Math.max(1, Math.ceil(entries.length / PAR_PAGE));
     clampedPage = Math.min(Math.max(0, page), totalPages - 1);
-    const pageChunks = chunks.slice(clampedPage * MAX_CHUNKS_PER_PAGE, (clampedPage + 1) * MAX_CHUNKS_PER_PAGE);
-    for (const chunk of pageChunks) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
+    const visibles = entries.slice(clampedPage * PAR_PAGE, (clampedPage + 1) * PAR_PAGE);
+    const parColonne = Math.ceil(visibles.length / 3) || 1;
+    const colonnes = [];
+    for (let i = 0; i < visibles.length; i += parColonne) {
+      colonnes.push({
+        couleur: TIER_COLORS[activeTier] || COULEUR_PAR_DEFAUT,
+        items: visibles.slice(i, i + parColonne).map((e) => ({
+          nom: `${prefixes.musicMod}${e.cmd.name}`,
+          // Les alias restent visibles, comme dans l'ancienne liste texte —
+          // sans eux, `&avatar` semblerait ne pas exister.
+          description: e.aliases.length ? `${e.cmd.description} · alias : ${e.aliases.join(", ")}` : e.cmd.description,
+        })),
+      });
     }
-  } else if (!availableTiers.length) {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Aucune commande accessible.*"));
+    spec = {
+      titre: TIER_LABELS[activeTier],
+      sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
+      cartes: colonnes,
+      pied: totalPages > 1 ? `Page ${clampedPage + 1} / ${totalPages}` : undefined,
+    };
   } else {
-    // Chaque catégorie = une VRAIE carte Components V2 (SectionBuilder) :
-    // texte à gauche (titre fort + description courte + les commandes réelles
-    // en pastilles `code`) et son bouton d'ouverture ancré à DROITE. C'est la
-    // seule disposition à deux zones que l'API Discord sait rendre — il
-    // n'existe aucune grille multi-colonnes, le rendu reste empilé
-    // verticalement quoi qu'on fasse. Le filet (divider) entre chaque carte
-    // donne des blocs nets et rapprochés au lieu d'une liste aérée.
-    // Le bouton de chaque carte EST la navigation ici : une rangée de boutons
-    // en plus ferait doublon et ferait dépasser le plafond de 40 composants
-    // d'un message Components V2 (voir scripts/test-help-honesty.js).
-    availableTiers.forEach((t, index) => {
-      const chips = highlightsFor(t, groups[t])
-        .map((id) => `\`${id}\``)
-        .join(" ");
-      container.addSectionComponents(
-        new SectionBuilder()
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              `### ${TIER_EMOJI[t]} ${TIER_LABELS[t].toUpperCase()}\n${TIER_DESCRIPTIONS[t]}${chips ? `\n${chips}` : ""}`
-            )
-          )
-          .setButtonAccessory(
-            new ButtonBuilder().setCustomId(`${SELECT_ID}:${authorId}:${t}`).setLabel("Ouvrir").setStyle(ButtonStyle.Secondary)
-          )
-      );
-      if (index < availableTiers.length - 1) {
-        container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true));
-      }
-    });
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("-# Tape une commande pour commencer"));
+    // Accueil : une carte par catégorie, en grille — les commandes montrées
+    // sont les vedettes du thème filtrées sur les droits réels du membre.
+    spec = {
+      titre: "Centre de commandes",
+      sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod}`,
+      cartes: availableTiers.map((t) => {
+        const parIdentite = new Map(dedupeByIdentity(groups[t]).map((e) => [identityOf(e.cmd), e.cmd]));
+        return {
+          cle: t,
+          titre: TIER_LABELS[t],
+          sousTitre: TIER_DESCRIPTIONS[t],
+          couleur: TIER_COLORS[t] || COULEUR_PAR_DEFAUT,
+          items: highlightsFor(t, groups[t]).map((id) => ({
+            nom: id,
+            description: resumer(parIdentite.get(id)?.description),
+          })),
+          vide: "Aucune commande accessible",
+        };
+      }),
+      pied: "Tape une commande pour commencer",
+    };
+    if (!availableTiers.length) {
+      spec.cartes = [{ titre: "Aucun accès", couleur: COULEUR_PAR_DEFAUT, items: [], vide: "Aucune commande accessible." }];
+      spec.pied = undefined;
+    }
   }
 
-  // Rangée de navigation seulement DANS une catégorie : à l'accueil, chaque
-  // carte porte déjà son propre bouton "Ouvrir" (la navigation fait donc
-  // partie intégrante des cartes) et la rangée ferait doublon.
-  if (activeTier && availableTiers.length) {
+  return { spec, availableTiers, activeTier, clampedPage, totalPages };
+}
+
+/**
+ * &help — "Centre de commandes". Le tableau de bord lui-même est une IMAGE
+ * (utils/dashboardImage.js) affichée dans un Container Components V2 :
+ * Discord ne sait pas disposer du texte en colonnes, c'est la seule façon
+ * d'obtenir une vraie grille de cartes et une couleur par catégorie. Les
+ * boutons de navigation, eux, restent de vrais composants Discord.
+ * Le contenu vient des droits RÉELS de la personne — même moteur que les
+ * commandes et le panel (utils/permissions/engine.js).
+ * @param {string} guildId
+ * @param {import('discord.js').GuildMember} member
+ * @param {string|null} [tier] catégorie active (une clé de CATEGORIES, ou null pour l'accueil)
+ * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
+ * @param {number} [page] page de commandes affichée dans la catégorie active
+ */
+function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
+  const { spec, availableTiers, activeTier, clampedPage, totalPages } = buildHelpSpec(guildId, member, tier, authorId, page);
+  const png = rendreEnCache(spec);
+
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLOR);
+  container.addMediaGalleryComponents(
+    new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
+  );
+
+  if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     for (const row of buildCategoryButtons(availableTiers, activeTier, authorId)) {
       container.addActionRowComponents(row);
     }
-    if (totalPages > 1) {
+    if (activeTier && totalPages > 1) {
       container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
     }
   }
 
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+    files: [new AttachmentBuilder(png, { name: NOM_IMAGE })],
+  };
 }
 
 /**
@@ -341,7 +397,14 @@ async function handleHelpInteraction(interaction) {
   }
   const page = kind === PAGE_SELECT_ID ? parseInt(interaction.values[0], 10) || 0 : 0;
   const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
-  return interaction.update(panel).catch((err) => console.error("[helpPanel] interaction.update a échoué :", err));
+  // `attachments: []` UNIQUEMENT ici : sur une ÉDITION, Discord conserve les
+  // pièces jointes existantes quand le champ est absent — le message
+  // accumulerait une image de plus à chaque clic. À la création (message.reply
+  // dans musicCommands.js), au contraire, ce champ écraserait la liste que
+  // discord.js construit pour l'upload et l'image ne s'afficherait pas.
+  return interaction
+    .update({ ...panel, attachments: [] })
+    .catch((err) => console.error("[helpPanel] interaction.update a échoué :", err));
 }
 
-module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID, ACCENT_COLOR };
+module.exports = { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID, ACCENT_COLOR };
