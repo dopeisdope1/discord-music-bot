@@ -48,14 +48,13 @@ function leadingWords(cmd) {
 }
 const identityOf = (cmd) => leadingWords(cmd).join(" ");
 
-function tierOf(cmd) {
-  if (cmd.permission === "sys") return "sys";
-  if (cmd.permission == null) return "public";
-  return "configurable";
-}
-
-const TIER_ORDER = ["public", "configurable", "sys"];
-const TIER_LABELS = { public: "Commandes publiques", configurable: "Commandes configurables", sys: "Commandes Sys" };
+// Regroupement par THÈME (Modération/Sécurité/Rôles & Membres/...) — demande
+// explicite de l'utilisateur, à la place de l'ancien tri par palier de
+// permission (public/configurable/sys), qui mélangeait des commandes sans
+// rapport dans le même palier "configurable". Les thèmes eux-mêmes sont
+// définis une seule fois dans utils/commandCatalog.js, jamais recopiés ici.
+const TIER_ORDER = CATEGORIES.map((c) => c.key);
+const TIER_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label]));
 
 /**
  * Réduit une liste d'entrées du catalogue à des IDENTITÉS distinctes, en
@@ -119,28 +118,28 @@ function hasAnyPanelAccessLazy(member) {
 
 /**
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a
- * accès, groupées par PALIER uniquement — toutes catégories du catalogue
- * confondues (demande explicite : pas de découpage par thème). Les
+ * accès, groupées par THÈME (utils/commandCatalog.js::CATEGORIES). Les
  * commandes seulement documentées (sans backend) ne sont jamais incluses.
- * @returns {Record<"public"|"configurable"|"sys", object[]>}
+ * @returns {Record<string, object[]>} une entrée par clé de CATEGORIES
  */
 function groupByTier(member) {
   const canUse = (permission) => can(member, permission);
-  const groups = { public: [], configurable: [], sys: [] };
+  const groups = Object.fromEntries(TIER_ORDER.map((key) => [key, []]));
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
       // &panel n'est gardée par AUCUNE clé unique du catalogue — la vraie
       // commande vérifie hasAnyPanelAccess (n'importe quelle permission de
       // rubrique du panel). Sans ce cas particulier, &help l'annonçait
-      // "publique" même à un membre sans aucun droit, pour qui la commande
-      // ne fait pourtant rien.
+      // "accessible" même à un membre sans aucun droit, pour qui la commande
+      // ne fait pourtant rien. Elle vit dans la catégorie "Bot & Accès" du
+      // catalogue, comme n'importe quelle autre commande de ce thème.
       if (identityOf(cmd) === "panel") {
-        if (hasAnyPanelAccessLazy(member)) groups.configurable.push(cmd);
+        if (hasAnyPanelAccessLazy(member)) groups[category.key].push(cmd);
         continue;
       }
       if (!canUse(cmd.permission)) continue;
-      groups[tierOf(cmd)].push(cmd);
+      groups[category.key].push(cmd);
     }
   }
   return groups;
