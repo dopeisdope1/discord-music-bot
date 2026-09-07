@@ -83,12 +83,13 @@ function render(section, state) {
   });
 
   await cas("toutes les rubriques de réglage ont un contrôle en plus de la navigation", () => {
-    // "home" et "securityOverview" sont des vues d'ensemble en lecture
-    // seule : leur seul contrôle est le menu de navigation (+ sous-menu pour
-    // la seconde), et c'est normal — le détail actionnable vit dans les
-    // rubriques qu'elles résument. Toutes les autres doivent offrir de quoi
-    // agir sans avoir à taper une commande.
-    for (const section of SECTIONS.filter((s) => s !== "home" && s !== "securityOverview")) {
+    // "home", "securityOverview", "stats" et "diagnostics" sont des vues en
+    // lecture seule : leur seul contrôle est le menu de navigation (+
+    // sous-menu s'il y a lieu), et c'est normal — rien à configurer sur un
+    // compteur ou un uptime. Toutes les autres doivent offrir de quoi agir
+    // sans avoir à taper une commande.
+    const lectureSeuleOK = ["home", "securityOverview", "stats", "diagnostics"];
+    for (const section of SECTIONS.filter((s) => !lectureSeuleOK.includes(s))) {
       assert.ok(render(section).rangees >= 2, `${section} n'offre aucun contrôle propre`);
     }
   });

@@ -27,6 +27,7 @@ const { commandsForKeys, nonCommandGrants } = require("./permsCommands");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
+const statsStore = require("./statsStore");
 const { LOG_CHANNEL_NAMES, createLogChannelsAutomatically, deleteLogChannelsAutomatically } = require("./logChannels");
 const historyStore = require("./moderationHistoryStore");
 const leaveStore = require("./leaveStore");
@@ -118,6 +119,8 @@ const SECTIONS = [
     visible: (member) => canOpenModCenter(member),
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
+  { key: "stats", label: "Statistiques", description: "Compteurs serveur et activité des 7 derniers jours", permission: "server.stats.view" },
+  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", permission: "sys" },
   {
     key: "securityOverview",
     label: "Vue d'ensemble",
@@ -202,7 +205,13 @@ const FAMILIES = [
   { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
   { key: "communication", label: "Communication", description: "Embed, sondages", sections: ["embedBuilder", "polls"] },
   { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", sections: ["musicPlayer"] },
-  { key: "monitoring", label: "Monitoring", description: "Salons de logs", sections: ["logs"] },
+  // Historique reste sous Modération (module 4) : la fiche membre y renvoie
+  // déjà directement, un aller-retour de famille en plus n'aurait rien
+  // apporté. Pas de rubrique "Scan de sécurité" séparée non plus : Sécurité >
+  // Vue d'ensemble (module 3) affiche déjà exactement computeSecurityScan en
+  // entier — une deuxième rubrique identique aurait été une redite, pas un
+  // vrai regroupement.
+  { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", sections: ["logs", "stats", "diagnostics"] },
   {
     key: "bot",
     label: "Bot",
@@ -361,6 +370,38 @@ function sectionBody(section, guild, member, state) {
     ]
       .filter((l) => l !== null)
       .join("\n");
+  }
+
+  if (section === "stats") {
+    const inVoice = guild.voiceStates.cache.filter((v) => v.channelId).size;
+    const range = statsStore.getRange(guildId, 7);
+    const totalMessages = range.reduce((sum, d) => sum + d.messages, 0);
+    const totalJoins = range.reduce((sum, d) => sum + d.joins, 0);
+    const totalLeaves = range.reduce((sum, d) => sum + d.leaves, 0);
+    const lines = [
+      `> **Membres** : ${guild.memberCount.toLocaleString("fr-FR")} · **rôles** : ${guild.roles.cache.size} · **salons** : ${guild.channels.cache.size} · **en vocal** : ${inVoice}`,
+      `> **7 derniers jours** : ${totalMessages} message(s) · ${totalJoins} arrivée(s) · ${totalLeaves} départ(s)`,
+    ];
+    const lastDays = range.slice(-3);
+    if (lastDays.length) {
+      lines.push("", "**Détail (3 derniers jours) :**");
+      for (const d of lastDays) lines.push(`> **${d.date}** — 💬 ${d.messages} · 🟢 ${d.joins} · 🔴 ${d.leaves}`);
+    }
+    return lines.join("\n");
+  }
+
+  if (section === "diagnostics") {
+    const info = computeStatus(guild.client);
+    const lavalink = info.lavalinkNodes.length
+      ? info.lavalinkNodes.map((n) => `> \`${n.name}\` : ${n.connected ? "🟢 connecté" : `🔴 état ${n.state}`}`).join("\n")
+      : "> *aucun nœud déclaré*";
+    return [
+      `> **Uptime** : ${formatUptime(info.uptimeMs)} · **latence** : ${info.ping}ms · **mémoire** : ${info.memoryRssMB} Mo`,
+      `> **Serveurs** : ${info.guildCount} · **Node.js** : ${info.nodeVersion} · **discord.js** : v${info.discordjsVersion}`,
+      "",
+      "**Lavalink :**",
+      lavalink,
+    ].join("\n");
   }
 
   if (section === "modCenter") {
