@@ -1,11 +1,13 @@
 /**
  * Vérifie &help (utils/helpPanel.js + utils/implementedCommands.js) :
- *  - accueil compact (juste les catégories THÉMATIQUES et leur effectif :
- *    "Modération — 39 commande(s)"), puis un menu déroulant pour choisir une
- *    catégorie — demande explicite de l'utilisateur : regrouper par thème
- *    (Modération/Sécurité/Rôles & Membres/...) plutôt que par palier de
- *    permission (l'ancien découpage public/configurable/sys, qui mélangeait
- *    des commandes sans rapport dans le même palier "configurable") ;
+ *  - accueil épuré (7 catégories thématiques maximum, chacune avec un emoji
+ *    et une description courte, JAMAIS de compteur de commandes) puis, une
+ *    fois une catégorie choisie, la liste détaillée de ses commandes —
+ *    demande explicite de refonte UX : un bot "propre, moderne, agréable à
+ *    regarder", 12 catégories ramenées à 7 par fusion thématique (Rôles &
+ *    Membres + Salons & Serveur + Vocal -> Serveur & Rôles ; Support +
+ *    Communication -> Communauté ; Informations + Logs -> Informations ;
+ *    Utilitaires + Sauvegardes -> Outils) ;
  *  - une catégorie choisie détaille CHAQUE commande (nom, description,
  *    syntaxe réelle à taper), pas juste une liste de noms nus — réparti sur
  *    plusieurs blocs de texte quand ça dépasse la limite Discord d'un seul
@@ -52,10 +54,10 @@ const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collecti
 // Catégories entièrement gardées par une permission (aucune commande réelle
 // à permission null dedans) — vérifié directement sur le catalogue, pas
 // deviné : un membre sans AUCUN droit ne doit en voir aucune.
-const CATEGORIES_GARDEES = ["securite", "roles", "serveur", "support", "communication", "logs", "sauvegardes", "bot"];
+const CATEGORIES_GARDEES = ["securite", "communaute", "bot"];
 // Catégories avec au moins une commande publique — un membre sans droit doit
 // voir CELLES-LÀ (et seulement celles-là).
-const CATEGORIES_PARTIELLEMENT_PUBLIQUES = ["moderation", "vocal", "informations", "utilitaires"];
+const CATEGORIES_PARTIELLEMENT_PUBLIQUES = ["moderation", "serveurroles", "informations", "outils"];
 
 /** Concatène TOUS les blocs de texte du panneau (une catégorie dense en a plusieurs). */
 function fullText(member = owner, categorie = null) {
@@ -135,24 +137,25 @@ function commandsText(member = owner, categorie) {
     assert.strictEqual(isImplemented({ name: "uo clear" }), true);
   });
 
-  console.log("\nAccueil (catégories thématiques + effectif, pas de détail) :");
+  console.log("\nAccueil épuré (emoji + nom + description courte, JAMAIS de compteur) :");
 
-  await cas("l'accueil affiche le nom de chaque catégorie et son effectif, aucun nom de commande", () => {
+  await cas("l'accueil affiche AU PLUS 7 catégories, chacune avec son emoji et sa description, sans compteur de commandes", () => {
+    assert.ok(CATEGORIES.length <= 7, `${CATEGORIES.length} catégories — demande explicite : maximum 7`);
     const body = fullText();
-    assert.ok(/\*\*Modération\*\* — \d+ commande\(s\)/.test(body), body);
-    assert.ok(/\*\*Sécurité\*\* — \d+ commande\(s\)/.test(body), body);
+    assert.ok(!/\d+ commande\(s\)/.test(body), `un compteur de commandes traîne encore : ${body}`);
+    for (const cat of CATEGORIES) {
+      assert.ok(body.includes(cat.emoji), `l'emoji de "${cat.label}" doit apparaître`);
+      assert.ok(body.includes(cat.description), `la description de "${cat.label}" doit apparaître`);
+    }
     assert.ok(!body.includes("Usage :"), "aucun détail de commande avant d'avoir choisi une catégorie");
+  });
+
+  await cas("le préfixe est indiqué clairement, une seule fois, à l'accueil", () => {
+    assert.ok(/Préfixe : `&`/.test(fullText()), fullText());
   });
 
   await cas("aucune trace de la section \"documentées\" — plus de commandes muettes affichées du tout", () => {
     assert.ok(!fullText().includes("Documentées"), fullText());
-  });
-
-  await cas("regroupé par THÈME — chaque catégorie du catalogue apparaît à l'accueil (fini le tri par palier)", () => {
-    const body = fullText();
-    for (const cat of CATEGORIES) {
-      assert.ok(body.includes(cat.label), `"${cat.label}" doit apparaître à l'accueil`);
-    }
   });
 
   await cas("un membre sans aucun droit ne voit QUE les catégories ayant une commande publique", () => {
@@ -194,9 +197,9 @@ function commandsText(member = owner, categorie) {
     assert.ok(body.includes("**badwords"), body);
   });
 
-  await cas("des commandes de thèmes différents n'atterrissent PAS dans la même catégorie (role create -> Rôles, pas Sécurité)", () => {
+  await cas("des commandes de thèmes différents n'atterrissent PAS dans la même catégorie (role create -> Serveur & Rôles, pas Sécurité)", () => {
     assert.ok(!commandsText(owner, "securite").includes("**role create**"));
-    assert.ok(commandsText(owner, "roles").includes("**role create**"));
+    assert.ok(commandsText(owner, "serveurroles").includes("**role create**"));
   });
 
   /** Fabrique une fausse interaction de sélection sur le menu &help, lancée par `clicker` sur la commande de `authorId`. */
@@ -228,7 +231,7 @@ function commandsText(member = owner, categorie) {
     assert.ok(interaction.updated, "le message existant doit être édité en place");
     const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(body.includes("pic/avatar"), body);
-    assert.ok(!body.includes("role create"), "la catégorie Rôles & Membres ne doit plus apparaître");
+    assert.ok(!body.includes("role create"), "la catégorie Serveur & Rôles ne doit plus apparaître");
   });
 
   await cas("le menu garde toujours une option \"Accueil\" — le chemin retour sans retaper &help", () => {
@@ -244,7 +247,8 @@ function commandsText(member = owner, categorie) {
     const interaction = fakeSelect(["home"], owner, owner.id);
     await handleHelpInteraction(interaction);
     const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(/\*\*Modération\*\* — \d+ commande\(s\)/.test(body), body);
+    assert.ok(!/\d+ commande\(s\)/.test(body), body);
+    assert.ok(body.includes("Modération"), body);
     assert.ok(!body.includes("Usage :"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
   });
 
@@ -344,14 +348,14 @@ function commandsText(member = owner, categorie) {
   console.log("\nSous-commandes distinctes (le bug \"&help incompréhensible\") :");
 
   await cas("role create/delete/rename/color/admin sont CINQ identités distinctes, pas fusionnées sous \"role\"", () => {
-    const body = commandsText(owner, "roles");
+    const body = commandsText(owner, "serveurroles");
     for (const sub of ["role create", "role delete", "role rename", "role color", "role admin"]) {
       assert.ok(body.includes(`**${sub}**`), `"${sub}" doit apparaître comme identité distincte`);
     }
   });
 
   await cas("channel create/delete/rename/topic sont des identités distinctes elles aussi", () => {
-    const body = commandsText(owner, "serveur");
+    const body = commandsText(owner, "serveurroles");
     for (const sub of ["channel create", "channel delete", "channel rename", "channel topic"]) {
       assert.ok(body.includes(`**${sub}**`), `"${sub}" doit apparaître comme identité distincte`);
     }

@@ -732,57 +732,36 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "home") {
+    // Accueil épuré (refonte UX demandée explicitement) : statut + stats
+    // serveur toujours visibles (uptime/latence ne révèlent aucun détail
+    // d'infrastructure — le diagnostic complet reste réservé au rang sys
+    // dans Monitoring), puis au plus DEUX alertes, les plus graves d'abord.
+    // Plus d'activité récente ici : elle alourdissait l'accueil pour un
+    // usage déjà couvert par Modération > Historique.
     const lines = [];
 
-    // Sécurité — même détection que `&security scan`, sur le cache déjà en
-    // mémoire (pas de fetch ici, voir le commentaire dans securityScan.js) :
-    // un coup d'œil instantané, pas un audit complet.
+    const info = computeStatus(guild.client);
+    lines.push(`🟢 En ligne — ${formatUptime(info.uptimeMs)} · ${info.ping}ms`);
+
+    const inVoice = guild.voiceStates.cache.filter((v) => v.channelId).size;
+    lines.push(`👥 ${guild.memberCount.toLocaleString("fr-FR")} membres · ${guild.channels.cache.size} salons · ${inVoice} en vocal`);
+
+    // Même détection que `&security scan`, sur le cache déjà en mémoire (pas
+    // de fetch ici, voir le commentaire dans securityScan.js) : un coup
+    // d'œil instantané, pas un audit complet — celui-ci reste dans
+    // Sécurité > Vue d'ensemble, jamais dupliqué ici.
     if (can(member, "protection.automod") || can(member, "protection.guard.manage")) {
       const { critical, warnings } = computeSecurityScan(guild);
-      const emoji = critical.length ? "🔴" : warnings.length ? "🟠" : "🟢";
-      lines.push(`**${emoji} Sécurité**`);
+      lines.push("");
       if (!critical.length && !warnings.length) {
-        lines.push("> Aucune alerte — tout est en ordre.");
+        lines.push("🟢 Tout est en ordre.");
       } else {
-        for (const l of critical) lines.push(`> 🔴 ${l}`);
-        for (const l of warnings) lines.push(`> 🟠 ${l}`);
+        const top = [...critical.map((l) => ["🔴", l]), ...warnings.map((l) => ["🟠", l])].slice(0, 2);
+        for (const [emoji, l] of top) lines.push(`${emoji} ${l}`);
       }
-      lines.push("");
     }
 
-    // Serveur — compteurs déjà en cache, aucune requête supplémentaire.
-    const inVoice = guild.voiceStates.cache.filter((v) => v.channelId).size;
-    lines.push(
-      "**👥 Serveur**",
-      `> **Membres** : ${guild.memberCount.toLocaleString("fr-FR")} · **rôles** : ${guild.roles.cache.size} · **salons** : ${guild.channels.cache.size} · **en vocal** : ${inVoice}`,
-      ""
-    );
-
-    // Activité récente — mêmes entrées que la rubrique Historique.
-    if (can(member, "logs.view")) {
-      const recent = historyStore.search(guildId, { limit: 5 });
-      lines.push("**📋 Activité récente**");
-      if (!recent.length) {
-        lines.push("> *Aucune entrée pour l'instant.*");
-      } else {
-        for (const e of recent) {
-          const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
-          lines.push(`> \`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}`);
-        }
-      }
-      lines.push("");
-    }
-
-    // Bot — réservé au rang sys, mêmes infos que &status.
-    if (accessStore.isAllowed("sys", member.id)) {
-      const info = computeStatus(guild.client);
-      lines.push(
-        "**⚙️ Bot**",
-        `> **Uptime** : ${formatUptime(info.uptimeMs)} · **latence** : ${info.ping}ms · **serveurs** : ${info.guildCount}`
-      );
-    }
-
-    return lines.join("\n").trim() || "*Aucune information à afficher.*";
+    return lines.join("\n");
   }
 
   return [

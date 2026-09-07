@@ -55,6 +55,8 @@ const identityOf = (cmd) => leadingWords(cmd).join(" ");
 // définis une seule fois dans utils/commandCatalog.js, jamais recopiés ici.
 const TIER_ORDER = CATEGORIES.map((c) => c.key);
 const TIER_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label]));
+const TIER_EMOJI = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.emoji]));
+const TIER_DESCRIPTIONS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.description]));
 
 /**
  * Réduit une liste d'entrées du catalogue à des IDENTITÉS distinctes, en
@@ -154,12 +156,17 @@ function buildSelect(availableTiers, current, authorId) {
   const options = [
     new StringSelectMenuOptionBuilder().setLabel("Accueil").setValue("home").setDefault(current === null),
     ...availableTiers.map((tier) =>
-      new StringSelectMenuOptionBuilder().setLabel(TIER_LABELS[tier]).setValue(tier).setDefault(tier === current)
+      new StringSelectMenuOptionBuilder()
+        .setLabel(TIER_LABELS[tier])
+        .setDescription(TIER_DESCRIPTIONS[tier].slice(0, 100))
+        .setValue(tier)
+        .setDefault(tier === current)
+        .setEmoji(TIER_EMOJI[tier])
     ),
   ];
   return new StringSelectMenuBuilder()
     .setCustomId(`${SELECT_ID}:${authorId}`)
-    .setPlaceholder("Choisir un palier")
+    .setPlaceholder("Choisir une catégorie")
     .addOptions(options);
 }
 
@@ -218,16 +225,16 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
     }
   } else {
-    const lines = availableTiers.map((t) => `> **${TIER_LABELS[t]}** — ${groups[t].length} commande(s)`);
+    // Pas de compteur de commandes ("— 39 commande(s)") : juste l'emoji, le
+    // nom et une description courte — demande explicite de refonte UX du
+    // &help, le chiffre n'apportait rien et alourdissait la lecture.
+    const lines = availableTiers.map((t) => `${TIER_EMOJI[t]} **${TIER_LABELS[t]}** — ${TIER_DESCRIPTIONS[t]}`);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         [
-          "Voici les commandes que tu peux utiliser sur ce serveur.",
-          "Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**",
+          `Préfixe : \`${prefixes.musicMod}\``,
           "",
           ...(lines.length ? lines : ["*Aucune commande accessible.*"]),
-          "",
-          `Préfixe musique : \`${prefixes.main}\` · préfixe commandes : \`${prefixes.musicMod}\``,
         ].join("\n")
       )
     );

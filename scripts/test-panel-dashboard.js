@@ -1,12 +1,15 @@
 /**
- * Vérifie la rubrique Accueil du panel (module 2 de la refonte) : un vrai
- * dashboard, pas le fourre-tout préfixes/rang sys qu'affichait "home"
- * auparavant. Chaque widget doit :
- *  - être gated par la même permission que la rubrique dont il résume l'état
- *    (Sécurité -> protection.automod/protection.guard.manage, Activité
- *    récente -> logs.view, Bot -> rang sys) ;
- *  - refléter les VRAIS réglages stockés (mêmes stores que les rubriques
- *    dédiées), jamais une valeur inventée.
+ * Vérifie la rubrique Accueil du panel — épurée (refonte UX demandée
+ * explicitement : "garder uniquement l'essentiel : statut du bot, stats du
+ * serveur, et seulement les vraies alertes importantes") :
+ *  - statut (uptime/latence) et compteurs serveur toujours affichés, pour
+ *    TOUT LE MONDE — ce ne sont pas des informations sensibles, contrairement
+ *    au diagnostic complet (versions, nœuds Lavalink) qui reste réservé au
+ *    rang sys dans Monitoring ;
+ *  - au plus DEUX alertes de sécurité, les plus graves en premier, gated par
+ *    la même permission que les rubriques Protection/Anti-nuke ;
+ *  - plus d'"Activité récente" sur cet écran (alourdissait l'accueil, déjà
+ *    consultable dans Modération > Historique).
  *
  * Lancement : node scripts/test-panel-dashboard.js
  */
@@ -20,9 +23,25 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel } = require("../utils/configPanel");
-const historyStore = require("../utils/moderationHistoryStore");
 const guardConfig = require("../utils/guard/config");
 const permStore = require("../utils/permissions/store");
+const antiSpam = require("../utils/automod/antiSpam");
+const antiLink = require("../utils/automod/antiLink");
+const antiMention = require("../utils/automod/antiMention");
+const badWords = require("../utils/automod/badWords");
+const muteStore = require("../utils/muteStore");
+const modLogStore = require("../utils/modLogStore");
+
+/** Configure tout ce que computeSecurityScan vérifie pour un état "OK" complet. */
+function rendreServeurSain(guildId) {
+  guardConfig.setEnabled(guildId, true);
+  antiSpam.setEnabled(guildId, true);
+  antiLink.setEnabled(guildId, true);
+  antiMention.setEnabled(guildId, true);
+  badWords.setEnabled(guildId, true);
+  muteStore.setMuteRoleId(guildId, "role-mute-1");
+  modLogStore.setLogChannelId(guildId, "moderation", "chan-logs-1");
+}
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -68,29 +87,39 @@ function mkMember(id, roleId) {
 }
 
 (async () => {
-  console.log("Accueil — un vrai dashboard, pas le résumé préfixes/rang sys :");
+  console.log("Accueil épuré — statut, stats serveur, au plus 2 alertes :");
 
   const guild = makeGuild();
 
-  await cas("les compteurs serveur (membres/rôles/salons/vocal) sont toujours affichés, sans permission particulière", () => {
+  await cas("un membre SANS AUCUN droit voit déjà le statut (uptime/latence) — ce n'est pas une info sensible", () => {
     const texte = homeText(guild, mkMember("u-none"));
-    assert.ok(texte.includes("**Membres** : 42"), texte);
-    assert.ok(texte.includes("en vocal** : 1"), texte);
-    assert.ok(!texte.includes("Préfixe musique"), "l'ancien contenu (préfixes) ne doit plus apparaître sur l'accueil");
+    assert.ok(texte.includes("En ligne"), texte);
+    assert.ok(texte.includes("17ms"), texte);
   });
 
-  await cas("sans le droit protection.automod/protection.guard.manage, aucun widget Sécurité", () => {
+  await cas("les compteurs serveur (membres/salons/vocal) sont affichés, sans permission particulière", () => {
     const texte = homeText(guild, mkMember("u-none"));
-    assert.ok(!texte.includes("Sécurité"), texte);
+    assert.ok(texte.includes("42 membres"), texte);
+    assert.ok(texte.includes("1 en vocal"), texte);
   });
 
-  await cas("avec protection.guard.manage, le widget Sécurité reflète le VRAI état de l'anti-nuke", () => {
+  await cas("l'ancien contenu (préfixes) et l'\"Activité récente\" n'apparaissent plus du tout sur l'accueil", () => {
+    const texte = homeText(guild, mkMember("u-none"));
+    assert.ok(!texte.includes("Préfixe musique"), texte);
+    assert.ok(!texte.includes("Activité récente"), texte);
+  });
+
+  await cas("sans le droit protection.automod/protection.guard.manage, aucune alerte de sécurité affichée", () => {
+    const texte = homeText(guild, mkMember("u-none"));
+    assert.ok(!texte.includes("🟢 Tout est en ordre") && !texte.includes("🔴") && !texte.includes("🟠"), texte);
+  });
+
+  await cas("avec protection.guard.manage, une alerte reflète le VRAI état de l'anti-nuke — puis disparaît une fois réglé", () => {
     permStore.setRoleGrants("gdash", "role-guard", ["protection.guard.manage"]);
     const member = mkMember("u-guard", "role-guard");
 
     guardConfig.setEnabled("gdash", false);
     let texte = homeText(guild, member);
-    assert.ok(texte.includes("🟠 Sécurité") || texte.includes("🔴 Sécurité"), texte);
     assert.ok(texte.includes("Anti-nuke désactivé"), texte);
 
     guardConfig.setEnabled("gdash", true);
@@ -98,30 +127,32 @@ function mkMember(id, roleId) {
     assert.ok(!texte.includes("Anti-nuke désactivé"), "l'alerte doit disparaître une fois l'anti-nuke réactivé");
   });
 
-  await cas("sans le droit logs.view, aucun widget Activité récente", () => {
-    const texte = homeText(guild, mkMember("u-none"));
-    assert.ok(!texte.includes("Activité récente"), texte);
+  await cas("tout est en ordre -> une seule ligne \"Tout est en ordre\", pas la liste complète des contrôles OK", () => {
+    const guildSain = makeGuild();
+    guildSain.roles.cache.set("role-mute-1", { id: "role-mute-1", managed: false, permissions: { has: () => false } });
+    rendreServeurSain("gdash");
+    const member = mkMember("u-guard", "role-guard");
+    const texte = homeText(guildSain, member);
+    assert.ok(texte.includes("🟢 Tout est en ordre."), texte);
+    assert.ok(!texte.includes("contrôle(s) OK"), "l'accueil épuré ne doit pas reprendre le détail complet de l'audit");
   });
 
-  await cas("avec logs.view, l'activité récente montre les VRAIES dernières entrées de l'historique", () => {
-    permStore.setRoleGrants("gdash", "role-logs", ["logs.view"]);
-    const member = mkMember("u-logs", "role-logs");
-    historyStore.record({ guildId: "gdash", targetId: "111111111111111111", moderatorId: "222222222222222222", action: "kick" });
-    const texte = homeText(guild, member);
-    assert.ok(texte.includes("Activité récente"), texte);
-    assert.ok(texte.includes("`kick`"), texte);
-  });
-
-  await cas("qui n'a PAS le rang sys ne voit aucun widget Bot (diagnostics)", () => {
-    const texte = homeText(guild, mkMember("u-none"));
-    assert.ok(!texte.includes("**Bot**"), texte);
-  });
-
-  await cas("le propriétaire voit le widget Bot avec les VRAIS uptime/latence/nombre de serveurs", () => {
-    const owner = { id: "owner-1", guild: { id: "gdash", ownerId: "owner-1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
-    const texte = homeText(guild, owner);
-    assert.ok(texte.includes("**⚙️ Bot**"), texte);
-    assert.ok(texte.includes("17ms"), texte);
+  await cas("jamais plus de DEUX alertes à l'accueil, même si l'audit complet en trouve plus", () => {
+    // @everyone avec une permission dangereuse (critique) + anti-nuke
+    // désactivé (avertissement) + AutoMod entièrement désactivé
+    // (avertissement) : au moins 3 signaux réels, mais l'accueil épuré n'en
+    // garde que 2 (les plus graves), le reste restant dans Sécurité > Vue
+    // d'ensemble.
+    const { PermissionFlagsBits } = require("discord.js");
+    const guildAvecProblemes = makeGuild();
+    guildAvecProblemes.roles.everyone = { permissions: new PermissionsBitField([PermissionFlagsBits.Administrator]) };
+    guardConfig.setEnabled("gdash", false);
+    const member = mkMember("u-guard2", "role-guard");
+    permStore.setRoleGrants("gdash", "role-guard", ["protection.guard.manage"]);
+    const texte = homeText(guildAvecProblemes, member);
+    const nbAlertes = (texte.match(/🔴|🟠/g) || []).length;
+    assert.ok(nbAlertes <= 2, `${nbAlertes} alertes affichées — l'accueil épuré doit en garder 2 maximum`);
+    assert.ok(texte.includes("@everyone"), "l'alerte la plus grave (critique) doit être celle gardée en premier");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

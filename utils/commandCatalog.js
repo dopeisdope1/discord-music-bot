@@ -1,15 +1,16 @@
+const { EMOJI } = require("./emojis");
+
 // Catalogue unique des commandes du bot (préfixe "&"), partagé par &help ET
 // &panel pour qu'ils ne puissent jamais se contredire (section 5/10/35 du
 // cahier des charges : un seul système de permissions, pas une liste par
 // endroit).
 //
-// Réorganisé par THÈME (Modération/Sécurité/Rôles & Membres/...) à la
-// demande explicite de l'utilisateur — l'ancien découpage groupait par
-// palier de permission côté &help (utils/helpPanel.js), ce qui mélangeait
-// des commandes sans rapport entre elles dans le même palier "configurable".
-// Le tri par thème remplace ce groupement ; le filtrage par droit réel
-// (utils/permissions/engine.js::can) reste appliqué à l'intérieur de chaque
-// thème, inchangé.
+// 7 catégories thématiques (fusion de 12, demande explicite de refonte UX du
+// &help : "maximum 6-7 catégories") — chacune porte un emoji et une
+// description courte, affichés à l'accueil de &help SANS compteur de
+// commandes (uniquement le nom + la description, plus lisible). Le filtrage
+// par droit réel (utils/permissions/engine.js::can) reste appliqué à
+// l'intérieur de chaque catégorie, inchangé.
 //
 // `permission` est une clé de utils/permissions/catalog.js, résolue via
 // utils/permissions/engine.js::can(member, permission) — null = tout le
@@ -33,6 +34,8 @@ const CATEGORIES = [
   {
     key: "moderation",
     label: "Modération",
+    emoji: EMOJI.BAN,
+    description: "Sanctionner un membre : kick, ban, mute, warn",
     commands: [
       {
         name: "uo clear",
@@ -266,6 +269,8 @@ const CATEGORIES = [
   {
     key: "securite",
     label: "Sécurité",
+    emoji: EMOJI.LOCK,
+    description: "Protection automatique et audit du serveur",
     commands: [
       {
         name: "allbots",
@@ -606,8 +611,10 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "roles",
-    label: "Rôles & Membres",
+    key: "serveurroles",
+    label: "Serveur & Rôles",
+    emoji: EMOJI.PENCIL,
+    description: "Rôles, salons et vocaux",
     commands: [
       {
         name: "addrole @membre @rôle",
@@ -701,12 +708,6 @@ const CATEGORIES = [
         permission: "server.roles.manage",
         description: "Retire la restriction d'un émoji",
       },
-    ],
-  },
-  {
-    key: "serveur",
-    label: "Salons & Serveur",
-    commands: [
       {
         name: "channel create <nom> [vocal]",
         prefix: "mod",
@@ -779,12 +780,6 @@ const CATEGORIES = [
         permission: "server.channels.manage",
         description: "Publie automatiquement les messages dans les salons d'annonces",
       },
-    ],
-  },
-  {
-    key: "vocal",
-    label: "Vocal",
-    commands: [
       {
         name: "voc lock|unlock|limit <n>|rename <nom>|kick|add|remove|transfer @membre",
         prefix: "mod",
@@ -830,8 +825,10 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "support",
-    label: "Support",
+    key: "communaute",
+    label: "Communauté",
+    emoji: EMOJI.TICKET,
+    description: "Tickets, annonces, sondages",
     commands: [
       {
         name: "ticket setup [@role-staff]",
@@ -893,12 +890,6 @@ const CATEGORIES = [
         permission: "panel.permissions.manage",
         description: "Configure le système de signalement",
       },
-    ],
-  },
-  {
-    key: "communication",
-    label: "Communication",
-    commands: [
       { name: "suggestion <message>", prefix: "mod", permission: null, description: "Poste une suggestion sur le serveur" },
       {
         name: "lb suggestions",
@@ -977,8 +968,10 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "logs",
-    label: "Logs",
+    key: "informations",
+    label: "Informations",
+    emoji: EMOJI.ONLINE,
+    description: "Fiches, statistiques, journaux d'activité",
     commands: [
       {
         name: "settings",
@@ -1069,12 +1062,6 @@ const CATEGORIES = [
         permission: "logs.manage",
         description: "Exempte (ou non) un salon des logs de messages",
       },
-    ],
-  },
-  {
-    key: "informations",
-    label: "Informations",
-    commands: [
       {
         name: "pic [@membre]",
         prefix: "mod",
@@ -1169,8 +1156,10 @@ const CATEGORIES = [
     ],
   },
   {
-    key: "utilitaires",
-    label: "Utilitaires",
+    key: "outils",
+    label: "Outils",
+    emoji: EMOJI.ARROW,
+    description: "Calcul, wiki, sauvegardes du serveur",
     commands: [
       {
         name: "image <mot-clé>",
@@ -1210,12 +1199,6 @@ const CATEGORIES = [
         permission: null,
         description: "Affiche/masque les photos de profil dans certains affichages",
       },
-    ],
-  },
-  {
-    key: "sauvegardes",
-    label: "Sauvegardes",
-    commands: [
       {
         name: "backup <nom>",
         prefix: "mod",
@@ -1241,6 +1224,8 @@ const CATEGORIES = [
   {
     key: "bot",
     label: "Bot & Accès",
+    emoji: EMOJI.DISCORD,
+    description: "Réglages du bot, accès, rang sys",
     commands: [
       {
         name: "status",
