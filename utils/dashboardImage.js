@@ -217,7 +217,9 @@ function rendre(spec) {
   for (const rangee of rangees) {
     hauteurGrille += Math.max(...rangee.map((c) => hauteurCarte(c.items, Boolean(c.titre), Boolean(c.sousTitre)))) + GOUTTIERE;
   }
-  const hauteur = HAUT_ENTETE + hauteurGrille + (spec.legende?.length ? 26 : 0) + (spec.pied ? 34 : 0) + MARGE - GOUTTIERE;
+  // Le bandeau d'état et chaque alerte repoussent la grille vers le bas.
+  const hauteurEntete = HAUT_ENTETE + (spec.banniere ? 26 : 0) + (spec.alertes?.length || 0) * 24;
+  const hauteur = hauteurEntete + hauteurGrille + (spec.legende?.length ? 26 : 0) + (spec.pied ? 34 : 0) + MARGE - GOUTTIERE;
 
   const canvas = createCanvas(LARGEUR, hauteur);
   const ctx = canvas.getContext("2d");
@@ -252,7 +254,32 @@ function rendre(spec) {
   ctx.fillStyle = THEME.texteDoux;
   ctx.fillText(tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
 
-  let y = HAUT_ENTETE;
+  // Bandeau d'état et alertes de sécurité, DESSINÉS : en texte Discord, une
+  // mention citée dans une alerte (« @everyone possède… ») sortait en
+  // pastille et pouvait notifier le serveur. Ici elle ne peut plus.
+  let yEntete = 112;
+  if (spec.banniere) {
+    yEntete += 26;
+    ctx.beginPath();
+    ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#4ade80";
+    ctx.fill();
+    ctx.font = "15px ChakraRegular";
+    ctx.fillStyle = THEME.texte;
+    ctx.fillText(tronquer(ctx, spec.banniere, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
+  }
+  for (const alerte of spec.alertes || []) {
+    yEntete += 24;
+    ctx.beginPath();
+    ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
+    ctx.fillStyle = alerte.couleur;
+    ctx.fill();
+    ctx.font = "14px ChakraRegular";
+    ctx.fillStyle = THEME.texteDoux;
+    ctx.fillText(tronquer(ctx, alerte.texte, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
+  }
+
+  let y = hauteurEntete;
   for (const rangee of rangees) {
     const pleineLargeur = LARGEUR - MARGE * 2;
     const largeurCarte = (pleineLargeur - GOUTTIERE * (colonnes - 1)) / colonnes;

@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-dashboard-te
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel } = require("../utils/configPanel");
+const { buildConfigPanel, buildHomeSpec } = require("../utils/configPanel");
 const guardConfig = require("../utils/guard/config");
 const permStore = require("../utils/permissions/store");
 const antiSpam = require("../utils/automod/antiSpam");
@@ -71,9 +71,22 @@ function makeGuild() {
   };
 }
 
+/**
+ * Tout ce qui est réellement DESSINÉ sur l'accueil : bandeau d'état, alertes
+ * et cartes de familles. Le statut n'est plus écrit sous l'en-tête — il y
+ * sortait avec des mentions en pastilles — donc on lit la spec passée au
+ * moteur de rendu, pas les composants texte.
+ */
 function homeText(guild, member) {
+  const s = buildHomeSpec(guild, member);
+  const morceaux = [s.titre, s.sousTitre, s.banniere || "", ...(s.alertes || []).map((a) => a.texte), s.pied || ""];
+  for (const carte of s.cartes) {
+    morceaux.push(carte.titre, carte.sousTitre || "");
+    for (const item of carte.items) morceaux.push(item.nom, item.description || "");
+  }
   const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
-  return json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+  morceaux.push(...json.components.filter((c) => c.type === 10).map((c) => c.content));
+  return morceaux.join("\n");
 }
 
 /** Membre minimal, sans aucun droit accordé (ni propriétaire, ni rôle). */
@@ -132,9 +145,12 @@ function mkMember(id, roleId) {
     guildSain.roles.cache.set("role-mute-1", { id: "role-mute-1", managed: false, permissions: { has: () => false } });
     rendreServeurSain("gdash");
     const member = mkMember("u-guard", "role-guard");
-    const texte = homeText(guildSain, member);
-    assert.ok(texte.includes("🟢 Tout est en ordre."), texte);
-    assert.ok(!texte.includes("contrôle(s) OK"), "l'accueil épuré ne doit pas reprendre le détail complet de l'audit");
+    // Les alertes sont désormais structurées (texte + couleur) et dessinées :
+    // le vert ne vient plus d'un emoji collé dans une chaîne.
+    const alertes = buildHomeSpec(guildSain, member).alertes;
+    assert.deepStrictEqual(alertes.map((a) => a.texte), ["Tout est en ordre"], JSON.stringify(alertes));
+    assert.strictEqual(alertes[0].couleur, "#4ade80", "un serveur sain se lit en vert");
+    assert.ok(!homeText(guildSain, member).includes("contrôle(s) OK"), "l'accueil épuré ne doit pas reprendre le détail complet de l'audit");
   });
 
   await cas("jamais plus de DEUX alertes à l'accueil, même si l'audit complet en trouve plus", () => {
@@ -149,9 +165,10 @@ function mkMember(id, roleId) {
     guardConfig.setEnabled("gdash", false);
     const member = mkMember("u-guard2", "role-guard");
     permStore.setRoleGrants("gdash", "role-guard", ["protection.guard.manage"]);
+    const alertes = buildHomeSpec(guildAvecProblemes, member).alertes;
+    assert.ok(alertes.length <= 2, `${alertes.length} alertes affichées — l'accueil épuré doit en garder 2 maximum`);
+    assert.strictEqual(alertes[0].couleur, "#ff6b6b", "une alerte critique se lit en rouge");
     const texte = homeText(guildAvecProblemes, member);
-    const nbAlertes = (texte.match(/🔴|🟠/g) || []).length;
-    assert.ok(nbAlertes <= 2, `${nbAlertes} alertes affichées — l'accueil épuré doit en garder 2 maximum`);
     assert.ok(texte.includes("@everyone"), "l'alerte la plus grave (critique) doit être celle gardée en premier");
   });
 

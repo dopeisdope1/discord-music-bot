@@ -31,7 +31,7 @@ const { automodHandlers } = require("./automodCommands");
 const { configHandlers } = require("./configCommands");
 const permCatalog = require("./permissions/catalog");
 const { autoroleHandlers } = require("./autoroleCommands");
-const { fakeMessage } = require("./fakeMessage");
+const { fakeMessage, remplacerParLaReponse, aEteRemplace } = require("./fakeMessage");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -1656,6 +1656,11 @@ async function handleFormCardInteraction(interaction) {
     const active = getFormState(interaction.user.id, formKey) || {};
     if (!form.ready(active)) return interaction.reply({ content: "Des champs obligatoires manquent encore.", flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
+    // Le résultat doit REMPLACER la carte de formulaire, pas arriver dans un
+    // second message éphémère à côté d'elle : c'est le même geste, il mérite
+    // un seul message. `fakeMessage` lit ce marqueur pour éditer le message
+    // d'origine à la première réponse de la commande.
+    remplacerParLaReponse(interaction);
     try {
       await form.run(interaction.client, interaction, active);
     } catch (err) {
@@ -1663,6 +1668,9 @@ async function handleFormCardInteraction(interaction) {
       await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
     clearFormState(interaction.user.id, formKey);
+    // Le formulaire n'est remis à blanc que s'il est encore là : quand la
+    // commande a répondu, sa réponse occupe déjà la place du message.
+    if (aEteRemplace(interaction)) return undefined;
     return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
   }
 }

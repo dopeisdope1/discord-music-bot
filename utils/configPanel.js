@@ -896,11 +896,30 @@ function buildFicheMembreSpec(guild, targetMember) {
   };
 }
 
+/**
+ * Au plus deux alertes de sécurité, les plus graves d'abord — même détection
+ * que `&security scan` (utils/securityScan.js), jamais une seconde logique.
+ * Réservé à qui peut réellement y remédier.
+ */
+function alertesSecurite(guild, member) {
+  if (!can(member, "protection.automod") && !can(member, "protection.guard.manage")) return [];
+  const { critical, warnings } = computeSecurityScan(guild);
+  if (!critical.length && !warnings.length) return [{ couleur: "#4ade80", texte: "Tout est en ordre" }];
+  return [...critical.map((l) => ({ couleur: "#ff6b6b", texte: l })), ...warnings.map((l) => ({ couleur: "#fbbf24", texte: l }))].slice(0, 2);
+}
+
 function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) {
   const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
+  // Statut et alertes sont DESSINÉS ici plutôt qu'écrits sous l'en-tête : une
+  // mention citée dans une alerte y sortait en pastille cliquable.
+  const info = computeStatus(guild.client);
+  const enVocal = guild.voiceStates.cache.filter((v) => v.channelId).size;
+
   return {
     titre: "Centre de gestion",
     sousTitre: `${member.displayName || member.user?.username || `Membre ${member.id}`} · ${guild.name} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
+    banniere: `En ligne ${formatUptime(info.uptimeMs)} · ${info.ping}ms · ${guild.memberCount.toLocaleString("fr-FR")} membres · ${guild.channels.cache.size} salons · ${enVocal} en vocal`,
+    alertes: alertesSecurite(guild, member),
     cartes: familles.map((f) => ({
       cle: f.key,
       titre: f.label,
@@ -955,12 +974,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 
   const enteteLignes = ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
   // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
-  // "### Accueil" juste au-dessus n'apporterait rien. Le statut (en ligne,
-  // compteurs, alertes) est fusionné DANS l'en-tête au lieu d'occuper son
-  // propre composant : ça économise une place sur le plafond de 40 et met le
-  // résumé directement sous le titre, comme l'accueil de &help.
-  if (meta.key === "home") enteteLignes.push("", sectionBody("home", guild, member, state));
-  else enteteLignes.push(`### ${famille.emoji} ${meta.label}`);
+  // "### Accueil" juste au-dessus n'apporterait rien. Le statut et les
+  // alertes ne sont plus écrits ici non plus : en texte, les mentions
+  // brutes sortaient en pastilles — un `@everyone` cité dans une alerte de
+  // sécurité, notamment. Ils sont désormais DESSINÉS dans l'image de
+  // l'accueil, où ils informent sans pouvoir notifier personne.
+  if (meta.key !== "home") enteteLignes.push(`### ${famille.emoji} ${meta.label}`);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enteteLignes.join("\n")));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 

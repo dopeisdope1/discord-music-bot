@@ -1,4 +1,36 @@
-const { Collection, MessageFlags } = require("discord.js");
+const { Collection, MessageFlags, ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = require("discord.js");
+
+// Interactions dont la réponse doit REMPLACER le message d'origine au lieu
+// d'ouvrir un message éphémère à côté. Posé par utils/commandForms.js juste
+// avant de lancer la commande : le résultat prend alors la place de la carte
+// de formulaire — c'est le même geste, il mérite un seul message.
+// Un WeakSet plutôt qu'un champ ajouté sur l'interaction : rien n'est greffé
+// sur un objet de discord.js, et l'entrée disparaît avec l'interaction.
+const A_REMPLACER = new WeakSet();
+const DEJA_REMPLACE = new WeakSet();
+
+function remplacerParLaReponse(interaction) {
+  A_REMPLACER.add(interaction);
+}
+/** Le message d'origine a-t-il déjà été remplacé par une réponse ? */
+function aEteRemplace(interaction) {
+  return DEJA_REMPLACE.has(interaction);
+}
+
+/**
+ * Une carte d'action est un simple PNG joint. Pour remplacer un message
+ * Components V2 — la carte de formulaire en est un — il faut la présenter
+ * elle-même en Components V2 : sur un tel message tout l'affichage passe par
+ * des composants, une pièce jointe seule ne s'y afficherait pas.
+ */
+function enConteneurV2(payload) {
+  if (!payload?.files?.length || payload.components?.length) return payload;
+  const nom = payload.files[0].name;
+  const container = new ContainerBuilder()
+    .setAccentColor(0x2c2f5c)
+    .addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${nom}`)));
+  return { ...payload, flags: MessageFlags.IsComponentsV2, components: [container] };
+}
 
 // Adaptateur UNIQUE interaction -> "message" pour tout le bot : &panel
 // (utils/configPanel.js) et les cartes de formulaire (utils/commandForms.js)
@@ -42,11 +74,24 @@ function fakeMessage(interaction, { channel, channels, user, role, roles: roleLi
     // ne partait pas — pièce jointe refusée, interaction expirée — rien ne
     // l'indiquait nulle part, ni à l'utilisateur ni dans les logs, alors que
     // l'action avait bien eu lieu. On journalise donc le motif.
-    reply: (payload) =>
-      interaction
+    reply: async (payload) => {
+      // Première réponse d'une commande lancée depuis une carte de formulaire :
+      // elle REMPLACE la carte au lieu d'ouvrir un message à côté. Les
+      // réponses suivantes (une commande peut en envoyer plusieurs) repartent
+      // en éphémère, pour ne pas écraser le résultat déjà affiché.
+      if (A_REMPLACER.has(interaction) && !DEJA_REMPLACE.has(interaction)) {
+        DEJA_REMPLACE.add(interaction);
+        try {
+          return await interaction.editReply({ ...enConteneurV2(payload), attachments: [] });
+        } catch (err) {
+          console.error(`[fakeMessage] remplacement impossible, repli en éphémère : ${err.message}`);
+        }
+      }
+      return interaction
         .followUp({ ...payload, flags: (payload.flags || 0) | MessageFlags.Ephemeral })
-        .catch((err) => console.error(`[fakeMessage] réponse non envoyée : ${err.message}`)),
+        .catch((err) => console.error(`[fakeMessage] réponse non envoyée : ${err.message}`));
+    },
   };
 }
 
-module.exports = { fakeMessage };
+module.exports = { fakeMessage, remplacerParLaReponse, aEteRemplace };
