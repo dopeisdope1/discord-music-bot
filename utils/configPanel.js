@@ -48,6 +48,7 @@ const { roleAdmin } = require("./serverAdminCommands");
 const { parseDuration } = require("./moderationCommands");
 const { computeSecurityScan } = require("./securityScan");
 const { computeStatus, formatUptime } = require("./statusDiagnostic");
+const { FORMS, setFormState, buildFormCard } = require("./commandForms");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -64,6 +65,20 @@ const WELCOME_DELETE_OPTIONS = [
 // Tous les identifiants d'interaction du panneau commencent par "cfg:", ce
 // qui permet à index.js de les router sans les énumérer un par un.
 const ID = "cfg";
+
+// Droits qui donnent accès au centre de modération (fiche membre) : au moins
+// UNE action doit être possible, ou au moins la consultation de
+// l'historique — chaque bouton de la fiche reste ensuite gated séparément
+// par son propre droit (voir le rendu de "modCenter").
+const MOD_CENTER_PERMS = [
+  "moderation.warn",
+  "moderation.timeout",
+  "moderation.kick",
+  "moderation.ban",
+  "members.role",
+  "logs.view",
+];
+const canOpenModCenter = (member) => MOD_CENTER_PERMS.some((key) => can(member, key));
 
 // Chaque rubrique déclare comment décider si elle est visible : `ownerOnly`
 // (uniquement le propriétaire), `permission` (une clé du catalogue,
@@ -88,6 +103,12 @@ const SECTIONS = [
     label: "Logs",
     description: "Salon de logs par catégorie (modération/membres/serveur/bots)",
     visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
+  },
+  {
+    key: "modCenter",
+    label: "Recherche de membre",
+    description: "Fiche membre : sanctions, rôles, actions rapides",
+    visible: (member) => canOpenModCenter(member),
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   {
@@ -147,7 +168,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 const FAMILIES = [
   { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", sections: ["home"] },
   { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", sections: ["securityOverview", "protection", "guard", "mute"] },
-  { key: "moderation", label: "Modération", description: "Historique des sanctions", sections: ["history"] },
+  { key: "moderation", label: "Modération", description: "Fiche membre, sanctions, historique", sections: ["modCenter", "history"] },
   {
     key: "serveur",
     label: "Serveur",
@@ -315,6 +336,32 @@ function sectionBody(section, guild, member, state) {
     ]
       .filter((l) => l !== null)
       .join("\n");
+  }
+
+  if (section === "modCenter") {
+    const targetId = state.modTargetId;
+    if (!targetId) return "> *Choisis un membre dans le menu ci-dessous.*";
+    const targetMember = guild.members.cache.get(targetId);
+    if (!targetMember) return "> *Ce membre n'a pas pu être chargé (a-t-il quitté le serveur ?) — relance une recherche.*";
+
+    const entries = historyStore.search(guildId, { targetId, limit: 0 });
+    const roleNames = [...targetMember.roles.cache.values()].filter((r) => r.id !== guildId).map((r) => r.toString());
+    const lines = [
+      `> **Membre** : ${targetMember.toString()} — \`${targetMember.id}\``,
+      `> **Arrivé le** : ${targetMember.joinedTimestamp ? `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:D>` : "*inconnu*"}`,
+      `> **Compte créé le** : <t:${Math.floor(targetMember.user.createdTimestamp / 1000)}:D>`,
+      `> **Rôles (${roleNames.length})** : ${roleNames.length ? roleNames.slice(0, 8).join(", ") + (roleNames.length > 8 ? `, +${roleNames.length - 8}` : "") : "*aucun*"}`,
+      `> **Sanctions enregistrées** : ${entries.length}`,
+    ];
+    const recentEntries = entries.slice(0, 3);
+    if (recentEntries.length) {
+      lines.push("", "**Dernières sanctions :**");
+      for (const e of recentEntries) {
+        const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
+        lines.push(`> \`${e.action}\` — ${e.reason || "*sans raison*"} — ${when}`);
+      }
+    }
+    return lines.join("\n");
   }
 
   if (section === "history") {
@@ -753,6 +800,44 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
             .setStyle(ButtonStyle.Danger)
         )
       );
+    }
+  } else if (meta.key === "modCenter") {
+    const targetSelect = new UserSelectMenuBuilder().setCustomId(`${ID}:modtarget`).setPlaceholder("Rechercher un membre").setMinValues(0).setMaxValues(1);
+    if (state.modTargetId) targetSelect.setDefaultUsers([state.modTargetId]);
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(targetSelect));
+
+    const targetMember = state.modTargetId && guild.members.cache.get(state.modTargetId);
+    if (targetMember) {
+      // Chaque bouton ouvre la MÊME carte de formulaire que la commande tapée
+      // à la main (&kick, &ban...), déjà pré-remplie avec ce membre — aucune
+      // deuxième implémentation de l'action, juste un raccourci vers celle qui
+      // existe déjà (voir utils/commandForms.js).
+      const actions = [];
+      if (can(member, "moderation.warn")) actions.push(["warn_member", "Warn", ButtonStyle.Secondary]);
+      if (can(member, "moderation.timeout")) actions.push(["timeout_member", "Timeout", ButtonStyle.Secondary]);
+      if (can(member, "moderation.kick")) actions.push(["kick_member", "Kick", ButtonStyle.Danger]);
+      if (can(member, "moderation.ban")) actions.push(["ban_member", "Ban", ButtonStyle.Danger]);
+      if (can(member, "logs.view")) actions.push([null, "Historique complet", ButtonStyle.Secondary]);
+      if (actions.length) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            actions.slice(0, 5).map(([formKey, label, style]) =>
+              new ButtonBuilder()
+                .setCustomId(formKey ? `${ID}:modaction:${formKey}:${targetMember.id}` : `${ID}:modhistory:${targetMember.id}`)
+                .setLabel(label)
+                .setStyle(style)
+            )
+          )
+        );
+      }
+      if (can(member, "members.role")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:modaction:addrole_member:${targetMember.id}`).setLabel("Ajouter un rôle").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`${ID}:modaction:delrole_member:${targetMember.id}`).setLabel("Retirer un rôle").setStyle(ButtonStyle.Secondary)
+          )
+        );
+      }
     }
   } else if (meta.key === "history") {
     if (!state.historySearchOpen) {
@@ -1319,6 +1404,45 @@ async function handleConfigInteraction(interaction) {
       flags: MessageFlags.Ephemeral,
     });
     return goto("logs");
+  }
+
+  // Centre de modération : chercher un membre, puis agir sur sa fiche.
+  if (action === "modtarget") {
+    if (!canOpenModCenter(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const targetId = interaction.values[0] || null;
+    // Un fetch ciblé (pas guild.members.fetch() complet) garantit une fiche à
+    // jour même si ce membre précis n'était pas déjà en cache — sectionBody
+    // reste lui synchrone et lit ensuite le cache tel quel.
+    if (targetId) await guild.members.fetch(targetId).catch(() => {});
+    return goto("modCenter", { modTargetId: targetId });
+  }
+
+  // Chaque bouton de la fiche membre ouvre la carte de formulaire EXISTANTE
+  // (utils/commandForms.js, celle que &kick/&ban/&timeout/&warn/... ouvrent
+  // déjà) pré-remplie avec ce membre — jamais une deuxième exécution de
+  // l'action. La carte est posée comme nouveau message public, exactement
+  // comme quand on tape la commande à vide.
+  if (action === "modaction") {
+    const formKey = extra;
+    const targetId = extra2;
+    const form = FORMS[formKey];
+    if (!form) return;
+    if (form.permission !== undefined && !can(member, form.permission)) {
+      return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    }
+    setFormState(member.id, formKey, { userId: targetId });
+    return interaction.reply(buildFormCard(formKey, member));
+  }
+
+  if (action === "modhistory") {
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const targetId = extra;
+    const results = historyStore.search(guildId, { targetId, limit: 10 });
+    await goto("modCenter", { modTargetId: targetId });
+    const resultContainer = new ContainerBuilder().addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`## Historique complet\n${formatHistoryResults(results).slice(0, 3800)}`)
+    );
+    return interaction.followUp({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
   }
 
   // Recherche d'historique : cible/modérateur se choisissent désormais via
