@@ -283,7 +283,7 @@ function makeMember(guild) {
     const interaction = fakeInteraction(guild, "cfg:voicehubsetup", { member: membreAvecAutreDroit });
     await configPanel.handleConfigInteraction(interaction);
     assert.strictEqual(guild._created.length, 0);
-    assert.ok(interaction._replies[0]?.content.includes("Accès refusé"), JSON.stringify(interaction._replies));
+    assert.ok(interaction._replies[0]?.content.includes("pas la permission"), JSON.stringify(interaction._replies));
   });
 
   await cas("\"Modifier les noms\" ouvre une modale pré-remplie avec la valeur actuelle (un seul champ)", async () => {

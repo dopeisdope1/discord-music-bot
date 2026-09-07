@@ -121,7 +121,7 @@ function buttons(guild, member, state) {
         refused = p;
       },
     });
-    assert.ok(refused?.content?.includes("Accès refusé"), JSON.stringify(refused));
+    assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

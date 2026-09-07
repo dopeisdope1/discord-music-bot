@@ -1603,7 +1603,7 @@ async function handleFormCardInteraction(interaction) {
   const form = FORMS[formKey];
   if (!form) return;
   if (form.permission !== undefined && !can(interaction.member, form.permission)) {
-    return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
   }
 
   if (["channel", "channel2", "role", "roles", "user", "mentionable"].includes(action)) {

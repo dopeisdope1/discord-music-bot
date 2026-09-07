@@ -291,7 +291,7 @@ function render(section, state) {
     await handleConfigInteraction(interaction);
     assert.strictEqual(replies.length, 1);
     const texte = replies[0].components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes("Confirmer la suppression du rôle"), texte);
+    assert.ok(texte.includes("Supprimer le rôle"), texte);
     assert.ok(g.roles.cache.has(role.id), "le rôle ne doit pas encore être supprimé avant confirmation");
   });
 

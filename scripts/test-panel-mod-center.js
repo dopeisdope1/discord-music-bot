@@ -180,7 +180,7 @@ function buttons(guild, section, member, state) {
         refused = p;
       },
     });
-    assert.ok(refused?.content?.includes("Accès refusé"), JSON.stringify(refused));
+    assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
   });
 
   await cas("\"Historique complet\" renvoie les VRAIES entrées déjà enregistrées pour ce membre", async () => {

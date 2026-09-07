@@ -210,25 +210,43 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // famille sans jamais partager le même écran : l'un donne accès à tout le bot,
 // l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
 const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Dashboard et vue d'ensemble", emoji: EMOJI.MEMBERS, sections: ["home"] },
-  { key: "securite", label: "Sécurité", description: "Anti-spam, anti-nuke, mute", emoji: EMOJI.LOCK, sections: ["securityOverview", "protection", "guard", "mute"] },
-  { key: "moderation", label: "Modération", description: "Fiche membre, sanctions, historique", emoji: EMOJI.BAN, sections: ["modCenter", "history"] },
+  { key: "accueil", label: "Accueil", description: "Vue d'ensemble : statut, alertes et accès rapides", emoji: EMOJI.MEMBERS, sections: ["home"] },
+  {
+    key: "securite",
+    label: "Sécurité",
+    description: "Protection automatique contre le spam et les attaques",
+    emoji: EMOJI.LOCK,
+    sections: ["securityOverview", "protection", "guard", "mute"],
+  },
+  {
+    key: "moderation",
+    label: "Modération",
+    description: "Gérer un membre : avertir, sanctionner, consulter son historique",
+    emoji: EMOJI.BAN,
+    sections: ["modCenter", "history"],
+  },
   {
     key: "serveur",
     label: "Serveur",
-    description: "Rôles, permissions, rôles automatiques, vérification",
+    description: "Rôles, permissions et arrivée des nouveaux membres",
     emoji: EMOJI.PENCIL,
     sections: ["permissions", "autorole", "verification"],
   },
   {
     key: "communaute",
     label: "Communauté",
-    description: "Bienvenue, départ, vocaux temporaires, giveaways",
+    description: "Messages d'accueil, salons vocaux et concours",
     emoji: EMOJI.MAIL,
     sections: ["welcome", "leave", "voice", "giveaways"],
   },
-  { key: "support", label: "Support", description: "Tickets", emoji: EMOJI.TICKET, sections: ["tickets"] },
-  { key: "communication", label: "Communication", description: "Embed, sondages", emoji: EMOJI.RULES, sections: ["embedBuilder", "polls"] },
+  { key: "support", label: "Support", description: "Système de tickets d'assistance", emoji: EMOJI.TICKET, sections: ["tickets"] },
+  {
+    key: "communication",
+    label: "Communication",
+    description: "Créer des annonces et des sondages",
+    emoji: EMOJI.RULES,
+    sections: ["embedBuilder", "polls"],
+  },
   { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", emoji: EMOJI.VOICE, sections: ["musicPlayer"] },
   // Historique reste sous Modération (module 4) : la fiche membre y renvoie
   // déjà directement, un aller-retour de famille en plus n'aurait rien
@@ -236,16 +254,28 @@ const FAMILIES = [
   // Vue d'ensemble (module 3) affiche déjà exactement computeSecurityScan en
   // entier — une deuxième rubrique identique aurait été une redite, pas un
   // vrai regroupement.
-  { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", emoji: EMOJI.ONLINE, sections: ["logs", "stats", "diagnostics"] },
+  {
+    key: "monitoring",
+    label: "Monitoring",
+    description: "Journaux d'activité et statistiques du serveur",
+    emoji: EMOJI.ONLINE,
+    sections: ["logs", "stats", "diagnostics"],
+  },
   {
     key: "bot",
     label: "Bot",
-    description: "Préfixes, profil du bot, accès au panel, rang sys, ban de masse, dispenses",
+    description: "Réglages généraux du bot et gestion des accès",
     emoji: EMOJI.DISCORD,
     sections: ["prefixes", "botProfile", "access", "sys", "banall", "moderation"],
   },
   // Ordre demandé explicitement : Sauvegardes en dernier, après Bot.
-  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", emoji: EMOJI.ARROW, sections: ["backups"] },
+  {
+    key: "sauvegardes",
+    label: "Sauvegardes",
+    description: "Sauvegarder et restaurer la structure du serveur",
+    emoji: EMOJI.ARROW,
+    sections: ["backups"],
+  },
 ];
 
 const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
@@ -261,7 +291,7 @@ function buildNav(current, member, isOwner) {
   const disponibles = FAMILIES.filter((f) => familySections(f, member, isOwner).length);
   return new StringSelectMenuBuilder()
     .setCustomId(`${ID}:nav`)
-    .setPlaceholder("Choisis une famille de réglages")
+    .setPlaceholder("Que veux-tu gérer aujourd'hui ?")
     .addOptions(
       disponibles.map((f) =>
         new StringSelectMenuOptionBuilder()
@@ -1598,13 +1628,13 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "permrole") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
 
   if (action === "permshowcmds" || action === "permhidecmds") {
     if (!can(member, "panel.permissions.manage") && !can(member, "panel.roles.manage")) {
-      return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     }
     return goto("permissions", { permissionsRoleId: extra, permissionsShowCommands: action === "permshowcmds" });
   }
@@ -1613,7 +1643,7 @@ async function handleConfigInteraction(interaction) {
   // exposé dans le panel jusqu'ici — même liste paginée qu'en tapant la
   // commande, juste ouverte depuis la fiche du rôle.
   if (action === "rolemembers") {
-    if (!can(member, "server.members.list")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.members.list")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const role = guild.roles.cache.get(extra);
     await goto("permissions", { permissionsRoleId: extra });
     if (!role) return;
@@ -1626,17 +1656,17 @@ async function handleConfigInteraction(interaction) {
   // déjà bare) ; terminer/reroll appellent directement utils/giveaways.js
   // avec l'ID du message ciblé, jamais un second tirage réimplémenté.
   if (action === "giveawaystart") {
-    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return interaction.reply(buildFormCard("giveaway_start", member));
   }
 
   if (action === "giveawaypick") {
-    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("giveaways", { giveawaySelected: interaction.values[0] || null });
   }
 
   if (action === "giveawayend" || action === "giveawayreroll") {
-    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.giveaways.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const messageId = extra;
     const giveaway = giveawayStore.get(messageId);
     await goto("giveaways", { giveawaySelected: null });
@@ -1655,7 +1685,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "pollstart") {
-    if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return interaction.reply(buildFormCard("poll_create", member));
   }
 
@@ -1677,7 +1707,7 @@ async function handleConfigInteraction(interaction) {
   // demandée explicitement pour le panel, où un clic est plus facile qu'en
   // tapant la commande.
   if (action === "backupsavebtn") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, rien n'a été sauvegardé.", flags: MessageFlags.Ephemeral });
@@ -1694,18 +1724,18 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "backuppick") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("backups", { backupSelected: interaction.values[0] || null });
   }
 
   if (action === "backupdelete") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     await backup(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
     return;
   }
 
   if (action === "backuprestore") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     await backup(interaction.client, messageFromInteraction(interaction), ["load", extra], { doubleConfirm: true });
     return;
   }
@@ -1713,7 +1743,7 @@ async function handleConfigInteraction(interaction) {
   // Profil du bot : réutilise TEL QUEL utils/botProfileCommands.js — même
   // remarque que ci-dessus, aucune deuxième implémentation.
   if (action === "botstatus") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const fn = botProfileHandlers[interaction.values[0]];
     if (!fn) return;
     await fn(interaction.client, messageFromInteraction(interaction));
@@ -1721,7 +1751,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "botnamebtn") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, rien n'a changé.", flags: MessageFlags.Ephemeral });
@@ -1743,7 +1773,7 @@ async function handleConfigInteraction(interaction) {
   // minimal — pas de logique dupliquée entre &role create/delete et ces
   // boutons.
   if (action === "rolecreate") {
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, aucun rôle créé.", flags: MessageFlags.Ephemeral });
@@ -1760,7 +1790,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "roledelete") {
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     await roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
     return;
   }
@@ -1768,18 +1798,18 @@ async function handleConfigInteraction(interaction) {
   // "Exclusif" : simple étiquette côté panel, aucun effet sur le calcul des
   // permissions (voir utils/permissions/store.js).
   if (action === "roleexclusive" || action === "roleexclusiveoff") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     permStore.setRoleExclusive(guildId, extra, action === "roleexclusive");
     return goto("permissions", { permissionsRoleId: extra });
   }
 
   if (action === "permcat") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: extra, permissionsCategory: interaction.values[0] });
   }
 
   if (action === "permkeys") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     // extra = roleId, extra2 = catégorie affichée dans ce menu : on ne
     // remplace que les clés DE CETTE catégorie, les autres catégories
     // déjà accordées à ce rôle restent intactes.
@@ -1806,18 +1836,18 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "logcat") {
-    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("logs", { logsCategory: interaction.values[0] });
   }
 
   if (action === "logchannel") {
-    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     setLogChannelId(guildId, extra, interaction.values[0] || null);
     return goto("logs", { logsCategory: extra });
   }
 
   if (action === "logauto") {
-    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const botPerm = checkBotPermission(guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
     if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
 
@@ -1832,7 +1862,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "logdelete") {
-    if (!can(member, "logs.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const botPerm = checkBotPermission(guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
     if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
 
@@ -1848,7 +1878,7 @@ async function handleConfigInteraction(interaction) {
 
   // Centre de modération : chercher un membre, puis agir sur sa fiche.
   if (action === "modtarget") {
-    if (!canOpenModCenter(member)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!canOpenModCenter(member)) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const targetId = interaction.values[0] || null;
     // Un fetch ciblé (pas guild.members.fetch() complet) garantit une fiche à
     // jour même si ce membre précis n'était pas déjà en cache — sectionBody
@@ -1868,14 +1898,14 @@ async function handleConfigInteraction(interaction) {
     const form = FORMS[formKey];
     if (!form) return;
     if (form.permission !== undefined && !can(member, form.permission)) {
-      return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     }
     setFormState(member.id, formKey, { userId: targetId });
     return interaction.reply(buildFormCard(formKey, member));
   }
 
   if (action === "modhistory") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const targetId = extra;
     const results = historyStore.search(guildId, { targetId, limit: 10 });
     await goto("modCenter", { modTargetId: targetId });
@@ -1894,12 +1924,12 @@ async function handleConfigInteraction(interaction) {
   // cette carte et qui porte cible/modérateur dans son propre customId pour
   // ne pas les perdre.
   if (action === "history" && extra === "search") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("history", { historySearchOpen: true });
   }
 
   if (action === "historytarget" || action === "historymoderator") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const other = extra !== "_" ? extra : null;
     const chosen = interaction.values[0] || null;
     return goto("history", {
@@ -1910,7 +1940,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "historytextopen") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const modal = new ModalBuilder().setCustomId(`${ID}:historytextsubmit:${extra}:${extra2}`).setTitle("Filtrer par type/ID");
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -1928,7 +1958,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "historytextsubmit") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return handleHistorySearchModal(interaction, {
       targetId: extra !== "_" ? extra : null,
       moderatorId: extra2 !== "_" ? extra2 : null,
@@ -1936,7 +1966,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "historyrun") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const targetId = extra !== "_" ? extra : null;
     const moderatorId = extra2 !== "_" ? extra2 : null;
     const results = historyStore.search(guildId, { targetId: targetId || undefined, moderatorId: moderatorId || undefined, limit: 10 });
@@ -1952,7 +1982,7 @@ async function handleConfigInteraction(interaction) {
   if (action === "protectionaction") {
     const choice = interaction.values[0];
     const requiredPerm = choice.startsWith("whitelist_") ? "protection.whitelist" : "protection.automod";
-    if (!can(member, requiredPerm)) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, requiredPerm)) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
 
     if (choice === "spam_toggle") {
       automod.setEnabled(guildId, !automod.getConfig(guildId).enabled);
@@ -1985,7 +2015,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "wladd" || action === "wldel") {
-    if (!can(member, "protection.whitelist")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.whitelist")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const userId = interaction.values[0];
     if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
     else automod.removeFromWhitelist(guildId, "users", userId);
@@ -1993,13 +2023,13 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "badwords" && extra === "del") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     badWords.removeWord(guildId, interaction.values[0]);
     return goto("protection");
   }
 
   if (action === "badwords" && extra === "add") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const word = interaction.fields.getTextInputValue("value").trim();
       if (!word) return interaction.reply({ content: "Mot vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
@@ -2020,7 +2050,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "guardaction") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const choice = interaction.values[0];
     if (choice === "guard_toggle") {
       guardConfig.setEnabled(guildId, !guardConfig.getConfig(guildId).enabled);
@@ -2040,18 +2070,18 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "guardpick") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("guard", { guardAction: "guard_pick", guardKey: interaction.values[0] });
   }
 
   if (action === "guardtoggle") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     guardConfig.toggleGuard(guildId, extra);
     return goto("guard", { guardAction: "guard_pick", guardKey: extra });
   }
 
   if (action === "guardwladd" || action === "guardwldel") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const userId = interaction.values[0];
     if (action === "guardwladd") guardWhitelist.add(guildId, "users", userId);
     else guardWhitelist.remove(guildId, "users", userId);
@@ -2059,7 +2089,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "guardwlroleadd" || action === "guardwlroledel") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const roleId = interaction.values[0];
     if (action === "guardwlroleadd") guardWhitelist.add(guildId, "roles", roleId);
     else guardWhitelist.remove(guildId, "roles", roleId);
@@ -2067,7 +2097,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "guardping") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     guardConfig.setPingRole(guildId, interaction.values[0] || null);
     return goto("guard");
   }
@@ -2088,7 +2118,7 @@ async function handleConfigInteraction(interaction) {
       await interaction.reply({ content: `Comptes créés il y a moins de **${raw}** sanctionnés à l'arrivée.`, flags: MessageFlags.Ephemeral });
       return interaction.message?.edit(buildConfigPanel(guild, "guard", member)).catch(() => {});
     }
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const modal = new ModalBuilder().setCustomId(`${ID}:guardcreationlimit`).setTitle("Seuil de création de compte");
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -2104,25 +2134,25 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "welcomechannel") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     welcomeStore.setChannel(guildId, interaction.values[0] || null);
     return goto("welcome");
   }
 
   if (action === "welcomedelete") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     welcomeStore.setAutoDelete(guildId, parseInt(interaction.values[0], 10) || 0);
     return goto("welcome");
   }
 
   if (action === "welcomedel") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     welcomeStore.removeMessage(guildId, parseInt(interaction.values[0], 10));
     return goto("welcome");
   }
 
   if (action === "welcomeadd") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const text = interaction.fields.getTextInputValue("value").trim();
       if (!text) return interaction.reply({ content: "Message vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
@@ -2145,25 +2175,25 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "leavechannel") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     leaveStore.setChannel(guildId, interaction.values[0] || null);
     return goto("leave");
   }
 
   if (action === "leavedelete") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     leaveStore.setAutoDelete(guildId, parseInt(interaction.values[0], 10) || 0);
     return goto("leave");
   }
 
   if (action === "leavedel") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     leaveStore.removeMessage(guildId, parseInt(interaction.values[0], 10));
     return goto("leave");
   }
 
   if (action === "leaveadd") {
-    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.welcome.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const text = interaction.fields.getTextInputValue("value").trim();
       if (!text) return interaction.reply({ content: "Message vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
@@ -2186,19 +2216,19 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "autoroleset") {
-    if (!can(member, "members.autorole.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "members.autorole.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     autoroleStore.setRoleIds(guildId, interaction.values);
     return goto("autorole");
   }
 
   if (action === "verifyrole") {
-    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     verificationStore.setRole(guildId, interaction.values[0] || null);
     return goto("verification");
   }
 
   if (action === "verifypost") {
-    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "members.verification.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const config = verificationStore.getConfig(guildId);
     if (!config.roleId || !guild.roles.cache.has(config.roleId)) {
       return interaction.reply({ content: "Choisis d'abord un rôle valide.", flags: MessageFlags.Ephemeral });
@@ -2219,7 +2249,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "access" && extra === "sweep") {
-    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const revoked = sweepGuild(interaction.client, guild);
     await interaction.reply({
       content: revoked.length ? `${revoked.length} accès obsolète(s) révoqué(s).` : "Rien à nettoyer, tout est à jour.",
@@ -2254,37 +2284,37 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "muterole") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     muteStore.setMuteRoleId(guildId, interaction.values[0] || null);
     return goto("mute");
   }
 
   if (action === "ticketstaff") {
-    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     ticketStore.setStaffRole(guildId, interaction.values[0] || null);
     return goto("tickets");
   }
 
   if (action === "voicehubchannel") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     voiceChannels.setHub(guildId, interaction.values[0] || null);
     return goto("voice");
   }
 
   if (action === "voicespawncategory") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     voiceChannels.setSpawnCategory(guildId, interaction.values[0] || null);
     return goto("voice");
   }
 
   if (action === "voicepanelchannel") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     voiceChannels.setPanelChannel(guildId, interaction.values[0] || null);
     return goto("voice");
   }
 
   if (action === "voicehubsetup") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     if (voiceHubSetup.isAlreadyConfigured(guild)) {
       return interaction.reply({ content: "Un générateur est déjà actif — change-le via le sélecteur plutôt que d'en recréer un.", flags: MessageFlags.Ephemeral });
     }
@@ -2300,7 +2330,7 @@ async function handleConfigInteraction(interaction) {
   }
 
   if (action === "voicepanelrefresh") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
     const ok = await voiceHubSetup.refreshPanelCard(guild);
     await interaction
@@ -2319,7 +2349,7 @@ async function handleConfigInteraction(interaction) {
       await interaction.reply({ content: "Modèle de nom enregistré.", flags: MessageFlags.Ephemeral });
       return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
     }
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
 
     const current = voiceChannels.getHubConfig(guildId);
     const modal = new ModalBuilder().setCustomId(`${ID}:voicenames`).setTitle("Modèle de nom des salons");
@@ -2375,7 +2405,7 @@ async function handleConfigInteraction(interaction) {
  */
 async function handleHistorySearchModal(interaction, carried = {}) {
   if (!can(interaction.member, "logs.view")) {
-    return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
   }
   const actionRaw = interaction.fields.getTextInputValue("action").trim();
   const idRaw = interaction.fields.getTextInputValue("id").trim();

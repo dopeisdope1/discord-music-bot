@@ -259,8 +259,8 @@ async function roleAdmin(client, message, args) {
     const roleId = role.id;
     const name = role.name;
     return requestConfirmation(message, {
-      title: "Confirmer la suppression du rôle",
-      body: `Rôle : **${name}** (${roleId})\n\nCette action est irréversible.`,
+      title: `Supprimer le rôle ${name} ?`,
+      body: `**${name}** (${roleId})\n\nCette action est définitive et ne peut pas être annulée.`,
       confirmLabel: "Supprimer",
       permission: "server.roles.manage",
       execute: async (interaction) => {
@@ -442,8 +442,8 @@ async function channelAdmin(client, message, args) {
     const name = target.name;
     const id = target.id;
     return requestConfirmation(message, {
-      title: "Confirmer la suppression du salon",
-      body: `Salon : **${name}** (${id})\n\nCette action est irréversible — l'historique part avec.`,
+      title: `Supprimer le salon ${name} ?`,
+      body: `**${name}** (${id})\n\nCette action est définitive et l'historique du salon part avec.`,
       confirmLabel: "Supprimer",
       permission: "server.channels.manage",
       execute: async (interaction) => {
