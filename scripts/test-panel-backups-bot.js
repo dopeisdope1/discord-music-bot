@@ -76,6 +76,19 @@ function titre(guild, section, member, state) {
   return buildConfigPanel(guild, section, member, state).components[0].toJSON().components.find((c) => c.type === 10).content;
 }
 
+/**
+ * Les actions d'un écran sont désormais les options d'un menu déroulant
+ * unique (`cfg:action`), plus des boutons alignés. On lit donc les deux :
+ * les boutons restants (liens, qu'un menu ne sait pas porter) et les options.
+ */
+function libellesActions(json) {
+  const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+  return [
+    ...composants.map((b) => b.label),
+    ...composants.filter((c) => c.custom_id === `${ID}:action`).flatMap((m) => m.options.map((o) => o.label)),
+  ].filter(Boolean);
+}
+
 (async () => {
   console.log("Sauvegardes et Profil du bot :");
 
@@ -123,16 +136,14 @@ function titre(guild, section, member, state) {
 
   await cas("choisir un préréglage intégré (yunara) ne propose PAS de bouton Supprimer", () => {
     const json = buildConfigPanel(guild, "backups", owner, { backupSelected: "yunara" }).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const labels = boutons.map((b) => b.label).filter(Boolean);
+    const labels = libellesActions(json);
     assert.ok(labels.some((l) => l.includes("Restaurer")), labels.join(", "));
     assert.ok(!labels.includes("Supprimer"), labels.join(", "));
   });
 
   await cas("choisir une sauvegarde enregistrée propose Restaurer ET Supprimer", () => {
     const json = buildConfigPanel(guild, "backups", owner, { backupSelected: "masauvegarde" }).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const labels = boutons.map((b) => b.label).filter(Boolean);
+    const labels = libellesActions(json);
     assert.ok(labels.includes("Supprimer"), labels.join(", "));
   });
 

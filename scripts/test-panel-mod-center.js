@@ -89,9 +89,20 @@ function titre(guild, section, member, state) {
   return buildConfigPanel(guild, section, member, state).components[0].toJSON().components.find((c) => c.type === 10).content;
 }
 
+/**
+ * Les actions de la fiche membre ne sont plus des boutons mais les options
+ * d'un menu déroulant unique (`cfg:action`) : sept boutons alignés faisaient
+ * désordre. La valeur de chaque option EST le customId du bouton d'origine,
+ * donc les assertions portent sur les mêmes identifiants qu'avant.
+ */
 function buttons(guild, section, member, state) {
   const json = buildConfigPanel(guild, section, member, state).components[0].toJSON();
-  return json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+  const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+  const actions = composants
+    .filter((c) => c.custom_id === `${ID}:action`)
+    .flatMap((menu) => menu.options)
+    .map((o) => ({ label: o.label, custom_id: o.value }));
+  return [...composants.filter((c) => c.custom_id !== `${ID}:action`), ...actions];
 }
 
 (async () => {

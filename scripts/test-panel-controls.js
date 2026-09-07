@@ -98,6 +98,21 @@ function render(section, state) {
   };
 }
 
+/**
+ * Les actions d'un écran ne sont plus des boutons mais les options d'un menu
+ * déroulant unique (`cfg:action`) : sept boutons alignés sur la fiche membre
+ * faisaient désordre. La valeur d'une option EST le customId du bouton
+ * d'origine, donc les assertions portent sur les mêmes identifiants qu'avant.
+ */
+function actionsDe(json) {
+  return json.components
+    .filter((c) => c.type === 1)
+    .flatMap((r) => r.components)
+    .filter((c) => c.custom_id === `${ID}:action`)
+    .flatMap((menu) => menu.options)
+    .map((o) => ({ label: o.label, custom_id: o.value }));
+}
+
 (async () => {
   console.log("Le panel montre, il n'explique pas :");
 
@@ -219,12 +234,11 @@ function render(section, state) {
     assert.ok(!boutons.some((b) => b.custom_id?.includes("permshowcmds")), "le bouton ne devrait apparaître qu'une fois un rôle choisi");
   });
 
-  await cas("un rôle choisi affiche le bouton \"Voir les commandes débloquées\"", () => {
+  await cas("un rôle choisi propose l'action \"Voir les commandes débloquées\"", () => {
     const json = buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const bouton = boutons.find((b) => b.custom_id === `${ID}:permshowcmds:${roleId}`);
-    assert.ok(bouton, "le bouton \"voir les commandes débloquées\" est absent");
-    assert.strictEqual(bouton.label, "Voir les commandes débloquées");
+    const action = actionsDe(json).find((a) => a.custom_id === `${ID}:permshowcmds:${roleId}`);
+    assert.ok(action, "l'action \"voir les commandes débloquées\" est absente du menu");
+    assert.strictEqual(action.label, "Voir les commandes débloquées");
   });
 
   await cas("le comptage par catégorie ne dit QUE le nombre, jamais les commandes elles-mêmes", () => {
@@ -241,8 +255,10 @@ function render(section, state) {
     );
     // Le clic a bien mené à l'écran "commandes affichées" : son bouton bascule
     // vers "Masquer".
-    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(boutons.some((b) => b.custom_id === `${ID}:permhidecmds:${roleId}`), "le bouton doit basculer vers \"Masquer\"");
+    assert.ok(
+      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:permhidecmds:${roleId}`),
+      "l'action doit basculer vers \"Masquer\""
+    );
     // Ce que cet écran AFFICHE se lit sur la spec dessinée (le corps des
     // rubriques est une image) — même état que celui produit par le clic.
     const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: true });
@@ -257,9 +273,10 @@ function render(section, state) {
     );
     const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowCommands: false });
     assert.ok(!texte.includes("Commandes débloquées par ce rôle"), "la liste devrait être repliée après un second clic");
-    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const bouton = boutons.find((b) => b.custom_id === `${ID}:permshowcmds:${roleId}`);
-    assert.ok(bouton, "le bouton doit repasser à \"Voir les commandes débloquées\" une fois replié");
+    assert.ok(
+      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:permshowcmds:${roleId}`),
+      "l'action doit repasser à \"Voir les commandes débloquées\" une fois repliée"
+    );
   });
 
   await cas("une permission accordée SANS commande dédiée (ex. accès à une rubrique du panel) reste visible — pas juste \"0 : aucune\"", () => {
@@ -313,11 +330,9 @@ function render(section, state) {
     return g;
   }
 
-  await cas("bouton \"Créer un rôle\" visible pour qui a server.roles.manage", () => {
+  await cas("action \"Créer un rôle\" proposée à qui a server.roles.manage", () => {
     const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const bouton = boutons.find((b) => b.custom_id === `${ID}:rolecreate`);
-    assert.ok(bouton, "le bouton \"Créer un rôle\" est absent");
+    assert.ok(actionsDe(json).some((a) => a.custom_id === `${ID}:rolecreate`), "l'action \"Créer un rôle\" est absente du menu");
   });
 
   await cas("cliquer \"Créer un rôle\" (pas encore un modal) ouvre bien une modale, ne crée rien tout de suite", async () => {
@@ -452,8 +467,10 @@ function render(section, state) {
     assert.ok(permStore.isRoleExclusive("g1", roleId), "le rôle doit être marqué exclusif");
     const texte = texteDessine("permissions", { permissionsRoleId: roleId });
     assert.ok(/Exclusif[\s\S]{0,12}oui/.test(texte), texte);
-    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(boutons.some((b) => b.custom_id === `${ID}:roleexclusiveoff:${roleId}`), "le bouton doit basculer vers \"Retirer de l'exclusif\"");
+    assert.ok(
+      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:roleexclusiveoff:${roleId}`),
+      "l'action doit basculer vers \"Retirer de l'exclusif\""
+    );
   });
 
   await cas("\"Retirer de l'exclusif\" annule le marquage", async () => {
@@ -531,12 +548,11 @@ function render(section, state) {
   historyStore.deleteAllForGuild("g1");
   historyStore.record({ guildId: "g1", targetId: TARGET_ID, moderatorId: MODERATOR_ID, action: "ban" });
 
-  await cas("par défaut, juste le bouton \"Rechercher\" — pas encore de sélecteur", () => {
+  await cas("par défaut, juste l'action \"Rechercher\" — pas encore de sélecteur", () => {
     const json = buildConfigPanel(guild, "history", member).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1 && c.components[0]?.type === 2).flatMap((r) => r.components);
     const selects = json.components.filter((c) => c.type === 1 && c.components[0]?.type === 5); // 5 = UserSelectMenu
-    assert.ok(boutons.some((b) => b.custom_id === `${ID}:history:search`));
-    assert.strictEqual(selects.length, 0);
+    assert.ok(actionsDe(json).some((a) => a.custom_id === `${ID}:history:search`), "l'action Rechercher doit être proposée");
+    assert.strictEqual(selects.length, 0, "les sélecteurs n'apparaissent qu'après avoir lancé la recherche");
   });
 
   await cas("cliquer \"Rechercher\" ouvre la carte avec DEUX UserSelectMenu natifs (cible + modérateur)", async () => {

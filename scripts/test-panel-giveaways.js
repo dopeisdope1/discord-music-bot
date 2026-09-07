@@ -159,8 +159,13 @@ function render(guild, member, state) {
         panel = p;
       },
     });
-    const boutons = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const labels = boutons.map((b) => b.label).filter(Boolean);
+    // Les actions sont désormais les options d'un menu déroulant unique
+    // (`cfg:action`), plus des boutons alignés.
+    const composants = panel.components[0].toJSON().components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const labels = [
+      ...composants.map((b) => b.label),
+      ...composants.filter((c) => c.custom_id === `${ID}:action`).flatMap((m) => m.options.map((o) => o.label)),
+    ].filter(Boolean);
     assert.ok(labels.includes("Terminer maintenant"), labels.join(", "));
     assert.ok(labels.includes("Retirer un gagnant (reroll)"), labels.join(", "));
   });

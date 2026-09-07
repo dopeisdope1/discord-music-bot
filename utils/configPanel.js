@@ -959,6 +959,55 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
  *   posé après un envoi refusé par Discord (voir utils/musicCommands.js) :
  *   le salon qui refuse une pièce jointe refusera aussi la suivante.
  */
+/**
+ * Remplace TOUTES les rangées de boutons d'un écran par UN menu déroulant
+ * d'actions. Demande explicite : « je veux plus de boutons, sinon ça fait
+ * moche et trop d'options » — la fiche membre en alignait sept, l'écran des
+ * permissions cinq.
+ *
+ * Fait après coup sur le conteneur déjà construit, plutôt que dans chacune
+ * des vingt branches de rendu : un seul endroit à maintenir, et une rubrique
+ * ajoutée plus tard en bénéficie sans rien changer. La valeur de chaque
+ * option EST le customId du bouton d'origine, donc aucun handler n'a besoin
+ * d'être réécrit — le routeur réexpédie simplement vers lui.
+ *
+ * Les boutons DÉSACTIVÉS sont écartés : un menu n'a pas d'option grisée, et
+ * proposer une action impossible serait pire que de la masquer.
+ */
+function regrouperBoutonsEnMenu(container) {
+  const enfants = container.components;
+  const boutons = [];
+  let premiereRangee = -1;
+
+  for (let i = enfants.length - 1; i >= 0; i--) {
+    const json = enfants[i].toJSON?.();
+    if (json?.type !== 1) continue;
+    const composants = json.components || [];
+    if (!composants.length || !composants.every((c) => c.type === 2)) continue;
+    // Un bouton LIEN ouvre une URL : aucune option de menu ne sait faire ça.
+    // Sa rangée est laissée telle quelle, sans quoi le lien disparaîtrait
+    // purement et simplement (c'est arrivé au bouton « Ouvrir le lecteur »).
+    if (composants.some((b) => !b.custom_id)) continue;
+    boutons.unshift(...composants.filter((b) => !b.disabled));
+    premiereRangee = i;
+    enfants.splice(i, 1);
+  }
+
+  if (!boutons.length) return;
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`${ID}:action`)
+    .setPlaceholder("Choisir une action")
+    .addOptions(
+      boutons.slice(0, 25).map((b) => {
+        const option = new StringSelectMenuOptionBuilder().setLabel(b.label || "Action").setValue(b.custom_id);
+        if (b.emoji) option.setEmoji(b.emoji);
+        return option;
+      })
+    );
+  enfants.splice(premiereRangee, 0, new ActionRowBuilder().addComponents(menu));
+}
+
 function buildConfigPanel(guild, current = "home", member, state = {}, { sansImage = false } = {}) {
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
@@ -1783,6 +1832,9 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
   }
 
+  // Dernière étape du rendu : les boutons d'action deviennent un seul menu.
+  regrouperBoutonsEnMenu(container);
+
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
 
@@ -1818,12 +1870,25 @@ function formatHistoryResults(results) {
  * droits sont re-vérifiés à CHAQUE clic — le message reste visible dans le
  * salon après l'envoi, n'importe qui pourrait cliquer dessus.
  */
-async function handleConfigInteraction(interaction) {
-  const [, action, extra, extra2] = interaction.customId.split(":");
+async function handleConfigInteraction(interaction, customIdImpose) {
+  // `customIdImpose` sert au menu d'actions : la valeur choisie EST le
+  // customId du bouton d'origine, et on réexpédie vers son handler sans avoir
+  // à cloner l'interaction (un clone casserait les méthodes de discord.js).
+  const identifiant = customIdImpose || interaction.customId;
+  const [, action, extra, extra2] = identifiant.split(":");
   const member = interaction.member;
 
   if (!hasAnyPanelAccess(member)) {
     return interaction.reply({ content: "Tu n'as pas accès à ce panneau.", flags: MessageFlags.Ephemeral });
+  }
+
+  // Menu d'actions : la valeur choisie est le customId du bouton d'origine.
+  // Une seule redirection possible — la valeur ne peut pas être un autre
+  // "cfg:action", donc pas de récursion sans fin.
+  if (action === "action") {
+    const choisi = interaction.values?.[0];
+    if (!choisi || choisi.startsWith(`${ID}:action`)) return undefined;
+    return handleConfigInteraction(interaction, choisi);
   }
 
   const guild = interaction.guild;
