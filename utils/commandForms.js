@@ -2,6 +2,9 @@ const {
   MessageFlags,
   ContainerBuilder,
   TextDisplayBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  AttachmentBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
@@ -32,6 +35,7 @@ const { configHandlers } = require("./configCommands");
 const permCatalog = require("./permissions/catalog");
 const { autoroleHandlers } = require("./autoroleCommands");
 const { fakeMessage, remplacerParLaReponse, aEteRemplace } = require("./fakeMessage");
+const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 
 // Exécution de commandes directement depuis le panel (&panel > Exécuter) :
 // pas une deuxième logique — chaque `run` construit un faux "message" à
@@ -1367,15 +1371,13 @@ const CUSTOM_CHOICE = "__autre__";
 // à 9 pour ne jamais s'y coller.
 const CONTAINER_BUDGET = 9;
 
-function buildFormCard(formKey, member) {
-  const form = FORMS[formKey];
-  if (!form) return null;
-  const active = getFormState(member.id, formKey) || {};
-
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${form.label}`));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
+/**
+ * Les lignes de résumé d'un formulaire ("> **Rôle** : @Modérateur"). Extraites
+ * de buildFormCard pour deux raisons : elles alimentent la carte d'aperçu
+ * DESSINÉE, et les tests peuvent vérifier ce qui est réellement présenté —
+ * une fois rendu en image, ce n'est plus inspectable autrement.
+ */
+function lignesResume(form, active) {
   // Un formulaire peut renommer un champ générique quand "Rôle" ou "Salon"
   // tout court ne dit pas ce qu'il fait là (ex : le rôle d'un giveaway filtre
   // qui a le droit de participer).
@@ -1405,7 +1407,113 @@ function buildFormCard(formKey, member) {
     const value = active.text?.[tf.key];
     lines.push(`> **${tf.label}** : ${value ? `\`${value}\`` : tf.required === false ? "*non rempli (optionnel)*" : "*non rempli*"}`);
   }
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.length ? lines.join("\n") : "Aucun paramètre nécessaire."));
+  return lines;
+}
+
+/**
+ * Carte d'aperçu d'un formulaire : ce que l'action VA faire, dessiné dans le
+ * même style que la carte de résultat. Le membre visé apparaît avec son
+ * avatar dès qu'il est choisi, le rôle avec sa vraie couleur.
+ *
+ * Rendu SYNCHRONE (buildFormCard l'est, et il est appelé depuis une dizaine
+ * d'endroits) : l'avatar n'est utilisé que s'il est déjà en cache, sinon la
+ * carte tombe sur les initiales. Le handler qui choisit le membre le
+ * précharge — c'est le seul moment où l'on connaît la cible et où l'on peut
+ * encore attendre.
+ *
+ * @returns {{fichier: AttachmentBuilder}|null} null si le rendu échoue : le
+ *   formulaire retombe alors sur son résumé texte, jamais sur rien.
+ */
+function construireApercu(form, active, member, lignesTexte) {
+  const guild = member?.guild;
+  if (!guild) return null;
+
+  // Caches interrogés prudemment : selon l'appelant, `member.guild` peut
+  // n'être qu'un objet partiel (ni membres ni rôles en cache).
+  const cible = active.userId ? guild.members?.cache?.get(active.userId) : null;
+  const role = active.roleId ? guild.roles?.cache?.get(active.roleId) : null;
+
+  // Les lignes déjà calculées pour le résumé texte sont réutilisées telles
+  // quelles : un champ ajouté à un formulaire apparaît sur la carte sans que
+  // cette fonction ait à le connaître.
+  const lignes = lignesTexte
+    .map((ligne) => {
+      const paire = ligne.match(/^>\s*\*\*(.+?)\*\*\s*:\s*(.*)$/);
+      if (!paire) return { label: "", valeur: nettoyerApercu(ligne, guild) };
+      return {
+        label: paire[1],
+        valeur: nettoyerApercu(paire[2], guild),
+        couleur: paire[1].startsWith("Rôle") && role?.color ? `#${role.color.toString(16).padStart(6, "0")}` : undefined,
+      };
+    })
+    // Le membre choisi est DÉJÀ le sujet de la carte (nom + avatar en tête) :
+    // le répéter en ligne "Membre : @untel" ne dit rien de plus.
+    .filter((l) => !(cible && l.label === "Membre"));
+
+  try {
+    const png = rendreCarteActionSync({
+      titre: form.label,
+      // Teinte neutre : rien n'est encore fait, la carte annonce une
+      // intention. Le vert/rouge est réservé au résultat.
+      couleur: "#8b8fd6",
+      membre: cible
+        ? { nom: nomDe(cible), sousTitre: cible.id, avatarURL: avatarDe(cible) }
+        : { nom: "Aucun membre choisi", sousTitre: "à sélectionner ci-dessous" },
+      lignes,
+      pied: guild.name,
+    });
+    return { fichier: new AttachmentBuilder(png, { name: "apercu.png" }) };
+  } catch (err) {
+    console.error("[commandForms] aperçu non rendu :", err.message);
+    return null;
+  }
+}
+
+/** Mentions et markdown -> texte lisible : une image n'affiche ni l'un ni l'autre. */
+function nettoyerApercu(texte, guild) {
+  return String(texte)
+    .replace(/<@&(\d+)>/g, (_, id) => `@${guild.roles?.cache?.get(id)?.name || "rôle"}`)
+    .replace(/<#(\d+)>/g, (_, id) => `#${guild.channels?.cache?.get(id)?.name || "salon"}`)
+    .replace(/<@!?(\d+)>/g, (_, id) => `@${guild.members?.cache?.get(id)?.user?.username || "membre"}`)
+    .replace(/[*`]/g, "")
+    .trim();
+}
+
+function buildFormCard(formKey, member) {
+  const form = FORMS[formKey];
+  if (!form) return null;
+  const active = getFormState(member.id, formKey) || {};
+
+  const fichiersApercu = [];
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${form.label}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  // Un formulaire peut renommer un champ générique quand "Rôle" ou "Salon"
+  // tout court ne dit pas ce qu'il fait là (ex : le rôle d'un giveaway filtre
+  // qui a le droit de participer).
+  // Ces deux helpers servent aussi aux CONTRÔLES plus bas (placeholder du
+  // sélecteur de rôle, sélection vide autorisée) : ils restent donc ici même
+  // si le résumé, lui, est calculé par lignesResume.
+  const labelFor = (key, fallback) => form.fieldLabels?.[key] || fallback;
+  const isOptional = (key) => form.optionalFields?.includes(key);
+
+  const lines = lignesResume(form, active);
+
+  // Résumé DESSINÉ plutôt qu'écrit : la carte d'aperçu montre déjà le membre
+  // visé (avatar compris) et le rôle choisi, dans le même style que la carte
+  // de résultat — la personne voit à quoi ressemblera l'action avant de la
+  // lancer, au lieu de lire "Rôle : non choisi". Repli sur le texte si le
+  // rendu échoue : un formulaire sans résumé serait inutilisable.
+  const apercu = construireApercu(form, active, member, lines);
+  if (apercu) {
+    fichiersApercu.push(apercu.fichier);
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${apercu.fichier.name}`))
+    );
+  } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.length ? lines.join("\n") : "Aucun paramètre nécessaire."));
+  }
 
   // Les contrôles sont assemblés à part : c'est leur nombre qui décide, plus
   // bas, si le séparateur décoratif tient encore dans le budget du container.
@@ -1524,7 +1632,11 @@ function buildFormCard(formKey, member) {
   if (used + 1 <= CONTAINER_BUDGET) container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   for (const row of rows) container.addActionRowComponents(row);
 
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+    ...(fichiersApercu.length ? { files: fichiersApercu } : {}),
+  };
 }
 
 const TEXT_CAPTURE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -1558,7 +1670,7 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
     content: `Réponds dans ce salon, un message par champ (${TEXT_CAPTURE_TIMEOUT_MS / 1000}s par réponse).`,
     flags: MessageFlags.Ephemeral,
   });
-  await interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+  await interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
 
   const text = { ...(getFormState(interaction.user.id, formKey)?.text || {}) };
   for (const tf of toCollect) {
@@ -1580,7 +1692,7 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
       await channel.send(`<@${interaction.user.id}> Temps écoulé — ce qui a déjà été rempli est conservé, reclique sur "Remplir dans le salon" pour continuer.`).catch(() => {});
       pendingTextCapture.delete(key);
       setFormState(interaction.user.id, formKey, { text });
-      return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+      return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
     }
 
     const raw = collected.first().content.trim();
@@ -1594,7 +1706,7 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
   pendingTextCapture.delete(key);
   setFormState(interaction.user.id, formKey, { text });
   await channel.send(`<@${interaction.user.id}> Champs enregistrés.`).catch(() => {});
-  return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+  return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
 }
 
 /** Toutes les interactions "cmdrun:" (voir index.js). */
@@ -1622,7 +1734,19 @@ async function handleFormCardInteraction(interaction) {
         : { mentionableId: null, mentionableType: null };
     } else patch = { userId: interaction.values[0] || null };
     setFormState(interaction.user.id, formKey, patch);
-    return interaction.update(buildFormCard(formKey, interaction.member));
+
+    // L'aperçu est dessiné de façon SYNCHRONE : l'avatar doit donc être en
+    // cache avant, sinon la carte retombe sur les initiales. C'est ici qu'on
+    // connaît la cible et qu'on peut encore attendre.
+    const cibleId = patch.userId || (patch.mentionableType === "user" ? patch.mentionableId : null);
+    if (cibleId) {
+      const cible = interaction.guild?.members.cache.get(cibleId) || (await interaction.guild?.members.fetch(cibleId).catch(() => null));
+      if (cible) await prechargerAvatar(avatarDe(cible));
+    }
+
+    // `attachments: []` : la carte porte une image, et sans ce champ Discord
+    // conserverait l'aperçu précédent en plus du nouveau à chaque choix.
+    return interaction.update({ ...buildFormCard(formKey, interaction.member), attachments: [] });
   }
 
   if (action === "choice") {
@@ -1645,7 +1769,7 @@ async function handleFormCardInteraction(interaction) {
     const resetPatch = {};
     for (const key of field.resets || []) resetPatch[key] = undefined;
     setFormState(interaction.user.id, formKey, { text: { [fieldKey]: interaction.values[0], ...resetPatch } });
-    return interaction.update(buildFormCard(formKey, interaction.member));
+    return interaction.update({ ...buildFormCard(formKey, interaction.member), attachments: [] });
   }
 
   if (action === "textopen") {
@@ -1671,7 +1795,7 @@ async function handleFormCardInteraction(interaction) {
     // Le formulaire n'est remis à blanc que s'il est encore là : quand la
     // commande a répondu, sa réponse occupe déjà la place du message.
     if (aEteRemplace(interaction)) return undefined;
-    return interaction.message?.edit(buildFormCard(formKey, interaction.member)).catch(() => {});
+    return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
   }
 }
 
@@ -1761,6 +1885,7 @@ const BARE_COMMAND_FORMS = {
 
 module.exports = {
   FORMS,
+  lignesResume,
   CATEGORIES,
   BARE_COMMAND_FORMS,
   getFormState,

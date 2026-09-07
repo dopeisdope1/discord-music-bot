@@ -52,7 +52,13 @@ function selectFor(key, fieldKey) {
   return row?.components[0] || null;
 }
 
-const summaryOf = (key) => cardComponents(key).find((c) => c.type === 10 && c.content.includes(">")).content;
+/**
+ * Le résumé du formulaire est désormais DESSINÉ (carte d'aperçu) : on lit les
+ * lignes réellement présentées plutôt que le composant texte, qui ne subsiste
+ * que comme repli quand le rendu échoue.
+ */
+const summaryOf = (key) =>
+  commandForms.lignesResume(commandForms.FORMS[key], commandForms.getFormState(STAFF, key) || {}).join("\n");
 
 /** Faux salon qui enregistre ce qui y est envoyé et sait répondre à awaitMessages. */
 function fakeChannel({ answers = [] } = {}) {

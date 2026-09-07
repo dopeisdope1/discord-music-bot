@@ -185,8 +185,13 @@ function buttons(guild, section, member, state) {
       },
     });
     assert.ok(replied, "la carte de formulaire aurait dû être postée");
-    const texte = replied.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
-    assert.ok(texte.includes(`<@${TARGET_ID}>`), texte);
+    // Le résumé du formulaire est DESSINÉ (carte d'aperçu) : on vérifie que
+    // le membre visé y est bien pré-rempli, via les lignes réellement
+    // présentées, et que l'aperçu est joint au message.
+    const { lignesResume, FORMS, getFormState } = require("../utils/commandForms");
+    const resume = lignesResume(FORMS.warn_member, getFormState(member.id, "warn_member") || {}).join("\n");
+    assert.ok(resume.includes(`<@${TARGET_ID}>`), resume);
+    assert.strictEqual(replied.files?.[0]?.name, "apercu.png", "l'aperçu doit être joint à la carte");
   });
 
   await cas("sans moderation.ban, actionner directement modaction:ban_member est quand même refusé (pas seulement caché)", async () => {
