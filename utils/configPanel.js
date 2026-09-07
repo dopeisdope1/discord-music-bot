@@ -62,6 +62,12 @@ const { backup, countChannels, PRESET_BACKUPS } = require("./serverBackup");
 const botProfileStore = require("./botProfileStore");
 const { botProfileHandlers, STATUS_LABELS } = require("./botProfileCommands");
 
+// Même variable d'environnement que index.js/musicCommands.js — musique
+// suspendue = rubrique Musique masquée du panel elle aussi (famille "musique"
+// automatiquement retirée du menu, buildNav ne montrant déjà que les
+// familles ayant au moins une rubrique visible).
+const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
+
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
 // tout souci d'encodage sur un nom de salon.
@@ -147,7 +153,7 @@ const SECTIONS = [
   // permissions (seule l'appartenance au même salon vocal compte, voir
   // index.js::canControlPlayer) — cette rubrique reste donc publique elle
   // aussi, comme les commandes qu'elle affiche/relie.
-  { key: "musicPlayer", label: "Musique", description: "Lecteur en cours et favoris" },
+  { key: "musicPlayer", label: "Musique", description: "Lecteur en cours et favoris", enabled: MUSIC_ENABLED },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "backups", label: "Sauvegardes", description: "Structure du serveur : créer, restaurer, supprimer", permission: "sys" },
   { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
@@ -156,6 +162,13 @@ const SECTIONS = [
 ];
 
 function sectionVisible(section, member, isOwner) {
+  // Indépendant des droits : une rubrique dont la fonctionnalité sous-jacente
+  // est globalement coupée (ex : musique suspendue) reste masquée pour tout
+  // le monde, y compris le propriétaire — volontairement testé AVANT tout le
+  // reste, et volontairement un champ distinct de `visible`/`permission` :
+  // ceux-ci comptent pour hasAnyPanelAccess (une vraie vérification de droit),
+  // alors qu'un simple interrupteur de fonctionnalité n'en est pas un.
+  if (section.enabled === false) return false;
   if (section.key === "home") return true;
   if (section.ownerOnly) return isOwner;
   if (section.visible) return section.visible(member);

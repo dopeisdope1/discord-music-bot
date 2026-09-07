@@ -39,6 +39,12 @@ const { setupVerification } = require("./verification");
 const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
 
+// Même variable d'environnement que index.js (qui vide LavalinkNodes) : la
+// musique suspendue doit aussi rendre le préfixe "?" muet, sinon &play etc.
+// répondraient encore en essayant d'utiliser un client.kazagumo sans aucun
+// nœud connecté.
+const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
+
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
   off: "none",
@@ -624,6 +630,9 @@ async function handleMusicTextCommand(client, message) {
   }
 
   if (!content.startsWith(MAIN_PREFIX)) return;
+  // Musique suspendue : silence total sur ce préfixe, comme une commande
+  // inconnue — voir le commentaire au-dessus de MUSIC_ENABLED.
+  if (!MUSIC_ENABLED) return;
 
   const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();

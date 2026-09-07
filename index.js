@@ -131,7 +131,17 @@ const FALLBACK_NODES = [
 // bannir par leur limite de connexions ("Too many websocket connections
 // attempt for this bot"). Les nœuds publics ne servent que si rien n'est
 // configuré.
-const LavalinkNodes = process.env.LAVALINK_HOST
+//
+// Musique suspendue (MUSIC_ENABLED=false) : liste de nœuds vidée plutôt que
+// d'ajouter des vérifications un peu partout. Shoukaku n'a alors rien à
+// contacter — aucune tentative de connexion, donc aucune des erreurs 429/4000
+// des nœuds publics. client.kazagumo existe toujours (le reste du code peut
+// continuer à le référencer sans changement), simplement `.players` reste
+// vide pour toujours puisqu'aucun nœud ne se connecte jamais.
+const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
+const LavalinkNodes = !MUSIC_ENABLED
+  ? []
+  : process.env.LAVALINK_HOST
   ? [
       {
         name: "prive",
@@ -147,7 +157,11 @@ const LavalinkNodes = process.env.LAVALINK_HOST
       secure: true,
     }));
 
-console.log(`[lavalink] ${LavalinkNodes.length} nœud(s) déclaré(s) : ${LavalinkNodes.map((n) => n.url).join(", ")}`);
+console.log(
+  MUSIC_ENABLED
+    ? `[lavalink] ${LavalinkNodes.length} nœud(s) déclaré(s) : ${LavalinkNodes.map((n) => n.url).join(", ")}`
+    : "[musique] suspendue (MUSIC_ENABLED=false) — aucun nœud Lavalink ne sera contacté."
+);
 
 client.kazagumo = new Kazagumo(
   {
@@ -223,30 +237,34 @@ function listNodes() {
   return Object.values(raw);
 }
 
-setInterval(() => {
-  const nodes = listNodes();
+// Inutile tant que la musique est suspendue : LavalinkNodes est vide, donc
+// "aucun nœud visible" en boucle toutes les 30s pour rien dire de plus.
+if (MUSIC_ENABLED) {
+  setInterval(() => {
+    const nodes = listNodes();
 
-  if (!nodes.length) {
-    console.warn("[lavalink] garde-fou : aucun nœud visible, rien à surveiller.");
-    return;
-  }
+    if (!nodes.length) {
+      console.warn("[lavalink] garde-fou : aucun nœud visible, rien à surveiller.");
+      return;
+    }
 
-  const offline = nodes.filter((n) => n.state !== ShoukakuState.CONNECTED);
-  if (!offline.length) return;
+    const offline = nodes.filter((n) => n.state !== ShoukakuState.CONNECTED);
+    if (!offline.length) return;
 
-  for (const node of offline) {
-    console.warn(`[lavalink] nœud "${node.name}" hors ligne (état ${node.state}), tentative de reconnexion.`);
-    // connect() est asynchrone : son échec ressort en promesse rejetée, que le
-    // try/catch synchrone d'origine ne voyait pas. Une promesse rejetée sans
-    // preneur arrête net le process sous Node — une tentative de reconnexion
-    // ratée suffisait donc à faire tomber tout le bot.
-    Promise.resolve(node.connect()).catch((err) =>
-      console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message)
-    );
-  }
-}, NODE_WATCHDOG_MS);
+    for (const node of offline) {
+      console.warn(`[lavalink] nœud "${node.name}" hors ligne (état ${node.state}), tentative de reconnexion.`);
+      // connect() est asynchrone : son échec ressort en promesse rejetée, que le
+      // try/catch synchrone d'origine ne voyait pas. Une promesse rejetée sans
+      // preneur arrête net le process sous Node — une tentative de reconnexion
+      // ratée suffisait donc à faire tomber tout le bot.
+      Promise.resolve(node.connect()).catch((err) =>
+        console.error(`[lavalink] échec de la tentative sur "${node.name}" :`, err.message)
+      );
+    }
+  }, NODE_WATCHDOG_MS);
 
-console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDOG_MS / 1000}s.`);
+  console.log(`[lavalink] garde-fou armé, vérification toutes les ${NODE_WATCHDOG_MS / 1000}s.`);
+}
 
 // Vérifie périodiquement les giveaways arrivés à échéance (voir
 // utils/giveaways.js) — persistés (utils/giveawayStore.js), donc un
