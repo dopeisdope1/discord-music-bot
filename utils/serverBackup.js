@@ -169,7 +169,14 @@ function resolveBackup(name) {
   return backupStore.getBackup(name) || PRESET_BACKUPS[name.toLowerCase()] || null;
 }
 
-async function backup(client, message, args) {
+/**
+ * @param {{ doubleConfirm?: boolean }} [options] `doubleConfirm` ajoute une
+ * seconde confirmation avant `load` (restauration) — demandé explicitement
+ * pour l'accès depuis &panel, où un mauvais clic est plus facile qu'en tapant
+ * la commande. `&backup load` au clavier garde sa confirmation unique
+ * inchangée (options omis).
+ */
+async function backup(client, message, args, options = {}) {
   if (!can(message.member, "sys")) return;
   const sub = (args[0] || "").toLowerCase();
 
@@ -228,23 +235,40 @@ async function backup(client, message, args) {
     const structure = resolveBackup(name);
     if (!structure) return reply(message, "error", `Aucune sauvegarde nommée **${name}** (voir \`backup list\`).`);
     const total = countChannels(structure);
+    const restore = async (interaction) => {
+      const { categoriesCreated, channelsCreated, wiredVoiceHub } = await applyStructure(interaction.guild, structure);
+      await interaction.update({
+        embeds: [
+          buildStatusEmbed(
+            "success",
+            `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.${wiredVoiceHub ? "\nLe générateur de salons vocaux temporaires a été rebranché automatiquement." : ""}`
+          ),
+        ],
+        components: [],
+      });
+    };
     return requestConfirmation(message, {
       title: "Confirmer la restauration",
       body: `**${total}** salon(s) dans **${structure.categories.length}** catégorie(s) seront créés dans CE serveur, d'après la sauvegarde **${name}** (${structure.sourceGuildName}). Les permissions par salon, les messages et les emojis ne sont pas restaurés. Ça peut prendre une minute.`,
       confirmLabel: "Restaurer",
       permission: "sys",
-      execute: async (interaction) => {
-        const { categoriesCreated, channelsCreated, wiredVoiceHub } = await applyStructure(interaction.guild, structure);
-        await interaction.update({
-          embeds: [
-            buildStatusEmbed(
-              "success",
-              `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.${wiredVoiceHub ? "\nLe générateur de salons vocaux temporaires a été rebranché automatiquement." : ""}`
-            ),
-          ],
-          components: [],
-        });
-      },
+      execute: options.doubleConfirm
+        ? async (interaction) => {
+            // `interaction` (le clic "Continuer") n'a pas encore été
+            // accusé réception : .reply() ici sert de premier accusé ET
+            // remplace le message par la seconde confirmation, plutôt que
+            // .update() qui n'aurait fait qu'éditer la première carte sans
+            // en garder de trace distincte.
+            const secondMessage = { author: message.author, guild: interaction.guild, reply: (payload) => interaction.reply(payload) };
+            return requestConfirmation(secondMessage, {
+              title: "Dernière confirmation",
+              body: `Aucun retour en arrière automatique : **${total}** salon(s) vont être créés maintenant dans **${interaction.guild.name}**, d'après **${name}**.`,
+              confirmLabel: "Restaurer maintenant",
+              permission: "sys",
+              execute: restore,
+            });
+          }
+        : restore,
     });
   }
 
@@ -262,4 +286,4 @@ async function backup(client, message, args) {
   return reply(message, "success", `Sauvegarde **${name}** enregistrée (${countChannels(structure)} salon(s) dans ${structure.categories.length} catégorie(s)).`);
 }
 
-module.exports = { backup, captureGuildStructure, applyStructure, resolveBackup, PRESET_BACKUPS };
+module.exports = { backup, captureGuildStructure, applyStructure, resolveBackup, countChannels, PRESET_BACKUPS };

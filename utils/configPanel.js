@@ -57,6 +57,10 @@ const { endGiveaway, rerollGiveaway } = require("./giveaways");
 const { handleEmbedButton } = require("./serverExtra");
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const { LOOP_LABELS } = require("./nowPlayingPanel");
+const backupStore = require("./serverBackupStore");
+const { backup, countChannels, PRESET_BACKUPS } = require("./serverBackup");
+const botProfileStore = require("./botProfileStore");
+const { botProfileHandlers, STATUS_LABELS } = require("./botProfileCommands");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -145,6 +149,8 @@ const SECTIONS = [
   // aussi, comme les commandes qu'elle affiche/relie.
   { key: "musicPlayer", label: "Musique", description: "Lecteur en cours et favoris" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
+  { key: "backups", label: "Sauvegardes", description: "Structure du serveur : créer, restaurer, supprimer", permission: "sys" },
+  { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
 ];
@@ -182,10 +188,8 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // le menu principal ne montre que les familles, un second menu n'apparaît
 // que pour choisir une rubrique dans la famille ouverte. Onze familles
 // cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
-// Communication/Musique/Monitoring/Sauvegardes/Bot) — celle encore vide
-// aujourd'hui (Sauvegardes) n'apparaît pas encore dans ce tableau : elle
-// arrive avec le module qui lui donne un vrai contenu plutôt que d'exposer
-// un onglet qui ne fait rien.
+// Communication/Musique/Monitoring/Sauvegardes/Bot), toutes présentes
+// désormais.
 //
 // Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
 // ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
@@ -212,11 +216,12 @@ const FAMILIES = [
   // entier — une deuxième rubrique identique aurait été une redite, pas un
   // vrai regroupement.
   { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", sections: ["logs", "stats", "diagnostics"] },
+  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", sections: ["backups"] },
   {
     key: "bot",
     label: "Bot",
-    description: "Préfixes, accès au panel, rang sys, ban de masse, dispenses",
-    sections: ["prefixes", "access", "sys", "banall", "moderation"],
+    description: "Préfixes, profil du bot, accès au panel, rang sys, ban de masse, dispenses",
+    sections: ["prefixes", "botProfile", "access", "sys", "banall", "moderation"],
   },
 ];
 
@@ -566,6 +571,33 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     ].join("\n");
+  }
+
+  if (section === "backups") {
+    const saved = backupStore.listBackups();
+    const presets = Object.keys(PRESET_BACKUPS).map((name) => ({
+      name,
+      sourceGuildName: PRESET_BACKUPS[name].sourceGuildName,
+      channelCount: countChannels(PRESET_BACKUPS[name]),
+      preset: true,
+    }));
+    const all = [...presets, ...saved];
+    if (!all.length) return "> *Aucune sauvegarde enregistrée.*";
+    return all
+      .map((b) => `> **${b.name}**${b.preset ? " *(préréglage)*" : ""} — ${b.channelCount} salon(s) — ${b.sourceGuildName}`)
+      .join("\n");
+  }
+
+  if (section === "botProfile") {
+    const config = botProfileStore.getConfig();
+    const activity = config.activities?.[config.rotateIndex % (config.activities.length || 1)];
+    return [
+      `> **Statut** : ${STATUS_LABELS[config.status] || config.status}`,
+      `> **Activité** : ${config.activityType && activity ? `${config.activityType} — ${activity}` : "*aucune*"}`,
+      config.activities?.length > 1 ? `> **Rotation** : ${config.activities.length} phrase(s)` : null,
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
   }
 
   if (section === "mute") {
@@ -1393,6 +1425,61 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     }
     boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
+  } else if (meta.key === "backups") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success)
+      )
+    );
+    const saved = backupStore.listBackups().map((b) => b.name);
+    const all = [...Object.keys(PRESET_BACKUPS), ...saved];
+    if (all.length) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:backuppick`)
+            .setPlaceholder("Choisir une sauvegarde")
+            .addOptions(
+              all.slice(0, 25).map((name) =>
+                new StringSelectMenuOptionBuilder().setLabel(name).setValue(name).setDefault(name === state.backupSelected)
+              )
+            )
+        )
+      );
+      if (state.backupSelected && all.includes(state.backupSelected)) {
+        const isPresetOnly = PRESET_BACKUPS[state.backupSelected.toLowerCase()] && !backupStore.getBackup(state.backupSelected);
+        const boutons = [
+          new ButtonBuilder()
+            .setCustomId(`${ID}:backuprestore:${state.backupSelected}`)
+            .setLabel("Restaurer (double confirmation)")
+            .setStyle(ButtonStyle.Danger),
+        ];
+        if (!isPresetOnly) {
+          boutons.push(
+            new ButtonBuilder().setCustomId(`${ID}:backupdelete:${state.backupSelected}`).setLabel("Supprimer").setStyle(ButtonStyle.Secondary)
+          );
+        }
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
+      }
+    }
+  } else if (meta.key === "botProfile") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:botstatus`)
+          .setPlaceholder("Changer le statut")
+          .addOptions(
+            Object.entries(STATUS_LABELS).map(([value, label]) =>
+              new StringSelectMenuOptionBuilder().setLabel(label).setValue(value).setDefault(value === botProfileStore.getConfig().status)
+            )
+          )
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
+      )
+    );
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -1525,6 +1612,75 @@ async function handleConfigInteraction(interaction) {
     const panel = buildFavoritesPanel(interaction.user.id, main);
     if (!panel) return interaction.reply({ content: "Tu n'as encore aucun favori.", flags: MessageFlags.Ephemeral });
     return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral });
+  }
+
+  // Sauvegardes : réutilise TEL QUEL &backup (utils/serverBackup.js) — un
+  // seul dispatcher pour créer/supprimer/restaurer, jamais une deuxième
+  // implémentation. `messageFromInteraction` sert d'accusé de réception
+  // (sa .reply() = interaction.reply(), même mécanisme que rolecreate un peu
+  // plus haut) : le message de confirmation vient donc directement de
+  // &backup lui-même. Restaurer passe doubleConfirm:true — amélioration
+  // demandée explicitement pour le panel, où un clic est plus facile qu'en
+  // tapant la commande.
+  if (action === "backupsavebtn") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const name = interaction.fields.getTextInputValue("name").trim();
+      if (!name) return interaction.reply({ content: "Nom vide, rien n'a été sauvegardé.", flags: MessageFlags.Ephemeral });
+      await backup(interaction.client, messageFromInteraction(interaction), [name]);
+      return;
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:backupsavebtn`).setTitle("Sauvegarder ce serveur");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nom de la sauvegarde").setStyle(TextInputStyle.Short).setMaxLength(50).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "backuppick") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return goto("backups", { backupSelected: interaction.values[0] || null });
+  }
+
+  if (action === "backupdelete") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    await backup(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
+    return;
+  }
+
+  if (action === "backuprestore") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    await backup(interaction.client, messageFromInteraction(interaction), ["load", extra], { doubleConfirm: true });
+    return;
+  }
+
+  // Profil du bot : réutilise TEL QUEL utils/botProfileCommands.js — même
+  // remarque que ci-dessus, aucune deuxième implémentation.
+  if (action === "botstatus") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    const fn = botProfileHandlers[interaction.values[0]];
+    if (!fn) return;
+    await fn(interaction.client, messageFromInteraction(interaction));
+    return;
+  }
+
+  if (action === "botnamebtn") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const name = interaction.fields.getTextInputValue("name").trim();
+      if (!name) return interaction.reply({ content: "Nom vide, rien n'a changé.", flags: MessageFlags.Ephemeral });
+      await botProfileHandlers.set(interaction.client, messageFromInteraction(interaction), ["name", name]);
+      return;
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:botnamebtn`).setTitle("Changer le nom du bot");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(32).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   // Création/suppression de rôle depuis le panel : réutilise TEL QUEL
