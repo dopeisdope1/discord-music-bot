@@ -221,10 +221,47 @@ function tousLesBoutons(json) {
   await cas("chaque carte met en avant de VRAIES commandes du thème (Modération -> kick/ban/mute/warn)", () => {
     const modo = spec().cartes.find((c) => c.titre === "Modération");
     const noms = modo.items.map((i) => i.nom);
-    assert.deepStrictEqual(noms, ["kick", "ban", "mute", "warn"], `mises en avant réelles : ${noms.join(", ")}`);
+    assert.deepStrictEqual(noms, ["&kick", "&ban", "&mute", "&warn"], `mises en avant réelles : ${noms.join(", ")}`);
     for (const item of modo.items) {
       assert.ok(item.description, `"${item.nom}" doit porter sa description du catalogue`);
     }
+  });
+
+  await cas("chaque commande porte son VRAI préfixe — `uo clear` n'en a aucun, lui en coller un annoncerait une commande inexistante", () => {
+    const tout = [];
+    for (const cat of CATEGORIES) {
+      const total = buildHelpSpec("g1", owner, cat.key, owner.id, 0).totalPages;
+      for (let page = 0; page < total; page++) {
+        for (const carte of spec(owner, cat.key, page).cartes) tout.push(...carte.items.map((i) => i.nom));
+      }
+    }
+    assert.ok(tout.includes("uo clear"), `"uo clear" doit s'afficher SANS préfixe : ${tout.filter((n) => n.includes("uo clear")).join(", ")}`);
+    assert.ok(!tout.includes("&uo clear"), "aucun préfixe ne doit être collé à un déclencheur qui n'en a pas");
+    assert.ok(tout.includes("&kick @membre [raison]"), "les commandes du préfixe mod gardent bien le leur");
+  });
+
+  await cas("une catégorie ouverte regroupe ses commandes par PALIER (Publiques / Configurables / Sys)", () => {
+    const titres = spec(owner, "moderation", 0).cartes.map((c) => c.titre);
+    assert.ok(titres.includes("Publiques"), titres.join(", "));
+    assert.ok(titres.some((t) => t.startsWith("Configurables")), titres.join(", "));
+    // Le palier se déduit du droit exigé, jamais saisi à la main : on le
+    // revérifie ici contre le catalogue.
+    for (const carte of spec(owner, "moderation", 0).cartes) {
+      const attendu = carte.titre.startsWith("Publiques") ? null : carte.titre.startsWith("Sys") ? "sys" : "autre";
+      for (const item of carte.items) {
+        const cmd = CATEGORIES.flatMap((c) => c.commands).find((c) => item.nom.endsWith(c.name));
+        if (!cmd) continue;
+        if (attendu === null) assert.strictEqual(cmd.permission, null, `${item.nom} n'est pas publique`);
+        else if (attendu === "sys") assert.strictEqual(cmd.permission, "sys", `${item.nom} n'est pas sys`);
+        else assert.ok(cmd.permission && cmd.permission !== "sys", `${item.nom} n'est pas configurable`);
+      }
+    }
+  });
+
+  await cas("les trois paliers ont une légende — sinon les couleurs de pastilles ne veulent rien dire", () => {
+    const legende = spec().legende;
+    assert.strictEqual(legende.length, 3);
+    assert.deepStrictEqual(legende.map((l) => l.texte), ["Publiques", "Configurables (accordées par rôle)", "Sys (réservées)"]);
   });
 
   await cas("une pastille ne promet jamais une commande que le membre ne peut pas lancer", () => {
@@ -232,8 +269,9 @@ function tousLesBoutons(json) {
     const accessibles = identitesAccessibles(plain);
     for (const carte of json.components.filter((c) => c.type === 9)) {
       const texte = carte.components.map((t) => t.content).join("\n");
-      for (const pastille of [...texte.matchAll(/`([^`]+)`/g)].map((m) => m[1])) {
-        assert.ok(accessibles.has(pastille), `"${pastille}" est affichée à un membre qui n'y a pas droit`);
+      for (const item of carte.items) {
+        const sansPrefixe = item.nom.replace(/^[^a-z]*/i, "");
+        assert.ok(accessibles.has(sansPrefixe), `"${item.nom}" est affichée à un membre qui n'y a pas droit`);
       }
     }
   });

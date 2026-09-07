@@ -146,18 +146,21 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
   for (const item of carte.items) {
     // Pastille ronde colorée, comme les icônes de la référence — un emoji
     // Discord ne se dessine pas dans un canvas sans police emoji.
+    // `couleurPastille` prime quand l'item porte une information propre (le
+    // palier de permission), sinon la pastille reprend la teinte de la carte.
+    const teinte = item.couleurPastille || carte.couleur;
     ctx.beginPath();
     ctx.arc(x + 28, ligneY + 1, 9, 0, Math.PI * 2);
-    ctx.fillStyle = `${carte.couleur}22`;
+    ctx.fillStyle = `${teinte}22`;
     ctx.fill();
     ctx.beginPath();
     ctx.arc(x + 28, ligneY + 1, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = carte.couleur;
+    ctx.fillStyle = teinte;
     ctx.fill();
 
     const texteX = x + 46;
     const dispo = largeur - (texteX - x) - 16;
-    ctx.font = "14px ChakraBold";
+    ctx.font = "15px ChakraBold";
     ctx.fillStyle = THEME.texte;
     ctx.fillText(tronquer(ctx, item.nom, dispo), texteX, ligneY - 6);
 
@@ -190,7 +193,7 @@ function rendre(spec) {
   for (const rangee of rangees) {
     hauteurGrille += Math.max(...rangee.map((c) => hauteurCarte(c.items, Boolean(c.titre), Boolean(c.sousTitre)))) + GOUTTIERE;
   }
-  const hauteur = HAUT_ENTETE + hauteurGrille + (spec.pied ? 34 : 0) + MARGE - GOUTTIERE;
+  const hauteur = HAUT_ENTETE + hauteurGrille + (spec.legende?.length ? 26 : 0) + (spec.pied ? 34 : 0) + MARGE - GOUTTIERE;
 
   const canvas = createCanvas(LARGEUR, hauteur);
   const ctx = canvas.getContext("2d");
@@ -236,10 +239,33 @@ function rendre(spec) {
     const hauteurRangee = Math.max(...rangee.map((c) => hauteurCarte(c.items, Boolean(c.titre), Boolean(c.sousTitre))));
     let x = MARGE;
     for (const carte of rangee) {
-      dessinerCarte(ctx, carte, x, y, largeur, hauteurRangee);
+      // `hauteursLibres` : chaque colonne prend sa hauteur réelle au lieu de
+      // s'aligner sur la plus haute. Indispensable quand les colonnes sont
+      // très inégales (un palier à 1 commande à côté d'un palier à 9) —
+      // sinon la courte devient un grand rectangle vide.
+      dessinerCarte(ctx, carte, x, y, largeur, spec.hauteursLibres ? undefined : hauteurRangee);
       x += largeur + GOUTTIERE;
     }
     y += hauteurRangee + GOUTTIERE;
+  }
+
+  // Légende : les pastilles sont DESSINÉES, pas écrites — la police
+  // embarquée n'a pas de glyphe rond ("●" sortirait en carré vide).
+  if (spec.legende?.length) {
+    ctx.font = "13px ChakraRegular";
+    const ESPACE = 26;
+    const largeurTotale = spec.legende.reduce((somme, e) => somme + 12 + 6 + ctx.measureText(e.texte).width + ESPACE, 0) - ESPACE;
+    let lx = (LARGEUR - largeurTotale) / 2;
+    for (const entree of spec.legende) {
+      ctx.beginPath();
+      ctx.arc(lx + 5, y + 6, 5, 0, Math.PI * 2);
+      ctx.fillStyle = entree.couleur;
+      ctx.fill();
+      ctx.fillStyle = THEME.texteDoux;
+      ctx.fillText(entree.texte, lx + 17, y + 6);
+      lx += 12 + 6 + ctx.measureText(entree.texte).width + ESPACE;
+    }
+    y += 26;
   }
 
   if (spec.pied) {

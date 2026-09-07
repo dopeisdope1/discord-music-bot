@@ -45,8 +45,37 @@ const TIER_COLORS = {
 };
 const COULEUR_PAR_DEFAUT = "#94a3b8";
 
-// Commandes affichées par page dans une catégorie ouverte : 3 colonnes de 8.
-const PAR_PAGE = 24;
+// Les trois PALIERS de l'ancien &help, réintroduits comme colonnes de la
+// grille : c'est ce qui donne du sens aux 3 colonnes (avant, elles étaient
+// un simple découpage en trois paquets égaux). Le palier se déduit du droit
+// exigé, il n'est jamais saisi à la main :
+//   pas de permission  -> tout le monde
+//   permission "sys"   -> réservé au rang sys
+//   toute autre clé    -> accordable par rôle depuis &panel
+const PALIERS = [
+  { cle: "public", titre: "Publiques", couleur: "#4ade80" },
+  { cle: "configurable", titre: "Configurables", couleur: "#38bdf8" },
+  { cle: "sys", titre: "Sys", couleur: "#ff6b6b" },
+];
+function palierDe(cmd) {
+  if (!cmd.permission) return "public";
+  return cmd.permission === "sys" ? "sys" : "configurable";
+}
+
+// Commandes par colonne, et colonnes par page, dans une catégorie ouverte.
+const PAR_COLONNE = 9;
+const COLONNES_PAR_PAGE = 3;
+
+/**
+ * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
+ * `prefix: "mod"` = préfixe des commandes (`&`), `"main"` = préfixe musique,
+ * et `null` = déclencheur SANS préfixe (ex. `uo clear`). Afficher `&` devant
+ * ce dernier annoncerait une commande qui n'existe pas.
+ */
+function prefixePour(cmd, prefixes) {
+  if (!cmd.prefix) return "";
+  return cmd.prefix === "main" ? prefixes.main : prefixes.musicMod;
+}
 
 /**
  * Ligne d'identité de l'image. Une image ne sait pas résoudre une mention
@@ -281,32 +310,50 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
   let spec;
 
   if (activeTier) {
-    // Catégorie ouverte : ses commandes réparties en TROIS colonnes de
-    // cartes sans en-tête (le titre de l'image porte déjà le nom de la
-    // catégorie). Le nom affiché est la syntaxe complète à taper — une image
-    // ne se copie pas, autant qu'elle montre exactement quoi écrire.
+    // Catégorie ouverte : ses commandes réparties en colonnes PAR PALIER
+    // (Publiques / Configurables / Sys) — le regroupement de l'ancien &help,
+    // remis dans la grille. Le nom affiché est la syntaxe complète à taper,
+    // préfixe réel compris : une image ne se copie pas, autant qu'elle
+    // montre exactement quoi écrire.
     const entries = dedupeByIdentity(groups[activeTier]);
-    totalPages = Math.max(1, Math.ceil(entries.length / PAR_PAGE));
-    clampedPage = Math.min(Math.max(0, page), totalPages - 1);
-    const visibles = entries.slice(clampedPage * PAR_PAGE, (clampedPage + 1) * PAR_PAGE);
-    const parColonne = Math.ceil(visibles.length / 3) || 1;
+
+    // Une colonne = un paquet d'un même palier. Un palier qui déborde
+    // s'étale sur plusieurs colonnes (marquées "suite") au lieu de laisser
+    // une colonne quasi vide à côté d'une colonne pleine : c'est ce qui
+    // recréait les grands blancs. Chaque page prend les 3 colonnes
+    // suivantes, donc aucune page n'est à moitié vide.
     const colonnes = [];
-    for (let i = 0; i < visibles.length; i += parColonne) {
-      colonnes.push({
-        couleur: TIER_COLORS[activeTier] || COULEUR_PAR_DEFAUT,
-        items: visibles.slice(i, i + parColonne).map((e) => ({
-          nom: `${prefixes.musicMod}${e.cmd.name}`,
-          // Les alias restent visibles, comme dans l'ancienne liste texte —
-          // sans eux, `&avatar` semblerait ne pas exister.
-          description: e.aliases.length ? `${e.cmd.description} · alias : ${e.aliases.join(", ")}` : e.cmd.description,
-        })),
-      });
+    for (const palier of PALIERS) {
+      const duPalier = entries.filter((e) => palierDe(e.cmd) === palier.cle);
+      for (let i = 0; i < duPalier.length; i += PAR_COLONNE) {
+        colonnes.push({
+          cle: palier.cle,
+          titre: i === 0 ? palier.titre : `${palier.titre} (suite)`,
+          couleur: palier.couleur,
+          entries: duPalier.slice(i, i + PAR_COLONNE),
+        });
+      }
     }
+
+    totalPages = Math.max(1, Math.ceil(colonnes.length / COLONNES_PAR_PAGE));
+    clampedPage = Math.min(Math.max(0, page), totalPages - 1);
+
     spec = {
       titre: TIER_LABELS[activeTier],
       sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
-      cartes: colonnes,
+      cartes: colonnes.slice(clampedPage * COLONNES_PAR_PAGE, (clampedPage + 1) * COLONNES_PAR_PAGE).map((c) => ({
+        cle: c.cle,
+        titre: c.titre,
+        couleur: c.couleur,
+        items: c.entries.map((e) => ({
+          nom: `${prefixePour(e.cmd, prefixes)}${e.cmd.name}`,
+          // Les alias restent visibles : sans eux, `&avatar` semblerait ne
+          // pas exister.
+          description: e.aliases.length ? `${e.cmd.description} · alias : ${e.aliases.join(", ")}` : e.cmd.description,
+        })),
+      })),
       pied: totalPages > 1 ? `Page ${clampedPage + 1} / ${totalPages}` : undefined,
+      hauteursLibres: true,
     };
   } else {
     // Accueil : une carte par catégorie, en grille — les commandes montrées
@@ -321,13 +368,29 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
           titre: TIER_LABELS[t],
           sousTitre: TIER_DESCRIPTIONS[t],
           couleur: TIER_COLORS[t] || COULEUR_PAR_DEFAUT,
-          items: highlightsFor(t, groups[t]).map((id) => ({
-            nom: id,
-            description: resumer(parIdentite.get(id)?.description),
-          })),
+          // Le nom porte son VRAI préfixe (certaines commandes n'en ont
+          // aucun), et une pastille de palier dit d'un coup d'œil qui peut
+          // s'en servir — la couleur reprend celle des colonnes de la vue
+          // détaillée, pour que les deux écrans se lisent pareil.
+          items: highlightsFor(t, groups[t]).map((id) => {
+            const cmd = parIdentite.get(id);
+            const palier = cmd ? palierDe(cmd) : "public";
+            return {
+              nom: `${cmd ? prefixePour(cmd, prefixes) : ""}${id}`,
+              description: resumer(cmd?.description),
+              couleurPastille: PALIERS.find((p) => p.cle === palier).couleur,
+            };
+          }),
           vide: "Aucune commande accessible",
         };
       }),
+      // Légende des pastilles : sans elle, les trois couleurs ne veulent rien
+      // dire pour qui découvre le bot.
+      legende: [
+        { couleur: PALIERS[0].couleur, texte: "Publiques" },
+        { couleur: PALIERS[1].couleur, texte: "Configurables (accordées par rôle)" },
+        { couleur: PALIERS[2].couleur, texte: "Sys (réservées)" },
+      ],
       pied: "Tape une commande pour commencer",
     };
     if (!availableTiers.length) {
