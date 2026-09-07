@@ -237,7 +237,6 @@ const FAMILIES = [
   // entier — une deuxième rubrique identique aurait été une redite, pas un
   // vrai regroupement.
   { key: "monitoring", label: "Monitoring", description: "Logs, statistiques, diagnostics", emoji: EMOJI.ONLINE, sections: ["logs", "stats", "diagnostics"] },
-  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", emoji: EMOJI.ARROW, sections: ["backups"] },
   {
     key: "bot",
     label: "Bot",
@@ -245,6 +244,8 @@ const FAMILIES = [
     emoji: EMOJI.DISCORD,
     sections: ["prefixes", "botProfile", "access", "sys", "banall", "moderation"],
   },
+  // Ordre demandé explicitement : Sauvegardes en dernier, après Bot.
+  { key: "sauvegardes", label: "Sauvegardes", description: "Structure du serveur", emoji: EMOJI.ARROW, sections: ["backups"] },
 ];
 
 const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
