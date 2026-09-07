@@ -35,7 +35,8 @@ const CATEGORIES = [
     key: "moderation",
     label: "Modération",
     emoji: EMOJI.BAN,
-    description: "Sanctionner un membre : kick, ban, mute, warn",
+    description: "Sanctionner un membre",
+    highlights: ["kick", "ban", "mute", "warn"],
     commands: [
       {
         name: "uo clear",
@@ -271,6 +272,7 @@ const CATEGORIES = [
     label: "Sécurité",
     emoji: EMOJI.LOCK,
     description: "Protection automatique et audit du serveur",
+    highlights: ["antinuke", "antispam", "antilink", "badwords"],
     commands: [
       {
         name: "allbots",
@@ -615,6 +617,7 @@ const CATEGORIES = [
     label: "Serveur & Rôles",
     emoji: EMOJI.PENCIL,
     description: "Rôles, salons et vocaux",
+    highlights: ["addrole", "role create", "channel create", "voc"],
     commands: [
       {
         name: "addrole @membre @rôle",
@@ -829,6 +832,7 @@ const CATEGORIES = [
     label: "Communauté",
     emoji: EMOJI.TICKET,
     description: "Tickets, annonces, sondages",
+    highlights: ["ticket setup", "poll", "giveaway start", "embed"],
     commands: [
       {
         name: "ticket setup [@role-staff]",
@@ -972,6 +976,7 @@ const CATEGORIES = [
     label: "Informations",
     emoji: EMOJI.ONLINE,
     description: "Fiches, statistiques, journaux d'activité",
+    highlights: ["userinfo", "server", "stats", "snipe"],
     commands: [
       {
         name: "settings",
@@ -1160,6 +1165,7 @@ const CATEGORIES = [
     label: "Outils",
     emoji: EMOJI.ARROW,
     description: "Calcul, wiki, sauvegardes du serveur",
+    highlights: ["calc", "wiki", "backup", "backup list"],
     commands: [
       {
         name: "image <mot-clé>",
@@ -1226,6 +1232,7 @@ const CATEGORIES = [
     label: "Bot & Accès",
     emoji: EMOJI.DISCORD,
     description: "Réglages du bot, accès, rang sys",
+    highlights: ["panel", "prefix", "status", "perms"],
     commands: [
       {
         name: "status",

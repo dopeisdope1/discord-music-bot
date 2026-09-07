@@ -1,6 +1,7 @@
 const {
   ContainerBuilder,
   TextDisplayBuilder,
+  SectionBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
@@ -161,6 +162,26 @@ function groupByTier(member) {
   return groups;
 }
 
+const TIER_HIGHLIGHTS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.highlights || []]));
+
+/**
+ * Les quelques commandes mises en avant sur la carte d'une catégorie à
+ * l'accueil. On part des "vedettes" curées dans le catalogue
+ * (utils/commandCatalog.js::highlights, les commandes emblématiques du
+ * thème), mais on ne garde QUE celles auxquelles ce membre a réellement
+ * accès — une pastille ne doit jamais promettre une commande que la
+ * personne ne peut pas lancer. Si aucune vedette n'est accessible, on
+ * retombe sur ses premières commandes disponibles, pour ne pas afficher une
+ * carte muette.
+ * @param {string} tier clé de catégorie
+ * @param {object[]} accessibles commandes de cette catégorie déjà filtrées sur les droits du membre
+ */
+function highlightsFor(tier, accessibles) {
+  const disponibles = dedupeByIdentity(accessibles).map((e) => identityOf(e.cmd));
+  const vedettes = TIER_HIGHLIGHTS[tier].filter((id) => disponibles.includes(id));
+  return (vedettes.length ? vedettes : disponibles).slice(0, 4);
+}
+
 /**
  * Boutons de navigation entre catégories + "Accueil" — remplace l'ancien
  * menu déroulant (demande explicite : look "dashboard" avec des boutons
@@ -250,32 +271,51 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
     for (const chunk of pageChunks) {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
     }
+  } else if (!availableTiers.length) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Aucune commande accessible.*"));
   } else {
-    // Chaque catégorie tient sur DEUX lignes seulement (titre+description
-    // sur une ligne, aperçu de 4 commandes réelles sur l'autre) — pas de
-    // séparateur ni de bloc dédié par catégorie, qui gonflait inutilement
-    // l'accueil en hauteur. Un ContainerBuilder Components V2 reste de
-    // toute façon plafonné à un petit nombre de composants (voir
-    // utils/commandForms.js::CONTAINER_BUDGET) : tout tient donc dans UN
-    // SEUL bloc de texte, dense, façon tableau de bord compact.
-    const cards = availableTiers.map((t) => {
-      const preview = dedupeByIdentity(groups[t])
-        .slice(0, 4)
-        .map((e) => identityOf(e.cmd))
-        .join(" • ");
-      const ligneCommandes = preview ? `\n${preview}` : "";
-      return `${TIER_EMOJI[t]} **${TIER_LABELS[t]}** — ${TIER_DESCRIPTIONS[t]}${ligneCommandes}`;
+    // Chaque catégorie = une VRAIE carte Components V2 (SectionBuilder) :
+    // texte à gauche (titre fort + description courte + les commandes réelles
+    // en pastilles `code`) et son bouton d'ouverture ancré à DROITE. C'est la
+    // seule disposition à deux zones que l'API Discord sait rendre — il
+    // n'existe aucune grille multi-colonnes, le rendu reste empilé
+    // verticalement quoi qu'on fasse. Le filet (divider) entre chaque carte
+    // donne des blocs nets et rapprochés au lieu d'une liste aérée.
+    // Le bouton de chaque carte EST la navigation ici : une rangée de boutons
+    // en plus ferait doublon et ferait dépasser le plafond de 40 composants
+    // d'un message Components V2 (voir scripts/test-help-honesty.js).
+    availableTiers.forEach((t, index) => {
+      const chips = highlightsFor(t, groups[t])
+        .map((id) => `\`${id}\``)
+        .join(" ");
+      container.addSectionComponents(
+        new SectionBuilder()
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              `### ${TIER_EMOJI[t]} ${TIER_LABELS[t].toUpperCase()}\n${TIER_DESCRIPTIONS[t]}${chips ? `\n${chips}` : ""}`
+            )
+          )
+          .setButtonAccessory(
+            new ButtonBuilder().setCustomId(`${SELECT_ID}:${authorId}:${t}`).setLabel("Ouvrir").setStyle(ButtonStyle.Secondary)
+          )
+      );
+      if (index < availableTiers.length - 1) {
+        container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true));
+      }
     });
-    const body = cards.length ? cards.join("\n\n") : "*Aucune commande accessible.*";
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`${body}\n\n*Tape une commande pour commencer*`));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("-# Tape une commande pour commencer"));
   }
 
-  if (availableTiers.length) {
+  // Rangée de navigation seulement DANS une catégorie : à l'accueil, chaque
+  // carte porte déjà son propre bouton "Ouvrir" (la navigation fait donc
+  // partie intégrante des cartes) et la rangée ferait doublon.
+  if (activeTier && availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     for (const row of buildCategoryButtons(availableTiers, activeTier, authorId)) {
       container.addActionRowComponents(row);
     }
-    if (activeTier && totalPages > 1) {
+    if (totalPages > 1) {
       container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
     }
   }

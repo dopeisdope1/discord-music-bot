@@ -1,6 +1,7 @@
 const {
   ContainerBuilder,
   TextDisplayBuilder,
+  SectionBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
@@ -828,14 +829,55 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   // fermerait la boucle, voir le commentaire de hasAnyPanelAccessLazy).
   const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
 
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``, `### ${famille.emoji} ${meta.label}`].join(
-        "\n"
-      )
-    )
-  );
+  const enteteLignes = ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
+  // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
+  // "### Accueil" juste au-dessus n'apporterait rien. Le statut (en ligne,
+  // compteurs, alertes) est fusionné DANS l'en-tête au lieu d'occuper son
+  // propre composant : ça économise une place sur le plafond de 40 et met le
+  // résumé directement sous le titre, comme l'accueil de &help.
+  if (meta.key === "home") enteteLignes.push("", sectionBody("home", guild, member, state));
+  else enteteLignes.push(`### ${famille.emoji} ${meta.label}`);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enteteLignes.join("\n")));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  if (meta.key === "home") {
+    // Accueil = tableau de bord en CARTES, exactement comme l'accueil de
+    // &help (utils/helpPanel.js) : même en-tête, même couleur, même
+    // structure carte = SectionBuilder (texte à gauche, bouton d'ouverture
+    // ancré à droite) séparée par un filet. Les familles, leurs rubriques et
+    // leurs droits restent ceux du panel réel — aucune fonction inventée,
+    // seulement une mise en page.
+    const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
+    if (familles.length) {
+      // Un message Components V2 est plafonné à 40 composants AU TOTAL,
+      // imbriqués compris : chaque carte en coûte 3 (Section + TextDisplay +
+      // bouton) et chaque filet 1. Avec beaucoup de familles visibles (le
+      // propriétaire les voit toutes, et la famille Musique revient si
+      // MUSIC_ENABLED repasse à true) les filets sont les premiers sacrifiés
+      // — les cartes, elles, ne doivent jamais sauter. On vise 38 et non 40
+      // pour garder une marge : frôler le plafond ferait planter tout le
+      // panel d'un coup si une famille gagnait une rubrique.
+      const COUT_FIXE = 3; // container + en-tête (statut inclus) + filet sous l'en-tête
+      const filetsEntreCartes = COUT_FIXE + familles.length * 3 + (familles.length - 1) <= 38;
+      familles.forEach((f, index) => {
+        const rubriques = familySections(f, member, isOwner)
+          .map((s) => `\`${s.label}\``)
+          .join(" ");
+        container.addSectionComponents(
+          new SectionBuilder()
+            .addTextDisplayComponents(
+              new TextDisplayBuilder().setContent(`### ${f.emoji} ${f.label.toUpperCase()}\n${f.description}\n${rubriques}`)
+            )
+            .setButtonAccessory(new ButtonBuilder().setCustomId(`${ID}:nav:${f.key}`).setLabel("Ouvrir").setStyle(ButtonStyle.Secondary))
+        );
+        if (filetsEntreCartes && index < familles.length - 1) {
+          container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true));
+        }
+      });
+    }
+    return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  }
+
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);

@@ -58,22 +58,57 @@ const guild = {
   client: { uptime: 12345, ws: { ping: 42 }, guilds: { cache: new Collection() } },
 };
 
+/**
+ * L'accueil est un tableau de bord en CARTES : son texte et ses boutons
+ * vivent dans des Section (type 9 : texte enfant + bouton "accessory"), pas
+ * dans les TextDisplay/ActionRow de premier niveau des autres écrans.
+ * `rangees` compte donc les deux formes — une carte cliquable est bien un
+ * contrôle offert par l'écran.
+ */
 function render(section, state) {
   const json = buildConfigPanel(guild, section, member, state).components[0].toJSON();
+  const textes = [];
+  for (const c of json.components) {
+    if (c.type === 10) textes.push(c.content);
+    else if (c.type === 9) textes.push(...c.components.filter((t) => t.type === 10).map((t) => t.content));
+  }
   return {
-    texte: json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n"),
-    rangees: json.components.filter((c) => c.type === 1).length,
+    texte: textes.join("\n"),
+    rangees: json.components.filter((c) => c.type === 1).length + json.components.filter((c) => c.type === 9 && c.accessory).length,
   };
 }
 
 (async () => {
   console.log("Le panel montre, il n'explique pas :");
 
-  await cas("aucune rubrique ne dépasse 900 caractères de texte", () => {
-    for (const section of SECTIONS) {
+  await cas("aucun écran de réglage ne dépasse 900 caractères de texte", () => {
+    // "home" est exclu : c'est le tableau de bord, une grille d'une dizaine
+    // de cartes (titre + description + rubriques), pas un écran de réglage.
+    // Son garde-fou à lui est le cas suivant — chaque CARTE reste courte,
+    // ce qui interdit vraiment le pavé de documentation que cette règle
+    // cherche à empêcher.
+    for (const section of SECTIONS.filter((s) => s !== "home")) {
       const { texte } = render(section);
       assert.ok(texte.length <= 900, `${section} affiche ${texte.length} caractères — c'est de la documentation, pas un écran de contrôle`);
     }
+  });
+
+  await cas("sur le tableau de bord, aucune carte ne devient un paragraphe (200 caractères max)", () => {
+    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
+    const cartes = json.components.filter((c) => c.type === 9);
+    assert.ok(cartes.length, "l'accueil doit être fait de cartes");
+    for (const carte of cartes) {
+      const texte = carte.components.map((t) => t.content).join("\n");
+      assert.ok(texte.length <= 200, `une carte affiche ${texte.length} caractères : ${texte}`);
+    }
+  });
+
+  await cas("le tableau de bord reste sous le plafond Discord (40 composants, 4000 caractères)", () => {
+    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
+    const compte = (n) => 1 + (n.components || []).reduce((s, c) => s + compte(c), 0) + (n.accessory ? 1 : 0);
+    const texte = (n) => (typeof n.content === "string" ? n.content.length : 0) + (n.components || []).reduce((s, c) => s + texte(c), 0);
+    assert.ok(compte(json) <= 40, `${compte(json)} composants — Discord refuse au-delà de 40`);
+    assert.ok(texte(json) < 4000, `${texte(json)} caractères affichables — Discord refuse au-delà de 4000`);
   });
 
   await cas("chaque rubrique propose au moins le menu de navigation", () => {
@@ -366,12 +401,15 @@ function render(section, state) {
 
   console.log("\nNavigation regroupée par famille :");
 
-  await cas("le menu principal propose des familles (en boutons), pas les 16 rubriques", () => {
+  await cas("le menu principal propose des familles (une carte cliquable par famille), pas les 16 rubriques", () => {
     const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
-    const boutonsNav = json.components
-      .filter((c) => c.type === 1)
-      .flatMap((r) => r.components)
-      .filter((c) => c.custom_id?.startsWith("cfg:nav:"));
+    // À l'accueil, chaque famille est une CARTE dont le bouton est ancré à
+    // droite (accessory) ; sur les autres écrans, la navigation reste une
+    // rangée de boutons classique. On accepte les deux formes.
+    const boutonsNav = [
+      ...json.components.filter((c) => c.type === 1).flatMap((r) => r.components),
+      ...json.components.filter((c) => c.type === 9 && c.accessory).map((c) => c.accessory),
+    ].filter((c) => c.custom_id?.startsWith("cfg:nav:"));
     assert.ok(boutonsNav.length, "les boutons de navigation par famille doivent exister");
     // Onze familles cibles au maximum (voir le plan de refonte du panel) —
     // le plafond suit ce nombre, pas un chiffre arbitraire.

@@ -33,8 +33,28 @@ const { Collection, MessageFlags } = require("discord.js");
 // musicCommands pour casser la boucle de dépendances. S'il était rompu, la
 // première ligne du test planterait.
 const { isImplemented } = require("../utils/implementedCommands");
-const { buildHelpPanel, handleHelpInteraction } = require("../utils/helpPanel");
+const { buildHelpPanel, handleHelpInteraction, identityOf } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
+const { can } = require("../utils/permissions/engine");
+
+/**
+ * Les identités de commandes que ce membre peut RÉELLEMENT lancer — même
+ * règles que utils/helpPanel.js::groupByTier (implémentée + droit accordé).
+ * Sert à vérifier qu'aucune pastille de carte ne promet une commande hors de
+ * portée. `panel` est écartée : elle est gardée par hasAnyPanelAccess, pas
+ * par une clé du catalogue, et a déjà son propre cas de test.
+ */
+function identitesAccessibles(member) {
+  const set = new Set();
+  for (const cat of CATEGORIES) {
+    for (const cmd of cat.commands) {
+      if (!isImplemented(cmd) || identityOf(cmd) === "panel") continue;
+      if (!can(member, cmd.permission)) continue;
+      set.add(identityOf(cmd));
+    }
+  }
+  return set;
+}
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -59,13 +79,31 @@ const CATEGORIES_GARDEES = ["securite", "communaute", "bot"];
 // voir CELLES-LÀ (et seulement celles-là).
 const CATEGORIES_PARTIELLEMENT_PUBLIQUES = ["moderation", "serveurroles", "informations", "outils"];
 
-/** Concatène TOUS les blocs de texte du panneau (une catégorie dense en a plusieurs). */
+/**
+ * Concatène TOUS les textes du panneau : les blocs simples (type 10) ET ceux
+ * nichés dans une carte (type 9 = Section, la carte de catégorie de
+ * l'accueil, dont le texte est un enfant et pas un composant de premier
+ * niveau).
+ */
+function textesDe(json) {
+  const morceaux = [];
+  for (const c of json.components) {
+    if (c.type === 10) morceaux.push(c.content);
+    else if (c.type === 9) morceaux.push(...c.components.filter((t) => t.type === 10).map((t) => t.content));
+  }
+  return morceaux;
+}
 function fullText(member = owner, categorie = null) {
-  return buildHelpPanel("g1", member, categorie, member.id)
-    .components[0].toJSON()
-    .components.filter((c) => c.type === 10)
-    .map((c) => c.content)
-    .join("\n\n");
+  return textesDe(buildHelpPanel("g1", member, categorie, member.id).components[0].toJSON()).join("\n\n");
+}
+/** Tous les boutons du panneau, y compris ceux ancrés à droite d'une carte (accessory). */
+function tousLesBoutons(json) {
+  const boutons = [];
+  for (const c of json.components) {
+    if (c.type === 1) boutons.push(...c.components);
+    else if (c.type === 9 && c.accessory) boutons.push(c.accessory);
+  }
+  return boutons;
 }
 /** Le détail des commandes d'une catégorie, TOUTES PAGES confondues (une catégorie dense est paginée). */
 function commandsText(member = owner, categorie) {
@@ -154,10 +192,44 @@ function commandsText(member = owner, categorie) {
     assert.ok(/Préfixe : `&`/.test(fullText()), fullText());
   });
 
-  await cas("l'accueil est compact : aucun filet décoratif entre catégories, un aperçu de vraies commandes sous chaque titre", () => {
-    const body = fullText();
-    assert.ok(!body.includes("┈"), "les séparateurs décoratifs entre catégories doivent avoir disparu, ils créaient l'espace vide dénoncé");
-    assert.ok(/Modération.*—.*\n.* • /.test(body), `un aperçu de commandes séparées par " • " doit suivre le titre de chaque catégorie : ${body}`);
+  await cas("l'accueil est une GRILLE DE CARTES : une carte par catégorie, texte à gauche et bouton d'ouverture à droite", () => {
+    const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
+    const cartes = json.components.filter((c) => c.type === 9);
+    assert.strictEqual(cartes.length, CATEGORIES.length, "une carte (Section) par catégorie accessible");
+    for (const carte of cartes) {
+      assert.ok(carte.accessory?.custom_id?.startsWith("help_tier:"), "chaque carte porte son bouton d'ouverture ancré à droite");
+      const texte = carte.components.map((t) => t.content).join("\n");
+      assert.ok(/^### /.test(texte), `la carte doit s'ouvrir sur un titre fort : ${texte}`);
+    }
+    assert.ok(!fullText().includes("┈"), "plus de filet décoratif en texte : les blocs sont de vrais composants Separator");
+  });
+
+  await cas("chaque carte met en avant de VRAIES commandes du thème, en pastilles (Modération -> kick/ban/mute/warn)", () => {
+    const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
+    const modo = json.components
+      .filter((c) => c.type === 9)
+      .map((c) => c.components.map((t) => t.content).join("\n"))
+      .find((t) => t.includes("MODÉRATION"));
+    for (const attendu of ["`kick`", "`ban`", "`mute`", "`warn`"]) {
+      assert.ok(modo.includes(attendu), `${attendu} doit être mis en avant sur la carte Modération : ${modo}`);
+    }
+  });
+
+  await cas("une pastille ne promet jamais une commande que le membre ne peut pas lancer", () => {
+    const json = buildHelpPanel("g1", plain, null, plain.id).components[0].toJSON();
+    const accessibles = identitesAccessibles(plain);
+    for (const carte of json.components.filter((c) => c.type === 9)) {
+      const texte = carte.components.map((t) => t.content).join("\n");
+      for (const pastille of [...texte.matchAll(/`([^`]+)`/g)].map((m) => m[1])) {
+        assert.ok(accessibles.has(pastille), `"${pastille}" est affichée à un membre qui n'y a pas droit`);
+      }
+    }
+  });
+
+  await cas("l'accueil tient sous le plafond Discord de 40 composants (cartes + boutons + filets)", () => {
+    const compte = (n) => 1 + (n.components || []).reduce((s, c) => s + compte(c), 0) + (n.accessory ? 1 : 0);
+    const total = compte(buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON());
+    assert.ok(total <= 40, `${total} composants — Discord refuse au-delà de 40`);
   });
 
   await cas("aucune trace de la section \"documentées\" — plus de commandes muettes affichées du tout", () => {
@@ -165,14 +237,16 @@ function commandsText(member = owner, categorie) {
   });
 
   await cas("un membre sans aucun droit ne voit QUE les catégories ayant une commande publique", () => {
-    const body = fullText(plain);
+    // Les cartes affichent le nom en capitales ("MODÉRATION") : on compare
+    // donc sur une version normalisée, pas sur la casse du catalogue.
+    const body = fullText(plain).toUpperCase();
     for (const key of CATEGORIES_PARTIELLEMENT_PUBLIQUES) {
       const label = CATEGORIES.find((c) => c.key === key).label;
-      assert.ok(body.includes(label), `"${label}" a une commande publique, elle doit apparaître`);
+      assert.ok(body.includes(label.toUpperCase()), `"${label}" a une commande publique, elle doit apparaître`);
     }
     for (const key of CATEGORIES_GARDEES) {
       const label = CATEGORIES.find((c) => c.key === key).label;
-      assert.ok(!body.includes(label), `"${label}" n'a AUCUNE commande publique, elle ne doit pas apparaître`);
+      assert.ok(!body.includes(label.toUpperCase()), `"${label}" n'a AUCUNE commande publique, elle ne doit pas apparaître`);
     }
   });
 
@@ -247,22 +321,26 @@ function commandsText(member = owner, categorie) {
     assert.strictEqual(accueil.style, 2, "sur une catégorie active, Accueil n'est pas le bouton mis en avant (Secondary, pas Primary)");
   });
 
-  await cas("choisir \"Accueil\" depuis une catégorie revient bien à la vue compacte", async () => {
+  await cas("choisir \"Accueil\" depuis une catégorie revient bien à la grille de cartes", async () => {
     const interaction = fakeCategoryClick("home", owner, owner.id);
     await handleHelpInteraction(interaction);
-    const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    const json = interaction.updated.components[0].toJSON();
+    const body = textesDe(json).join("\n");
     assert.ok(!/\d+ commande\(s\)/.test(body), body);
-    assert.ok(body.includes("Modération"), body);
+    assert.ok(body.includes("MODÉRATION"), body);
+    assert.ok(json.components.some((c) => c.type === 9), "l'accueil doit bien être fait de cartes");
     assert.ok(!body.includes("└ `&"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
   });
 
   console.log("\nMessage public unique, réservé à qui a lancé &help :");
 
-  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId du bouton Accueil", () => {
+  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId de CHAQUE bouton de carte", () => {
     const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const accueil = boutons.find((b) => b.label === "Accueil");
-    assert.strictEqual(accueil.custom_id, `help_tier:${owner.id}:home`);
+    const boutons = tousLesBoutons(json);
+    assert.ok(boutons.length, "l'accueil doit proposer des boutons d'ouverture");
+    for (const b of boutons) {
+      assert.ok(b.custom_id.startsWith(`help_tier:${owner.id}:`), `${b.custom_id} n'encode pas l'auteur`);
+    }
   });
 
   await cas("l'auteur qui clique édite le message en place", async () => {
