@@ -1371,6 +1371,24 @@ const CUSTOM_CHOICE = "__autre__";
 // à 9 pour ne jamais s'y coller.
 const CONTAINER_BUDGET = 9;
 
+// Formulaires qui GARDENT le bouton "Lancer" : leur action est
+// irréversible, et un formulaire qui s'exécute tout seul dès le dernier
+// champ rempli transformerait un mauvais clic dans une liste déroulante en
+// bannissement immédiat, sans retour possible. Partout ailleurs — donner ou
+// retirer un rôle, avertir, mettre en timeout — l'action se défait, et
+// l'attente d'un clic de plus n'apporte rien.
+const CONFIRMATION_REQUISE = new Set(["ban_member", "softban_member", "tempban_member", "kick_member", "banall_members", "derank_member"]);
+
+/**
+ * Ce formulaire peut-il s'exécuter dès qu'il est complet ?
+ * Non s'il est irréversible, non plus s'il attend une saisie au clavier dans
+ * le salon : cette saisie se termine hors du flux des composants, il faut
+ * alors un bouton pour relancer.
+ */
+function seLanceToutSeul(formKey, form) {
+  return !CONFIRMATION_REQUISE.has(formKey) && !form.textFields?.length;
+}
+
 /**
  * Les lignes de résumé d'un formulaire ("> **Rôle** : @Modérateur"). Extraites
  * de buildFormCard pour deux raisons : elles alimentent la carte d'aperçu
@@ -1614,14 +1632,19 @@ function buildFormCard(formKey, member) {
         .setDisabled(capturing)
     );
   }
-  const launchButton = new ButtonBuilder()
-    .setCustomId(`${CARD_ID}:launch:${formKey}`)
-    .setLabel("Lancer")
-    .setStyle(ButtonStyle.Success)
-    .setDisabled(!form.ready(active));
-  if (form.emoji) launchButton.setEmoji(form.emoji);
-  buttons.push(launchButton);
-  rows.push(new ActionRowBuilder().addComponents(...buttons));
+  // Pas de bouton "Lancer" quand le formulaire part tout seul une fois
+  // complet : il ne serait jamais cliquable, la carte étant déjà remplacée
+  // par le résultat à ce moment-là.
+  if (!seLanceToutSeul(formKey, form)) {
+    const launchButton = new ButtonBuilder()
+      .setCustomId(`${CARD_ID}:launch:${formKey}`)
+      .setLabel(CONFIRMATION_REQUISE.has(formKey) ? "Confirmer" : "Lancer")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!form.ready(active));
+    if (form.emoji) launchButton.setEmoji(form.emoji);
+    buttons.push(launchButton);
+  }
+  if (buttons.length) rows.push(new ActionRowBuilder().addComponents(...buttons));
 
   // Un Container Components V2 accepte 10 composants au maximum, et on en garde
   // volontairement un de libre. Quand un formulaire a beaucoup de menus (le
@@ -1709,6 +1732,30 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
   return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
 }
 
+/**
+ * Exécute la commande derrière un formulaire. L'interaction doit DÉJÀ être
+ * acquittée (deferUpdate) : cette fonction ne répond pas elle-même, elle
+ * laisse la commande le faire à travers `fakeMessage`.
+ */
+async function executerFormulaire(interaction, form, formKey, active) {
+  // Le résultat doit REMPLACER la carte de formulaire, pas arriver dans un
+  // second message éphémère à côté d'elle : c'est le même geste, il mérite
+  // un seul message. `fakeMessage` lit ce marqueur pour éditer le message
+  // d'origine à la première réponse de la commande.
+  remplacerParLaReponse(interaction);
+  try {
+    await form.run(interaction.client, interaction, active);
+  } catch (err) {
+    console.error("[commandForms]", err);
+    await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
+  clearFormState(interaction.user.id, formKey);
+  // Le formulaire n'est remis à blanc que s'il est encore là : quand la
+  // commande a répondu, sa réponse occupe déjà la place du message.
+  if (aEteRemplace(interaction)) return undefined;
+  return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
+}
+
 /** Toutes les interactions "cmdrun:" (voir index.js). */
 async function handleFormCardInteraction(interaction) {
   const [, action, formKey] = interaction.customId.split(":");
@@ -1744,6 +1791,15 @@ async function handleFormCardInteraction(interaction) {
       if (cible) await prechargerAvatar(avatarDe(cible));
     }
 
+    // Formulaire complet : on lance sans attendre un clic de plus. Le bouton
+    // "Lancer" a disparu de ces cartes — il ne serait de toute façon jamais
+    // cliquable, la carte étant remplacée par le résultat à cet instant.
+    const etat = getFormState(interaction.user.id, formKey) || {};
+    if (seLanceToutSeul(formKey, form) && form.ready(etat)) {
+      await interaction.deferUpdate();
+      return executerFormulaire(interaction, form, formKey, etat);
+    }
+
     // `attachments: []` : la carte porte une image, et sans ce champ Discord
     // conserverait l'aperçu précédent en plus du nouveau à chaque choix.
     return interaction.update({ ...buildFormCard(formKey, interaction.member), attachments: [] });
@@ -1769,6 +1825,15 @@ async function handleFormCardInteraction(interaction) {
     const resetPatch = {};
     for (const key of field.resets || []) resetPatch[key] = undefined;
     setFormState(interaction.user.id, formKey, { text: { [fieldKey]: interaction.values[0], ...resetPatch } });
+
+    // Même règle que pour les listes de membres/rôles : si ce choix complète
+    // le formulaire, l'action part sans clic supplémentaire.
+    const etatApresChoix = getFormState(interaction.user.id, formKey) || {};
+    if (seLanceToutSeul(formKey, form) && form.ready(etatApresChoix)) {
+      await interaction.deferUpdate();
+      return executerFormulaire(interaction, form, formKey, etatApresChoix);
+    }
+
     return interaction.update({ ...buildFormCard(formKey, interaction.member), attachments: [] });
   }
 
@@ -1780,22 +1845,7 @@ async function handleFormCardInteraction(interaction) {
     const active = getFormState(interaction.user.id, formKey) || {};
     if (!form.ready(active)) return interaction.reply({ content: "Des champs obligatoires manquent encore.", flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
-    // Le résultat doit REMPLACER la carte de formulaire, pas arriver dans un
-    // second message éphémère à côté d'elle : c'est le même geste, il mérite
-    // un seul message. `fakeMessage` lit ce marqueur pour éditer le message
-    // d'origine à la première réponse de la commande.
-    remplacerParLaReponse(interaction);
-    try {
-      await form.run(interaction.client, interaction, active);
-    } catch (err) {
-      console.error("[commandForms]", err);
-      await interaction.followUp({ content: `Erreur pendant l'exécution : ${err.message}`, flags: MessageFlags.Ephemeral }).catch(() => {});
-    }
-    clearFormState(interaction.user.id, formKey);
-    // Le formulaire n'est remis à blanc que s'il est encore là : quand la
-    // commande a répondu, sa réponse occupe déjà la place du message.
-    if (aEteRemplace(interaction)) return undefined;
-    return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
+    return executerFormulaire(interaction, form, formKey, active);
   }
 }
 
