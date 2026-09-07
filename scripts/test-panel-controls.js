@@ -369,7 +369,9 @@ function render(section, state) {
     const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
     const nav = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":nav"));
     assert.ok(nav, "le menu de navigation doit exister");
-    assert.ok(nav.components[0].options.length <= 8, `${nav.components[0].options.length} entrées — c'est de nouveau une liste à faire défiler`);
+    // Onze familles cibles au maximum (voir le plan de refonte du panel) —
+    // le plafond suit ce nombre, pas un chiffre arbitraire.
+    assert.ok(nav.components[0].options.length <= 11, `${nav.components[0].options.length} entrées — c'est de nouveau une liste à faire défiler`);
     assert.ok(nav.components[0].options.length < SECTIONS.length, "il doit y avoir moins de familles que de rubriques");
   });
 

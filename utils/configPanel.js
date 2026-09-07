@@ -53,6 +53,7 @@ const { fakeMessage } = require("./fakeMessage");
 const { utilityHandlers } = require("./utilityCommands");
 const giveawayStore = require("./giveawayStore");
 const { endGiveaway, rerollGiveaway } = require("./giveaways");
+const { handleEmbedButton } = require("./serverExtra");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -131,6 +132,8 @@ const SECTIONS = [
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
   { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
+  { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
+  { key: "polls", label: "Sondages", description: "Créer un sondage (2 à 5 options)", permission: "server.polls.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
@@ -162,9 +165,9 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // que pour choisir une rubrique dans la famille ouverte. Onze familles
 // cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
 // Communication/Musique/Monitoring/Sauvegardes/Bot) — celles encore vides
-// aujourd'hui (Communication, Musique, Sauvegardes) n'apparaissent pas
-// encore dans ce tableau : elles arrivent avec le module qui leur donne un
-// vrai contenu plutôt que d'exposer un onglet qui ne fait rien.
+// aujourd'hui (Musique, Sauvegardes) n'apparaissent pas encore dans ce
+// tableau : elles arrivent avec le module qui leur donne un vrai contenu
+// plutôt que d'exposer un onglet qui ne fait rien.
 //
 // Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
 // ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
@@ -182,6 +185,7 @@ const FAMILIES = [
   },
   { key: "communaute", label: "Communauté", description: "Bienvenue, départ, vocaux temporaires, giveaways", sections: ["welcome", "leave", "voice", "giveaways"] },
   { key: "support", label: "Support", description: "Tickets", sections: ["tickets"] },
+  { key: "communication", label: "Communication", description: "Embed, sondages", sections: ["embedBuilder", "polls"] },
   { key: "monitoring", label: "Monitoring", description: "Salons de logs", sections: ["logs"] },
   {
     key: "bot",
@@ -553,6 +557,14 @@ function sectionBody(section, guild, member, state) {
       return `> **${g.prize}** — <#${g.channelId}> — se termine ${when} — ${g.participants.length} participant(s)${gagnants}`;
     });
     return ["**Giveaways en cours :**", ...lines].join("\n");
+  }
+
+  if (section === "embedBuilder") {
+    return "> *Aucun réglage — le bouton ci-dessous ouvre le même constructeur d'embed que `&embed`.*";
+  }
+
+  if (section === "polls") {
+    return "> *Sondages en mémoire, perdus au redémarrage du bot — le bouton ci-dessous ouvre le même formulaire que `&poll`.*";
   }
 
   if (section === "banall") {
@@ -1286,6 +1298,18 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
         );
       }
     }
+  } else if (meta.key === "embedBuilder") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary)
+      )
+    );
+  } else if (meta.key === "polls") {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
+      )
+    );
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -1398,6 +1422,17 @@ async function handleConfigInteraction(interaction) {
     if (action === "giveawayend") await endGiveaway(interaction.client, msg, [messageId]);
     else await rerollGiveaway(interaction.client, msg, [messageId]);
     return;
+  }
+
+  // Communication : le bouton ouvre EXACTEMENT ce que &embed/&poll ouvrent
+  // déjà (modale / carte de formulaire) — aucune deuxième implémentation.
+  if (action === "embedbuild") {
+    return handleEmbedButton(interaction);
+  }
+
+  if (action === "pollstart") {
+    if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return interaction.reply(buildFormCard("poll_create", member));
   }
 
   // Création/suppression de rôle depuis le panel : réutilise TEL QUEL
