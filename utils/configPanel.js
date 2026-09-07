@@ -46,6 +46,8 @@ const voiceChannels = require("./voiceChannels");
 const voiceHubSetup = require("./voiceHubSetup");
 const { roleAdmin } = require("./serverAdminCommands");
 const { parseDuration } = require("./moderationCommands");
+const { computeSecurityScan } = require("./securityScan");
+const { computeStatus, formatUptime } = require("./statusDiagnostic");
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -478,6 +480,60 @@ function sectionBody(section, guild, member, state) {
       // panel dont un mauvais clic bannit le serveur entier.
       "> ⚠️ *`banall` bannit tout le serveur d'un coup. Le propriétaire y a toujours droit sans figurer ici.*",
     ].join("\n");
+  }
+
+  if (section === "home") {
+    const lines = [];
+
+    // Sécurité — même détection que `&security scan`, sur le cache déjà en
+    // mémoire (pas de fetch ici, voir le commentaire dans securityScan.js) :
+    // un coup d'œil instantané, pas un audit complet.
+    if (can(member, "protection.automod") || can(member, "protection.guard.manage")) {
+      const { critical, warnings } = computeSecurityScan(guild);
+      const emoji = critical.length ? "🔴" : warnings.length ? "🟠" : "🟢";
+      lines.push(`**${emoji} Sécurité**`);
+      if (!critical.length && !warnings.length) {
+        lines.push("> Aucune alerte — tout est en ordre.");
+      } else {
+        for (const l of critical) lines.push(`> 🔴 ${l}`);
+        for (const l of warnings) lines.push(`> 🟠 ${l}`);
+      }
+      lines.push("");
+    }
+
+    // Serveur — compteurs déjà en cache, aucune requête supplémentaire.
+    const inVoice = guild.voiceStates.cache.filter((v) => v.channelId).size;
+    lines.push(
+      "**👥 Serveur**",
+      `> **Membres** : ${guild.memberCount.toLocaleString("fr-FR")} · **rôles** : ${guild.roles.cache.size} · **salons** : ${guild.channels.cache.size} · **en vocal** : ${inVoice}`,
+      ""
+    );
+
+    // Activité récente — mêmes entrées que la rubrique Historique.
+    if (can(member, "logs.view")) {
+      const recent = historyStore.search(guildId, { limit: 5 });
+      lines.push("**📋 Activité récente**");
+      if (!recent.length) {
+        lines.push("> *Aucune entrée pour l'instant.*");
+      } else {
+        for (const e of recent) {
+          const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
+          lines.push(`> \`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}`);
+        }
+      }
+      lines.push("");
+    }
+
+    // Bot — réservé au rang sys, mêmes infos que &status.
+    if (accessStore.isAllowed("sys", member.id)) {
+      const info = computeStatus(guild.client);
+      lines.push(
+        "**⚙️ Bot**",
+        `> **Uptime** : ${formatUptime(info.uptimeMs)} · **latence** : ${info.ping}ms · **serveurs** : ${info.guildCount}`
+      );
+    }
+
+    return lines.join("\n").trim() || "*Aucune information à afficher.*";
   }
 
   return [

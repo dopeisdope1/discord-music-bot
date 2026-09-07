@@ -26,15 +26,17 @@ const DANGEROUS_PERMS = [
 ];
 
 /**
- * &security scan — audit en lecture seule (aucune modification), combine
- * des réglages déjà stockés ailleurs (anti-nuke, automod, logs, mute role,
- * permissions des rôles) en un rapport unique. Ne remplace aucun de ces
- * systèmes, se contente de les résumer au même endroit.
+ * Cœur de &security scan, sans le message Discord ni le fetch des membres :
+ * réutilisé tel quel par le dashboard du panel (rubrique Accueil), qui lit
+ * déjà tout le reste (rôles, salons) depuis le cache sans requête
+ * supplémentaire. Sur un gros serveur au cache de membres incomplet, la
+ * détection "bots avec Administrator" peut donc rater un membre non mis en
+ * cache — limite acceptée pour un résumé instantané, la commande complète
+ * (`&security scan`, qui fait le fetch avant d'appeler cette fonction) reste
+ * l'audit fiable.
+ * @returns {{ critical: string[], warnings: string[], ok: string[] }}
  */
-async function securityScan(client, message) {
-  if (!can(message.member, "server.security.scan")) return;
-  const guild = message.guild;
-
+function computeSecurityScan(guild) {
   const critical = [];
   const warnings = [];
   const ok = [];
@@ -55,8 +57,7 @@ async function securityScan(client, message) {
     ok.push("Aucun rôle (hors intégrations) n'a Administrator.");
   }
 
-  // --- Bots avec Administrator ---
-  await guild.members.fetch().catch(() => {});
+  // --- Bots avec Administrator --- (cache tel quel, voir le commentaire ci-dessus)
   const adminBots = guild.members.cache.filter((m) => m.user.bot && m.permissions.has(PermissionFlagsBits.Administrator));
   if (adminBots.size) {
     warnings.push(`${adminBots.size} bot(s) ont Administrator : ${[...adminBots.values()].map((m) => m.user.tag).join(", ")}.`);
@@ -96,6 +97,22 @@ async function securityScan(client, message) {
   else if (!guild.roles.cache.has(muteRoleId)) warnings.push("Le rôle de mute configuré n'existe plus sur le serveur.");
   else ok.push("Rôle de mute configuré et valide.");
 
+  return { critical, warnings, ok };
+}
+
+/**
+ * &security scan — audit en lecture seule (aucune modification), combine
+ * des réglages déjà stockés ailleurs (anti-nuke, automod, logs, mute role,
+ * permissions des rôles) en un rapport unique. Ne remplace aucun de ces
+ * systèmes, se contente de les résumer au même endroit.
+ */
+async function securityScan(client, message) {
+  if (!can(message.member, "server.security.scan")) return;
+  const guild = message.guild;
+
+  await guild.members.fetch().catch(() => {});
+  const { critical, warnings, ok } = computeSecurityScan(guild);
+
   const emoji = critical.length ? "🔴" : warnings.length ? "🟠" : "🟢";
   const lines = [
     `${emoji} **${ok.length}** contrôle(s) OK · **${warnings.length}** avertissement(s) · **${critical.length}** problème(s) critique(s)`,
@@ -108,4 +125,4 @@ async function securityScan(client, message) {
   await message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Sécurité du serveur" })] });
 }
 
-module.exports = { securityScan };
+module.exports = { securityScan, computeSecurityScan };

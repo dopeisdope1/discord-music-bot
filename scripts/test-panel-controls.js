@@ -48,10 +48,14 @@ const guild = {
   id: "g1",
   name: "Serveur",
   ownerId: "owner-1",
-  roles: { cache: new Collection() },
+  memberCount: 1,
+  roles: { cache: new Collection(), everyone: { permissions: new PermissionsBitField([]) } },
   channels: { cache: new Collection() },
   members: { cache: new Collection(), me: { roles: { highest: { position: 9 } } } },
   emojis: { cache: new Collection() },
+  voiceStates: { cache: new Collection() },
+  // Lu par la rubrique Accueil (diagnostics réservés au rang sys) — dashboard, module 2.
+  client: { uptime: 12345, ws: { ping: 42 }, guilds: { cache: new Collection() } },
 };
 
 function render(section, state) {
@@ -104,7 +108,7 @@ function render(section, state) {
   console.log("\n« Voir les commandes débloquées » (permissions > rôle) :");
 
   const roleId = "role-1";
-  guild.roles.cache.set(roleId, { id: roleId, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [] } });
+  guild.roles.cache.set(roleId, { id: roleId, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
   permStore.setRoleGrants("g1", roleId, ["server.stats.view"]);
 
   const fakeInteraction = (customId, extra = {}) => ({
@@ -162,7 +166,7 @@ function render(section, state) {
 
   await cas("une permission accordée SANS commande dédiée (ex. accès à une rubrique du panel) reste visible — pas juste \"0 : aucune\"", () => {
     const roleId2 = "role-2";
-    guild.roles.cache.set(roleId2, { id: roleId2, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [] } });
+    guild.roles.cache.set(roleId2, { id: roleId2, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
     // panel.roles.manage donne accès à une rubrique du panel, pas à une
     // commande tapée : reproduit le cas "1 permission accordée" affichant
     // "0 commande débloquée" sans explication.

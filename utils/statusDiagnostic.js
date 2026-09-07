@@ -28,29 +28,45 @@ function formatUptime(ms) {
   return parts.join(" ") || "0s";
 }
 
+/**
+ * Cœur de &status, sans le message Discord : réutilisé tel quel par le
+ * dashboard du panel (rubrique Accueil) pour éviter une deuxième lecture des
+ * mêmes compteurs client/process.
+ */
+function computeStatus(client) {
+  const nodes = listNodes(client);
+  const mem = process.memoryUsage();
+  return {
+    uptimeMs: client.uptime,
+    ping: client.ws.ping,
+    memoryRssMB: Math.round(mem.rss / 1024 / 1024),
+    guildCount: client.guilds.cache.size,
+    nodeVersion: process.version,
+    discordjsVersion: DISCORDJS_VERSION,
+    lavalinkNodes: nodes.map((n) => ({ name: n.name, connected: n.state === ShoukakuState.CONNECTED, state: n.state })),
+  };
+}
+
 /** &status — diagnostics techniques du bot, réservé au rang sys (mêmes infos sensibles que &sources). */
 async function status(client, message) {
   if (!accessStore.isAllowed("sys", message.author.id)) return;
 
-  const nodes = listNodes(client);
-  const lavalinkLines = nodes.length
-    ? nodes.map((n) => `> \`${n.name}\` : ${n.state === ShoukakuState.CONNECTED ? "🟢 connecté" : `🔴 état ${n.state}`}`)
+  const info = computeStatus(client);
+  const lavalinkLines = info.lavalinkNodes.length
+    ? info.lavalinkNodes.map((n) => `> \`${n.name}\` : ${n.connected ? "🟢 connecté" : `🔴 état ${n.state}`}`)
     : ["> *aucun nœud déclaré*"];
-
-  const mem = process.memoryUsage();
-  const toMB = (bytes) => `${Math.round(bytes / 1024 / 1024)} Mo`;
 
   await message.reply({
     embeds: [
       buildStatusEmbed("info", null, {
         title: "Diagnostics du bot",
         fields: [
-          { name: "Uptime", value: formatUptime(client.uptime), inline: true },
-          { name: "Latence gateway", value: `${client.ws.ping}ms`, inline: true },
-          { name: "Mémoire (RSS)", value: toMB(mem.rss), inline: true },
-          { name: "Serveurs", value: String(client.guilds.cache.size), inline: true },
-          { name: "Node.js", value: process.version, inline: true },
-          { name: "discord.js", value: `v${DISCORDJS_VERSION}`, inline: true },
+          { name: "Uptime", value: formatUptime(info.uptimeMs), inline: true },
+          { name: "Latence gateway", value: `${info.ping}ms`, inline: true },
+          { name: "Mémoire (RSS)", value: `${info.memoryRssMB} Mo`, inline: true },
+          { name: "Serveurs", value: String(info.guildCount), inline: true },
+          { name: "Node.js", value: info.nodeVersion, inline: true },
+          { name: "discord.js", value: `v${info.discordjsVersion}`, inline: true },
           { name: "Lavalink", value: lavalinkLines.join("\n") },
         ],
       }),
@@ -58,4 +74,4 @@ async function status(client, message) {
   });
 }
 
-module.exports = { status };
+module.exports = { status, computeStatus, formatUptime };
