@@ -84,6 +84,7 @@ const FORMS = {
     label: "Lancer un giveaway",
     category: "server",
     permission: "server.giveaways.manage",
+    emoji: EMOJI.CROWN,
     fields: ["channel", "role"],
     // Le rôle ne désigne pas la cible de l'action ici, mais qui a le DROIT de
     // participer — et il reste facultatif.
@@ -157,6 +158,7 @@ const FORMS = {
     label: "Créer un sondage",
     category: "server",
     permission: "server.polls.manage",
+    emoji: EMOJI.PENCIL,
     fields: ["channel"],
     textFields: [
       { key: "question", label: "Question", max: 200 },
@@ -178,6 +180,7 @@ const FORMS = {
     label: "Configurer les tickets",
     category: "server",
     permission: "server.tickets.manage",
+    emoji: EMOJI.TICKET,
     fields: ["channel", "role"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {
@@ -228,6 +231,7 @@ const FORMS = {
     label: "Créer un rôle",
     category: "server",
     permission: "server.roles.manage",
+    emoji: EMOJI.PENCIL,
     fields: [],
     textFields: [{ key: "name", label: "Nom du rôle", max: 100 }],
     ready: (v) => Boolean(v.text?.name),
@@ -287,6 +291,7 @@ const FORMS = {
     label: "Ajouter un rôle à un membre",
     category: "moderation",
     permission: "members.role",
+    emoji: EMOJI.CHECK,
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {
@@ -302,6 +307,7 @@ const FORMS = {
     label: "Retirer un rôle à un membre",
     category: "moderation",
     permission: "members.role",
+    emoji: EMOJI.CROSS,
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {

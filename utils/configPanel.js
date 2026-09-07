@@ -840,7 +840,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     if (peutModifier) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success)
+          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success).setEmoji(EMOJI.PENCIL)
         )
       );
     }
@@ -862,7 +862,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       ];
       if (can(member, "server.members.list")) {
         boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`).setLabel("Voir les membres").setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder()
+            .setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`)
+            .setLabel("Voir les membres")
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji(EMOJI.MEMBERS)
         );
       }
       if (peutModifier) {
@@ -872,13 +876,19 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
                 .setCustomId(`${ID}:roleexclusiveoff:${state.permissionsRoleId}`)
                 .setLabel("Retirer de l'exclusif")
                 .setStyle(ButtonStyle.Secondary)
+                .setEmoji(EMOJI.CROSS)
             : new ButtonBuilder()
                 .setCustomId(`${ID}:roleexclusive:${state.permissionsRoleId}`)
                 .setLabel("Ajouter à l'exclusif")
                 .setStyle(ButtonStyle.Secondary)
+                .setEmoji(EMOJI.CHECK)
         );
         boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`).setLabel("Supprimer ce rôle").setStyle(ButtonStyle.Danger)
+          new ButtonBuilder()
+            .setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`)
+            .setLabel("Supprimer ce rôle")
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji(EMOJI.DELETE)
         );
       }
       container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
@@ -1395,7 +1405,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   } else if (meta.key === "giveaways") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success).setEmoji(EMOJI.CROWN)
       )
     );
     const active = giveawayStore
@@ -1423,11 +1433,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       if (state.giveawaySelected && active.some((g) => g.messageId === state.giveawaySelected)) {
         container.addActionRowComponents(
           new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:giveawayend:${state.giveawaySelected}`).setLabel("Terminer maintenant").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId(`${ID}:giveawayend:${state.giveawaySelected}`)
+              .setLabel("Terminer maintenant")
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji(EMOJI.LOCK),
             new ButtonBuilder()
               .setCustomId(`${ID}:giveawayreroll:${state.giveawaySelected}`)
               .setLabel("Retirer un gagnant (reroll)")
               .setStyle(ButtonStyle.Secondary)
+              .setEmoji(EMOJI.ARROW)
           )
         );
       }
@@ -1435,13 +1450,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
   } else if (meta.key === "embedBuilder") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
       )
     );
   } else if (meta.key === "polls") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
       )
     );
   } else if (meta.key === "musicPlayer") {
@@ -1454,14 +1469,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     // sur CE message précis (il l'édite en retour) — les dupliquer dans le
     // panel désynchroniserait les deux affichages.
     if (player?.queue?.current && npMessage) {
-      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url));
+      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url).setEmoji(EMOJI.VOICE));
     }
-    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary));
+    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROWN));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
   } else if (meta.key === "backups") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success).setEmoji(EMOJI.CHECK)
       )
     );
     const saved = backupStore.listBackups().map((b) => b.name);
@@ -1485,11 +1500,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
           new ButtonBuilder()
             .setCustomId(`${ID}:backuprestore:${state.backupSelected}`)
             .setLabel("Restaurer (double confirmation)")
-            .setStyle(ButtonStyle.Danger),
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji(EMOJI.ARROW),
         ];
         if (!isPresetOnly) {
           boutons.push(
-            new ButtonBuilder().setCustomId(`${ID}:backupdelete:${state.backupSelected}`).setLabel("Supprimer").setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder()
+              .setCustomId(`${ID}:backupdelete:${state.backupSelected}`)
+              .setLabel("Supprimer")
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji(EMOJI.DELETE)
           );
         }
         container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
@@ -1510,7 +1530,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
       )
     );
   }

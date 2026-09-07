@@ -9,6 +9,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
+const { EMOJI } = require("./emojis");
 const { can } = require("./permissions/engine");
 const { parseDuration } = require("./moderationCommands");
 const giveawayStore = require("./giveawayStore");
@@ -47,7 +48,7 @@ function activeCard(giveaway) {
     ]
       .filter(Boolean)
       .join("\n"),
-    [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:join`).setLabel("Participer").setStyle(ButtonStyle.Primary))]
+    [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:join`).setLabel("Participer").setStyle(ButtonStyle.Primary).setEmoji(EMOJI.CROWN))]
   );
 }
 
