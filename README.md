@@ -254,32 +254,43 @@ pilotable. Même principe que les cartes de sanction, qui retombent sur leur
 message texte plutôt que de laisser croire que l'action a échoué (section
 7ter). Vérifié par `scripts/test-dashboard-fallback.js`.
 
-Il distingue aussi les commandes **actives** de celles qui sont seulement
-**documentées**. Le catalogue liste volontairement des commandes sans backend
-(demande explicite : "intègre tout, même sans backend"), mais les afficher à
-l'identique revenait à promettre qu'elles répondent — alors que les taper ne
-produit rien, silencieusement. Chaque catégorie annonce donc son nombre réel
-d'actives, et les autres sont regroupées sous *"Documentées, pas encore
-actives"*.
+`&help` **ne promet jamais une commande muette**. Le catalogue liste
+volontairement des commandes sans backend (demande explicite : "intègre tout,
+même sans backend"), mais les afficher revenait à promettre qu'elles
+répondent, alors que les taper ne produit rien, silencieusement. Seules les
+commandes réellement câblées sont donc affichées — plus aucune section
+"documentées", et aucun compteur de commandes non plus : un chiffre à côté
+d'une catégorie n'aide personne à trouver ce qu'il cherche.
 
-La distinction est calculée depuis la **vraie** table de dispatch
+Le tri actif/muet est calculé depuis la **vraie** table de dispatch
 (`utils/implementedCommands.js` lit `MOD_COMMAND_NAMES`), pas depuis une
-liste tenue à la main : une commande qui gagne un backend quitte
-automatiquement la liste des inactives, et `scripts/test-help-honesty.js`
-échoue si les deux se contredisent.
+liste tenue à la main : une commande qui gagne un backend apparaît d'elle-même,
+et `scripts/test-help-honesty.js` échoue si les deux se contredisent.
 
-Enfin, `&help` liste **un nom de commande par ligne**, jamais le même deux
-fois :
+L'accueil montre **une carte par thème** (7 au maximum : Modération,
+Sécurité, Serveur & Rôles, Communauté, Informations, Outils, Bot & Accès),
+chacune avec quelques commandes emblématiques du thème — filtrées, elles
+aussi, sur les droits réels de la personne : une vedette ne doit jamais
+annoncer une commande qu'on ne peut pas lancer. Choisir une catégorie dans le
+menu déroulant en détaille les commandes, réparties en colonnes par **palier**
+(Publiques / Configurables / Sys) et paginées quand le thème est dense
+(Sécurité en compte plusieurs pages). La navigation est réservée à qui a tapé
+`&help` : son identifiant est encodé dans le menu, car un tiers y verrait une
+liste filtrée sur SES droits à lui, affichée publiquement dans le salon.
+
+Chaque commande n'apparaît **qu'une seule fois**, sous le nom qu'on tape
+vraiment :
 
 - les **alias** sont collés à leur commande (`pic/avatar`,
   `server/serverinfo`, `userinfo/member`, `mute/cmute`) au lieu d'occuper
   leur propre entrée — découvrables, sans laisser croire à deux
   fonctionnalités distinctes ;
-- les **sous-commandes** d'un même dispatcher (`server`, `server pic`,
-  `server banner`) se replient sur leur nom de commande ;
-- une commande dont les sous-commandes ont des permissions différentes
-  (`&clear`, `&role`) n'apparaît que dans le palier le plus ouvert, celui
-  qui décrit ce qu'on peut réellement lancer.
+- les **sous-commandes** d'un même dispatcher restent au contraire des
+  entrées DISTINCTES (`&role create`, `&role delete`, `&role rename`,
+  `&channel topic`...). Les replier sous le seul mot `role` est précisément
+  ce qui rendait l'ancien `&help` incompréhensible : le nom affiché ne
+  correspondait à rien de tapable ;
+- une même identité n'est jamais listée dans deux catégories à la fois.
 
 Le test échoue aussi si un alias est annoncé sans avoir de handler — c'est
 ce qui a révélé que `lockall`/`unlockall`, documentés comme alias de
@@ -344,8 +355,8 @@ boutons — jamais deux listes qui pourraient se contredire.
 Chaque commande de modération exige une **clé de permission** (ex :
 `moderation.clear`, `moderation.ban`, `channels.lock` — liste complète dans
 `utils/permissions/catalog.js`). Une clé s'accorde à un **rôle Discord**
-(l'octroi normal, depuis `&panel` > Permissions) ou, plus rarement, à un
-utilisateur précis. `&help` et `&panel` filtrent tous deux sur cette même
+(l'octroi normal, depuis `&panel` > Rôles et permissions) ou, plus rarement,
+à un utilisateur précis. `&help` et `&panel` filtrent tous deux sur cette même
 clé : ce que tu vois, tu peux réellement l'utiliser.
 
 **Statut prioritaire inchangé** : le propriétaire du bot (`BOT_OWNER_IDS`) et
@@ -362,21 +373,31 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
-Ses quinze rubriques sont regroupées en **six familles** : le menu principal
-propose les familles, un second menu n'apparaît que pour choisir à l'intérieur
-d'une famille qui en contient plusieurs. Les écrans, eux, ne sont **pas**
-fusionnés — chacun garde ses contrôles et ses avertissements. « Rang sys » et
-« Ban de masse » voisinent dans la même famille sans jamais partager le même
-écran : l'un donne accès à tout le bot, l'autre bannit le serveur entier.
+Ses vingt-huit rubriques sont regroupées en **onze familles** : le menu
+principal propose les familles, un second menu n'apparaît que pour choisir à
+l'intérieur d'une famille qui en contient plusieurs. Sans ce regroupement, un
+seul menu aurait dû tenir les 28 rubriques, alors que Discord en plafonne un à
+25 options. Les écrans, eux, ne sont **pas** fusionnés — chacun garde ses
+contrôles et ses avertissements. « Rang sys » et « Ban de masse » voisinent
+dans la même famille sans jamais partager le même écran : l'un donne accès à
+tout le bot, l'autre bannit le serveur entier.
+
+Une famille dont **aucune** rubrique ne t'est accessible disparaît
+complètement du menu — le panel ne montre jamais une porte fermée.
 
 | Famille | Rubriques |
 |---|---|
-| Accueil | Vue d'ensemble |
-| Permissions et accès | Rôles et permissions, Accès panel, Rang sys, Ban de masse |
-| Protection | Protection, Anti-nuke, Mute |
-| Logs et historique | Logs, Historique |
-| Communauté | Bienvenue, Tickets, Vocaux |
-| Réglages du bot | Préfixes, Dispenses |
+| Accueil | Vue d'ensemble : statut, alertes, accès rapides |
+| Sécurité | Vue d'ensemble, Protection, Anti-nuke, Mute |
+| Modération | Recherche de membre, Historique |
+| Serveur | Rôles et permissions, Rôles automatiques, Vérification |
+| Communauté | Bienvenue, Départ, Vocaux, Giveaways |
+| Support | Tickets |
+| Communication | Constructeur d'embed, Sondages |
+| Musique | Lecteur en cours |
+| Monitoring | Logs, Statistiques, Diagnostics |
+| Bot | Préfixes, Profil du bot, Accès panel, Rang sys, Ban de masse, Dispenses |
+| Sauvegardes | Sauvegarder / restaurer la structure du serveur |
 
 « Permissions » et « Rôles » étaient deux rubriques qui commençaient toutes
 deux par *choisis un rôle* — au point que la seconde avait un bouton pour
@@ -446,25 +467,26 @@ rendrait toutes les commandes intapables.
 
 ### `&panel` — rubriques
 
-Chaque rubrique n'apparaît que si tu y as droit :
+Le tableau des familles est en section 6ter ; chaque rubrique n'apparaît que
+si tu y as droit. Quelques-unes méritent un mot :
 
-- **Permissions** — choisis un rôle, puis coche les permissions à lui
-  accorder dans un menu (remplace l'ensemble actuel en un envoi).
-- **Profils** — applique un profil prédéfini (**Helper**, **Modérateur**,
-  **Admin** — `utils/permissions/profiles.js`) à un rôle en un clic ; c'est
-  un octroi en masse ponctuel, pas un lien permanent — le résultat reste
-  éditable ensuite permission par permission depuis la rubrique
-  Permissions.
-- **Rôles** — nom, ID, couleur, position, nombre de membres, permissions
-  Discord notables et permissions de modération accordées, pour n'importe
-  quel rôle du serveur.
-- **Logs** — un salon par catégorie (**Modération**, **Membres**,
-  **Serveur**, **Bots**, **Messages**) plutôt qu'un seul pour tout ; voir
-  plus bas. Bouton "Créer les salons automatiquement" : crée les salons
-  manquants (regroupés dans une catégorie "Logs"), masqués à `@everyone` —
-  seuls les membres avec la permission Discord **Administrateur** les
-  voient, celle-ci passant outre toute restriction de salon, rien d'autre à
-  faire.
+- **Rôles et permissions** — choisis un rôle, puis une catégorie de
+  permissions, puis coche les clés à lui accorder. Trois étapes plutôt qu'un
+  menu unique : Discord plafonne un menu à 25 options et le catalogue de
+  permissions a vocation à grandir, chaque catégorie restant largement sous
+  la limite indéfiniment.
+- **Recherche de membre** — cherche un membre, puis agis sur sa **fiche**
+  (dessinée en carte : avatar, arrivée, rôles, casier). Chaque bouton
+  d'action rouvre la carte de formulaire que `&kick`/`&ban`/`&timeout`/
+  `&warn` ouvrent déjà, pré-remplie avec ce membre — jamais une seconde
+  implémentation de la sanction.
+- **Logs** — un salon par catégorie (**Modération**, **Membres**, **Rôles**,
+  **Salons**, **Vocal**, **Serveur**, **Bots**, **Messages**) plutôt qu'un
+  seul pour tout ; voir plus bas. Bouton "Créer les salons automatiquement" :
+  crée les salons manquants (regroupés dans une catégorie "Logs"), masqués à
+  `@everyone` — seuls les membres avec la permission Discord
+  **Administrateur** les voient, celle-ci passant outre toute restriction de
+  salon, rien d'autre à faire.
 - **Historique** — 5 dernières actions en aperçu, plus un bouton
   "Rechercher" (fenêtre modale : cible / modérateur / type / ID) ; ou en
   texte via `&modlogs [@membre|id]`.
@@ -576,7 +598,7 @@ Outils de structure du serveur (créer/supprimer/modifier rôles et salons),
 distincts de la détection anti-nuke (qui reste chez CrowBot, voir
 7quater) : ici, pas de surveillance, juste des commandes directes,
 chacune avec sa propre clé de permission (catégorie **Serveur** dans
-`&panel` > Permissions).
+`&panel` > Rôles et permissions).
 
 - **`&role create <nom>`** / **`&role rename @rôle <nom>`** /
   **`&role color @rôle <hex>`** — clé `server.roles.manage`.
