@@ -67,6 +67,19 @@ function setThreshold(guildId, maxMessages, windowSeconds) {
   return { maxMessages, windowSeconds };
 }
 
+/**
+ * Durée du timeout appliqué quand l'anti-spam se déclenche. Bornée : en
+ * dessous d'une poignée de secondes la sanction ne sert à rien, au-delà du
+ * plafond Discord (28 jours) l'API refuserait la demande.
+ * @returns {number|null} la valeur retenue, ou null si hors bornes
+ */
+function setTimeoutSeconds(guildId, seconds) {
+  if (!Number.isInteger(seconds) || seconds < 5 || seconds > 28 * 86400) return null;
+  guildEntry(guildId).timeoutSeconds = seconds;
+  save();
+  return seconds;
+}
+
 /** Salons où l'anti-spam ne s'applique pas (salons de flood assumés, bots...). */
 function getExemptChannels(guildId) {
   return [...guildEntry(guildId).exemptChannels];
@@ -187,6 +200,7 @@ module.exports = {
   getWhitelist,
   setEnabled,
   setThreshold,
+  setTimeoutSeconds,
   getExemptChannels,
   setChannelExempt,
   THRESHOLD_LIMITS,

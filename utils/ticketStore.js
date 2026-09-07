@@ -47,15 +47,34 @@ function saveOpen() {
   }
 }
 
-/** @returns {{ staffRoleId: string|null }} */
+/**
+ * Réglages d'un serveur. Les champs ajoutés après coup ont un défaut qui
+ * reproduit l'ancien comportement, pour qu'une configuration déjà enregistrée
+ * continue de fonctionner à l'identique :
+ *  - `closeRoleId` vide  -> c'est le rôle staff qui ferme, comme avant ;
+ *  - `ownerCanClose` absent -> `true`, le demandeur pouvait déjà fermer ;
+ *  - `categoryId` vide   -> le salon est créé à la racine, comme avant.
+ * @returns {{ staffRoleId: string|null, closeRoleId: string|null, categoryId: string|null, ownerCanClose: boolean }}
+ */
 function getConfig(guildId) {
-  return { staffRoleId: loadConfig()[guildId]?.staffRoleId || null };
+  const brut = loadConfig()[guildId] || {};
+  return {
+    staffRoleId: brut.staffRoleId || null,
+    closeRoleId: brut.closeRoleId || null,
+    categoryId: brut.categoryId || null,
+    ownerCanClose: brut.ownerCanClose !== false,
+  };
+}
+
+/** Écrit un ou plusieurs réglages sans écraser les autres. */
+function setConfig(guildId, patch) {
+  const data = loadConfig();
+  data[guildId] = { ...(data[guildId] || {}), ...patch };
+  saveConfig();
 }
 
 function setStaffRole(guildId, roleId) {
-  const data = loadConfig();
-  data[guildId] = { staffRoleId: roleId || null };
-  saveConfig();
+  setConfig(guildId, { staffRoleId: roleId || null });
 }
 
 function registerOpenTicket(channelId, guildId, ownerId) {
@@ -75,4 +94,4 @@ function unregisterTicket(channelId) {
   return true;
 }
 
-module.exports = { getConfig, setStaffRole, registerOpenTicket, getTicketInfo, unregisterTicket };
+module.exports = { getConfig, setConfig, setStaffRole, registerOpenTicket, getTicketInfo, unregisterTicket };

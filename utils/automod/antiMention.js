@@ -53,6 +53,19 @@ function setMaxMentions(guildId, maxMentions) {
 }
 
 /**
+ * Durée du timeout appliqué en cas de mass-mention. Bornée pour les mêmes
+ * raisons que l'anti-spam : trop court ne sanctionne rien, au-delà de 28
+ * jours l'API Discord refuse.
+ * @returns {number|null} la valeur retenue, ou null si hors bornes
+ */
+function setTimeoutSeconds(guildId, seconds) {
+  if (!Number.isInteger(seconds) || seconds < 5 || seconds > 28 * 86400) return null;
+  guildEntry(guildId).timeoutSeconds = seconds;
+  save();
+  return seconds;
+}
+
+/**
  * À appeler dans messageCreate, pour CHAQUE message d'un serveur.
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').Message} message
@@ -102,5 +115,6 @@ module.exports = {
   getConfig,
   setEnabled,
   setMaxMentions,
+  setTimeoutSeconds,
   checkMessage,
 };

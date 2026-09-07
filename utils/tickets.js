@@ -71,17 +71,27 @@ async function handleTicketButton(interaction) {
     const botPerm = checkBotPermission(interaction.guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
     if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
 
-    const { staffRoleId } = ticketStore.getConfig(interaction.guild.id);
+    const { staffRoleId, closeRoleId, categoryId } = ticketStore.getConfig(interaction.guild.id);
     const overwrites = [
       { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ];
     if (staffRoleId) overwrites.push({ id: staffRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] });
+    // Le rôle qui peut FERMER doit forcément voir le ticket, sinon il ne
+    // pourrait jamais cliquer sur le bouton.
+    if (closeRoleId && closeRoleId !== staffRoleId) {
+      overwrites.push({ id: closeRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] });
+    }
 
+    // La catégorie n'est reprise que si elle existe encore : une catégorie
+    // supprimée entre-temps ferait échouer la création, et le ticket ne
+    // s'ouvrirait plus du tout.
+    const categorie = categoryId && interaction.guild.channels.cache.get(categoryId);
     const channel = await interaction.guild.channels
       .create({
         name: `ticket-${interaction.user.username}`.slice(0, 100),
         type: ChannelType.GuildText,
+        ...(categorie ? { parent: categorie.id } : {}),
         permissionOverwrites: overwrites,
         reason: `Ticket ouvert par ${interaction.user.tag}`,
       })
@@ -117,10 +127,21 @@ async function handleTicketButton(interaction) {
     const info = ticketStore.getTicketInfo(interaction.channelId);
     if (!info) return interaction.reply({ content: "Ce salon n'est pas un ticket suivi par le bot.", flags: MessageFlags.Ephemeral });
 
-    const { staffRoleId } = ticketStore.getConfig(interaction.guild.id);
-    const isStaff = staffRoleId && interaction.member.roles.cache.has(staffRoleId);
-    if (interaction.user.id !== info.ownerId && !isStaff && !can(interaction.member, "server.tickets.manage")) {
-      return interaction.reply({ content: "Seul le demandeur ou le staff peut fermer ce ticket.", flags: MessageFlags.Ephemeral });
+    const { staffRoleId, closeRoleId, ownerCanClose } = ticketStore.getConfig(interaction.guild.id);
+    // Le rôle autorisé à fermer peut être distinct de celui qui voit les
+    // tickets ; sans réglage dédié, c'est le rôle staff, comme avant.
+    const roleFermeture = closeRoleId || staffRoleId;
+    const peutFermer =
+      (roleFermeture && interaction.member.roles.cache.has(roleFermeture)) ||
+      can(interaction.member, "server.tickets.manage") ||
+      (ownerCanClose && interaction.user.id === info.ownerId);
+    if (!peutFermer) {
+      return interaction.reply({
+        content: ownerCanClose
+          ? "Seul le demandeur ou le staff peut fermer ce ticket."
+          : "Seul le staff peut fermer ce ticket.",
+        flags: MessageFlags.Ephemeral,
+      });
     }
 
     ticketStore.unregisterTicket(interaction.channelId);

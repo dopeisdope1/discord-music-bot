@@ -534,9 +534,12 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Anti-spam/anti-flood** : ${config.enabled ? "activé" : "désactivé"}`,
       `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
+      // Les salons exemptés d'anti-spam n'étaient nulle part : on pouvait en
+      // configurer par commande sans jamais les revoir dans le panel.
+      `> Salons exemptés : ${automod.getExemptChannels(guildId).length ? automod.getExemptChannels(guildId).map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
       "",
       `> **Anti-lien** : ${linkConfig.enabled ? "activé" : "désactivé"} (mode : ${linkConfig.mode === "all" ? "tous les liens" : "invitations Discord"})`,
-      `> Salons exemptés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
+      `> Salons où les liens restent autorisés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
       "",
       `> **Anti-mass-mention** : ${mentionConfig.enabled ? "activé" : "désactivé"} (seuil : ${mentionConfig.maxMentions} mentions, timeout ${mentionConfig.timeoutSeconds}s)`,
       "",
@@ -675,8 +678,17 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "tickets") {
     const config = ticketStore.getConfig(guildId);
+    const role = (id) => (id && guild.roles.cache.has(id) ? `<@&${id}>` : null);
+    const categorie = config.categoryId && guild.channels.cache.get(config.categoryId);
     return [
-      `> **Rôle staff** : ${config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? `<@&${config.staffRoleId}>` : "*aucun*"}`,
+      `> **Rôle qui voit les tickets** : ${role(config.staffRoleId) || "*aucun — seul le demandeur y a accès*"}`,
+      // Sans rôle dédié, c'est le rôle staff qui ferme : on le dit, plutôt que
+      // d'afficher "aucun" et de laisser croire que personne ne peut fermer.
+      `> **Rôle qui peut fermer** : ${
+        role(config.closeRoleId) || (role(config.staffRoleId) ? `${role(config.staffRoleId)} *(le rôle staff)*` : "*aucun*")
+      }`,
+      `> **Le demandeur peut fermer son ticket** : ${config.ownerCanClose ? "oui" : "non"}`,
+      `> **Catégorie des tickets** : ${categorie ? `<#${categorie.id}>` : "*aucune — créés à la racine*"}`,
     ].join("\n");
   }
 
@@ -1225,10 +1237,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 
     const options = [
       { value: "spam_toggle", label: "Anti-spam : activer/désactiver" },
+      { value: "spam_threshold", label: "Anti-spam : changer le seuil (messages / secondes)" },
+      { value: "spam_timeout", label: "Anti-spam : durée du timeout" },
+      { value: "spam_exempt", label: "Anti-spam : salons exemptés" },
       { value: "link_toggle", label: "Anti-lien : activer/désactiver" },
       { value: "link_mode", label: "Anti-lien : changer le mode (invitations ↔ tous les liens)" },
+      { value: "link_allow", label: "Anti-lien : salons où les liens restent autorisés" },
       { value: "mention_toggle", label: "Anti-mass-mention : activer/désactiver" },
       { value: "mention_threshold", label: "Anti-mass-mention : changer le seuil" },
+      { value: "mention_timeout", label: "Anti-mass-mention : durée du timeout" },
       { value: "badwords_toggle", label: "Mots interdits : activer/désactiver" },
       { value: "badwords_add", label: "Mots interdits : ajouter un mot" },
       ...(words.length ? [{ value: "badwords_remove", label: "Mots interdits : retirer un mot" }] : []),
@@ -1262,6 +1279,30 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             .setCustomId(`${ID}:badwords:del`)
             .setPlaceholder("Retirer un mot interdit")
             .addOptions(words.slice(0, 25).map((w) => new StringSelectMenuOptionBuilder().setLabel(w.slice(0, 100)).setValue(w)))
+        )
+      );
+    } else if (state.protectionAction === "spam_exempt") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder()
+            .setCustomId(`${ID}:spamexempt`)
+            .setPlaceholder("Salons où l'anti-spam ne s'applique pas")
+            .addChannelTypes(ChannelType.GuildText)
+            .setMinValues(0)
+            .setMaxValues(25)
+            .setDefaultChannels(automod.getExemptChannels(guild.id).filter((id) => guild.channels.cache.has(id)).slice(0, 25))
+        )
+      );
+    } else if (state.protectionAction === "link_allow") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder()
+            .setCustomId(`${ID}:linkallow`)
+            .setPlaceholder("Salons où les liens restent autorisés")
+            .addChannelTypes(ChannelType.GuildText)
+            .setMinValues(0)
+            .setMaxValues(25)
+            .setDefaultChannels(antiLink.getAllowedChannels(guild.id).filter((id) => guild.channels.cache.has(id)).slice(0, 25))
         )
       );
     } else if (state.protectionAction === "whitelist_add") {
@@ -1510,9 +1551,39 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId(`${ID}:ticketstaff`)
-          .setPlaceholder("Choisir le rôle staff (vide = aucun)")
+          .setPlaceholder("Rôle qui voit les tickets (vide = aucun)")
           .setMinValues(0)
           .setDefaultRoles(config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? [config.staffRoleId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder()
+          .setCustomId(`${ID}:ticketclose`)
+          .setPlaceholder("Rôle qui peut fermer (vide = le rôle staff)")
+          .setMinValues(0)
+          .setDefaultRoles(config.closeRoleId && guild.roles.cache.has(config.closeRoleId) ? [config.closeRoleId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:ticketcategory`)
+          .setPlaceholder("Catégorie où créer les tickets (vide = racine)")
+          .addChannelTypes(ChannelType.GuildCategory)
+          .setMinValues(0)
+          .setDefaultChannels(config.categoryId && guild.channels.cache.has(config.categoryId) ? [config.categoryId] : [])
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        // Bascule encodée dans le customId : le libellé reflète ce que CE
+        // rendu affiche, donc un clic fait toujours l'inverse.
+        new ButtonBuilder()
+          .setCustomId(`${ID}:ticketownerclose:${config.ownerCanClose ? "off" : "on"}`)
+          .setLabel(config.ownerCanClose ? "Interdire au demandeur de fermer" : "Autoriser le demandeur à fermer")
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji(config.ownerCanClose ? EMOJI.CROSS : EMOJI.CHECK)
       )
     );
   } else if (meta.key === "voice") {
@@ -2136,12 +2207,63 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       antiMention.setMaxMentions(guildId, steps.find((n) => n > current) || steps[0]);
       return goto("protection");
     }
+    // Les seuils défilent par paliers plutôt que d'ouvrir une fenêtre de
+    // saisie : un clic suffit, et aucune valeur hors bornes ne peut être
+    // saisie. Le dernier palier ramène au premier.
+    if (choice === "spam_threshold") {
+      const paliers = [
+        { maxMessages: 3, windowSeconds: 5 },
+        { maxMessages: 5, windowSeconds: 6 },
+        { maxMessages: 6, windowSeconds: 6 },
+        { maxMessages: 8, windowSeconds: 10 },
+        { maxMessages: 10, windowSeconds: 15 },
+      ];
+      const actuel = automod.getConfig(guildId);
+      const suivant =
+        paliers.find((p) => p.maxMessages > actuel.maxMessages || (p.maxMessages === actuel.maxMessages && p.windowSeconds > actuel.windowSeconds)) ||
+        paliers[0];
+      automod.setThreshold(guildId, suivant.maxMessages, suivant.windowSeconds);
+      return goto("protection");
+    }
+    if (choice === "spam_timeout") {
+      const paliers = [30, 60, 120, 300, 600, 1800];
+      const actuel = automod.getConfig(guildId).timeoutSeconds;
+      automod.setTimeoutSeconds(guildId, paliers.find((n) => n > actuel) || paliers[0]);
+      return goto("protection");
+    }
+    if (choice === "mention_timeout") {
+      const paliers = [30, 60, 120, 300, 600, 1800];
+      const actuel = antiMention.getConfig(guildId).timeoutSeconds;
+      antiMention.setTimeoutSeconds(guildId, paliers.find((n) => n > actuel) || paliers[0]);
+      return goto("protection");
+    }
+    // Ces deux-là ouvrent un sélecteur de salons : on mémorise seulement le
+    // choix en cours, le rendu s'occupe d'afficher le bon menu.
+    if (choice === "spam_exempt" || choice === "link_allow") {
+      return goto("protection", { protectionAction: choice });
+    }
     if (choice === "badwords_toggle") {
       badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled);
       return goto("protection");
     }
     // badwords_add / badwords_remove / whitelist_add / whitelist_remove : révèle le contrôle correspondant.
     return goto("protection", { protectionAction: choice });
+  }
+
+  // Sélecteurs de salons de la rubrique Protection. Le menu renvoie la liste
+  // COMPLÈTE de ce qui doit être coché : on remplace donc l'ancienne liste au
+  // lieu d'ajouter, sinon décocher un salon n'aurait aucun effet.
+  if (action === "spamexempt" || action === "linkallow") {
+    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const choisis = interaction.values || [];
+    if (action === "spamexempt") {
+      for (const id of automod.getExemptChannels(guildId)) automod.setChannelExempt(guildId, id, false);
+      for (const id of choisis) automod.setChannelExempt(guildId, id, true);
+    } else {
+      for (const id of antiLink.getAllowedChannels(guildId)) antiLink.setChannelAllowed(guildId, id, false);
+      for (const id of choisis) antiLink.setChannelAllowed(guildId, id, true);
+    }
+    return goto("protection", { protectionAction: action === "spamexempt" ? "spam_exempt" : "link_allow" });
   }
 
   if (action === "wladd" || action === "wldel") {
@@ -2422,6 +2544,26 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "ticketstaff") {
     if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     ticketStore.setStaffRole(guildId, interaction.values[0] || null);
+    return goto("tickets");
+  }
+
+  // Rôle autorisé à FERMER, distinct de celui qui voit les tickets. Vide =
+  // c'est le rôle staff qui ferme, comme avant l'ajout de ce réglage.
+  if (action === "ticketclose") {
+    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    ticketStore.setConfig(guildId, { closeRoleId: interaction.values[0] || null });
+    return goto("tickets");
+  }
+
+  if (action === "ticketcategory") {
+    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    ticketStore.setConfig(guildId, { categoryId: interaction.values[0] || null });
+    return goto("tickets");
+  }
+
+  if (action === "ticketownerclose") {
+    if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    ticketStore.setConfig(guildId, { ownerCanClose: extra === "on" });
     return goto("tickets");
   }
 
