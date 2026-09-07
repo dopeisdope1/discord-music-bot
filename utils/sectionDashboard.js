@@ -1,4 +1,6 @@
 const { DateTime } = require("luxon");
+const { AttachmentBuilder } = require("discord.js");
+const { rendreEnCache } = require("./dashboardImage");
 
 // Transforme le corps TEXTE d'une rubrique du panel (utils/configPanel.js ::
 // sectionBody) en spec de tableau de bord dessinable (utils/dashboardImage.js).
@@ -221,6 +223,12 @@ function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
     cartes.push({ titre, couleur, items: [], vide: notes.shift() || "Rien à afficher pour l'instant." });
   }
 
+  // Une carte unique qui porte le même nom que le tableau répéterait le titre
+  // à deux centimètres d'écart. On lui retire son bandeau : le grand titre en
+  // haut de l'image le dit déjà. (Plusieurs cartes, en revanche, ont besoin
+  // de leurs libellés pour se distinguer.)
+  if (cartes.length === 1 && cartes[0].titre === titre) delete cartes[0].titre;
+
   // Deux colonnes coupent les lignes longues en plein milieu (« Anti-nuke
   // désactivé — antinuke on p… ») : c'est le défaut que la refonte de
   // lisibilité avait déjà corrigé sur &help. On ne passe donc à deux colonnes
@@ -238,4 +246,58 @@ function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
   };
 }
 
-module.exports = { enSpec, decouper, resoudre, PASTILLES };
+// Discord plafonne le texte alternatif d'une pièce jointe à 1024 caractères.
+const ALT_MAX = 1024;
+
+/**
+ * Texte alternatif de l'image : ce qu'un lecteur d'écran lira, et la seule
+ * façon pour quelqu'un qui ne voit pas l'image d'accéder au contenu. Un bot
+ * dont les réponses sont des images le rend indispensable — sans lui, tout ce
+ * qui a été dessiné est perdu pour ces personnes.
+ */
+function texteAlternatif(spec) {
+  const lignes = [spec.titre];
+  for (const carte of spec.cartes) {
+    if (carte.titre && carte.titre !== spec.titre) lignes.push(`— ${carte.titre} —`);
+    if (!carte.items.length && carte.vide) lignes.push(carte.vide);
+    for (const item of carte.items) lignes.push(item.description ? `${item.nom} : ${item.description}` : item.nom);
+  }
+  if (spec.pied) lignes.push(spec.pied);
+  const texte = lignes.filter(Boolean).join("\n");
+  return texte.length > ALT_MAX ? `${texte.slice(0, ALT_MAX - 1)}…` : texte;
+}
+
+/**
+ * Ce texte est-il des DONNÉES structurées (« **Libellé** : valeur ») plutôt
+ * que de la prose ? Sert à décider quelles réponses de commande valent d'être
+ * dessinées : un paragraphe d'article Wikipédia ou une phrase d'erreur rendus
+ * en carte seraient MOINS lisibles qu'en texte, alors qu'une fiche de rôle ou
+ * de salon y gagne. Deux lignes minimum : une seule ne fait pas un tableau.
+ */
+function estTableau(texte) {
+  const lignes = String(texte || "").split("\n").filter((l) => /^>?\s*\*\*[^*]+\*\*\s*(?:\(.+?\))?\s*:\s*\S/.test(l.trim()));
+  return lignes.length >= 2;
+}
+
+/**
+ * Le même tableau de bord, prêt à être posté en réponse à une commande texte.
+ * `null` si le rendu échoue : l'appelant garde alors son message d'origine —
+ * une commande qui n'affiche RIEN serait pire que la version texte qu'elle
+ * remplace. Même contrat que utils/actionCard.js::carteActionMessage, et se
+ * poste avec le même repondreAvecCarte (qui rattrape en plus le refus
+ * d'envoi quand le salon interdit les pièces jointes).
+ * @returns {{files: import('discord.js').AttachmentBuilder[]}|null}
+ */
+function carteTableau(corps, { titre, couleur = "#38bdf8", sousTitre, guild, nomFichier = "tableau.png" }) {
+  try {
+    const spec = enSpec(corps, { titre, couleur, sousTitre, guild });
+    const png = rendreEnCache(spec);
+    if (!png) return null;
+    return { files: [new AttachmentBuilder(png, { name: nomFichier, description: texteAlternatif(spec) })] };
+  } catch (err) {
+    console.error("[sectionDashboard] tableau non rendu :", err);
+    return null;
+  }
+}
+
+module.exports = { enSpec, decouper, resoudre, carteTableau, estTableau, texteAlternatif, PASTILLES };

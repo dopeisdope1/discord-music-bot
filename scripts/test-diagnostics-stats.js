@@ -66,12 +66,21 @@ async function cas(nom, fn) {
 
   console.log("\n&stats history :");
 
-  function makeStatsMessage(guildId) {
+  /**
+   * @param {{refuseFichiers?: boolean}} [o] simule un salon où le bot n'a pas
+   *   « Joindre des fichiers » : la réponse dessinée est refusée et la
+   *   commande retombe sur son embed texte. C'est ce chemin qu'on interroge
+   *   pour COMPTER les jours — le texte alternatif de l'image, lui, est
+   *   plafonné à 1024 caractères par Discord et se ferait tronquer au-delà
+   *   d'une vingtaine de lignes.
+   */
+  function makeStatsMessage(guildId, { refuseFichiers = false } = {}) {
     const replies = [];
     return {
       member: { id: "owner-1", guild: { id: guildId }, roles: { cache: new Collection() }, permissions: new PermissionsBitField(PermissionsBitField.All) },
-      guild: { id: guildId },
+      guild: { id: guildId, name: "Serveur" },
       reply: async (p) => {
+        if (refuseFichiers && p.files?.length) throw new Error("Missing Permissions");
         replies.push(p);
         return {};
       },
@@ -80,18 +89,29 @@ async function cas(nom, fn) {
   }
 
   await cas("&stats history affiche 7 jours par défaut", async () => {
-    const msg = makeStatsMessage("gs5");
+    const msg = makeStatsMessage("gs5", { refuseFichiers: true });
     await utilityHandlers.statsHistory(null, msg, []);
     const desc = msg._replies[0].embeds[0].data.description;
     assert.strictEqual(desc.split("\n").length, 7);
   });
 
+  await cas("&stats history est DESSINÉE en tableau de bord, avec un texte alternatif lisible", async () => {
+    const msg = makeStatsMessage("gs5b");
+    await utilityHandlers.statsHistory(null, msg, ["3"]);
+    const carte = msg._replies[0];
+    assert.ok(carte.files?.length, "la réponse doit être une image");
+    // Le texte alternatif est ce que lit un lecteur d'écran : sans lui, tout
+    // le contenu dessiné serait perdu pour qui ne voit pas l'image.
+    assert.ok(carte.files[0].description.includes("message(s)"), carte.files[0].description);
+    assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(carte.files[0].description), "aucun emoji : la police embarquée n'en dessine aucun");
+  });
+
   await cas("&stats history <n> respecte le nombre demandé, plafonné à 30", async () => {
-    const msg1 = makeStatsMessage("gs6");
+    const msg1 = makeStatsMessage("gs6", { refuseFichiers: true });
     await utilityHandlers.statsHistory(null, msg1, ["3"]);
     assert.strictEqual(msg1._replies[0].embeds[0].data.description.split("\n").length, 3);
 
-    const msg2 = makeStatsMessage("gs6");
+    const msg2 = makeStatsMessage("gs6", { refuseFichiers: true });
     await utilityHandlers.statsHistory(null, msg2, ["9999"]);
     assert.strictEqual(msg2._replies[0].embeds[0].data.description.split("\n").length, 30);
   });
@@ -100,9 +120,11 @@ async function cas(nom, fn) {
     statsStore.record("gs7", "messages");
     statsStore.record("gs7", "messages");
     statsStore.record("gs7", "messages");
-    const msg = makeStatsMessage("gs7");
+    const msg = makeStatsMessage("gs7", { refuseFichiers: true });
     await utilityHandlers.statsHistory(null, msg, ["1"]);
-    assert.ok(msg._replies[0].embeds[0].data.description.includes("💬 3"));
+    // Libellés en toutes lettres depuis que la réponse est dessinée : la
+    // police embarquée n'a aucun glyphe emoji.
+    assert.ok(msg._replies[0].embeds[0].data.description.includes("3 message(s)"), msg._replies[0].embeds[0].data.description);
   });
 
   console.log("\n&status :");

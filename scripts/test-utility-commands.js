@@ -123,8 +123,18 @@ function fakeMessage(guild, { args = [], mentions = {} } = {}) {
 
 /** Texte de la carte Components V2 (utils/listCard.js) : le 3e composant. */
 const cardBody = (payload) => payload.components[0].toJSON().components[2].content;
-const embedText = (payload) => payload.embeds[0].data.description || "";
-const embedTitle = (payload) => payload.embeds[0].data.title || "";
+/**
+ * Ce que la réponse AFFICHE, qu'elle soit un embed ou un tableau de bord
+ * dessiné. Les réponses qui présentent des données structurées sont des
+ * images depuis qu'elles sont toutes en tableau de bord : leur contenu se lit
+ * alors sur le texte alternatif de la pièce jointe — celui-là même que lit un
+ * lecteur d'écran, donc la garantie porte aussi sur l'accessibilité. Les
+ * marqueurs markdown n'y figurent pas : sur une image, le gras est un
+ * attribut de dessin, pas du texte.
+ */
+const embedText = (payload) => payload.embeds?.[0]?.data?.description || payload.files?.[0]?.description || "";
+const embedTitle = (payload) =>
+  payload.embeds?.[0]?.data?.title || (payload.files?.[0]?.description || "").split("\n")[0] || "";
 
 (async () => {
   console.log("Listes de membres (utils/readOnlyLists.js) :");
@@ -244,13 +254,13 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     const msg = fakeMessage(g);
     await utilityHandlers.user(null, msg, []);
     assert.ok(embedTitle(msg._replies[0]).includes("utilisateur"));
-    assert.ok(embedText(msg._replies[0]).includes("Sur ce serveur** : oui"));
+    assert.ok(embedText(msg._replies[0]).includes("Sur ce serveur : oui"));
   });
 
   await cas("&user répond aussi pour quelqu'un qui n'est PAS membre du serveur", async () => {
     const msg = fakeMessage(fakeGuild({ members: [] }));
     await utilityHandlers.user(null, msg, []);
-    assert.ok(embedText(msg._replies[0]).includes("Sur ce serveur** : non"));
+    assert.ok(embedText(msg._replies[0]).includes("Sur ce serveur : non"));
   });
 
   await cas("&vocinfo compte les connectés et détaille les salons occupés", async () => {
@@ -260,9 +270,12 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
       rawPosition: 0,
       userLimit: 5,
       members: new Collection([["u1", {}], ["u2", {}]]),
+      // `name` : la réponse est dessinée, et c'est le nom du salon qui
+      // s'affiche à la place de `<#id>` (utils/sectionDashboard.js).
+      name: "vocal-1",
       toString: () => "<#v1>",
     };
-    const empty = { id: "v2", type: ChannelType.GuildVoice, rawPosition: 1, userLimit: 0, members: new Collection(), toString: () => "<#v2>" };
+    const empty = { id: "v2", type: ChannelType.GuildVoice, rawPosition: 1, userLimit: 0, members: new Collection(), name: "vocal-2", toString: () => "<#v2>" };
     const g = fakeGuild({
       channels: [occupied, empty],
       voiceStates: [{ channelId: "v1", mute: true, deaf: false, streaming: true }, { channelId: "v1", mute: false, deaf: false }],
@@ -270,9 +283,11 @@ const embedTitle = (payload) => payload.embeds[0].data.title || "";
     const msg = fakeMessage(g);
     await utilityHandlers.vocinfo(null, msg);
     const body = embedText(msg._replies[0]);
-    assert.ok(body.includes("**Salons vocaux** : 2 (dont 1 occupé)"));
-    assert.ok(body.includes("**Membres connectés** : 2"));
-    assert.ok(body.includes("<#v1> — 2/5"));
+    assert.ok(body.includes("Salons vocaux : 2 (dont 1 occupé)"), body);
+    assert.ok(body.includes("Membres connectés : 2"), body);
+    // Le salon apparaît par son NOM : une mention brute dessinée serait
+    // illisible.
+    assert.ok(body.includes("#vocal-1 — 2/5"), body);
   });
 
   await cas("&vocinfo le dit clairement quand personne n'est en vocal", async () => {

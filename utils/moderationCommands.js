@@ -1,6 +1,7 @@
 const { PermissionFlagsBits, ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { carteActionMessage, carteSanctionMessage, repondreAvecCarte, avatarDe, nomDe } = require("./actionCard");
+const { carteTableau } = require("./sectionDashboard");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { deleteMessages } = require("./deleteMessages");
@@ -469,9 +470,24 @@ const handlers = {
       mentioned.communicationDisabledUntil ? `**En timeout jusqu'à** : <t:${Math.floor(mentioned.communicationDisabledUntilTimestamp / 1000)}:f>` : null,
       `**Rôles (${roles.length})** : ${roles.length ? roles.join(", ") : "*aucun*"}`,
     ].filter(Boolean);
-    await message.reply({
-      embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Informations membre", thumbnail: mentioned.user.displayAvatarURL() })],
-    });
+    // Fiche dessinée (même moteur que les rubriques du panel et les cartes de
+    // sanction) ; le message d'origine reste le repli si le rendu ou l'envoi
+    // échoue — voir utils/actionCard.js::repondreAvecCarte.
+    const corps = lines.join("\n");
+    await repondreAvecCarte(
+      message,
+      carteTableau(corps, {
+        titre: "Informations membre",
+        sousTitre: nomDe(mentioned),
+        couleur: "#38bdf8",
+        guild: message.guild,
+        nomFichier: "userinfo.png",
+      }),
+      () =>
+        message.reply({
+          embeds: [buildStatusEmbed("info", corps, { title: "Informations membre", thumbnail: mentioned.user.displayAvatarURL() })],
+        })
+    );
   },
 
   async modlogs(client, message, args) {
@@ -488,9 +504,13 @@ const handlers = {
       const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
       return `\`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
     });
-    await message.reply({
-      embeds: [buildStatusEmbed("info", lines.join("\n"), { title: `Historique de modération${targetId ? " — membre ciblé" : ""}` })],
-    });
+    const titre = `Historique de modération${targetId ? " — membre ciblé" : ""}`;
+    const corps = lines.map((l) => `> ${l}`).join("\n");
+    await repondreAvecCarte(
+      message,
+      carteTableau(corps, { titre, sousTitre: message.guild.name, couleur: "#a78bfa", guild: message.guild, nomFichier: "modlogs.png" }),
+      () => message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: titre })] })
+    );
   },
 };
 

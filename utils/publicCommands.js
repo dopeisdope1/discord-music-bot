@@ -1,4 +1,6 @@
 const { buildStatusEmbed } = require("./statusEmbed");
+const { carteTableau } = require("./sectionDashboard");
+const { repondreAvecCarte } = require("./actionCard");
 
 // Commandes publiques d'affichage : accessibles à tout le monde, sans effet
 // sur le serveur (elles ne font que lire et présenter des informations).
@@ -51,24 +53,38 @@ const handlers = {
     const owner = await guild.fetchOwner().catch(() => null);
     const bots = guild.members.cache.filter((m) => m.user.bot).size;
 
-    await message.reply({
-      embeds: [
-        buildStatusEmbed("info", null, {
-          title: guild.name,
-          thumbnail: guild.iconURL({ size: 256 }) || undefined,
-          fields: [
-            { name: "Identifiant", value: guild.id, inline: true },
-            { name: "Propriétaire", value: owner ? `<@${owner.id}>` : "inconnu", inline: true },
-            { name: "Membres", value: String(guild.memberCount), inline: true },
-            { name: "Bots", value: String(bots), inline: true },
-            { name: "Salons", value: String(guild.channels.cache.size), inline: true },
-            { name: "Rôles", value: String(guild.roles.cache.size), inline: true },
-            { name: "Boosts", value: `${guild.premiumSubscriptionCount ?? 0} (palier ${guild.premiumTier})`, inline: true },
-            { name: "Créé le", value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>` },
+    // Une seule liste de champs, deux rendus : la carte dessinée et l'embed de
+    // repli. Les recopier séparément les ferait diverger au premier ajout.
+    const champs = [
+      { name: "Identifiant", value: guild.id, inline: true },
+      { name: "Propriétaire", value: owner ? `<@${owner.id}>` : "inconnu", inline: true },
+      { name: "Membres", value: String(guild.memberCount), inline: true },
+      { name: "Bots", value: String(bots), inline: true },
+      { name: "Salons", value: String(guild.channels.cache.size), inline: true },
+      { name: "Rôles", value: String(guild.roles.cache.size), inline: true },
+      { name: "Boosts", value: `${guild.premiumSubscriptionCount ?? 0} (palier ${guild.premiumTier})`, inline: true },
+      { name: "Créé le", value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:D>` },
+    ];
+    await repondreAvecCarte(
+      message,
+      carteTableau(champs.map((c) => `**${c.name}** : ${c.value}`).join("\n"), {
+        titre: guild.name,
+        sousTitre: "Informations du serveur",
+        couleur: "#a78bfa",
+        guild,
+        nomFichier: "serveur.png",
+      }),
+      () =>
+        message.reply({
+          embeds: [
+            buildStatusEmbed("info", null, {
+              title: guild.name,
+              thumbnail: guild.iconURL({ size: 256 }) || undefined,
+              fields: champs,
+            }),
           ],
-        }),
-      ],
-    });
+        })
+    );
   },
 
   async snipe(client, message) {

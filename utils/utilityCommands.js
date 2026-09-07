@@ -7,6 +7,8 @@ const { can } = require("./permissions/engine");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
 const statsStore = require("./statsStore");
+const { carteTableau, estTableau } = require("./sectionDashboard");
+const { repondreAvecCarte } = require("./actionCard");
 
 // Commandes utilitaires en LECTURE SEULE : les fiches d'info individuelles
 // (&pic/&server/&userinfo...) n'exigent aucune permission (`permission:
@@ -26,7 +28,22 @@ const statsStore = require("./statsStore");
 // bot (voir &vc/&stats) — pas la peine d'annoncer qu'une commande existe à
 // qui n'a pas le droit de la lancer.
 
-const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
+// Les réponses qui présentent des DONNÉES (« **Libellé** : valeur », au moins
+// deux lignes) sont dessinées en tableau de bord, comme les rubriques du
+// panel : c'est la même identité visuelle dans tout le bot. Le reste — une
+// phrase d'erreur, un paragraphe de Wikipédia, une réponse dont l'image EST
+// le contenu (`&emoji`) — reste un embed, qu'une carte rendrait moins
+// lisible. Le message d'origine sert toujours de repli si le rendu échoue ou
+// si le salon refuse les pièces jointes.
+const reply = (message, kind, text, options = {}) => {
+  const embed = () => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
+  if (kind !== "info" || !options.title || options.image || !estTableau(text)) return embed();
+  return repondreAvecCarte(
+    message,
+    carteTableau(text, { titre: options.title, sousTitre: message.guild?.name, guild: message.guild, nomFichier: "infos.png" }),
+    embed
+  );
+};
 
 const CHANNEL_TYPE_LABELS = {
   [ChannelType.GuildText]: "texte",
@@ -189,8 +206,10 @@ const handlers = {
     if (!can(message.member, "server.stats.view")) return;
     const days = Math.min(30, Math.max(1, parseInt(args[0], 10) || 7));
     const range = statsStore.getRange(message.guild.id, days);
+    // Libellés en toutes lettres : la réponse est dessinée, et la police
+    // embarquée n'a aucun glyphe emoji (« 💬 0 » sortirait en carré vide).
     const lines = range.map(
-      (d) => `> **${d.date}** — 💬 ${d.messages} · 🟢 ${d.joins} arrivée(s) · 🔴 ${d.leaves} départ(s)`
+      (d) => `> **${d.date}** : ${d.messages} message(s) · ${d.joins} arrivée(s) · ${d.leaves} départ(s)`
     );
     await reply(message, "info", lines.join("\n"), { title: `Statistiques des ${days} derniers jours` });
   },
