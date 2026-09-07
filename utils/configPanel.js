@@ -205,80 +205,83 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 
 // Une couleur par famille — c'est tout l'intérêt de l'image : un Container
 // Components V2 n'a qu'UNE couleur d'accent pour tout le message.
+// Une teinte par rubrique : c'est elle qui colore le liseré et le titre de
+// l'image. Les sujets proches partagent une famille de couleur (protection en
+// vert, communauté en ambre, réglages du bot en gris-bleu) pour que le panel
+// garde une cohérence malgré le nombre d'entrées.
 const FAMILY_COLORS = {
   securite: "#4ade80",
-  moderation: "#ff6b6b",
-  serveur: "#a78bfa",
-  communaute: "#fbbf24",
-  support: "#38bdf8",
-  communication: "#f472b6",
+  logs: "#60a5fa",
+  bienvenue: "#fbbf24",
+  depart: "#f59e0b",
+  vocaux: "#2dd4bf",
+  permissions: "#a78bfa",
+  autorole: "#8b5cf6",
+  verification: "#22d3ee",
+  tickets: "#38bdf8",
+  giveaways: "#fb923c",
+  sondages: "#f472b6",
+  annonces: "#ec4899",
   musique: "#2dd4bf",
-  monitoring: "#60a5fa",
-  bot: "#94a3b8",
+  historique: "#94a3b8",
+  statistiques: "#60a5fa",
+  diagnostics: "#818cf8",
   sauvegardes: "#fb923c",
+  profil: "#94a3b8",
+  prefixes: "#94a3b8",
+  acces: "#a3a3a3",
+  sys: "#ff6b6b",
+  banall: "#ff6b6b",
+  dispenses: "#a3a3a3",
 };
 
+// Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Vocaux
+// temporaires, Permissions, Giveaways — et non plus des familles abstraites
+// ("Serveur", "Communauté", "Communication") dans lesquelles il fallait
+// deviner ce qui se cachait. Demande explicite : « je veux genre des rubriques
+// comme Logs, Sécurité, Bienvenue, Voc temporaire, Permission, Giveaway ».
+//
+// Chaque entrée ne contient donc qu'UNE rubrique, sauf Sécurité qui en
+// regroupe quatre : ses écrans (vue d'ensemble, anti-spam, anti-nuke, rôle de
+// mute) forment un seul sujet, et les séparer au premier niveau noierait le
+// reste. C'est la seule qui affiche encore un sous-menu.
+//
+// Un menu déroulant Discord accepte 25 options au maximum : la liste
+// ci-dessous en compte moins, et le test scripts/test-panel-rubriques.js
+// échoue si elle venait à dépasser.
 const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Vue d'ensemble : statut, alertes et accès rapides", emoji: EMOJI.MEMBERS, sections: ["home"] },
+  { key: "accueil", label: "Accueil", description: "Statut du bot et alertes de sécurité", emoji: EMOJI.MEMBERS, sections: ["home"] },
   {
     key: "securite",
     label: "Sécurité",
-    description: "Protection automatique contre le spam et les attaques",
+    description: "Anti-spam, anti-nuke, mots interdits, rôle de mute",
     emoji: EMOJI.LOCK,
     sections: ["securityOverview", "protection", "guard", "mute"],
   },
-  {
-    key: "serveur",
-    label: "Serveur",
-    description: "Rôles, permissions et arrivée des nouveaux membres",
-    emoji: EMOJI.PENCIL,
-    sections: ["permissions", "autorole", "verification"],
-  },
-  {
-    key: "communaute",
-    label: "Communauté",
-    description: "Messages d'accueil, salons vocaux et concours",
-    emoji: EMOJI.MAIL,
-    sections: ["welcome", "leave", "voice", "giveaways"],
-  },
-  { key: "support", label: "Support", description: "Système de tickets d'assistance", emoji: EMOJI.TICKET, sections: ["tickets"] },
-  {
-    key: "communication",
-    label: "Communication",
-    description: "Créer des annonces et des sondages",
-    emoji: EMOJI.RULES,
-    sections: ["embedBuilder", "polls"],
-  },
-  { key: "musique", label: "Musique", description: "Lecteur en cours, favoris", emoji: EMOJI.VOICE, sections: ["musicPlayer"] },
-  // Historique reste sous Modération (module 4) : la fiche membre y renvoie
-  // déjà directement, un aller-retour de famille en plus n'aurait rien
-  // apporté. Pas de rubrique "Scan de sécurité" séparée non plus : Sécurité >
-  // Vue d'ensemble (module 3) affiche déjà exactement computeSecurityScan en
-  // entier — une deuxième rubrique identique aurait été une redite, pas un
-  // vrai regroupement.
-  {
-    key: "monitoring",
-    label: "Monitoring",
-    description: "Journaux d'activité et statistiques du serveur",
-    emoji: EMOJI.ONLINE,
-    sections: ["logs", "history", "stats", "diagnostics"],
-  },
-  {
-    key: "bot",
-    label: "Bot",
-    description: "Réglages généraux du bot et gestion des accès",
-    emoji: EMOJI.DISCORD,
-    sections: ["prefixes", "botProfile", "access", "sys", "banall", "moderation"],
-  },
-  // Ordre demandé explicitement : Sauvegardes en dernier, après Bot.
-  {
-    key: "sauvegardes",
-    label: "Sauvegardes",
-    description: "Sauvegarder et restaurer la structure du serveur",
-    emoji: EMOJI.ARROW,
-    sections: ["backups"],
-  },
+  { key: "logs", label: "Logs", description: "Salon de logs par catégorie", emoji: EMOJI.ONLINE, sections: ["logs"] },
+  { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", emoji: EMOJI.MAIL, sections: ["welcome"] },
+  { key: "depart", label: "Départ", description: "Message quand un membre s'en va", emoji: EMOJI.MAIL, sections: ["leave"] },
+  { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", emoji: EMOJI.VOICE, sections: ["voice"] },
+  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", emoji: EMOJI.PENCIL, sections: ["permissions"] },
+  { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", emoji: EMOJI.PENCIL, sections: ["autorole"] },
+  { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", emoji: EMOJI.CHECK, sections: ["verification"] },
+  { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", emoji: EMOJI.TICKET, sections: ["tickets"] },
+  { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", emoji: EMOJI.BOING, sections: ["giveaways"] },
+  { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", emoji: EMOJI.RULES, sections: ["polls"] },
+  { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", emoji: EMOJI.MAIL, sections: ["embedBuilder"] },
+  { key: "musique", label: "Musique", description: "Lecteur en cours et favoris", emoji: EMOJI.VOICE, sections: ["musicPlayer"] },
+  { key: "historique", label: "Historique", description: "Rechercher dans l'historique de modération", emoji: EMOJI.INFO, sections: ["history"] },
+  { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", emoji: EMOJI.ONLINE, sections: ["stats"] },
+  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", emoji: EMOJI.INFO, sections: ["diagnostics"] },
+  { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", emoji: EMOJI.ARROW, sections: ["backups"] },
+  { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", emoji: EMOJI.DISCORD, sections: ["botProfile"] },
+  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", emoji: EMOJI.DISCORD, sections: ["prefixes"] },
+  { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", emoji: EMOJI.STAFF, sections: ["access"] },
+  { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", emoji: EMOJI.CROWN, sections: ["sys"] },
+  { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", emoji: EMOJI.BAN, sections: ["banall"] },
+  { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", emoji: EMOJI.STAFF_AWAY, sections: ["moderation"] },
 ];
+
 
 const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
 

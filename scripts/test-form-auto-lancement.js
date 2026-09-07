@@ -117,25 +117,23 @@ const boutonsDe = (formKey) =>
     assert.ok(!labels.includes("Lancer"), labels.join(", "));
   });
 
-  console.log("\nLes actions IRRÉVERSIBLES gardent leur confirmation :");
+  console.log("\nPlus aucune confirmation, y compris sur les actions irréversibles :");
 
-  await cas("ban garde un bouton de confirmation, et ne part JAMAIS sur simple sélection", async () => {
+  await cas("ban part dès que la cible est choisie — la confirmation a été retirée sur demande", async () => {
+    // Ce qui protège encore : le droit exigé par la commande, la hiérarchie
+    // des rôles revérifiée juste avant d'agir, et l'entrée d'historique.
     commandForms.clearFormState("staff-1", "ban_member");
     const i = choix("user", "ban_member", [CIBLE_ID]);
     await commandForms.handleFormCardInteraction(i);
-    assert.strictEqual(i.aEteDefer, false, "un bannissement ne doit pas partir dès la sélection de la cible");
-    assert.ok(commandForms.getFormState("staff-1", "ban_member")?.userId, "la cible est bien retenue, mais rien n'est exécuté");
-
-    const labels = boutonsDe("ban_member").map((b) => b.label);
-    assert.ok(labels.includes("Confirmer"), `un bouton de confirmation doit rester : ${labels.join(", ")}`);
+    assert.strictEqual(i.aEteDefer, true, "le bannissement doit partir sans étape supplémentaire");
+    assert.strictEqual(i.misAJour.length, 0, "il ne doit pas se contenter de réafficher la carte");
   });
 
-  await cas("kick, softban, tempban et derank exigent eux aussi une confirmation", () => {
-    for (const cle of ["kick_member", "softban_member", "tempban_member", "derank_member"]) {
-      if (!commandForms.FORMS[cle]) continue;
+  await cas("plus aucun bouton \"Confirmer\" nulle part", () => {
+    for (const cle of Object.keys(commandForms.FORMS)) {
       commandForms.clearFormState("staff-1", cle);
       const labels = boutonsDe(cle).map((b) => b.label);
-      assert.ok(labels.includes("Confirmer"), `${cle} doit garder une confirmation : ${labels.join(", ")}`);
+      assert.ok(!labels.includes("Confirmer"), `${cle} affiche encore une confirmation : ${labels.join(", ")}`);
     }
   });
 

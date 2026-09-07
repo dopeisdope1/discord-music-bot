@@ -1371,22 +1371,19 @@ const CUSTOM_CHOICE = "__autre__";
 // à 9 pour ne jamais s'y coller.
 const CONTAINER_BUDGET = 9;
 
-// Formulaires qui GARDENT le bouton "Lancer" : leur action est
-// irréversible, et un formulaire qui s'exécute tout seul dès le dernier
-// champ rempli transformerait un mauvais clic dans une liste déroulante en
-// bannissement immédiat, sans retour possible. Partout ailleurs — donner ou
-// retirer un rôle, avertir, mettre en timeout — l'action se défait, et
-// l'attente d'un clic de plus n'apporte rien.
-const CONFIRMATION_REQUISE = new Set(["ban_member", "softban_member", "tempban_member", "kick_member", "banall_members", "derank_member"]);
-
-/**
- * Ce formulaire peut-il s'exécuter dès qu'il est complet ?
- * Non s'il est irréversible, non plus s'il attend une saisie au clavier dans
- * le salon : cette saisie se termine hors du flux des composants, il faut
- * alors un bouton pour relancer.
- */
+// Plus aucun formulaire n'attend de confirmation : demande explicite, après
+// que le risque a été exposé (une action irréversible part désormais dès que
+// le dernier champ est rempli). Ce qui protège encore : le droit exigé par
+// chaque commande, la hiérarchie des rôles vérifiée juste avant d'agir, et la
+// journalisation dans l'historique de modération.
+//
+// Restent hors de l'automatisme les formulaires qui attendent une saisie
+// clavier OBLIGATOIRE : elle se termine dans le salon, hors du flux des
+// composants, et sans bouton la carte serait sans issue. Un champ facultatif
+// — la raison d'un bannissement, par exemple — ne doit pas retenir l'action,
+// sinon &ban afficherait encore un bouton alors que tout est déjà choisi.
 function seLanceToutSeul(formKey, form) {
-  return !CONFIRMATION_REQUISE.has(formKey) && !form.textFields?.length;
+  return !form.textFields?.some((champ) => champ.required !== false);
 }
 
 /**
@@ -1638,7 +1635,7 @@ function buildFormCard(formKey, member) {
   if (!seLanceToutSeul(formKey, form)) {
     const launchButton = new ButtonBuilder()
       .setCustomId(`${CARD_ID}:launch:${formKey}`)
-      .setLabel(CONFIRMATION_REQUISE.has(formKey) ? "Confirmer" : "Lancer")
+      .setLabel("Lancer")
       .setStyle(ButtonStyle.Success)
       .setDisabled(!form.ready(active));
     if (form.emoji) launchButton.setEmoji(form.emoji);

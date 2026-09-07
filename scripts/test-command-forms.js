@@ -172,7 +172,11 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.strictEqual(interaction.guild._createdRole?.name, "Testeur");
   });
 
-  await cas("ban_member réutilise le VRAI &ban, donc demande confirmation (comportement voulu, pas de ban immédiat)", async () => {
+  await cas("ban_member réutilise le VRAI &ban et bannit DIRECTEMENT — la confirmation a été retirée", async () => {
+    // Comportement demandé explicitement, le risque ayant été exposé : plus de
+    // panneau « Confirmer le bannissement ». Ce qui protège encore : le droit
+    // exigé, la hiérarchie des rôles vérifiée juste avant, et l'entrée
+    // d'historique — vérifiés par les cas voisins.
     const interaction = makeInteraction();
     const followUps = [];
     interaction.followUp = async (p) => {
@@ -180,17 +184,8 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
       return {};
     };
     await commandForms.FORMS.ban_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "raid" } });
-    assert.strictEqual(interaction._targetMember._banned, undefined, "&ban ne bannit jamais sans confirmation explicite, même depuis le panel");
-    assert.ok(followUps.length > 0, "un panneau de confirmation aurait dû être renvoyé");
-    // fakeMessage.reply COMBINE ses flags avec ceux du payload (bitwise OR) —
-    // un simple écrasement par MessageFlags.Ephemeral perdrait IsComponentsV2
-    // et Discord refuserait ce message (des builders V2 sans le flag qui les
-    // autorise). Régression réelle trouvée en réutilisant fakeMessage pour
-    // &rolemembers (module 5 de la refonte du panel).
-    assert.ok(
-      (followUps[0].flags & MessageFlags.IsComponentsV2) === MessageFlags.IsComponentsV2,
-      "le panneau de confirmation doit rester en Components V2 même envoyé via fakeMessage"
-    );
+    assert.ok(interaction._targetMember._banned, "&ban doit désormais bannir sans étape de confirmation");
+    assert.strictEqual(interaction._targetMember._banned.reason, "raid", "la raison doit être transmise à Discord");
   });
 
   await cas("softban_member bannit avec deleteMessageSeconds (purge) puis prévoit le débannissement", async () => {

@@ -69,52 +69,6 @@ function card(title, body, rows = []) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-/** Panneau de confirmation pour une cible précise. */
-function buildConfirmPanel(target, actorId, reason) {
-  const token = rememberRequest({ actorId, reason, targetId: target.id });
-  const boutons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${ID}:go:${token}`).setLabel("Bannir").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`${ID}:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary)
-  );
-
-  // Carte dessinée plutôt qu'un pavé de texte : c'est la confirmation la plus
-  // lourde de conséquences du bot, elle doit se lire d'un coup d'œil. Repli
-  // sur le texte si le rendu échoue — sans confirmation affichée, le
-  // bannissement deviendrait impossible à lancer.
-  const fichier = carteConfirmationFichier(
-    {
-      titre: "Confirmer le bannissement",
-      couleur: "#ff6b6b",
-      lignes: [
-        { label: "Membre", valeur: target.user.tag },
-        { label: "Identifiant", valeur: target.id },
-        { label: "Raison", valeur: reason || "aucune" },
-      ],
-      avertissement: "Irréversible depuis Discord sans débannissement manuel.",
-    },
-    "confirmation-ban.png"
-  );
-  if (fichier) {
-    const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL("attachment://confirmation-ban.png"))
-    );
-    container.addActionRowComponents(boutons);
-    return { flags: MessageFlags.IsComponentsV2, components: [container], files: [fichier] };
-  }
-
-  return card(
-    "Confirmer le bannissement",
-    [
-      `Membre : **${target.user.tag}** (<@${target.id}>)`,
-      `Raison : ${reason || "*aucune*"}`,
-      "",
-      "Cette action est irréversible depuis Discord sans débannissement manuel.",
-    ].join("\n"),
-    [boutons]
-  );
-}
-
 /** Sépare la cible (mention ou identifiant) du reste, qui devient la raison. */
 function parseTarget(message, args) {
   const rest = args.join(" ").trim();
@@ -127,6 +81,64 @@ function parseTarget(message, args) {
       .replace(/\d{15,25}/, "")
       .trim(),
   };
+}
+
+/**
+ * Bannit RÉELLEMENT, et répond par la carte d'action. Les vérifications
+ * (permission du bot, hiérarchie) sont refaites ici même : elles sont le seul
+ * garde-fou restant depuis que la confirmation a été retirée.
+ * @param {(payload: object) => Promise<any>} repondre comment répondre —
+ *   `message.reply` pour une commande tapée, `interaction.update` pour un
+ *   ancien panneau encore affiché.
+ */
+async function bannir(client, { guild, acteur, target, reason, channelId, repondre, surEdition = false }) {
+  const refusal =
+    checkBotPermission(guild, PermissionFlagsBits.BanMembers, "BanMembers") || checkHierarchy(guild, acteur.member, target);
+  if (refusal) return repondre(card("Bannissement impossible", refusal));
+
+  const tag = target.user.tag;
+  try {
+    await target.ban({ reason: reason || `zinki assasini — par ${acteur.user.tag}` });
+    console.log(`[assasini] ${tag} banni par ${acteur.user.tag} sur "${guild.name}"`);
+    await report(client, {
+      guildId: guild.id,
+      category: "moderation",
+      title: "Bannissement",
+      fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
+      action: "ban",
+      targetId: target.id,
+      targetTag: tag,
+      moderator: acteur.user,
+      reason,
+      channelId,
+    });
+
+    const carte = await carteSanctionMessage({
+      action: "ban",
+      cible: target,
+      moderateur: acteur.user,
+      raison: reason,
+      duree: "Définitif",
+      serveur: guild.name,
+    });
+    if (carte) {
+      try {
+        // `attachments: []` seulement sur une ÉDITION : à la création, ce
+        // champ écraserait la liste construite pour l'upload et l'image ne
+        // s'afficherait pas.
+        return await repondre(surEdition ? { ...carte, components: [], embeds: [], content: "", attachments: [] } : carte);
+      } catch (err) {
+        // Typiquement : permission « Joindre des fichiers » absente. Le
+        // membre est DÉJÀ banni — il faut donc quand même confirmer.
+        console.error(`[banPanel] carte non envoyée (permission « Joindre des fichiers » ?) : ${err.message}`);
+      }
+    }
+    return repondre(card("Membre banni", `**${tag}** a été banni.${reason ? `
+Raison : ${reason}` : ""}`));
+  } catch (err) {
+    console.error("[assasini] échec du bannissement :", err);
+    return repondre(card("Bannissement impossible", `Discord a refusé : ${err.message}`));
+  }
 }
 
 /**
@@ -154,12 +166,17 @@ async function handleBan(client, message, args) {
     return message.reply(card("Membre introuvable", "Ce membre n'est pas sur le serveur."));
   }
 
-  const refusal =
-    checkBotPermission(message.guild, PermissionFlagsBits.BanMembers, "BanMembers") ||
-    checkHierarchy(message.guild, message.member, target);
-  if (refusal) return message.reply(card("Bannissement impossible", refusal));
-
-  return message.reply(buildConfirmPanel(target, message.author.id, reason));
+  // Plus de panneau « Confirmer le bannissement » : demande explicite, le
+  // risque ayant été exposé. La cible étant donnée par mention ou identifiant,
+  // le bannissement part directement.
+  return bannir(client, {
+    guild: message.guild,
+    acteur: { member: message.member, user: message.author },
+    target,
+    reason,
+    channelId: message.channel.id,
+    repondre: (payload) => message.reply(payload),
+  });
 }
 
 /**
@@ -277,6 +294,34 @@ async function handleBanInteraction(interaction) {
   }
   if (interaction.user.id !== request.actorId) {
     return interaction.reply({ content: "Ce panneau n'est pas le tien.", flags: MessageFlags.Ephemeral });
+  }
+
+  if (action === "no") {
+    pending.delete(token);
+    return interaction.update(card("Bannissement annulé", null));
+  }
+
+  // Le choix du membre par menu n'existe plus : la cible se donne par mention
+  // ou identifiant. Un vieux message encore affiché peut toutefois envoyer un
+  // "pick" — on l'ignore plutôt que de rouvrir un chemin retiré.
+  if (action === "pick") return undefined;
+
+  // Un ancien panneau de confirmation peut encore traîner dans un salon : son
+  // bouton continue de fonctionner, en passant par le même chemin que la
+  // commande. Les nouveaux bannissements, eux, n'en créent plus.
+  if (action === "go") {
+    const target = await interaction.guild.members.fetch(request.targetId).catch(() => null);
+    if (!target) return interaction.update(card("Membre introuvable", "Ce membre n'est plus sur le serveur."));
+    pending.delete(token);
+    return bannir(interaction.client, {
+      guild: interaction.guild,
+      acteur: { member: interaction.member, user: interaction.user },
+      target,
+      reason: request.reason,
+      channelId: interaction.channelId,
+      repondre: (payload) => interaction.update(payload),
+      surEdition: true,
+    });
   }
 
   if (action === "no") {

@@ -155,9 +155,14 @@ function actionsDe(json) {
     }
   });
 
-  await cas("chaque famille a SA couleur — ce qu'un Container Components V2 ne sait pas faire", () => {
+  await cas("chaque rubrique porte une couleur valide, et la palette reste variée", () => {
+    // Des sujets proches partagent volontairement une teinte (les réglages du
+    // bot en gris, les actions dangereuses en rouge) : l'invariant utile n'est
+    // pas l'unicité mais que chacune SOIT colorée, et que la palette distingue
+    // encore les grands ensembles.
     const couleurs = buildHomeSpec(guild, member).cartes.map((c) => c.couleur);
-    assert.strictEqual(new Set(couleurs).size, couleurs.length, `deux familles partagent la même couleur : ${couleurs.join(", ")}`);
+    for (const c of couleurs) assert.ok(/^#[0-9a-f]{6}$/i.test(c), `couleur invalide : ${c}`);
+    assert.ok(new Set(couleurs).size >= 10, `palette trop pauvre : ${new Set(couleurs).size} teintes pour ${couleurs.length} rubriques`);
   });
 
   await cas("l'accueil du panel est une IMAGE dans un Container Components V2, avec la MÊME identité que &help", () => {
@@ -484,28 +489,30 @@ function actionsDe(json) {
 
   console.log("\nNavigation regroupée par famille :");
 
-  await cas("le menu principal propose des familles dans UN menu déroulant, pas les 16 rubriques", () => {
+  await cas("le menu principal liste des SUJETS concrets, dans un seul menu déroulant", () => {
     const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
-    // Même contrôle que &help : un menu déroulant, pas une pile de boutons —
-    // dix familles en boutons occupaient presque tout l'écran sur mobile.
     const menu = json.components
       .filter((c) => c.type === 1)
       .flatMap((r) => r.components)
       .find((c) => c.custom_id === "cfg:nav");
-    assert.ok(menu, "le menu de navigation par famille doit exister");
-    // Onze familles cibles au maximum (voir le plan de refonte du panel) —
-    // le plafond suit ce nombre, pas un chiffre arbitraire.
-    assert.ok(menu.options.length <= 11, `${menu.options.length} familles — c'est de nouveau une liste à faire défiler`);
-    assert.ok(menu.options.length < SECTIONS.length, "il doit y avoir moins de familles que de rubriques");
-    assert.ok(menu.options.some((o) => o.default), "la famille ouverte doit être marquée comme choisie");
+    assert.ok(menu, "le menu de navigation doit exister");
+    // Discord refuse au-delà de 25 options : c'est la vraie limite, pas un
+    // chiffre choisi au hasard.
+    assert.ok(menu.options.length <= 25, `${menu.options.length} options — Discord en refuse plus de 25`);
+    // Les sujets sont nommés, pas regroupés sous des étiquettes abstraites.
+    const labels = menu.options.map((o) => o.label);
+    for (const attendu of ["Logs", "Sécurité", "Bienvenue", "Vocaux temporaires", "Permissions", "Giveaways"]) {
+      assert.ok(labels.includes(attendu), `"${attendu}" doit être proposé directement : ${labels.join(", ")}`);
+    }
+    assert.ok(menu.options.some((o) => o.default), "la rubrique ouverte doit être marquée comme choisie");
   });
 
-  await cas("un second menu apparaît pour choisir dans une famille qui en contient plusieurs", () => {
-    const json = buildConfigPanel(guild, "sys", member).components[0].toJSON();
+  await cas("un second menu apparaît pour Sécurité, seul sujet qui regroupe plusieurs écrans", () => {
+    const json = buildConfigPanel(guild, "securityOverview", member).components[0].toJSON();
     const sub = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":subnav"));
-    assert.ok(sub, "la famille Permissions et accès contient plusieurs rubriques");
+    assert.ok(sub, "Sécurité regroupe vue d'ensemble, protection, anti-nuke et mute");
     const valeurs = sub.components[0].options.map((o) => o.value);
-    assert.ok(valeurs.includes("sys") && valeurs.includes("banall"));
+    assert.ok(valeurs.includes("protection") && valeurs.includes("guard"), valeurs.join(", "));
   });
 
   await cas("aucun second menu quand la famille n'a qu'une rubrique", () => {
