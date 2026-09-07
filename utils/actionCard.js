@@ -432,7 +432,31 @@ async function carteSanctionMessage({ action, cible, moderateur, raison, duree, 
   );
 }
 
+/**
+ * Poste une carte, et retombe sur `repli()` si Discord refuse l'envoi.
+ *
+ * Le cas qui arrive vraiment : le bot n'a pas la permission « Joindre des
+ * fichiers » dans le salon. Sans ce garde-fou l'exception remonte AVANT le
+ * message texte de secours, et l'utilisateur ne voit alors strictement rien —
+ * alors que la sanction, elle, a bien été appliquée. Le motif est journalisé
+ * pour que la cause soit identifiable sans avoir à deviner.
+ * @param {import('discord.js').Message} message
+ * @param {{files: AttachmentBuilder[]}|null} carte
+ * @param {() => Promise<any>} repli
+ */
+async function repondreAvecCarte(message, carte, repli) {
+  if (carte) {
+    try {
+      return await message.reply(carte);
+    } catch (err) {
+      console.error(`[actionCard] envoi de la carte refusé (permission « Joindre des fichiers » ?) : ${err.message}`);
+    }
+  }
+  return repli();
+}
+
 module.exports = {
+  repondreAvecCarte,
   rendreCarteAction,
   rendreCarteConfirmation,
   carteConfirmationFichier,

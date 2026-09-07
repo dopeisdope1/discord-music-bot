@@ -4,8 +4,6 @@ const {
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   MediaGalleryBuilder,
@@ -246,34 +244,35 @@ function highlightsFor(tier, accessibles) {
 }
 
 /**
- * Boutons de navigation entre catégories + "Accueil" — remplace l'ancien
- * menu déroulant (demande explicite : look "dashboard" avec des boutons
- * comme le screenshot de référence). La catégorie/l'accueil actif ressort en
- * style Primary (rempli), les autres en Secondary (gris) — Discord n'a pas
- * d'état "sélectionné" natif sur un bouton, ce contraste en tient lieu.
- * Répartis sur plusieurs rangées (5 boutons max par ActionRow, limite
- * Discord).
+ * Menu déroulant de navigation entre catégories + "Accueil". Une rangée de
+ * boutons occupait presque tout l'écran sur mobile (8 boutons = 5 rangées
+ * empilées), alors qu'un menu tient sur une seule ligne quel que soit le
+ * nombre de catégories. La catégorie ouverte est marquée par
+ * `setDefault` — l'état "sélectionné" natif des menus, que les boutons
+ * n'ont pas.
  */
-function buildCategoryButtons(availableTiers, current, authorId) {
-  const buttons = [
-    new ButtonBuilder()
-      .setCustomId(`${SELECT_ID}:${authorId}:home`)
+function buildCategorySelect(availableTiers, current, authorId) {
+  const options = [
+    new StringSelectMenuOptionBuilder()
       .setLabel("Accueil")
+      .setValue("home")
       .setEmoji("🏠")
-      .setStyle(current === null ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      .setDescription("Toutes les catégories en un coup d'oeil")
+      .setDefault(current === null),
     ...availableTiers.map((tier) =>
-      new ButtonBuilder()
-        .setCustomId(`${SELECT_ID}:${authorId}:${tier}`)
+      new StringSelectMenuOptionBuilder()
         .setLabel(TIER_LABELS[tier])
+        .setValue(tier)
         .setEmoji(TIER_EMOJI[tier])
-        .setStyle(tier === current ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        // Discord plafonne la description d'une option à 100 caractères.
+        .setDescription(TIER_DESCRIPTIONS[tier].slice(0, 100))
+        .setDefault(tier === current)
     ),
   ];
-  const rows = [];
-  for (let i = 0; i < buttons.length; i += 5) {
-    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-  }
-  return rows;
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${SELECT_ID}:${authorId}`)
+    .setPlaceholder("Choisir une catégorie")
+    .addOptions(options);
 }
 
 /** Pagination de la catégorie active, même style que utils/listCard.js::buildListCard. */
@@ -427,9 +426,7 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
 
   if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    for (const row of buildCategoryButtons(availableTiers, activeTier, authorId)) {
-      container.addActionRowComponents(row);
-    }
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildCategorySelect(availableTiers, activeTier, authorId)));
     if (activeTier && totalPages > 1) {
       container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
     }
@@ -452,13 +449,17 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
  * affichée publiquement dans le salon.
  */
 async function handleHelpInteraction(interaction) {
-  const [kind, authorId, tier] = interaction.customId.split(":");
+  // Les deux menus encodent l'auteur dans le customId ; la valeur choisie
+  // (catégorie ou numéro de page) vient de `values`, comme tout menu déroulant.
+  const [kind, authorId, tierDuCustomId] = interaction.customId.split(":");
   if (interaction.user.id !== authorId) {
     return interaction
       .reply({ content: "Seule la personne qui a lancé `&help` peut utiliser ce menu.", flags: MessageFlags.Ephemeral })
       .catch(() => {});
   }
-  const page = kind === PAGE_SELECT_ID ? parseInt(interaction.values[0], 10) || 0 : 0;
+  const estPagination = kind === PAGE_SELECT_ID;
+  const page = estPagination ? parseInt(interaction.values?.[0], 10) || 0 : 0;
+  const tier = estPagination ? tierDuCustomId : interaction.values?.[0] || null;
   const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
   // `attachments: []` UNIQUEMENT ici : sur une ÉDITION, Discord conserve les
   // pièces jointes existantes quand le champ est absent — le message

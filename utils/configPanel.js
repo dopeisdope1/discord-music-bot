@@ -314,9 +314,12 @@ function familySections(family, member, isOwner) {
 }
 
 /**
- * Boutons de navigation entre familles — même logique que le menu de
- * catégories de &help (identité visuelle partagée, "Centre de commandes" /
- * "Centre de gestion") : la famille active ressort en style Primary, les
+ * Menu déroulant de navigation entre familles — même contrôle que &help
+ * (identité partagée "Centre de commandes" / "Centre de gestion"). Une
+ * rangée de boutons occupait presque tout l'écran sur mobile avec dix
+ * familles ; un menu tient sur une ligne et marque la famille ouverte avec
+ * `setDefault`. Reste, pour mémoire, l'ancienne logique : la famille active
+ * ressortait en style Primary, les
  * autres en Secondary, réparties sur autant de rangées de 5 que nécessaire
  * (limite Discord par ActionRow). Remplace l'ancien menu déroulant.
  * @returns {import('discord.js').ActionRowBuilder[]}
@@ -324,18 +327,20 @@ function familySections(family, member, isOwner) {
 function buildNav(current, member, isOwner) {
   const famille = familyOf(current);
   const disponibles = FAMILIES.filter((f) => familySections(f, member, isOwner).length);
-  const buttons = disponibles.map((f) =>
-    new ButtonBuilder()
-      .setCustomId(`${ID}:nav:${f.key}`)
-      .setLabel(f.label)
-      .setEmoji(f.emoji)
-      .setStyle(f.key === famille.key ? ButtonStyle.Primary : ButtonStyle.Secondary)
-  );
-  const rows = [];
-  for (let i = 0; i < buttons.length; i += 5) {
-    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-  }
-  return rows;
+  return new StringSelectMenuBuilder()
+    .setCustomId(`${ID}:nav`)
+    .setPlaceholder("Choisir une famille")
+    .addOptions(
+      disponibles.map((f) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(f.label)
+          .setValue(f.key)
+          .setEmoji(f.emoji)
+          // Discord plafonne la description d'une option à 100 caractères.
+          .setDescription(f.description.slice(0, 100))
+          .setDefault(f.key === famille.key)
+      )
+    );
 }
 
 /**
@@ -936,7 +941,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_PANEL}`))
     );
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
     return {
       flags: MessageFlags.IsComponentsV2,
       components: [container],
@@ -959,7 +964,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}) {
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(sectionBody(meta.key, guild, member, state)));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  for (const row of buildNav(meta.key, member, isOwner)) container.addActionRowComponents(row);
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
   const subNav = buildSubNav(meta.key, member, isOwner);
   if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
 
@@ -1741,7 +1746,7 @@ async function handleConfigInteraction(interaction) {
     // "cfg:nav:<clé>" — plus un menu déroulant) : on ouvre sa première
     // rubrique accessible, celle qui a le plus de chances d'être celle
     // qu'on cherche.
-    const famille = FAMILIES.find((f) => f.key === extra);
+    const famille = FAMILIES.find((f) => f.key === (interaction.values?.[0] || extra));
     const rubriques = famille ? familySections(famille, member, isOwner) : [];
     return goto(rubriques[0]?.key || "home");
   }

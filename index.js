@@ -530,9 +530,11 @@ client.on("interactionCreate", async (interaction) => {
   // (menu, voir utils/helpPanel.js) dans &help : message public unique
   // édité en place, réservé à qui a lancé la commande (son ID est encodé
   // dans le customId).
+  // Les deux contrôles de &help sont des menus déroulants : le choix de
+  // catégorie (help_tier) et la pagination (help_page).
   if (
-    (interaction.isButton?.() && interaction.customId?.startsWith("help_tier:")) ||
-    (interaction.isStringSelectMenu?.() && interaction.customId?.startsWith("help_page:"))
+    interaction.isStringSelectMenu?.() &&
+    (interaction.customId?.startsWith("help_tier:") || interaction.customId?.startsWith("help_page:"))
   ) {
     await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
     return;

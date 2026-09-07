@@ -354,7 +354,15 @@ async function handleBanInteraction(interaction) {
         duree: "Définitif",
         serveur: interaction.guild.name,
       });
-      if (carte) return interaction.update({ ...carte, components: [], embeds: [], content: "", attachments: [] });
+      if (carte) {
+        try {
+          return await interaction.update({ ...carte, components: [], embeds: [], content: "", attachments: [] });
+        } catch (err) {
+          // Typiquement : permission « Joindre des fichiers » absente. Le
+          // membre est DÉJÀ banni — il faut donc quand même confirmer.
+          console.error(`[banPanel] carte non envoyée (permission « Joindre des fichiers » ?) : ${err.message}`);
+        }
+      }
       return interaction.update(
         card("Membre banni", `**${tag}** a été banni.${reason ? `\nRaison : ${reason}` : ""}`)
       );

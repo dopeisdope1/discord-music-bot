@@ -1,6 +1,6 @@
 const { PermissionFlagsBits, ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { carteSanctionMessage } = require("./actionCard");
+const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
@@ -128,7 +128,9 @@ async function muteMember(client, message, args, { temporary }) {
     duree: temporary ? formatDuration(durationMs) : "Jusqu'à démute",
     serveur: message.guild.name,
   });
-  if (carteMute) return message.reply(carteMute);
+  return repondreAvecCarte(message, carteMute, () =>
+    reply(message, "success", `**${target.user.tag}** mute${temporary ? ` pour ${formatDuration(durationMs)}` : ""}.`)
+  );
 
   await reply(
     message,
@@ -167,7 +169,9 @@ async function unmuteMember(client, message, args) {
     channelId: message.channel.id,
   });
   const carteUnmute = await carteSanctionMessage({ action: "unmute", cible: target, moderateur: message.author, serveur: message.guild.name });
-  if (carteUnmute) return message.reply(carteUnmute);
+  return repondreAvecCarte(message, carteUnmute, () =>
+    reply(message, "success", `**${target.user.tag}** n'est plus mute.`)
+  );
   await reply(message, "success", `**${target.user.tag}** n'est plus mute.`);
 }
 
@@ -315,8 +319,9 @@ async function warn(client, message, args) {
     channelId: message.channel.id,
   });
   const carteWarn = await carteSanctionMessage({ action: "warn", cible: target, moderateur: message.author, raison: reason, serveur: message.guild.name });
-  if (carteWarn) return message.reply(carteWarn);
-  return reply(message, "success", `**${tag}** a été averti.${reason ? `\nRaison : ${reason}` : ""}`);
+  return repondreAvecCarte(message, carteWarn, () =>
+    reply(message, "success", `**${tag}** a été averti.${reason ? `\nRaison : ${reason}` : ""}`)
+  );
 }
 
 async function warnings(client, message, args) {
@@ -421,8 +426,9 @@ async function tempban(client, message, args) {
     channelId: message.channel.id,
   });
   const carteTempban = await carteSanctionMessage({ action: "tempban", cible: target, moderateur: message.author, raison: reason, duree: formatDuration(durationMs), serveur: message.guild.name });
-  if (carteTempban) return message.reply(carteTempban);
-  await reply(message, "success", `**${tag}** banni pour ${formatDuration(durationMs)}.`);
+  return repondreAvecCarte(message, carteTempban, () =>
+    reply(message, "success", `**${tag}** banni pour ${formatDuration(durationMs)}.`)
+  );
 }
 
 /** Appelé périodiquement (voir index.js) pour débannir les tempbans arrivés à échéance. */

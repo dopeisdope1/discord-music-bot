@@ -112,14 +112,12 @@ function commandsText(member = owner, categorie) {
   }
   return morceaux.join("\n");
 }
-/** Tous les boutons du panneau (rangées de navigation). */
-function tousLesBoutons(json) {
-  const boutons = [];
-  for (const c of json.components) {
-    if (c.type === 1) boutons.push(...c.components);
-    else if (c.type === 9 && c.accessory) boutons.push(c.accessory);
-  }
-  return boutons;
+/** Le menu déroulant de navigation entre catégories (type 3 = StringSelect). */
+function menuNavigation(json) {
+  return json.components
+    .filter((c) => c.type === 1)
+    .flatMap((r) => r.components)
+    .find((c) => c.custom_id?.startsWith("help_tier:"));
 }
 
 (async () => {
@@ -209,13 +207,17 @@ function tousLesBoutons(json) {
     assert.strictEqual(panneau.files[0].attachment.subarray(1, 4).toString(), "PNG", "l'en-tête PNG doit être valide");
   });
 
-  await cas("une carte par catégorie accessible, et la navigation reste en vrais boutons Discord", () => {
+  await cas("une carte par catégorie, et la navigation tient en UN menu déroulant (pas une pile de boutons)", () => {
     const s = spec();
     assert.strictEqual(s.cartes.length, CATEGORIES.length, "une carte par catégorie accessible");
     const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
-    const boutons = tousLesBoutons(json);
-    assert.strictEqual(boutons.length, CATEGORIES.length + 1, "un bouton par catégorie, plus Accueil");
-    assert.ok(boutons.some((b) => b.label === "Accueil"), "le retour à l'accueil doit rester possible");
+    // Une seule rangée de contrôles : huit boutons occupaient cinq rangées et
+    // presque tout l'écran sur mobile.
+    assert.strictEqual(json.components.filter((c) => c.type === 1).length, 1, "un seul contrôle de navigation");
+    const menu = menuNavigation(json);
+    assert.ok(menu, "la navigation doit être un menu déroulant");
+    assert.strictEqual(menu.options.length, CATEGORIES.length + 1, "une option par catégorie, plus Accueil");
+    assert.ok(menu.options.some((o) => o.label === "Accueil"), "le retour à l'accueil doit rester possible");
   });
 
   await cas("chaque carte met en avant de VRAIES commandes du thème (Modération -> kick/ban/mute/warn)", () => {
@@ -333,13 +335,14 @@ function tousLesBoutons(json) {
     assert.ok(commandsText(owner, "serveurroles").includes("&role create"));
   });
 
-  /** Fabrique un faux clic de bouton de navigation &help (catégorie ou Accueil), lancé par `clicker` sur la commande de `authorId`. */
+  /** Fabrique un faux choix dans le menu de navigation &help, lancé par `clicker` sur la commande de `authorId`. */
   function fakeCategoryClick(value, clicker, authorId) {
     const i = {
       guild: { id: "g1" },
       member: clicker,
       user: { id: clicker.id },
-      customId: `help_tier:${authorId}:${value}`,
+      customId: `help_tier:${authorId}`,
+      values: [value],
       replies: [],
       updated: null,
       reply(p) {
@@ -368,12 +371,12 @@ function tousLesBoutons(json) {
     assert.ok(!contenu.includes("&role create"), "la catégorie Serveur & Rôles ne doit pas déborder ici");
   });
 
-  await cas("le bouton \"Accueil\" est toujours présent dans la navigation — le chemin retour sans retaper &help", () => {
-    const json = buildHelpPanel("g1", owner, "informations", owner.id).components[0].toJSON();
-    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    const accueil = boutons.find((b) => b.label === "Accueil");
-    assert.ok(accueil, "le bouton Accueil doit toujours être présent");
-    assert.strictEqual(accueil.style, 2, "sur une catégorie active, Accueil n'est pas le bouton mis en avant (Secondary, pas Primary)");
+  await cas("\"Accueil\" reste dans le menu — le chemin retour sans retaper &help", () => {
+    const menu = menuNavigation(buildHelpPanel("g1", owner, "informations", owner.id).components[0].toJSON());
+    const accueil = menu.options.find((o) => o.label === "Accueil");
+    assert.ok(accueil, "l'option Accueil doit toujours être présente");
+    assert.ok(!accueil.default, "sur une catégorie ouverte, ce n'est pas Accueil qui est marqué comme choisi");
+    assert.ok(menu.options.find((o) => o.label === "Informations").default, "la catégorie ouverte doit être marquée");
   });
 
   await cas("choisir \"Accueil\" depuis une catégorie revient bien à la grille de cartes", async () => {
@@ -384,19 +387,15 @@ function tousLesBoutons(json) {
     assert.ok(!/\d+ commande\(s\)/.test(body), body);
     assert.ok(body.includes("Modération"), body);
     assert.ok(json.components.some((c) => c.type === 12), "l'accueil doit bien réafficher l'image du tableau de bord");
-    const accueil = tousLesBoutons(json).find((b) => b.label === "Accueil");
-    assert.strictEqual(accueil.style, 1, "de retour à l'accueil, c'est Accueil qui est mis en avant (Primary)");
+    const accueil = menuNavigation(json).options.find((o) => o.label === "Accueil");
+    assert.ok(accueil.default, "de retour à l'accueil, c'est Accueil qui est marqué comme choisi");
   });
 
   console.log("\nMessage public unique, réservé à qui a lancé &help :");
 
-  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId de CHAQUE bouton de carte", () => {
+  await cas("&help est réservé à l'auteur : son ID est encodé dans le customId du menu de navigation", () => {
     const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
-    const boutons = tousLesBoutons(json);
-    assert.ok(boutons.length, "l'accueil doit proposer des boutons d'ouverture");
-    for (const b of boutons) {
-      assert.ok(b.custom_id.startsWith(`help_tier:${owner.id}:`), `${b.custom_id} n'encode pas l'auteur`);
-    }
+    assert.strictEqual(menuNavigation(json).custom_id, `help_tier:${owner.id}`);
   });
 
   await cas("l'auteur qui clique édite le message en place", async () => {

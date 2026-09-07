@@ -1,6 +1,6 @@
 const { PermissionFlagsBits, ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { carteActionMessage, carteSanctionMessage, avatarDe, nomDe } = require("./actionCard");
+const { carteActionMessage, carteSanctionMessage, repondreAvecCarte, avatarDe, nomDe } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { deleteMessages } = require("./deleteMessages");
@@ -161,12 +161,8 @@ async function roleMembership(client, message, args, sub) {
     },
     "role.png"
   );
-  if (carte) return message.reply(carte);
-
-  await reply(
-    message,
-    "success",
-    `Rôle **${mentionedRole.name}** ${sub === "add" ? "ajouté à" : "retiré de"} **${mentionedMember.user.tag}**.`
+  return repondreAvecCarte(message, carte, () =>
+    reply(message, "success", `Rôle **${mentionedRole.name}** ${sub === "add" ? "ajouté à" : "retiré de"} **${mentionedMember.user.tag}**.`)
   );
 }
 
@@ -204,8 +200,9 @@ const handlers = {
     // Carte d'action en image ; le message texte reste le filet de sécurité
     // si le rendu échoue — la sanction, elle, a déjà été appliquée.
     const carteKick = await carteSanctionMessage({ action: "kick", cible: target, moderateur: message.author, raison: reason, serveur: message.guild.name });
-    if (carteKick) return message.reply(carteKick);
-    await reply(message, "success", `**${tag}** a été expulsé.${reason ? `\nRaison : ${reason}` : ""}`);
+    return repondreAvecCarte(message, carteKick, () =>
+      reply(message, "success", `**${tag}** a été expulsé.${reason ? `\nRaison : ${reason}` : ""}`)
+    );
   },
 
   async softban(client, message, args) {
@@ -245,8 +242,9 @@ const handlers = {
       channelId: message.channel.id,
     });
     const carteSoftban = await carteSanctionMessage({ action: "softban", cible: target, moderateur: message.author, raison: reason, duree: "Messages des 24h purgés", serveur: message.guild.name });
-    if (carteSoftban) return message.reply(carteSoftban);
-    await reply(message, "success", `**${tag}** a été softban (messages des dernières 24h purgés).${reason ? `\nRaison : ${reason}` : ""}`);
+    return repondreAvecCarte(message, carteSoftban, () =>
+      reply(message, "success", `**${tag}** a été softban (messages des dernières 24h purgés).${reason ? `\nRaison : ${reason}` : ""}`)
+    );
   },
 
   async timeout(client, message, args) {
@@ -291,8 +289,9 @@ const handlers = {
       extra: { durationMs: ms },
     });
     const carteTimeout = await carteSanctionMessage({ action: "timeout", cible: target, moderateur: message.author, raison: reason, duree: formatDuration(ms), serveur: message.guild.name });
-    if (carteTimeout) return message.reply(carteTimeout);
-    await reply(message, "success", `**${tag}** est en timeout pour **${formatDuration(ms)}**.${reason ? `\nRaison : ${reason}` : ""}`);
+    return repondreAvecCarte(message, carteTimeout, () =>
+      reply(message, "success", `**${tag}** est en timeout pour **${formatDuration(ms)}**.${reason ? `\nRaison : ${reason}` : ""}`)
+    );
   },
 
   async untimeout(client, message, args) {
@@ -329,8 +328,7 @@ const handlers = {
       channelId: message.channel.id,
     });
     const carteUntimeout = await carteSanctionMessage({ action: "untimeout", cible: target, moderateur: message.author, serveur: message.guild.name });
-    if (carteUntimeout) return message.reply(carteUntimeout);
-    await reply(message, "success", `Timeout de **${tag}** levé.`);
+    return repondreAvecCarte(message, carteUntimeout, () => reply(message, "success", `Timeout de **${tag}** levé.`));
   },
 
   async slowmode(client, message, args) {
