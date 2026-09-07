@@ -4,6 +4,8 @@ const {
   SeparatorBuilder,
   SeparatorSpacingSize,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   MessageFlags,
@@ -12,6 +14,11 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
+
+// Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
+// identité visuelle pour les deux "pages" du même système, demande
+// explicite ("Centre de commandes" / "Centre de gestion").
+const ACCENT_COLOR = 0x2c2f5c;
 
 const SELECT_ID = "help_tier";
 const PAGE_SELECT_ID = "help_page";
@@ -23,7 +30,7 @@ const PAGE_SELECT_ID = "help_page";
 //   Components displayable text size exceeds maximum size of 4000
 // Ce n'est PAS une limite par composant (chaque TextDisplay peut déjà aller
 // jusqu'à 4000) mais le TOTAL du texte affichable de TOUS les composants du
-// message CUMULÉS. D'où : un seul bloc de commandes par page (pas deux), et
+// message CUMULÉ. D'où : un seul bloc de commandes par page (pas deux), et
 // chunkBlocks vise plus bas que 4000 pour laisser de la place au titre/à la
 // légende qui partagent le même budget.
 const MAX_CHUNKS_PER_PAGE = 1;
@@ -76,10 +83,17 @@ function dedupeByIdentity(commands) {
   return [...byIdentity.values()].map(({ cmd, aliases }) => ({ cmd, aliases: [...aliases] }));
 }
 
-/** Une commande, en bloc : nom (+alias) en gras, description, puis la syntaxe réelle à taper. */
+/**
+ * Une commande, en bloc : nom (+alias) en gras, description, puis la syntaxe
+ * réelle à taper. Un 🔒 discret signale une commande qui exige un droit
+ * particulier — pas la clé technique exacte, juste le signal qu'elle est
+ * restreinte (l'accès réel reste filtré en amont, ce n'est qu'un repère
+ * visuel pour les commandes déjà accordées à cette personne).
+ */
 function formatCommandBlock(entry, prefixSymbol) {
   const heading = entry.aliases.length ? `${identityOf(entry.cmd)}/${entry.aliases.join("/")}` : identityOf(entry.cmd);
-  return `**${heading}** (${entry.cmd.description})\n└ Usage : \`${prefixSymbol}${entry.cmd.name}\``;
+  const lock = entry.cmd.permission ? " 🔒" : "";
+  return `🔹 **${heading}**${lock} — ${entry.cmd.description}\n└ \`${prefixSymbol}${entry.cmd.name}\``;
 }
 
 /**
@@ -147,30 +161,38 @@ function groupByTier(member) {
   return groups;
 }
 
-function buildSelect(availableTiers, current, authorId) {
-  // "Accueil" toujours présent dans le même menu : une fois entré dans un
-  // palier, il donne le chemin retour sans avoir à retaper &help.
-  // L'ID de l'auteur est encodé dans le customId : le message est public
-  // (pas d'ephémère possible pour une commande texte), mais seul l'auteur
-  // doit pouvoir le piloter (voir handleHelpInteraction).
-  const options = [
-    new StringSelectMenuOptionBuilder().setLabel("Accueil").setValue("home").setDefault(current === null),
+/**
+ * Boutons de navigation entre catégories + "Accueil" — remplace l'ancien
+ * menu déroulant (demande explicite : look "dashboard" avec des boutons
+ * comme le screenshot de référence). La catégorie/l'accueil actif ressort en
+ * style Primary (rempli), les autres en Secondary (gris) — Discord n'a pas
+ * d'état "sélectionné" natif sur un bouton, ce contraste en tient lieu.
+ * Répartis sur plusieurs rangées (5 boutons max par ActionRow, limite
+ * Discord).
+ */
+function buildCategoryButtons(availableTiers, current, authorId) {
+  const buttons = [
+    new ButtonBuilder()
+      .setCustomId(`${SELECT_ID}:${authorId}:home`)
+      .setLabel("Accueil")
+      .setEmoji("🏠")
+      .setStyle(current === null ? ButtonStyle.Primary : ButtonStyle.Secondary),
     ...availableTiers.map((tier) =>
-      new StringSelectMenuOptionBuilder()
+      new ButtonBuilder()
+        .setCustomId(`${SELECT_ID}:${authorId}:${tier}`)
         .setLabel(TIER_LABELS[tier])
-        .setDescription(TIER_DESCRIPTIONS[tier].slice(0, 100))
-        .setValue(tier)
-        .setDefault(tier === current)
         .setEmoji(TIER_EMOJI[tier])
+        .setStyle(tier === current ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ),
   ];
-  return new StringSelectMenuBuilder()
-    .setCustomId(`${SELECT_ID}:${authorId}`)
-    .setPlaceholder("Choisir une catégorie")
-    .addOptions(options);
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
+  return rows;
 }
 
-/** Pagination du palier actif, même style que utils/listCard.js::buildListCard. */
+/** Pagination de la catégorie active, même style que utils/listCard.js::buildListCard. */
 function buildPageSelect(tier, page, totalPages, authorId) {
   const options = [];
   if (page > 0) options.push(new StringSelectMenuOptionBuilder().setLabel("Page précédente").setValue(String(page - 1)));
@@ -182,16 +204,16 @@ function buildPageSelect(tier, page, totalPages, authorId) {
 }
 
 /**
- * &help — vue d'ensemble compacte (juste les paliers et leur effectif) puis,
- * une fois un palier choisi dans le menu, la liste de ses commandes. Filtré
- * sur les droits RÉELS de la personne — même moteur que les commandes et le
- * panel (utils/permissions/engine.js), pas une liste séparée qui pourrait
- * diverger.
+ * &help — "Centre de commandes" : à l'accueil, chaque catégorie thématique
+ * en bloc (emoji + description courte, JAMAIS de compteur de commandes) ;
+ * une catégorie choisie détaille ses commandes. Filtré sur les droits RÉELS
+ * de la personne — même moteur que les commandes et le panel
+ * (utils/permissions/engine.js), pas une liste séparée qui pourrait diverger.
  * @param {string} guildId
  * @param {import('discord.js').GuildMember} member
- * @param {string|null} [tier] palier actif ("public"/"configurable"/"sys")
- * @param {string} authorId qui a lancé &help — seul lui peut piloter le menu
- * @param {number} [page] page de commandes affichée dans le palier actif
+ * @param {string|null} [tier] catégorie active (une clé de CATEGORIES, ou null pour l'accueil)
+ * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
+ * @param {number} [page] page de commandes affichée dans la catégorie active
  */
 function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
   const prefixes = getPrefixes(guildId);
@@ -199,17 +221,21 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
   const availableTiers = TIER_ORDER.filter((t) => groups[t].length);
   const activeTier = availableTiers.includes(tier) ? tier : null;
 
-  const container = new ContainerBuilder();
-  // Titre ET légende dans le MÊME bloc de texte (pas deux composants
-  // séparés) : chaque composant compte dans la limite du Container, et le
-  // palier dense en a besoin ailleurs (voir MAX_CHUNKS_PER_PAGE ci-dessus).
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      activeTier
-        ? `## Aide — ${TIER_LABELS[activeTier]}\nLes arguments entre \`[]\` sont **facultatifs**, les arguments entre \`<>\` sont **obligatoires**`
-        : "## Aide"
-    )
-  );
+  const container = new ContainerBuilder().setAccentColor(ACCENT_COLOR);
+
+  // En-tête partagé avec &panel ("Centre de commandes" / "Centre de
+  // gestion") : titre + uniquement le pseudo (pas de niveau/rang, ce bot n'a
+  // pas ce système) — <@id> reste valide même si le membre n'a jamais été
+  // mis en cache, pas besoin de résoudre un pseudo affichable.
+  const headerLines = [
+    "## 🖥️ 「 CENTRE DE COMMANDES 」",
+    `> <@${authorId}> · Préfixe : \`${prefixes.musicMod}\``,
+  ];
+  if (activeTier) {
+    headerLines.push(`### ${TIER_EMOJI[activeTier]} ${TIER_LABELS[activeTier]}`);
+    headerLines.push("Les arguments entre `[]` sont **facultatifs**, les arguments entre `<>` sont **obligatoires**");
+  }
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(headerLines.join("\n")));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   let clampedPage = 0;
@@ -225,24 +251,26 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(chunk));
     }
   } else {
-    // Pas de compteur de commandes ("— 39 commande(s)") : juste l'emoji, le
-    // nom et une description courte — demande explicite de refonte UX du
-    // &help, le chiffre n'apportait rien et alourdissait la lecture.
-    const lines = availableTiers.map((t) => `${TIER_EMOJI[t]} **${TIER_LABELS[t]}** — ${TIER_DESCRIPTIONS[t]}`);
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        [
-          `Préfixe : \`${prefixes.musicMod}\``,
-          "",
-          ...(lines.length ? lines : ["*Aucune commande accessible.*"]),
-        ].join("\n")
-      )
-    );
+    // Toutes les cartes de catégorie dans UN SEUL bloc de texte (un
+    // ContainerBuilder Components V2 est plafonné à un petit nombre de
+    // composants, voir utils/commandForms.js::CONTAINER_BUDGET) — la
+    // séparation visuelle "bloc par bloc" façon dashboard vient d'un simple
+    // filet de texte entre chaque carte, pas d'un vrai composant Separator
+    // par catégorie (ça dépasserait vite le budget avec 7 catégories).
+    const cards = availableTiers.map((t) => `### ${TIER_EMOJI[t]} ${TIER_LABELS[t]}\n${TIER_DESCRIPTIONS[t]}`);
+    const body = cards.length
+      ? cards.join("\n\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n\n")
+      : "*Aucune commande accessible.*";
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Tape une commande pour commencer*"));
   }
 
   if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildSelect(availableTiers, activeTier, authorId)));
+    for (const row of buildCategoryButtons(availableTiers, activeTier, authorId)) {
+      container.addActionRowComponents(row);
+    }
     if (activeTier && totalPages > 1) {
       container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
     }
@@ -252,25 +280,24 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0) {
 }
 
 /**
- * Toutes les interactions "help_tier:<authorId>" (choix d'un palier, revient
- * à la page 0) ET "help_page:<authorId>:<tier>" (change de page dans le
- * palier actif) — voir index.js. Message PUBLIC et unique, édité en place à
- * chaque clic — jamais de nouveau message — mais réservé à qui a lancé
- * &help : n'importe qui d'autre verrait un palier filtré sur SES droits à
- * lui, potentiellement plus larges (Sys, configurable), affiché publiquement
- * dans le salon.
+ * Toutes les interactions "help_tier:<authorId>:<catégorie|home>" (bouton de
+ * navigation, revient à la page 0) ET "help_page:<authorId>:<catégorie>"
+ * (menu de pagination dans la catégorie active) — voir index.js. Message
+ * PUBLIC et unique, édité en place à chaque clic — jamais de nouveau message
+ * — mais réservé à qui a lancé &help : n'importe qui d'autre verrait une
+ * catégorie filtrée sur SES droits à lui, potentiellement plus larges,
+ * affichée publiquement dans le salon.
  */
 async function handleHelpInteraction(interaction) {
-  const [kind, authorId, tierFromCustomId] = interaction.customId.split(":");
+  const [kind, authorId, tier] = interaction.customId.split(":");
   if (interaction.user.id !== authorId) {
     return interaction
       .reply({ content: "Seule la personne qui a lancé `&help` peut utiliser ce menu.", flags: MessageFlags.Ephemeral })
       .catch(() => {});
   }
-  const tier = kind === PAGE_SELECT_ID ? tierFromCustomId : interaction.values[0];
   const page = kind === PAGE_SELECT_ID ? parseInt(interaction.values[0], 10) || 0 : 0;
   const panel = buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page);
   return interaction.update(panel).catch((err) => console.error("[helpPanel] interaction.update a échoué :", err));
 }
 
-module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID };
+module.exports = { buildHelpPanel, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID, ACCENT_COLOR };

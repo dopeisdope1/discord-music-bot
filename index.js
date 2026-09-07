@@ -526,12 +526,13 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Choix d'un palier OU d'une page dans &help (voir utils/helpPanel.js) :
-  // message public unique édité en place, réservé à qui a lancé la
-  // commande (son ID est encodé dans le customId).
+  // Choix d'une catégorie (bouton, "Centre de commandes") OU d'une page
+  // (menu, voir utils/helpPanel.js) dans &help : message public unique
+  // édité en place, réservé à qui a lancé la commande (son ID est encodé
+  // dans le customId).
   if (
-    interaction.isStringSelectMenu?.() &&
-    (interaction.customId?.startsWith("help_tier:") || interaction.customId?.startsWith("help_page:"))
+    (interaction.isButton?.() && interaction.customId?.startsWith("help_tier:")) ||
+    (interaction.isStringSelectMenu?.() && interaction.customId?.startsWith("help_page:"))
   ) {
     await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
     return;

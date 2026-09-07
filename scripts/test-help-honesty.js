@@ -187,8 +187,8 @@ function commandsText(member = owner, categorie) {
   await cas("chaque commande affiche son nom en gras, sa description, et la vraie syntaxe à taper", () => {
     const body = commandsText(owner, "informations");
     assert.ok(body.includes("**banner**"), body);
-    assert.ok(body.includes("(Affiche la bannière d'un membre)"), body);
-    assert.ok(body.includes("Usage : `&banner [@membre]`"), body);
+    assert.ok(body.includes("— Affiche la bannière d'un membre"), body);
+    assert.ok(body.includes("`&banner [@membre]`"), body);
   });
 
   await cas("des commandes du même thème atterrissent bien dans la MÊME catégorie (antilink et badwords -> Sécurité)", () => {
@@ -202,14 +202,13 @@ function commandsText(member = owner, categorie) {
     assert.ok(commandsText(owner, "serveurroles").includes("**role create**"));
   });
 
-  /** Fabrique une fausse interaction de sélection sur le menu &help, lancée par `clicker` sur la commande de `authorId`. */
-  function fakeSelect(values, clicker, authorId) {
+  /** Fabrique un faux clic de bouton de navigation &help (catégorie ou Accueil), lancé par `clicker` sur la commande de `authorId`. */
+  function fakeCategoryClick(value, clicker, authorId) {
     const i = {
       guild: { id: "g1" },
       member: clicker,
       user: { id: clicker.id },
-      values,
-      customId: `help_tier:${authorId}`,
+      customId: `help_tier:${authorId}:${value}`,
       replies: [],
       updated: null,
       reply(p) {
@@ -225,7 +224,7 @@ function commandsText(member = owner, categorie) {
   }
 
   await cas("changer de catégorie depuis la carte édite le MÊME message en place — jamais de nouveau message", async () => {
-    const interaction = fakeSelect(["informations"], owner, owner.id);
+    const interaction = fakeCategoryClick("informations", owner, owner.id);
     await handleHelpInteraction(interaction);
     assert.strictEqual(interaction.replies.length, 0, "aucun nouveau message ne doit être créé");
     assert.ok(interaction.updated, "le message existant doit être édité en place");
@@ -234,35 +233,34 @@ function commandsText(member = owner, categorie) {
     assert.ok(!body.includes("role create"), "la catégorie Serveur & Rôles ne doit plus apparaître");
   });
 
-  await cas("le menu garde toujours une option \"Accueil\" — le chemin retour sans retaper &help", () => {
-    const menu = buildHelpPanel("g1", owner, "informations", owner.id)
-      .components[0].toJSON()
-      .components.find((c) => c.type === 1).components[0];
-    const accueil = menu.options.find((o) => o.value === "home");
-    assert.ok(accueil, "l'option Accueil doit toujours être présente dans le menu");
-    assert.strictEqual(accueil.default, false, "sur une catégorie active, Accueil n'est pas l'option sélectionnée par défaut");
+  await cas("le bouton \"Accueil\" est toujours présent dans la navigation — le chemin retour sans retaper &help", () => {
+    const json = buildHelpPanel("g1", owner, "informations", owner.id).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const accueil = boutons.find((b) => b.label === "Accueil");
+    assert.ok(accueil, "le bouton Accueil doit toujours être présent");
+    assert.strictEqual(accueil.style, 2, "sur une catégorie active, Accueil n'est pas le bouton mis en avant (Secondary, pas Primary)");
   });
 
   await cas("choisir \"Accueil\" depuis une catégorie revient bien à la vue compacte", async () => {
-    const interaction = fakeSelect(["home"], owner, owner.id);
+    const interaction = fakeCategoryClick("home", owner, owner.id);
     await handleHelpInteraction(interaction);
     const body = interaction.updated.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(!/\d+ commande\(s\)/.test(body), body);
     assert.ok(body.includes("Modération"), body);
-    assert.ok(!body.includes("Usage :"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
+    assert.ok(!body.includes("└ `&"), "de retour à l'accueil, plus aucun détail de commande ne doit rester");
   });
 
   console.log("\nMessage public unique, réservé à qui a lancé &help :");
 
-  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId du menu", () => {
-    const menu = buildHelpPanel("g1", owner, null, owner.id)
-      .components[0].toJSON()
-      .components.find((c) => c.type === 1).components[0];
-    assert.strictEqual(menu.custom_id, `help_tier:${owner.id}`);
+  await cas("&help est réservé à l'auteur : l'ID du lanceur est encodé dans le customId du bouton Accueil", () => {
+    const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+    const accueil = boutons.find((b) => b.label === "Accueil");
+    assert.strictEqual(accueil.custom_id, `help_tier:${owner.id}:home`);
   });
 
   await cas("l'auteur qui clique édite le message en place", async () => {
-    const interaction = fakeSelect(["bot"], owner, owner.id);
+    const interaction = fakeCategoryClick("bot", owner, owner.id);
     await handleHelpInteraction(interaction);
     assert.ok(interaction.updated, "le message doit être édité en place pour l'auteur");
     assert.strictEqual(interaction.replies.length, 0);
@@ -270,7 +268,7 @@ function commandsText(member = owner, categorie) {
 
   await cas("QUELQU'UN D'AUTRE qui clique est refusé — jamais la catégorie d'un autre affichée publiquement à sa place", async () => {
     const intrus = { id: "intrus-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
-    const interaction = fakeSelect(["bot"], intrus, owner.id);
+    const interaction = fakeCategoryClick("bot", intrus, owner.id);
     await handleHelpInteraction(interaction);
     assert.strictEqual(interaction.updated, null, "le message public ne doit pas changer pour un clic d'un autre membre");
     assert.strictEqual(interaction.replies.length, 1, "un refus doit être envoyé, seulement à l'intrus");
@@ -407,8 +405,8 @@ function commandsText(member = owner, categorie) {
   await cas("la coupe entre deux blocs ne tombe jamais AU MILIEU d'une commande", () => {
     const parts = allChunks(owner, "securite");
     for (const p of parts) {
-      assert.ok(p.content.trimStart().startsWith("**"), "chaque bloc doit commencer par le nom d'une commande");
-      assert.ok(p.content.includes("Usage : `"), "chaque bloc doit contenir au moins une commande complète");
+      assert.ok(p.content.trimStart().startsWith("🔹 **"), "chaque bloc doit commencer par le nom d'une commande");
+      assert.ok(p.content.includes("└ `"), "chaque bloc doit contenir au moins une commande complète");
     }
   });
 
