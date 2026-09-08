@@ -195,8 +195,8 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "sans menu, impossible d'ouvrir une catégorie");
   });
 
-  await cas("sansImage : une catégorie ouverte liste ses commandes, pas seulement son titre", () => {
-    const texte = texteDe(buildHelpPanel("g1", membre, "moderation", "testeur", 0, { sansImage: true }));
+  await cas("sansImage : un palier ouvert liste ses commandes, pas seulement son titre", () => {
+    const texte = texteDe(buildHelpPanel("g1", membre, "configurable", "testeur", 0, { sansImage: true }));
     assert.ok(texte.includes("&kick"), texte);
   });
 
@@ -280,8 +280,8 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     };
   }
 
-  await cas("&help : une édition refusée est rejouée en texte, la catégorie s'ouvre quand même", async () => {
-    const clic = fakeClic("help_tier:testeur", "moderation");
+  await cas("&help : une édition refusée est rejouée en texte, le palier s'ouvre quand même", async () => {
+    const clic = fakeClic("help_tier:testeur", "configurable");
     await handleHelpInteraction(clic);
     assert.strictEqual(clic.editions.length, 2, "la seconde édition (en texte) manque — le clic resterait sans réponse");
     assert.strictEqual(clic.editions[1].files, undefined);

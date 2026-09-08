@@ -45,18 +45,68 @@ const TIER_COLORS = new Proxy({}, { get: () => COULEUR_PAR_DEFAUT });
 //   permission "sys"   -> réservé au rang sys
 //   toute autre clé    -> accordable par rôle depuis &panel
 const PALIERS = [
-  { cle: "public", titre: "Publiques", couleur: COULEUR_PAR_DEFAUT },
-  { cle: "configurable", titre: "Configurables", couleur: COULEUR_PAR_DEFAUT },
-  { cle: "sys", titre: "Sys", couleur: COULEUR_PAR_DEFAUT },
+  {
+    cle: "public",
+    titre: "Publiques",
+    label: "Commandes publiques",
+    emoji: "🌐",
+    description: "Utilisables par tout le monde, sans droit particulier",
+    couleur: COULEUR_PAR_DEFAUT,
+  },
+  {
+    cle: "configurable",
+    titre: "Configurables",
+    label: "Commandes configurables",
+    emoji: "🔧",
+    description: "Accordées rôle par rôle depuis &panel > Permissions",
+    couleur: COULEUR_PAR_DEFAUT,
+  },
+  {
+    cle: "sys",
+    titre: "Sys",
+    label: "Commandes sys",
+    emoji: "🛡️",
+    description: "Réservées au rang sys, jamais accordables par rôle",
+    couleur: COULEUR_PAR_DEFAUT,
+  },
 ];
+const PALIER_PAR_CLE = Object.fromEntries(PALIERS.map((p) => [p.cle, p]));
 function palierDe(cmd) {
   if (!cmd.permission) return "public";
   return cmd.permission === "sys" ? "sys" : "configurable";
 }
 
-// Commandes par colonne, et colonnes par page, dans une catégorie ouverte.
+// Commandes par colonne dans un palier ouvert.
 const PAR_COLONNE = 9;
-const COLONNES_PAR_PAGE = 2;
+
+// Une page se remplit en LIGNES, pas en nombre de colonnes. Compter les
+// colonnes donnait 3 pages pour les 9 commandes publiques : chaque thème
+// n'en a qu'une ou deux, et deux colonnes d'une ligne suffisaient à remplir
+// une page. On empile donc les thèmes courts jusqu'à ce que la page soit
+// pleine, ce qui rend aussi les hauteurs de cartes comparables.
+const LIGNES_PAR_PAGE = 24;
+
+/**
+ * Répartit les colonnes en pages d'au plus LIGNES_PAR_PAGE lignes. Une
+ * colonne n'est jamais coupée en deux (elle l'a déjà été par PAR_COLONNE) et
+ * une page reçoit toujours au moins une colonne, même trop longue.
+ */
+function paginerColonnes(colonnes) {
+  const pages = [];
+  let courante = [];
+  let lignes = 0;
+  for (const colonne of colonnes) {
+    if (courante.length && lignes + colonne.entries.length > LIGNES_PAR_PAGE) {
+      pages.push(courante);
+      courante = [];
+      lignes = 0;
+    }
+    courante.push(colonne);
+    lignes += colonne.entries.length;
+  }
+  if (courante.length) pages.push(courante);
+  return pages.length ? pages : [[]];
+}
 
 /**
  * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
@@ -251,21 +301,21 @@ function buildCategorySelect(availableTiers, current, authorId) {
       .setLabel("Accueil")
       .setValue("home")
       .setEmoji("🏠")
-      .setDescription("Toutes les catégories en un coup d'oeil")
+      .setDescription("Les trois paliers en un coup d'oeil")
       .setDefault(current === null),
-    ...availableTiers.map((tier) =>
+    ...availableTiers.map((cle) =>
       new StringSelectMenuOptionBuilder()
-        .setLabel(TIER_LABELS[tier])
-        .setValue(tier)
-        .setEmoji(TIER_EMOJI[tier])
+        .setLabel(PALIER_PAR_CLE[cle].label)
+        .setValue(cle)
+        .setEmoji(PALIER_PAR_CLE[cle].emoji)
         // Discord plafonne la description d'une option à 100 caractères.
-        .setDescription(TIER_DESCRIPTIONS[tier].slice(0, 100))
-        .setDefault(tier === current)
+        .setDescription(PALIER_PAR_CLE[cle].description.slice(0, 100))
+        .setDefault(cle === current)
     ),
   ];
   return new StringSelectMenuBuilder()
     .setCustomId(`${SELECT_ID}:${authorId}`)
-    .setPlaceholder("Choisir une catégorie")
+    .setPlaceholder("Choisir un palier")
     .addOptions(options);
 }
 
@@ -295,7 +345,16 @@ function buildPageSelect(tier, page, totalPages, authorId) {
 function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
   const prefixes = getPrefixes(guildId);
   const groups = groupByTier(member);
-  const availableTiers = TIER_ORDER.filter((t) => groups[t].length);
+
+  // La navigation se fait par PALIER (Publiques / Configurables / Sys), plus
+  // par thème : demande explicite. Les thèmes n'ont pas disparu pour autant,
+  // ils deviennent les colonnes à l'intérieur d'un palier — c'est ce qui
+  // donne un classement à une liste qui, sinon, serait un mur de commandes.
+  const parPalier = Object.fromEntries(PALIERS.map((p) => [p.cle, []]));
+  for (const categorie of TIER_ORDER) {
+    for (const cmd of groups[categorie]) parPalier[palierDe(cmd)].push({ cmd, categorie });
+  }
+  const availableTiers = PALIERS.map((p) => p.cle).filter((cle) => parPalier[cle].length);
   const activeTier = availableTiers.includes(tier) ? tier : null;
 
   let clampedPage = 0;
@@ -303,38 +362,34 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
   let spec;
 
   if (activeTier) {
-    // Catégorie ouverte : ses commandes réparties en colonnes PAR PALIER
-    // (Publiques / Configurables / Sys) — le regroupement de l'ancien &help,
-    // remis dans la grille. Le nom affiché est la syntaxe complète à taper,
-    // préfixe réel compris : une image ne se copie pas, autant qu'elle
-    // montre exactement quoi écrire.
-    const entries = dedupeByIdentity(groups[activeTier]);
-
-    // Une colonne = un paquet d'un même palier. Un palier qui déborde
-    // s'étale sur plusieurs colonnes (marquées "suite") au lieu de laisser
-    // une colonne quasi vide à côté d'une colonne pleine : c'est ce qui
-    // recréait les grands blancs. Chaque page prend les 3 colonnes
-    // suivantes, donc aucune page n'est à moitié vide.
+    // Palier ouvert : ses commandes réparties en colonnes PAR THÈME. Le nom
+    // affiché est la syntaxe complète à taper, préfixe réel compris : une
+    // image ne se copie pas, autant qu'elle montre exactement quoi écrire.
+    //
+    // Un thème qui déborde s'étale sur plusieurs colonnes (marquées "suite")
+    // au lieu de laisser une colonne quasi vide à côté d'une colonne pleine :
+    // c'est ce qui recréait les grands blancs.
     const colonnes = [];
-    for (const palier of PALIERS) {
-      const duPalier = entries.filter((e) => palierDe(e.cmd) === palier.cle);
-      for (let i = 0; i < duPalier.length; i += PAR_COLONNE) {
+    for (const categorie of TIER_ORDER) {
+      const duTheme = dedupeByIdentity(parPalier[activeTier].filter((e) => e.categorie === categorie).map((e) => e.cmd));
+      for (let i = 0; i < duTheme.length; i += PAR_COLONNE) {
         colonnes.push({
-          cle: palier.cle,
-          titre: i === 0 ? palier.titre : `${palier.titre} (suite)`,
-          couleur: palier.couleur,
-          entries: duPalier.slice(i, i + PAR_COLONNE),
+          cle: categorie,
+          titre: i === 0 ? TIER_LABELS[categorie] : `${TIER_LABELS[categorie]} (suite)`,
+          couleur: COULEUR_PAR_DEFAUT,
+          entries: duTheme.slice(i, i + PAR_COLONNE),
         });
       }
     }
 
-    totalPages = Math.max(1, Math.ceil(colonnes.length / COLONNES_PAR_PAGE));
+    const pages = paginerColonnes(colonnes);
+    totalPages = pages.length;
     clampedPage = Math.min(Math.max(0, page), totalPages - 1);
 
     spec = {
-      titre: TIER_LABELS[activeTier],
+      titre: PALIER_PAR_CLE[activeTier].label,
       sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
-      cartes: colonnes.slice(clampedPage * COLONNES_PAR_PAGE, (clampedPage + 1) * COLONNES_PAR_PAGE).map((c) => ({
+      cartes: pages[clampedPage].map((c) => ({
         cle: c.cle,
         titre: c.titre,
         couleur: c.couleur,
@@ -351,37 +406,34 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
       hauteursLibres: true,
     };
   } else {
-    // Accueil : une carte par catégorie, en grille — les commandes montrées
-    // sont les vedettes du thème filtrées sur les droits réels du membre.
+    // Accueil : les TROIS PALIERS, et rien d'autre. Demande explicite — la
+    // grille de commandes vedettes faisait doublon avec la vue détaillée
+    // qu'on ouvre juste après, pour un écran deux fois plus long.
+    //
+    // Chaque carte annonce ce que le palier contient par THÈME plutôt que par
+    // commande : c'est ce qui permet de choisir sans avoir à tout lire.
     spec = {
       titre: "Centre de commandes",
       sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod}`,
-      cartes: availableTiers.map((t) => {
-        const parIdentite = new Map(dedupeByIdentity(groups[t]).map((e) => [identityOf(e.cmd), e.cmd]));
+      cartes: availableTiers.map((cle) => {
+        const palier = PALIER_PAR_CLE[cle];
+        const entrees = parPalier[cle];
         return {
-          cle: t,
-          titre: TIER_LABELS[t],
-          sousTitre: TIER_DESCRIPTIONS[t],
-          couleur: TIER_COLORS[t] || COULEUR_PAR_DEFAUT,
-          // Le nom porte son VRAI préfixe (certaines commandes n'en ont
-          // aucun), et une pastille de palier dit d'un coup d'œil qui peut
-          // s'en servir — la couleur reprend celle des colonnes de la vue
-          // détaillée, pour que les deux écrans se lisent pareil.
-          items: highlightsFor(t, groups[t]).map((id) => {
-            const cmd = parIdentite.get(id);
-            const palier = cmd ? palierDe(cmd) : "public";
-            return {
-              nom: `${cmd ? prefixePour(cmd, prefixes) : ""}${id}`,
-              description: resumer(cmd?.description),
-              couleurPastille: PALIERS.find((p) => p.cle === palier).couleur,
-            };
+          cle,
+          titre: palier.label,
+          sousTitre: palier.description,
+          couleur: COULEUR_PAR_DEFAUT,
+          items: TIER_ORDER.filter((cat) => entrees.some((e) => e.categorie === cat)).map((cat) => {
+            const nb = dedupeByIdentity(entrees.filter((e) => e.categorie === cat).map((e) => e.cmd)).length;
+            return { nom: TIER_LABELS[cat], description: `${nb} commande${nb > 1 ? "s" : ""}` };
           }),
           vide: "Aucune commande accessible",
         };
       }),
-      // Légende des pastilles : sans elle, les trois couleurs ne veulent rien
-      // dire pour qui découvre le bot.
-      pied: "Tape une commande pour commencer",
+      pied: "Choisis un palier dans le menu pour voir les commandes",
+      // Sans ça, la carte la plus courte s'étire à la hauteur de sa voisine et
+      // laisse un grand rectangle vide sous sa dernière ligne.
+      hauteursLibres: true,
     };
     if (!availableTiers.length) {
       spec.cartes = [{ titre: "Aucun accès", couleur: COULEUR_PAR_DEFAUT, items: [], vide: "Aucune commande accessible." }];

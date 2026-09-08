@@ -233,11 +233,22 @@ function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
   // désactivé — antinuke on p… ») : c'est le défaut que la refonte de
   // lisibilité avait déjà corrigé sur &help. On ne passe donc à deux colonnes
   // que si TOUT tient dans une demi-largeur.
-  const plusLongue = Math.max(0, ...cartes.flatMap((c) => c.items.map((i) => `${i.nom} ${i.description || ""}`.trim().length)));
+  //
+  // Le libellé et la valeur sont dessinés sur DEUX lignes distinctes
+  // (utils/dashboardImage.js) : mesurer leur somme surestimait chaque entrée
+  // de la longueur de l'autre moitié, et condamnait à une seule colonne des
+  // écrans qui tenaient très bien en deux — la fiche d'un rôle occupait ainsi
+  // 15 % de la largeur sur toute sa hauteur. On mesure donc chaque ligne
+  // séparément, avec le budget de SA police : le nom est en gras, plus large
+  // à nombre de caractères égal.
+  const items = cartes.flatMap((c) => c.items);
+  const nomLePlusLong = Math.max(0, ...items.map((i) => String(i.nom || "").length));
+  const valeurLaPlusLongue = Math.max(0, ...items.map((i) => String(i.description || "").length));
+  const tientEnDemiLargeur = nomLePlusLong <= 30 && valeurLaPlusLongue <= 42;
   return {
     titre,
     sousTitre,
-    colonnes: colonnes || (plusLongue <= 42 ? 2 : 1),
+    colonnes: colonnes || (tientEnDemiLargeur ? 2 : 1),
     cartes,
     // La prose (ce que fait l'écran, les avertissements) passe en pied plutôt
     // qu'en carte : ce sont des phrases, pas des réglages.

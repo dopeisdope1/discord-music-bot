@@ -35,6 +35,11 @@ const { Collection, MessageFlags } = require("discord.js");
 const { isImplemented } = require("../utils/implementedCommands");
 const { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
+
+// Les trois valeurs de navigation de &help depuis la refonte : la personne
+// choisit un PALIER de droits, et les thèmes deviennent les colonnes à
+// l'intérieur.
+const PALIERS = ["public", "configurable", "sys"];
 const { can } = require("../utils/permissions/engine");
 
 /**
@@ -101,13 +106,28 @@ function fullText(member = owner, categorie = null) {
   }
   return morceaux.join("\n");
 }
-/** Les commandes listées dans une catégorie, TOUTES PAGES confondues. */
-function commandsText(member = owner, categorie) {
+/**
+ * Les commandes listées, TOUS PALIERS ET TOUTES PAGES confondus.
+ *
+ * La navigation se fait par palier de droits depuis la refonte, plus par
+ * thème : une commande donnée peut donc être sous n'importe lequel des trois
+ * selon le droit qu'elle exige. Les cas qui vérifient qu'une commande est bien
+ * listée balaient donc tout, au lieu de deviner son palier — ce qui les rend
+ * aussi indifférents à un changement de droit dans le catalogue.
+ *
+ * @param {string} [theme] restreint aux colonnes d'un thème donné (clé de
+ *   CATEGORIES), pour les cas qui vérifient le RANGEMENT et pas la présence.
+ */
+function commandsText(member = owner, theme) {
+  const labelTheme = theme ? CATEGORIES.find((c) => c.key === theme)?.label : null;
   const morceaux = [];
-  const total = buildHelpSpec("g1", member, categorie, member.id, 0).totalPages;
-  for (let page = 0; page < total; page++) {
-    for (const carte of spec(member, categorie, page).cartes) {
-      for (const item of carte.items) morceaux.push(`${item.nom} — ${item.description || ""}`);
+  for (const palier of PALIERS) {
+    const total = buildHelpSpec("g1", member, palier, member.id, 0).totalPages;
+    for (let page = 0; page < total; page++) {
+      for (const carte of spec(member, palier, page).cartes) {
+        if (labelTheme && carte.titre.replace(/ \(suite.*\)$/, "") !== labelTheme) continue;
+        for (const item of carte.items) morceaux.push(`${item.nom} — ${item.description || ""}`);
+      }
     }
   }
   return morceaux.join("\n");
@@ -172,15 +192,41 @@ function menuNavigation(json) {
 
   console.log("\nAccueil épuré (emoji + nom + description courte, JAMAIS de compteur) :");
 
-  await cas("l'accueil affiche AU PLUS 7 catégories, chacune avec sa description, sans compteur de commandes", () => {
-    assert.ok(CATEGORIES.length <= 7, `${CATEGORIES.length} catégories — demande explicite : maximum 7`);
+  await cas("l'accueil montre LES TROIS PALIERS, et aucune commande", () => {
+    // Demande explicite : « dans help je veux plus voir les commandes dans
+    // l'accueil, je veux juste voir commande configurable, commande public,
+    // commande sys ». La grille de commandes vedettes faisait doublon avec la
+    // vue détaillée qu'on ouvre juste après.
     const s = spec();
-    assert.ok(!/\d+ commande\(s\)/.test(fullText()), "un compteur de commandes traîne encore");
-    for (const cat of CATEGORIES) {
-      const carte = s.cartes.find((c) => c.titre === cat.label);
-      assert.ok(carte, `la carte "${cat.label}" doit être dessinée`);
-      assert.strictEqual(carte.sousTitre, cat.description, `la description de "${cat.label}" doit apparaître sur sa carte`);
+    assert.deepStrictEqual(
+      s.cartes.map((c) => c.titre),
+      ["Commandes publiques", "Commandes configurables", "Commandes sys"],
+      JSON.stringify(s.cartes.map((c) => c.titre))
+    );
+    for (const carte of s.cartes) {
+      assert.ok(carte.sousTitre, `"${carte.titre}" doit expliquer ce que le palier contient`);
+      for (const item of carte.items) {
+        assert.ok(!item.nom.startsWith("&"), `"${item.nom}" est une commande — l'accueil ne doit plus en lister`);
+      }
     }
+  });
+
+  await cas("chaque palier annonce ce qu'il contient par THÈME, avec le compte RÉEL", () => {
+    // Sans ça, l'accueil serait trois cartes vides : il faut de quoi choisir.
+    const publiques = spec().cartes.find((c) => c.titre === "Commandes publiques");
+    assert.ok(publiques.items.length, "un palier accessible ne peut pas être vide");
+    for (const item of publiques.items) {
+      assert.ok(CATEGORIES.some((c) => c.label === item.nom), `"${item.nom}" n'est pas un thème du catalogue`);
+    }
+    // Le compte annoncé est celui de la vue détaillée, jamais un nombre à part
+    // qui divergerait au premier ajout de commande.
+    const dessinees = new Set();
+    const total = buildHelpSpec("g1", owner, "public", owner.id, 0).totalPages;
+    for (let page = 0; page < total; page++) {
+      for (const carte of spec(owner, "public", page).cartes) for (const i of carte.items) dessinees.add(i.nom);
+    }
+    const annonce = publiques.items.reduce((somme, i) => somme + parseInt(i.description, 10), 0);
+    assert.strictEqual(annonce, dessinees.size, `${annonce} annoncées, ${dessinees.size} réellement listées`);
   });
 
   await cas("AUCUNE couleur : tout est dessiné dans une seule teinte neutre", () => {
@@ -216,23 +262,34 @@ function menuNavigation(json) {
     assert.strictEqual(panneau.files[0].attachment.subarray(1, 4).toString(), "PNG", "l'en-tête PNG doit être valide");
   });
 
-  await cas("une carte par catégorie, et la navigation tient en UN menu déroulant (pas une pile de boutons)", () => {
-    const s = spec();
-    assert.strictEqual(s.cartes.length, CATEGORIES.length, "une carte par catégorie accessible");
+  await cas("le menu propose LES MÊMES trois paliers que l'accueil, plus Accueil", () => {
     const json = buildHelpPanel("g1", owner, null, owner.id).components[0].toJSON();
     // Une seule rangée de contrôles : huit boutons occupaient cinq rangées et
     // presque tout l'écran sur mobile.
     assert.strictEqual(json.components.filter((c) => c.type === 1).length, 1, "un seul contrôle de navigation");
     const menu = menuNavigation(json);
     assert.ok(menu, "la navigation doit être un menu déroulant");
-    assert.strictEqual(menu.options.length, CATEGORIES.length + 1, "une option par catégorie, plus Accueil");
-    assert.ok(menu.options.some((o) => o.label === "Accueil"), "le retour à l'accueil doit rester possible");
+    assert.deepStrictEqual(
+      menu.options.map((o) => o.label),
+      ["Accueil", "Commandes publiques", "Commandes configurables", "Commandes sys"],
+      JSON.stringify(menu.options.map((o) => o.label))
+    );
+    // Le menu et l'image doivent nommer les paliers PAREIL : deux libellés
+    // pour la même chose et on ne sait plus lequel on vient d'ouvrir.
+    const surLImage = spec().cartes.map((c) => c.titre);
+    for (const label of menu.options.slice(1).map((o) => o.label)) {
+      assert.ok(surLImage.includes(label), `"${label}" est dans le menu mais pas sur l'image`);
+    }
   });
 
-  await cas("chaque carte met en avant de VRAIES commandes du thème (Modération -> kick/ban/mute/warn)", () => {
-    const modo = spec().cartes.find((c) => c.titre === "Modération");
-    const noms = modo.items.map((i) => i.nom);
-    assert.deepStrictEqual(noms, ["&kick", "&ban", "&mute", "&warn"], `mises en avant réelles : ${noms.join(", ")}`);
+  await cas("un palier ouvert range ses commandes par THÈME — les thèmes n'ont pas disparu, ils ont changé de niveau", () => {
+    const cartes = spec(owner, "configurable", 0).cartes;
+    for (const carte of cartes) {
+      const theme = carte.titre.replace(/ \(suite.*\)$/, "");
+      assert.ok(CATEGORIES.some((c) => c.label === theme), `"${theme}" n'est pas un thème du catalogue`);
+    }
+    const modo = cartes.find((c) => c.titre.startsWith("Modération"));
+    assert.ok(modo, `Modération doit ouvrir le palier configurable : ${cartes.map((c) => c.titre).join(", ")}`);
     for (const item of modo.items) {
       assert.ok(item.description, `"${item.nom}" doit porter sa description du catalogue`);
     }
@@ -240,10 +297,10 @@ function menuNavigation(json) {
 
   await cas("chaque commande porte son VRAI préfixe — `uo clear` n'en a aucun, lui en coller un annoncerait une commande inexistante", () => {
     const tout = [];
-    for (const cat of CATEGORIES) {
-      const total = buildHelpSpec("g1", owner, cat.key, owner.id, 0).totalPages;
+    for (const palier of PALIERS) {
+      const total = buildHelpSpec("g1", owner, palier, owner.id, 0).totalPages;
       for (let page = 0; page < total; page++) {
-        for (const carte of spec(owner, cat.key, page).cartes) tout.push(...carte.items.map((i) => i.nom));
+        for (const carte of spec(owner, palier, page).cartes) tout.push(...carte.items.map((i) => i.nom));
       }
     }
     assert.ok(tout.includes("uo clear"), `"uo clear" doit s'afficher SANS préfixe : ${tout.filter((n) => n.includes("uo clear")).join(", ")}`);
@@ -251,20 +308,21 @@ function menuNavigation(json) {
     assert.ok(tout.includes("&kick @membre [raison]"), "les commandes du préfixe mod gardent bien le leur");
   });
 
-  await cas("une catégorie ouverte regroupe ses commandes par PALIER (Publiques / Configurables / Sys)", () => {
-    const titres = spec(owner, "moderation", 0).cartes.map((c) => c.titre);
-    assert.ok(titres.includes("Publiques"), titres.join(", "));
-    assert.ok(titres.some((t) => t.startsWith("Configurables")), titres.join(", "));
-    // Le palier se déduit du droit exigé, jamais saisi à la main : on le
-    // revérifie ici contre le catalogue.
-    for (const carte of spec(owner, "moderation", 0).cartes) {
-      const attendu = carte.titre.startsWith("Publiques") ? null : carte.titre.startsWith("Sys") ? "sys" : "autre";
-      for (const item of carte.items) {
-        const cmd = CATEGORIES.flatMap((c) => c.commands).find((c) => item.nom.endsWith(c.name));
-        if (!cmd) continue;
-        if (attendu === null) assert.strictEqual(cmd.permission, null, `${item.nom} n'est pas publique`);
-        else if (attendu === "sys") assert.strictEqual(cmd.permission, "sys", `${item.nom} n'est pas sys`);
-        else assert.ok(cmd.permission && cmd.permission !== "sys", `${item.nom} n'est pas configurable`);
+  await cas("un palier ne contient QUE ses commandes — il se déduit du droit exigé, jamais saisi à la main", () => {
+    const attenduDe = { public: null, sys: "sys", configurable: "autre" };
+    for (const palier of PALIERS) {
+      const total = buildHelpSpec("g1", owner, palier, owner.id, 0).totalPages;
+      for (let page = 0; page < total; page++) {
+        for (const carte of spec(owner, palier, page).cartes) {
+          for (const item of carte.items) {
+            const cmd = CATEGORIES.flatMap((c) => c.commands).find((c) => item.nom.endsWith(c.name));
+            if (!cmd) continue;
+            const attendu = attenduDe[palier];
+            if (attendu === null) assert.strictEqual(cmd.permission, null, `${item.nom} n'est pas publique`);
+            else if (attendu === "sys") assert.strictEqual(cmd.permission, "sys", `${item.nom} n'est pas sys`);
+            else assert.ok(cmd.permission && cmd.permission !== "sys", `${item.nom} n'est pas configurable`);
+          }
+        }
       }
     }
   });
@@ -379,11 +437,11 @@ function menuNavigation(json) {
   });
 
   await cas("\"Accueil\" reste dans le menu — le chemin retour sans retaper &help", () => {
-    const menu = menuNavigation(buildHelpPanel("g1", owner, "informations", owner.id).components[0].toJSON());
+    const menu = menuNavigation(buildHelpPanel("g1", owner, "configurable", owner.id).components[0].toJSON());
     const accueil = menu.options.find((o) => o.label === "Accueil");
     assert.ok(accueil, "l'option Accueil doit toujours être présente");
-    assert.ok(!accueil.default, "sur une catégorie ouverte, ce n'est pas Accueil qui est marqué comme choisi");
-    assert.ok(menu.options.find((o) => o.label === "Informations").default, "la catégorie ouverte doit être marquée");
+    assert.ok(!accueil.default, "sur un palier ouvert, ce n'est pas Accueil qui est marqué comme choisi");
+    assert.ok(menu.options.find((o) => o.label === "Commandes configurables").default, "le palier ouvert doit être marqué");
   });
 
   await cas("choisir \"Accueil\" depuis une catégorie revient bien à la grille de cartes", async () => {
@@ -480,13 +538,17 @@ function menuNavigation(json) {
     }
   });
 
-  await cas("une identité n'apparaît jamais dans deux catégories à la fois", () => {
+  await cas("une identité n'apparaît jamais deux fois — ni dans deux paliers, ni sur deux pages", () => {
     const vus = new Set();
-    for (const cat of CATEGORIES) {
-      const noms = buildHelpSpec("g1", owner, cat.key, owner.id, 0).spec.cartes.flatMap((c) => c.items.map((i) => i.nom));
-      for (const n of noms) {
-        assert.ok(!vus.has(n), `${n} listé dans deux catégories`);
-        vus.add(n);
+    for (const palier of PALIERS) {
+      const total = buildHelpSpec("g1", owner, palier, owner.id, 0).totalPages;
+      for (let page = 0; page < total; page++) {
+        for (const carte of spec(owner, palier, page).cartes) {
+          for (const item of carte.items) {
+            assert.ok(!vus.has(item.nom), `${item.nom} listé deux fois`);
+            vus.add(item.nom);
+          }
+        }
       }
     }
   });
@@ -509,34 +571,48 @@ function menuNavigation(json) {
 
   console.log("\nPagination d'une catégorie dense (toutes ses commandes ne tiennent pas sur une image) :");
 
-  await cas("une catégorie dense (\"Sécurité\") est répartie sur PLUSIEURS pages, aucune commande perdue", () => {
-    const { totalPages } = buildHelpSpec("g1", owner, "securite", owner.id, 0);
-    assert.ok(totalPages > 1, "la catégorie dense doit avoir besoin de plusieurs pages");
+  await cas("le palier dense (\"configurables\") est réparti sur PLUSIEURS pages, aucune commande perdue", () => {
+    const { totalPages } = buildHelpSpec("g1", owner, "configurable", owner.id, 0);
+    assert.ok(totalPages > 1, "le palier dense doit avoir besoin de plusieurs pages");
     const vues = [];
     for (let page = 0; page < totalPages; page++) {
-      for (const carte of spec(owner, "securite", page).cartes) vues.push(...carte.items.map((i) => i.nom));
+      for (const carte of spec(owner, "configurable", page).cartes) vues.push(...carte.items.map((i) => i.nom));
     }
     assert.strictEqual(new Set(vues).size, vues.length, "une commande ne doit pas apparaître sur deux pages");
+
+    // Aucune commande de Sécurité ne doit se perdre entre deux pages. On les
+    // cherche dans TOUS les paliers : `&allbots` exige le rang sys et vit donc
+    // dans « Commandes sys », pas avec le reste de son thème — c'est
+    // précisément ce que la navigation par palier change.
+    const toutesLesPages = [];
+    for (const palier of PALIERS) {
+      const total = buildHelpSpec("g1", owner, palier, owner.id, 0).totalPages;
+      for (let p = 0; p < total; p++) {
+        for (const carte of spec(owner, palier, p).cartes) toutesLesPages.push(...carte.items.map((i) => i.nom));
+      }
+    }
     const attenduesSecurite = CATEGORIES.find((c) => c.key === "securite").commands.filter((cmd) => isImplemented(cmd)).map((cmd) => identityOf(cmd));
-    const manquantes = [...new Set(attenduesSecurite)].filter((id) => !vues.some((v) => v.startsWith(`&${id}`)));
+    const manquantes = [...new Set(attenduesSecurite)].filter((id) => !toutesLesPages.some((v) => v.startsWith(`&${id}`)));
     assert.deepStrictEqual(manquantes, [], `commandes de Sécurité jamais affichées : ${manquantes.join(", ")}`);
   });
 
   await cas("chaque page se répartit en colonnes — la grille que Discord ne sait pas faire en texte", () => {
-    // Deux colonnes et non trois : Discord réduit l'image à ~500 px de large,
-    // et trois colonnes y rendaient le texte illisible sans zoomer.
-    const cartes = spec(owner, "securite", 0).cartes;
-    assert.strictEqual(cartes.length, 2, `${cartes.length} colonnes au lieu de 2`);
+    // La grille reste large de DEUX colonnes : Discord réduit l'image à
+    // ~500 px, et trois colonnes y rendaient le texte illisible sans zoomer.
+    // Une page peut en revanche empiler plusieurs rangées de deux, depuis que
+    // la pagination compte les lignes et non les colonnes.
+    const cartes = spec(owner, "configurable", 0).cartes;
+    assert.ok(cartes.length >= 2, `${cartes.length} colonne(s) : la page doit être une grille, pas une liste`);
     for (const carte of cartes) {
       assert.ok(carte.items.length, `la colonne "${carte.titre}" ne doit pas être vide`);
     }
   });
 
   await cas("les libellés restent courts pour ne pas être tronqués à l'affichage", () => {
-    for (const cat of CATEGORIES) {
-      const total = buildHelpSpec("g1", owner, cat.key, owner.id, 0).totalPages;
+    for (const palier of PALIERS) {
+      const total = buildHelpSpec("g1", owner, palier, owner.id, 0).totalPages;
       for (let page = 0; page < total; page++) {
-        for (const carte of spec(owner, cat.key, page).cartes) {
+        for (const carte of spec(owner, palier, page).cartes) {
           for (const item of carte.items) {
             assert.ok(item.nom.length <= 46, `"${item.nom}" (${item.nom.length}) sera coupé`);
           }
@@ -545,11 +621,11 @@ function menuNavigation(json) {
     }
   });
 
-  await cas("un menu de pagination dédié apparaît sur la catégorie dense, avec \"Page suivante\"", () => {
-    const json = buildHelpPanel("g1", owner, "securite", owner.id, 0).components[0].toJSON();
+  await cas("un menu de pagination dédié apparaît sur le palier dense, avec \"Page suivante\"", () => {
+    const json = buildHelpPanel("g1", owner, "configurable", owner.id, 0).components[0].toJSON();
     const pageRow = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.startsWith("help_page:"));
-    assert.ok(pageRow, "la catégorie dense doit proposer un menu de pagination");
-    assert.strictEqual(pageRow.components[0].custom_id, `help_page:${owner.id}:securite`);
+    assert.ok(pageRow, "le palier dense doit proposer un menu de pagination");
+    assert.strictEqual(pageRow.components[0].custom_id, `help_page:${owner.id}:configurable`);
     assert.ok(pageRow.components[0].options.some((o) => o.label === "Page suivante"));
     assert.ok(!pageRow.components[0].options.some((o) => o.label === "Page précédente"), "page 0 : pas de \"page précédente\"");
   });
@@ -560,8 +636,8 @@ function menuNavigation(json) {
   });
 
   await cas("cliquer \"Page suivante\" affiche bien la suite des commandes, sans jamais créer de nouveau message", async () => {
-    const page0 = spec(owner, "securite", 0).cartes.flatMap((c) => c.items.map((i) => i.nom));
-    const page1 = spec(owner, "securite", 1).cartes.flatMap((c) => c.items.map((i) => i.nom));
+    const page0 = spec(owner, "configurable", 0).cartes.flatMap((c) => c.items.map((i) => i.nom));
+    const page1 = spec(owner, "configurable", 1).cartes.flatMap((c) => c.items.map((i) => i.nom));
     assert.notDeepStrictEqual(page1, page0, "la page 1 doit montrer d'autres commandes que la page 0");
 
     const interaction = {
@@ -569,7 +645,7 @@ function menuNavigation(json) {
       member: owner,
       user: { id: owner.id },
       values: ["1"],
-      customId: `help_page:${owner.id}:securite`,
+      customId: `help_page:${owner.id}:configurable`,
       replies: [],
       updated: null,
       reply(p) {

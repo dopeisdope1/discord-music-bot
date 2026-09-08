@@ -21,6 +21,7 @@ const { botProfileHandlers } = require("./botProfileCommands");
 const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
+const familyHelp = require("./familyHelp");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
@@ -638,6 +639,21 @@ async function handleMusicTextCommand(client, message) {
       const form = commandForms.FORMS[bareFormKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {
         return message.reply(commandForms.buildFormCard(bareFormKey, message.member));
+      }
+    }
+
+    // Tapée toute seule sans pouvoir tourner ainsi (`&giveaway`, qui n'existe
+    // qu'en `giveaway start`/`giveaway reroll`), la commande rappelle ses
+    // variantes au lieu de ne rien répondre du tout. Placé APRÈS la carte de
+    // formulaire : quand une commande en a une, c'est elle qui prime.
+    if (modArgs.length === 0) {
+      const rappel = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id);
+      if (rappel) {
+        return message.reply(rappel).catch(async (err) => {
+          console.error("[familyHelp] envoi refusé, repli en texte :", err);
+          const texte = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id, { sansImage: true });
+          return texte ? message.reply(texte).catch(() => {}) : undefined;
+        });
       }
     }
 

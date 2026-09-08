@@ -212,6 +212,12 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 // gris de tracé pour les liserés et les titres des images, de sorte que le
 // rendu reste lisible sans rien colorer.
 const TEINTE_NEUTRE = "#d0d0d0";
+
+// Commandes listées nommément sur la fiche d'un rôle. Un rôle très doté en
+// débloque plus de cent : les dessiner toutes ferait une image de plusieurs
+// milliers de pixels de haut, où plus rien ne se lit. Le compte exact reste
+// affiché juste au-dessus, et &perms donne la liste complète.
+const MAX_COMMANDES_AFFICHEES = 27;
 const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
 // Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Vocaux
@@ -394,16 +400,32 @@ function sectionBody(section, guild, member, state) {
     // catégorie ne dit pas CE que le rôle peut faire. L'ancien bouton "Voir
     // les commandes débloquées" renvoyait la liste dans un message éphémère,
     // à côté du panneau au lieu d'être dedans.
+    //
+    // UNE LIGNE PAR COMMANDE, et non plus toutes collées en une seule ligne de
+    // virgules : c'est ce qui les fait atterrir dans la carte « Commandes
+    // débloquées » du tableau de bord (utils/sectionDashboard.js range chaque
+    // ligne citée comme une entrée, et ouvre une carte « (suite) » au-delà de
+    // neuf). Collées, elles formaient une phrase unique rejetée en bas d'écran
+    // et tronquée par le moteur de rendu.
+    const prefixeCommandes = getPrefixes(guildId).musicMod;
     const commands = commandsForKeys(granted);
     lines.push("", `**Commandes débloquées (${commands.length})** :`);
-    lines.push(commands.length ? commands.map((c) => `\`${c}\``).join(", ") : "*aucune*");
+    if (!commands.length) {
+      lines.push("> *aucune*");
+    } else {
+      for (const c of commands.slice(0, MAX_COMMANDES_AFFICHEES)) lines.push(`> \`${prefixeCommandes}${c}\``);
+      const reste = commands.length - MAX_COMMANDES_AFFICHEES;
+      if (reste > 0) lines.push(`> +${reste} autre${reste > 1 ? "s" : ""}`);
+    }
     // Une clé accordée peut donner accès à une rubrique du panel plutôt
     // qu'à une commande tapée — sans cette section, "0 commande" donnait
     // l'impression fausse que rien n'était accordé du tout.
     const autres = nonCommandGrants(granted);
     if (autres.length) {
       lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
-      lines.push(autres.map((l) => `\`${l}\``).join(", "));
+      for (const l of autres.slice(0, MAX_COMMANDES_AFFICHEES)) lines.push(`> ${l}`);
+      const resteAutres = autres.length - MAX_COMMANDES_AFFICHEES;
+      if (resteAutres > 0) lines.push(`> +${resteAutres} autre${resteAutres > 1 ? "s" : ""}`);
     }
 
     // Les membres du rôle, eux aussi dans l'image plutôt que dans un message

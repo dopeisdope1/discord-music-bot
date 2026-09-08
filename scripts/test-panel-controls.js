@@ -27,6 +27,7 @@ const { ACCENT_COLOR } = require("../utils/helpPanel");
 const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("../utils/permissions/store");
+const permCatalog = require("../utils/permissions/catalog");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -266,6 +267,38 @@ function actionsDe(json) {
     assert.ok(texte.includes("Commandes débloquées"), texte);
     assert.ok(texte.includes("vc") || texte.includes("stats"), `attendu vc/stats (server.stats.view) : ${texte}`);
     assert.ok(!actionsDe(buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON()).some((a) => /permshowcmds|permhidecmds/.test(a.custom_id)), "plus de bascule Voir/Masquer");
+  });
+
+  await cas("elles occupent leur PROPRE carte, une commande par ligne — plus une phrase en bas d'écran", () => {
+    // Demande explicite : « quand on donne des permissions à un rôle je veux
+    // que dans le dashboard ça écrive dans la case Commandes débloquées, pas
+    // tout en bas ». Collées en une seule ligne de virgules, elles formaient
+    // une phrase que le moteur de rendu tronquait au premier tiers.
+    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: roleId });
+    const carte = spec.cartes.find((c) => (c.titre || "").startsWith("Commandes débloquées"));
+    assert.ok(carte, `aucune carte dédiée : ${spec.cartes.map((c) => c.titre).join(" | ")}`);
+    assert.ok(carte.items.length, "la carte ne doit pas être vide");
+    for (const item of carte.items) {
+      // Chaque entrée est UNE commande, avec son vrai préfixe et sans liste.
+      assert.ok(/^&\S/.test(item.nom) || /^\+\d+ autres?$/.test(item.nom), `"${item.nom}" n'est pas une commande seule`);
+      assert.ok(!item.nom.includes(","), `"${item.nom}" contient encore une liste collée`);
+    }
+    // Et elles ne traînent plus dans le pied de l'image.
+    assert.ok(!(spec.pied || "").includes("&"), `le pied ne doit plus porter les commandes : ${spec.pied}`);
+  });
+
+  await cas("un rôle très doté n'étire pas l'image à l'infini — le compte exact reste annoncé", () => {
+    const roleGros = "role-gros";
+    guild.roles.cache.set(roleGros, { id: roleGros, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
+    // Toutes les clés du catalogue d'un coup : le pire cas réel.
+    permStore.setRoleGrants("g1", roleGros, permCatalog.byCategory().flatMap((g) => g.permissions.map((p) => p.key)));
+    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: roleGros });
+    const lignes = spec.cartes.filter((c) => (c.titre || "").startsWith("Commandes débloquées")).flatMap((c) => c.items);
+    assert.ok(lignes.length <= 28, `${lignes.length} lignes dessinées — l'image deviendrait illisible`);
+    const annonce = spec.cartes.find((c) => (c.titre || "").startsWith("Commandes débloquées")).titre;
+    const total = parseInt(/\((\d+)\)/.exec(annonce)[1], 10);
+    assert.ok(total > lignes.length, `le compte annoncé (${total}) doit être le VRAI total, pas le nombre affiché`);
+    assert.ok(lignes.some((i) => /^\+\d+ autres?$/.test(i.nom)), `le reste doit être annoncé : ${lignes.map((i) => i.nom).join(" | ")}`);
   });
 
   await cas("\"Voir les membres\" affiche la liste DANS l'écran, pas dans un message à côté", async () => {
