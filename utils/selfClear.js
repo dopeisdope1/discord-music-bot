@@ -19,24 +19,28 @@ const WINDOW_MS = 25 * 60_000;
 const limiter = createRateLimiter(MAX_USES, WINDOW_MS);
 
 /**
- * Messages à effacer : ceux de la personne qui tape, PLUS tous ceux du bot
- * présents dans le lot.
+ * Messages à effacer : UNIQUEMENT ceux de la personne qui tape.
  *
- * Demande explicite, maintenue après avoir été discutée : "enlève tous les
- * messages du bot". Ce déclencheur n'exige aucune permission, donc n'importe
- * qui peut ainsi supprimer une carte de giveaway en cours, un panneau de
- * tickets ou le lecteur de musique. C'est assumé — le quota (2 usages par
- * 25 minutes, voir plus bas) est le seul garde-fou.
+ * Les messages du bot étaient emportés eux aussi, sur demande explicite. Le
+ * choix a été inversé — également sur demande — et il referme au passage un
+ * vrai trou : le déclencheur n'exige AUCUNE permission, si bien que n'importe
+ * qui pouvait supprimer une carte de giveaway en cours, un panneau de tickets
+ * ou le lecteur de musique, sans laisser de trace de modération.
  *
  * Le message déclencheur lui-même part avec, puisqu'il appartient à la
- * personne qui l'a tapé.
+ * personne qui l'a tapé. Les confirmations du bot (« Nettoyage en cours… »)
+ * ne restent pas pour autant : elles s'auto-suppriment au bout de 15 s, sans
+ * dépendre de ce balayage.
+ *
+ * `botId` reste dans la signature : les appelants le passent déjà, et son
+ * absence de tout effet est justement ce que vérifient les tests.
  *
  * @param {import('discord.js').Message[]} messages lot récupéré dans le salon
  * @param {string} authorId la personne qui a tapé le déclencheur
- * @param {string|undefined} botId le bot lui-même
+ * @param {string|undefined} [botId] ignoré — voir ci-dessus
  */
 function collectOwnConversation(messages, authorId, botId) {
-  return messages.filter((m) => m.author.id === authorId || (botId && m.author.id === botId));
+  return messages.filter((m) => m.author.id === authorId);
 }
 
 /**

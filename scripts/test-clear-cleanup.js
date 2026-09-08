@@ -54,25 +54,24 @@ const msg = (id, authorId, referenceId = null) => ({
 (async () => {
   console.log("`uo clear` — quels messages sont emportés :");
 
-  await cas("mes messages et TOUS ceux du bot", () => {
+  await cas("MES messages, et eux seuls", () => {
     const salon = [msg("m1", MOI), msg("r1", BOT, "m1"), msg("carte-giveaway", BOT), msg("m2", MOI)];
     const pris = collectOwnConversation(salon, MOI, BOT).map((m) => m.id);
-    assert.deepStrictEqual(pris.sort(), ["carte-giveaway", "m1", "m2", "r1"]);
+    assert.deepStrictEqual(pris.sort(), ["m1", "m2"]);
   });
 
-  await cas("une carte du bot qui ne répond à personne part aussi", () => {
-    // Demande explicite, maintenue après discussion : "enlève tous les
-    // messages du bot". Une carte de giveaway ou un panneau de tickets en
-    // cours est donc emporté, par qui que ce soit — le quota est le seul
-    // garde-fou. Ce test existe pour que ce soit un choix visible, pas un
-    // effet de bord découvert un jour en production.
+  await cas("une carte du bot n'est PLUS emportée", () => {
+    // Le déclencheur n'exige AUCUNE permission : tant que les messages du bot
+    // partaient avec, n'importe qui pouvait supprimer un giveaway en cours ou
+    // un panneau de tickets sans laisser de trace. Ce test garde la porte
+    // fermée.
     const salon = [msg("carte-giveaway", BOT), msg("panneau-tickets", BOT)];
-    assert.strictEqual(collectOwnConversation(salon, MOI, BOT).length, 2);
+    assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT), []);
   });
 
-  await cas("les réponses du bot adressées à quelqu'un d'autre partent aussi", () => {
-    const salon = [msg("son-message", AUTRE), msg("sa-reponse", BOT, "son-message")];
-    assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["sa-reponse"]);
+  await cas("une réponse du bot qui m'est adressée reste elle aussi", () => {
+    const salon = [msg("mon-message", MOI), msg("sa-reponse", BOT, "mon-message")];
+    assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["mon-message"]);
   });
 
   await cas("PAS les messages des autres membres — la seule limite qui reste", () => {
@@ -85,14 +84,20 @@ const msg = (id, authorId, referenceId = null) => ({
     assert.deepStrictEqual(collectOwnConversation(salon, MOI, BOT).map((m) => m.id), ["le-uo-clear"]);
   });
 
-  await cas("sans bot identifiable, on se limite à mes messages", () => {
+  await cas("l'identifiant du bot ne change plus rien au résultat", () => {
+    // Il reste dans la signature (les appelants le passent) mais n'a plus
+    // aucun effet : le vérifier évite qu'un futur remaniement le réintroduise
+    // discrètement dans le filtre.
     const salon = [msg("m1", MOI), msg("r1", BOT, "m1")];
-    assert.deepStrictEqual(collectOwnConversation(salon, MOI, undefined).map((m) => m.id), ["m1"]);
+    const avec = collectOwnConversation(salon, MOI, BOT).map((m) => m.id);
+    const sans = collectOwnConversation(salon, MOI, undefined).map((m) => m.id);
+    assert.deepStrictEqual(avec, ["m1"]);
+    assert.deepStrictEqual(avec, sans);
   });
 
   console.log("\n`uo clear` de bout en bout :");
 
-  await cas("le déclencheur emporte bien la conversation complète", async () => {
+  await cas("de bout en bout, SEULS mes messages sont supprimés", async () => {
     const salon = [msg("m1", MOI), msg("r1", BOT, "m1"), msg("carte", BOT), msg("autre", AUTRE)];
     const supprimes = [];
     const channel = {
@@ -111,8 +116,9 @@ const msg = (id, authorId, referenceId = null) => ({
       channel,
     };
     await handleSelfClear({ user: { id: BOT } }, declencheur);
-    assert.ok(supprimes.includes("m1") && supprimes.includes("r1"), supprimes.join(", "));
-    assert.ok(supprimes.includes("carte"), "tous les messages du bot partent, carte comprise");
+    assert.ok(supprimes.includes("m1"), `mes messages doivent partir : ${supprimes.join(", ")}`);
+    assert.ok(!supprimes.includes("r1"), "la réponse du bot devait rester");
+    assert.ok(!supprimes.includes("carte"), "une carte du bot devait rester");
     assert.ok(!supprimes.includes("autre"), "le message d'un autre membre devait rester");
   });
 
