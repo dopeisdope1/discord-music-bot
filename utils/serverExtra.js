@@ -14,6 +14,7 @@ const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
 const { requestConfirmation } = require("./serverAdminCommands");
+const { majSure } = require("./componentsV2");
 const tempRoleStore = require("./tempRoleStore");
 const autoReactStore = require("./autoReactStore");
 
@@ -274,7 +275,12 @@ async function unbanall(client, message) {
         channelId: interaction.channel?.id || null,
         extra: { count },
       });
-      await interaction.update({ embeds: [buildStatusEmbed("success", `**${count}** membre(s) débanni(s).`)], components: [] });
+      // `majSure` et non `interaction.update` : la confirmation est affichée en
+      // Components V2 dès qu'elle porte une carte dessinée, et Discord refuse
+      // alors un embed sur le même message (« MESSAGE_CANNOT_USE_LEGACY_FIELDS
+      // _WITH_COMPONENTS_V2 »). Le clic restait sans réponse, alors que les
+      // débannissements avaient bien eu lieu.
+      await majSure(interaction, { embeds: [buildStatusEmbed("success", `**${count}** membre(s) débanni(s).`)], components: [] });
     },
   });
 }

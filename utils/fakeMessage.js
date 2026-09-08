@@ -1,4 +1,4 @@
-const { Collection, MessageFlags, ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = require("discord.js");
+const { Collection, MessageFlags } = require("discord.js");
 
 // Interactions dont la réponse doit REMPLACER le message d'origine au lieu
 // d'ouvrir un message éphémère à côté. Posé par utils/commandForms.js juste
@@ -25,20 +25,12 @@ function aEteRemplace(interaction) {
   return DEJA_REMPLACE.has(interaction);
 }
 
-/**
- * Une carte d'action est un simple PNG joint. Pour remplacer un message
- * Components V2 — la carte de formulaire en est un — il faut la présenter
- * elle-même en Components V2 : sur un tel message tout l'affichage passe par
- * des composants, une pièce jointe seule ne s'y afficherait pas.
- */
-function enConteneurV2(payload) {
-  if (!payload?.files?.length || payload.components?.length) return payload;
-  const nom = payload.files[0].name;
-  const container = new ContainerBuilder()
-    .setAccentColor(0x2c2f5c)
-    .addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${nom}`)));
-  return { ...payload, flags: MessageFlags.IsComponentsV2, components: [container] };
-}
+// La conversion vit dans utils/componentsV2.js : elle sert aussi aux boutons
+// de confirmation, et la version locale ne savait traiter QUE les réponses à
+// pièce jointe. Toutes celles à embed — la grande majorité des commandes —
+// partaient telles quelles et Discord les refusait, si bien que le résultat ne
+// remplaçait jamais la carte et repartait en éphémère.
+const { enConteneurV2 } = require("./componentsV2");
 
 // Adaptateur UNIQUE interaction -> "message" pour tout le bot : &panel
 // (utils/configPanel.js) et les cartes de formulaire (utils/commandForms.js)
