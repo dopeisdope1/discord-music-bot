@@ -1649,7 +1649,7 @@ function buildFormCard(formKey, member) {
       .setLabel("Lancer")
       .setStyle(ButtonStyle.Success)
       .setDisabled(!form.ready(active));
-    if (form.emoji) launchButton.setEmoji(form.emoji);
+    if (form.emoji) launchButton;
     buttons.push(launchButton);
   }
   if (buttons.length) rows.push(new ActionRowBuilder().addComponents(...buttons));

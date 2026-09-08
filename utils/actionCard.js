@@ -6,7 +6,7 @@ const { AttachmentBuilder } = require("discord.js");
 // (utils/dashboardImage.js, mêmes polices déjà enregistrées par ce module —
 // d'où le require ci-dessous, qui n'est pas décoratif : il déclenche
 // l'enregistrement des polices Chakra Petch).
-require("./dashboardImage");
+const { ecrire, largeur } = require("./dashboardImage");
 
 // Mêmes gris purs et mêmes contrastes que le tableau de bord
 // (utils/dashboardImage.js) : les deux images se croisent dans le même salon,
@@ -55,17 +55,17 @@ function cheminArrondi(ctx, x, y, l, h, r) {
 }
 
 function tronquer(ctx, texte, largeurMax) {
-  if (ctx.measureText(texte).width <= largeurMax) return texte;
+  if (largeur(ctx, texte) <= largeurMax) return texte;
   let coupe = texte;
-  while (coupe.length > 1 && ctx.measureText(`${coupe}…`).width > largeurMax) coupe = coupe.slice(0, -1);
+  while (coupe.length > 1 && largeur(ctx, `${coupe}…`) > largeurMax) coupe = coupe.slice(0, -1);
   return `${coupe.trimEnd()}…`;
 }
 
 function texteEspace(ctx, texte, x, y, espacement) {
   let curseur = x;
   for (const lettre of texte) {
-    ctx.fillText(lettre, curseur, y);
-    curseur += ctx.measureText(lettre).width + espacement;
+    ecrire(ctx, lettre, curseur, y);
+    curseur += largeur(ctx, lettre) + espacement;
   }
 }
 
@@ -196,7 +196,7 @@ function dessinerCarte(spec, image) {
     ctx.fillStyle = spec.couleur;
     ctx.textBaseline = "middle";
     const ini = initiales(spec.membre.nom);
-    ctx.fillText(ini, ax + AVATAR / 2 - ctx.measureText(ini).width / 2, ay + AVATAR / 2);
+    ecrire(ctx, ini, ax + AVATAR / 2 - largeur(ctx, ini) / 2, ay + AVATAR / 2);
   }
   ctx.restore();
   ctx.beginPath();
@@ -215,13 +215,13 @@ function dessinerCarte(spec, image) {
 
   ctx.font = "20px ChakraBold";
   ctx.fillStyle = THEME.texte;
-  ctx.fillText(tronquer(ctx, spec.membre.nom, dispo), tx, 80);
+  ecrire(ctx, tronquer(ctx, spec.membre.nom, dispo), tx, 80);
 
   let y = 118;
   if (spec.membre.sousTitre) {
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, spec.membre.sousTitre, dispo), tx, 102);
+    ecrire(ctx, tronquer(ctx, spec.membre.sousTitre, dispo), tx, 102);
     y = 132;
   }
 
@@ -229,7 +229,7 @@ function dessinerCarte(spec, image) {
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     const labelLarge = 92;
-    ctx.fillText(tronquer(ctx, ligne.label.toUpperCase(), labelLarge), tx, y);
+    ecrire(ctx, tronquer(ctx, ligne.label.toUpperCase(), labelLarge), tx, y);
 
     // Une ligne peut porter sa propre couleur (ex. la couleur réelle du rôle
     // attribué) : elle est alors précédée d'une pastille de cette teinte.
@@ -243,14 +243,14 @@ function dessinerCarte(spec, image) {
     }
     ctx.font = "17px ChakraBold";
     ctx.fillStyle = THEME.texte;
-    ctx.fillText(tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
+    ecrire(ctx, tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
     y += 34;
   }
 
   if (spec.pied) {
     ctx.font = "14px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, spec.pied, dispo), tx, hauteur - MARGE + 4);
+    ecrire(ctx, tronquer(ctx, spec.pied, dispo), tx, hauteur - MARGE + 4);
   }
 
   return canvas.toBuffer("image/png");
@@ -344,7 +344,7 @@ function rendreCarteConfirmation(spec) {
   for (const ligne of lignes) {
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, ligne.label.toUpperCase(), 165), MARGE, y);
+    ecrire(ctx, tronquer(ctx, ligne.label.toUpperCase(), 165), MARGE, y);
     let vx = MARGE + 178;
     if (ligne.couleur) {
       ctx.beginPath();
@@ -355,14 +355,14 @@ function rendreCarteConfirmation(spec) {
     }
     ctx.font = "17px ChakraBold";
     ctx.fillStyle = THEME.texte;
-    ctx.fillText(tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
+    ecrire(ctx, tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
     y += 32;
   }
 
   if (spec.avertissement) {
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = couleur;
-    ctx.fillText(tronquer(ctx, spec.avertissement, LARGEUR - MARGE * 2), MARGE, y + 6);
+    ecrire(ctx, tronquer(ctx, spec.avertissement, LARGEUR - MARGE * 2), MARGE, y + 6);
   }
 
   return canvas.toBuffer("image/png");

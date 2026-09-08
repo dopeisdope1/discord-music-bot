@@ -235,36 +235,35 @@ const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 // ci-dessous en compte moins, et le test scripts/test-panel-rubriques.js
 // échoue si elle venait à dépasser.
 const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Statut du bot et alertes de sécurité", emoji: EMOJI.MEMBERS, sections: ["home"] },
+  { key: "accueil", label: "Accueil", description: "Statut du bot et alertes de sécurité", sections: ["home"] },
   {
     key: "securite",
     label: "Sécurité",
     description: "Anti-spam, anti-nuke, mots interdits, rôle de mute",
-    emoji: EMOJI.LOCK,
     sections: ["securityOverview", "protection", "guard", "mute"],
   },
-  { key: "logs", label: "Logs", description: "Salon de logs par catégorie", emoji: EMOJI.ONLINE, sections: ["logs"] },
-  { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", emoji: EMOJI.MAIL, sections: ["welcome"] },
-  { key: "depart", label: "Départ", description: "Message quand un membre s'en va", emoji: EMOJI.MAIL, sections: ["leave"] },
-  { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", emoji: EMOJI.VOICE, sections: ["voice"] },
-  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", emoji: EMOJI.PENCIL, sections: ["permissions"] },
-  { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", emoji: EMOJI.PENCIL, sections: ["autorole"] },
-  { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", emoji: EMOJI.CHECK, sections: ["verification"] },
-  { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", emoji: EMOJI.TICKET, sections: ["tickets"] },
-  { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", emoji: EMOJI.BOING, sections: ["giveaways"] },
-  { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", emoji: EMOJI.RULES, sections: ["polls"] },
-  { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", emoji: EMOJI.MAIL, sections: ["embedBuilder"] },
-  { key: "musique", label: "Musique", description: "Lecteur en cours et favoris", emoji: EMOJI.VOICE, sections: ["musicPlayer"] },
-  { key: "historique", label: "Historique", description: "Rechercher dans l'historique de modération", emoji: EMOJI.INFO, sections: ["history"] },
-  { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", emoji: EMOJI.ONLINE, sections: ["stats"] },
-  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", emoji: EMOJI.INFO, sections: ["diagnostics"] },
-  { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", emoji: EMOJI.ARROW, sections: ["backups"] },
-  { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", emoji: EMOJI.DISCORD, sections: ["botProfile"] },
-  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", emoji: EMOJI.DISCORD, sections: ["prefixes"] },
-  { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", emoji: EMOJI.STAFF, sections: ["access"] },
-  { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", emoji: EMOJI.CROWN, sections: ["sys"] },
-  { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", emoji: EMOJI.BAN, sections: ["banall"] },
-  { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", emoji: EMOJI.STAFF_AWAY, sections: ["moderation"] },
+  { key: "logs", label: "Logs", description: "Salon de logs par catégorie", sections: ["logs"] },
+  { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
+  { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
+  { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", sections: ["voice"] },
+  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions"] },
+  { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
+  { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
+  { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", sections: ["tickets"] },
+  { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", sections: ["giveaways"] },
+  { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", sections: ["polls"] },
+  { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", sections: ["embedBuilder"] },
+  { key: "musique", label: "Musique", description: "Lecteur en cours et favoris", sections: ["musicPlayer"] },
+  { key: "historique", label: "Historique", description: "Rechercher dans l'historique de modération", sections: ["history"] },
+  { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", sections: ["stats"] },
+  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", sections: ["diagnostics"] },
+  { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", sections: ["backups"] },
+  { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", sections: ["botProfile"] },
+  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", sections: ["prefixes"] },
+  { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", sections: ["access"] },
+  { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
+  { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
+  { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", sections: ["moderation"] },
 ];
 
 
@@ -298,7 +297,6 @@ function buildNav(current, member, isOwner) {
         new StringSelectMenuOptionBuilder()
           .setLabel(f.label)
           .setValue(f.key)
-          .setEmoji(f.emoji)
           // Discord plafonne la description d'une option à 100 caractères.
           .setDescription(f.description.slice(0, 100))
           .setDefault(f.key === famille.key)
@@ -948,11 +946,10 @@ function regrouperBoutonsEnMenu(container) {
     .setCustomId(`${ID}:action`)
     .setPlaceholder("Choisir une action")
     .addOptions(
-      boutons.slice(0, 25).map((b) => {
-        const option = new StringSelectMenuOptionBuilder().setLabel(b.label || "Action").setValue(b.custom_id);
-        if (b.emoji) option.setEmoji(b.emoji);
-        return option;
-      })
+      // L'emoji du bouton d'origine n'est PAS repris : les libellés suffisent,
+      // et une colonne d'emojis dans un menu déroulant fait exactement le
+      // bruit visuel qu'on cherchait à supprimer.
+      boutons.slice(0, 25).map((b) => new StringSelectMenuOptionBuilder().setLabel(b.label || "Action").setValue(b.custom_id))
     );
   enfants.splice(premiereRangee, 0, new ActionRowBuilder().addComponents(menu));
 }
@@ -1056,7 +1053,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     if (peutModifier) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success).setEmoji(EMOJI.PENCIL)
+          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success)
         )
       );
     }
@@ -1072,7 +1069,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setCustomId(`${ID}:permrolereset`)
           .setLabel("Choisir un autre rôle")
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji(EMOJI.PENCIL),
+          ,
       ];
       if (can(member, "server.members.list")) {
         boutons.push(
@@ -1081,12 +1078,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
                 .setCustomId(`${ID}:rolemembershide:${state.permissionsRoleId}`)
                 .setLabel("Masquer les membres")
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji(EMOJI.MEMBERS)
             : new ButtonBuilder()
                 .setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`)
                 .setLabel("Voir les membres")
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji(EMOJI.MEMBERS)
         );
       }
       if (peutModifier) {
@@ -1096,19 +1091,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
                 .setCustomId(`${ID}:roleexclusiveoff:${state.permissionsRoleId}`)
                 .setLabel("Retirer de l'exclusif")
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji(EMOJI.CROSS)
             : new ButtonBuilder()
                 .setCustomId(`${ID}:roleexclusive:${state.permissionsRoleId}`)
                 .setLabel("Ajouter à l'exclusif")
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji(EMOJI.CHECK)
         );
         boutons.push(
           new ButtonBuilder()
             .setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`)
             .setLabel("Supprimer ce rôle")
             .setStyle(ButtonStyle.Danger)
-            .setEmoji(EMOJI.DELETE)
         );
       }
       container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
@@ -1579,7 +1571,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setCustomId(`${ID}:ticketownerclose:${config.ownerCanClose ? "off" : "on"}`)
           .setLabel(config.ownerCanClose ? "Interdire au demandeur de fermer" : "Autoriser le demandeur à fermer")
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji(config.ownerCanClose ? EMOJI.CROSS : EMOJI.CHECK)
       )
     );
   } else if (meta.key === "voice") {
@@ -1636,7 +1627,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "giveaways") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success).setEmoji(EMOJI.CROWN)
+        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success)
       )
     );
     const active = giveawayStore
@@ -1668,12 +1659,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
               .setCustomId(`${ID}:giveawayend:${state.giveawaySelected}`)
               .setLabel("Terminer maintenant")
               .setStyle(ButtonStyle.Danger)
-              .setEmoji(EMOJI.LOCK),
+              ,
             new ButtonBuilder()
               .setCustomId(`${ID}:giveawayreroll:${state.giveawaySelected}`)
               .setLabel("Retirer un gagnant (reroll)")
               .setStyle(ButtonStyle.Secondary)
-              .setEmoji(EMOJI.ARROW)
           )
         );
       }
@@ -1681,13 +1671,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "embedBuilder") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
+        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "polls") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
+        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "musicPlayer") {
@@ -1700,14 +1690,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     // sur CE message précis (il l'édite en retour) — les dupliquer dans le
     // panel désynchroniserait les deux affichages.
     if (player?.queue?.current && npMessage) {
-      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url).setEmoji(EMOJI.VOICE));
+      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url));
     }
-    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROWN));
+    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
   } else if (meta.key === "backups") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success).setEmoji(EMOJI.CHECK)
+        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success)
       )
     );
     const saved = backupStore.listBackups().map((b) => b.name);
@@ -1732,7 +1722,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             .setCustomId(`${ID}:backuprestore:${state.backupSelected}`)
             .setLabel("Restaurer (double confirmation)")
             .setStyle(ButtonStyle.Danger)
-            .setEmoji(EMOJI.ARROW),
+            ,
         ];
         if (!isPresetOnly) {
           boutons.push(
@@ -1740,7 +1730,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
               .setCustomId(`${ID}:backupdelete:${state.backupSelected}`)
               .setLabel("Supprimer")
               .setStyle(ButtonStyle.Secondary)
-              .setEmoji(EMOJI.DELETE)
           );
         }
         container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
@@ -1761,7 +1750,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.PENCIL)
+        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
       )
     );
   }

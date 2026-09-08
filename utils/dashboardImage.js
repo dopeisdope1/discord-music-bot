@@ -18,6 +18,79 @@ const FONTS = path.join(__dirname, "..", "assets", "fonts");
 GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-Bold.ttf"), "ChakraBold");
 GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-SemiBold.ttf"), "ChakraSemi");
 GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-Regular.ttf"), "ChakraRegular");
+// Rajdhani (OFL, même esprit technique) sert UNIQUEMENT d'esperluette de
+// secours — voir ecrire() plus bas.
+// Deux graisses, appariées à celles de Chakra Petch : une esperluette maigre
+// à côté d'un texte gras se verrait autant que le « 8 » qu'elle remplace.
+GlobalFonts.registerFromPath(path.join(FONTS, "Rajdhani-Bold.ttf"), "AmpBold");
+GlobalFonts.registerFromPath(path.join(FONTS, "Rajdhani-Medium.ttf"), "AmpRegular");
+
+// Chakra Petch dessine l'esperluette comme un « 8 » barré. Le préfixe du bot
+// ÉTANT « & », tout ce que l'image annonçait se lisait « 8kick », « 8ban »,
+// « Préfixe : 8 » — soit un préfixe qui ne ressemblait pas à celui qu'on tape.
+//
+// On emprunte donc CE SEUL caractère à une police de secours, sans toucher au
+// reste : changer de police pour tout le tableau de bord aurait changé son
+// allure pour corriger un glyphe.
+const CARACTERE_EMPRUNTE = "&";
+const SECOURS_PAR_POLICE = { ChakraBold: "AmpBold", ChakraSemi: "AmpBold", ChakraRegular: "AmpRegular" };
+
+/** La même déclaration de police, avec la famille de secours. `null` si la police courante n'en a pas. */
+function policeDeSecours(font) {
+  const declaration = String(font || "").trim();
+  const famille = declaration.split(/\s+/).pop();
+  const secours = SECOURS_PAR_POLICE[famille];
+  return secours ? `${declaration.slice(0, declaration.length - famille.length)}${secours}` : null;
+}
+
+/**
+ * Découpe un texte en tronçons, en isolant les caractères empruntés.
+ * @returns {{texte: string, emprunte: boolean}[]}
+ */
+function troncons(texte) {
+  return String(texte ?? "")
+    .split(new RegExp(`(${CARACTERE_EMPRUNTE})`))
+    .filter(Boolean)
+    .map((t) => ({ texte: t, emprunte: t === CARACTERE_EMPRUNTE }));
+}
+
+/**
+ * `fillText` qui dessine l'esperluette dans la police de secours. À utiliser
+ * PARTOUT à la place de ctx.fillText : un seul appel oublié et le « 8 »
+ * réapparaît à cet endroit-là.
+ */
+function ecrire(ctx, texte, x, y) {
+  const t = String(texte ?? "");
+  const alternative = t.includes(CARACTERE_EMPRUNTE) ? policeDeSecours(ctx.font) : null;
+  if (!alternative) return ctx.fillText(t, x, y); // détour-ok
+  const origine = ctx.font;
+  let curseur = x;
+  for (const tronçon of troncons(t)) {
+    ctx.font = tronçon.emprunte ? alternative : origine;
+    ctx.fillText(tronçon.texte, curseur, y); // détour-ok
+    curseur += ctx.measureText(tronçon.texte).width; // détour-ok
+  }
+  ctx.font = origine;
+}
+
+/**
+ * `measureText(...).width` équivalent : la largeur réellement occupée une fois
+ * l'esperluette empruntée. Sans elle, la troncature et les centrages
+ * calculeraient sur une largeur qui n'est pas celle dessinée.
+ */
+function largeur(ctx, texte) {
+  const t = String(texte ?? "");
+  const alternative = t.includes(CARACTERE_EMPRUNTE) ? policeDeSecours(ctx.font) : null;
+  if (!alternative) return ctx.measureText(t).width; // détour-ok
+  const origine = ctx.font;
+  let total = 0;
+  for (const tronçon of troncons(t)) {
+    ctx.font = tronçon.emprunte ? alternative : origine;
+    total += ctx.measureText(tronçon.texte).width; // détour-ok
+  }
+  ctx.font = origine;
+  return total;
+}
 
 // Gris PURS, sans la moindre teinte : demande explicite, et les gris violacés
 // précédents se lisaient encore comme une couleur.
@@ -76,9 +149,9 @@ function cheminArrondi(ctx, x, y, l, h, r) {
 
 /** Coupe un texte à la largeur disponible, avec une ellipse s'il déborde. */
 function tronquer(ctx, texte, largeurMax) {
-  if (ctx.measureText(texte).width <= largeurMax) return texte;
+  if (largeur(ctx, texte) <= largeurMax) return texte;
   let coupe = texte;
-  while (coupe.length > 1 && ctx.measureText(`${coupe}…`).width > largeurMax) {
+  while (coupe.length > 1 && largeur(ctx, `${coupe}…`) > largeurMax) {
     coupe = coupe.slice(0, -1);
   }
   return `${coupe.trimEnd()}…`;
@@ -88,14 +161,14 @@ function tronquer(ctx, texte, largeurMax) {
 function texteEspace(ctx, texte, x, y, espacement) {
   let curseur = x;
   for (const lettre of texte) {
-    ctx.fillText(lettre, curseur, y);
-    curseur += ctx.measureText(lettre).width + espacement;
+    ecrire(ctx, lettre, curseur, y);
+    curseur += largeur(ctx, lettre) + espacement;
   }
   return curseur - x - espacement;
 }
 function largeurEspacee(ctx, texte, espacement) {
   let total = 0;
-  for (const lettre of texte) total += ctx.measureText(lettre).width + espacement;
+  for (const lettre of texte) total += largeur(ctx, lettre) + espacement;
   return total - espacement;
 }
 
@@ -159,13 +232,13 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
   if (carte.sousTitre) {
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 68);
+    ecrire(ctx, tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 68);
     ligneY += 24;
   }
   if (!carte.items.length) {
     ctx.font = "13px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    ctx.fillText(tronquer(ctx, carte.vide || "—", largeur - 36), x + 18, ligneY);
+    ecrire(ctx, tronquer(ctx, carte.vide || "—", largeur - 36), x + 18, ligneY);
     return hauteur;
   }
 
@@ -188,12 +261,12 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     const dispo = largeur - (texteX - x) - 16;
     ctx.font = "20px ChakraBold";
     ctx.fillStyle = THEME.texte;
-    ctx.fillText(tronquer(ctx, item.nom, dispo), texteX, ligneY - 8);
+    ecrire(ctx, tronquer(ctx, item.nom, dispo), texteX, ligneY - 8);
 
     if (item.description) {
       ctx.font = "16px ChakraRegular";
       ctx.fillStyle = THEME.texteDoux;
-      ctx.fillText(tronquer(ctx, item.description, dispo), texteX, ligneY + 12);
+      ecrire(ctx, tronquer(ctx, item.description, dispo), texteX, ligneY + 12);
     }
     ligneY += 50;
   }
@@ -259,7 +332,7 @@ function rendre(spec) {
 
   ctx.font = "17px ChakraRegular";
   ctx.fillStyle = THEME.texteDoux;
-  ctx.fillText(tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
+  ecrire(ctx, tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
 
   // Bandeau d'état et alertes de sécurité, DESSINÉS : en texte Discord, une
   // mention citée dans une alerte (« @everyone possède… ») sortait en
@@ -273,7 +346,7 @@ function rendre(spec) {
     ctx.fill();
     ctx.font = "16px ChakraRegular";
     ctx.fillStyle = THEME.texte;
-    ctx.fillText(tronquer(ctx, spec.banniere, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
+    ecrire(ctx, tronquer(ctx, spec.banniere, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
   for (const alerte of spec.alertes || []) {
     yEntete += 24;
@@ -285,7 +358,7 @@ function rendre(spec) {
     ctx.fill();
     ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteDoux;
-    ctx.fillText(tronquer(ctx, alerte.texte, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
+    ecrire(ctx, tronquer(ctx, alerte.texte, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
 
   let y = hauteurEntete;
@@ -314,7 +387,7 @@ function rendre(spec) {
   if (spec.legende?.length) {
     ctx.font = "14px ChakraRegular";
     const ESPACE = 24;
-    const largeurTotale = spec.legende.reduce((somme, e) => somme + 12 + 6 + ctx.measureText(e.texte).width + ESPACE, 0) - ESPACE;
+    const largeurTotale = spec.legende.reduce((somme, e) => somme + 12 + 6 + largeur(ctx, e.texte) + ESPACE, 0) - ESPACE;
     let lx = (LARGEUR - largeurTotale) / 2;
     for (const entree of spec.legende) {
       ctx.beginPath();
@@ -322,8 +395,8 @@ function rendre(spec) {
       ctx.fillStyle = entree.couleur;
       ctx.fill();
       ctx.fillStyle = THEME.texteDoux;
-      ctx.fillText(entree.texte, lx + 17, y + 6);
-      lx += 12 + 6 + ctx.measureText(entree.texte).width + ESPACE;
+      ecrire(ctx, entree.texte, lx + 17, y + 6);
+      lx += 12 + 6 + largeur(ctx, entree.texte) + ESPACE;
     }
     y += 26;
   }
@@ -331,8 +404,8 @@ function rendre(spec) {
   if (spec.pied) {
     ctx.font = "14px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
-    const l = ctx.measureText(spec.pied).width;
-    ctx.fillText(spec.pied, (LARGEUR - l) / 2, y + 6);
+    const l = largeur(ctx, spec.pied);
+    ecrire(ctx, spec.pied, (LARGEUR - l) / 2, y + 6);
   }
 
   return canvas.toBuffer("image/png");
@@ -445,4 +518,4 @@ function enTexte(spec, budget = BUDGET_TEXTE) {
   return lignes.join("\n");
 }
 
-module.exports = { rendre, rendreEnCache, resumer, enTexte, LARGEUR };
+module.exports = { rendre, rendreEnCache, resumer, enTexte, ecrire, largeur, LARGEUR };

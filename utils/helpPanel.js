@@ -49,7 +49,6 @@ const PALIERS = [
     cle: "public",
     titre: "Publiques",
     label: "Commandes publiques",
-    emoji: "🌐",
     description: "Utilisables par tout le monde, sans droit particulier",
     couleur: COULEUR_PAR_DEFAUT,
   },
@@ -57,7 +56,6 @@ const PALIERS = [
     cle: "configurable",
     titre: "Configurables",
     label: "Commandes configurables",
-    emoji: "🔧",
     description: "Accordées rôle par rôle depuis &panel > Permissions",
     couleur: COULEUR_PAR_DEFAUT,
   },
@@ -65,7 +63,6 @@ const PALIERS = [
     cle: "sys",
     titre: "Sys",
     label: "Commandes sys",
-    emoji: "🛡️",
     description: "Réservées au rang sys, jamais accordables par rôle",
     couleur: COULEUR_PAR_DEFAUT,
   },
@@ -300,14 +297,12 @@ function buildCategorySelect(availableTiers, current, authorId) {
     new StringSelectMenuOptionBuilder()
       .setLabel("Accueil")
       .setValue("home")
-      .setEmoji("🏠")
       .setDescription("Les trois paliers en un coup d'oeil")
       .setDefault(current === null),
     ...availableTiers.map((cle) =>
       new StringSelectMenuOptionBuilder()
         .setLabel(PALIER_PAR_CLE[cle].label)
         .setValue(cle)
-        .setEmoji(PALIER_PAR_CLE[cle].emoji)
         // Discord plafonne la description d'une option à 100 caractères.
         .setDescription(PALIER_PAR_CLE[cle].description.slice(0, 100))
         .setDefault(cle === current)
