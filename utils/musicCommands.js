@@ -22,6 +22,7 @@ const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
+const customCommands = require("./customCommands");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
@@ -452,6 +453,10 @@ const modHandlers = {
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,
+  // Commandes personnalisees du serveur (utils/customCommands.js).
+  addcmd: customCommands.customCommandHandlers.addcmd,
+  delcmd: customCommands.customCommandHandlers.delcmd,
+  listcmd: customCommands.customCommandHandlers.listcmd,
   // Alias stricts : la même fonction, pas une seconde version du même écran.
   // &avatar et &serverinfo avaient chacun leur propre implémentation, qui
   // affichait les mêmes informations autrement (et moins bien : &avatar ne
@@ -678,7 +683,17 @@ async function handleMusicTextCommand(client, message) {
 
     const handler = modHandlers[cmdLower];
     if (handler) return handler(client, message, modArgs);
-    return;
+
+    // DERNIER recours, une fois toutes les vraies commandes écartées : le mot
+    // est peut-être une commande personnalisée de ce serveur
+    // (utils/customCommands.js). L'ordre compte — placé plus haut, une
+    // commande personnalisée pourrait masquer une vraie commande du bot.
+    // Un mot inconnu, lui, reste sans réponse : le préfixe est partagé avec
+    // le CrowBot.
+    return customCommands.repondreSiPersonnalisee(message, cmdLower).then(
+      () => undefined,
+      (err) => console.error("[musicCommands] commande personnalisée :", err.message)
+    );
   }
 
   if (!content.startsWith(MAIN_PREFIX)) return;

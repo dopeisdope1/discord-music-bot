@@ -89,6 +89,7 @@ const PERMISSIONS = [
   },
   { key: "server.info.view", category: "server", label: "Voir les fiches d'info détaillées (&vocinfo, &user, &emoji)" },
   { key: "server.tools.use", category: "server", label: "Utiliser les outils annexes (&choose, &wiki, &search wiki)" },
+  { key: "server.customcommands.manage", category: "server", label: "Créer/supprimer des commandes personnalisées (&addcmd, &delcmd)" },
   { key: "server.security.scan", category: "server", label: "Lancer un audit de sécurité (&security scan)" },
 ];
 

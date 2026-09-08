@@ -950,6 +950,24 @@ const CATEGORIES = [
         description: "Tire une option au hasard parmi celles données",
       },
       {
+        name: "addcmd <nom> <réponse>",
+        prefix: "mod",
+        permission: "server.customcommands.manage",
+        description: "Crée une réponse toute faite, rappelable en tapant son nom (règles, liens, FAQ)",
+      },
+      {
+        name: "delcmd <nom>",
+        prefix: "mod",
+        permission: "server.customcommands.manage",
+        description: "Supprime une commande personnalisée",
+      },
+      {
+        name: "listcmd",
+        prefix: "mod",
+        permission: null,
+        description: "Liste les commandes personnalisées du serveur, les plus utilisées d'abord",
+      },
+      {
         name: "embed",
         prefix: "mod",
         permission: "server.channels.manage",
