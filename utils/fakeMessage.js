@@ -6,11 +6,19 @@ const { Collection, MessageFlags, ContainerBuilder, MediaGalleryBuilder, MediaGa
 // de formulaire — c'est le même geste, il mérite un seul message.
 // Un WeakSet plutôt qu'un champ ajouté sur l'interaction : rien n'est greffé
 // sur un objet de discord.js, et l'entrée disparaît avec l'interaction.
-const A_REMPLACER = new WeakSet();
+const A_REMPLACER = new WeakMap();
 const DEJA_REMPLACE = new WeakSet();
 
-function remplacerParLaReponse(interaction) {
-  A_REMPLACER.add(interaction);
+/**
+ * @param {import('discord.js').Interaction} interaction
+ * @param {(payload: object) => Promise<any>} [cible] comment appliquer la
+ *   réponse. Par défaut `editReply`, qui édite le message de l'interaction.
+ *   La saisie clavier en salon, elle, a DÉJÀ répondu (le message éphémère qui
+ *   demande d'écrire) : `editReply` modifierait cette invite au lieu de la
+ *   carte, d'où la possibilité de viser explicitement `message.edit`.
+ */
+function remplacerParLaReponse(interaction, cible) {
+  A_REMPLACER.set(interaction, cible || ((payload) => interaction.editReply(payload)));
 }
 /** Le message d'origine a-t-il déjà été remplacé par une réponse ? */
 function aEteRemplace(interaction) {
@@ -82,7 +90,7 @@ function fakeMessage(interaction, { channel, channels, user, role, roles: roleLi
       if (A_REMPLACER.has(interaction) && !DEJA_REMPLACE.has(interaction)) {
         DEJA_REMPLACE.add(interaction);
         try {
-          return await interaction.editReply({ ...enConteneurV2(payload), attachments: [] });
+          return await A_REMPLACER.get(interaction)({ ...enConteneurV2(payload), attachments: [] });
         } catch (err) {
           console.error(`[fakeMessage] remplacement impossible, repli en éphémère : ${err.message}`);
         }

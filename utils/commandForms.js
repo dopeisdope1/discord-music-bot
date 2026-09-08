@@ -1377,13 +1377,20 @@ const CONTAINER_BUDGET = 9;
 // chaque commande, la hiérarchie des rôles vérifiée juste avant d'agir, et la
 // journalisation dans l'historique de modération.
 //
-// Restent hors de l'automatisme les formulaires qui attendent une saisie
-// clavier OBLIGATOIRE : elle se termine dans le salon, hors du flux des
-// composants, et sans bouton la carte serait sans issue. Un champ facultatif
-// — la raison d'un bannissement, par exemple — ne doit pas retenir l'action,
-// sinon &ban afficherait encore un bouton alors que tout est déjà choisi.
+// Un formulaire part tout seul dès qu'il est complet — que le dernier champ
+// vienne d'un menu OU d'une saisie au clavier dans le salon. Le bouton
+// "Lancer" a donc disparu partout... sauf d'un cas : les formulaires qui sont
+// DÉJÀ complets sans qu'on remplisse quoi que ce soit (une commande sans
+// paramètre). Là, rien ne peut déclencher l'action, et sans bouton la carte
+// serait sans issue.
 function seLanceToutSeul(formKey, form) {
-  return !form.textFields?.some((champ) => champ.required !== false);
+  try {
+    return !form.ready({});
+  } catch {
+    // Un `ready` qui suppose un état non vide considère forcément qu'il
+    // manque quelque chose : le formulaire se lancera à ce moment-là.
+    return true;
+  }
 }
 
 /**
@@ -1729,6 +1736,20 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
 
   pendingTextCapture.delete(key);
   setFormState(interaction.user.id, formKey, { text });
+
+  // La saisie terminée, le formulaire est peut-être complet : dans ce cas
+  // l'action part sans attendre un clic sur "Lancer", exactement comme quand
+  // le dernier champ est choisi dans un menu. C'est ce qui manquait à
+  // `&role create` : le nom saisi, il fallait encore cliquer.
+  const etat = getFormState(interaction.user.id, formKey) || {};
+  if (form.ready(etat)) {
+    await channel.send(`<@${interaction.user.id}> C'est parti.`).catch(() => {});
+    // La cible du remplacement est la CARTE, pas la réponse de
+    // l'interaction : celle-ci est l'invite éphémère « écris dans le salon ».
+    remplacerParLaReponse(interaction, (payload) => interaction.message?.edit(payload));
+    return executerFormulaire(interaction, form, formKey, etat);
+  }
+
   await channel.send(`<@${interaction.user.id}> Champs enregistrés.`).catch(() => {});
   return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
 }

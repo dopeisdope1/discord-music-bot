@@ -137,14 +137,30 @@ const boutonsDe = (formKey) =>
     }
   });
 
-  await cas("un formulaire à saisie clavier garde son bouton — sa saisie se termine hors des composants", () => {
-    // Sans bouton, la carte serait sans issue : le texte est collecté dans le
-    // salon, pas par un composant qui pourrait déclencher le lancement.
-    const aTexte = Object.entries(commandForms.FORMS).find(([, f]) => f.textFields?.length);
-    assert.ok(aTexte, "au moins un formulaire doit encore collecter du texte");
-    commandForms.clearFormState("staff-1", aTexte[0]);
-    const labels = boutonsDe(aTexte[0]).map((b) => b.label);
-    assert.ok(labels.some((l) => l === "Lancer" || l === "Confirmer"), `${aTexte[0]} : ${labels.join(", ")}`);
+  await cas("un formulaire à saisie clavier n'a QUE de quoi saisir — plus de bouton Lancer", () => {
+    // La saisie terminée, l'action part toute seule : c'est ce qui manquait à
+    // `&role create`, où il fallait encore cliquer après avoir tapé le nom.
+    commandForms.clearFormState("staff-1", "role_create");
+    const labels = boutonsDe("role_create").map((b) => b.label);
+    assert.ok(labels.includes("Remplir dans le salon"), `il faut pouvoir saisir : ${labels.join(", ")}`);
+    assert.ok(!labels.includes("Lancer"), `plus de bouton Lancer : ${labels.join(", ")}`);
+  });
+
+  await cas("SEULE exception : un formulaire déjà complet sans rien remplir garde un bouton", () => {
+    // Une commande sans paramètre (&banlist, &mutelist...) n'a aucun champ à
+    // renseigner : rien ne pourrait déclencher l'action, la carte serait sans
+    // issue.
+    const sansParametre = Object.entries(commandForms.FORMS).find(([, f]) => {
+      try {
+        return f.ready({});
+      } catch {
+        return false;
+      }
+    });
+    assert.ok(sansParametre, "au moins un formulaire est complet dès l'ouverture");
+    commandForms.clearFormState("staff-1", sansParametre[0]);
+    const labels = boutonsDe(sansParametre[0]).map((b) => b.label);
+    assert.ok(labels.includes("Lancer"), `${sansParametre[0]} : ${labels.join(", ")}`);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
