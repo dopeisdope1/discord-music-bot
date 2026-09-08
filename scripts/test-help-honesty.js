@@ -183,9 +183,11 @@ function menuNavigation(json) {
     }
   });
 
-  await cas("chaque catégorie a SA couleur — ce qu'un Container Components V2 ne sait pas faire (une seule teinte par message)", () => {
+  await cas("AUCUNE couleur : tout est dessiné dans une seule teinte neutre", () => {
+    // Demande explicite. Ce qui distingue les catégories, c'est leur titre —
+    // plus une teinte.
     const couleurs = spec().cartes.map((c) => c.couleur);
-    assert.strictEqual(new Set(couleurs).size, couleurs.length, `deux catégories partagent la même couleur : ${couleurs.join(", ")}`);
+    assert.strictEqual(new Set(couleurs).size, 1, `plusieurs teintes subsistent : ${[...new Set(couleurs)].join(", ")}`);
     for (const c of couleurs) assert.ok(/^#[0-9a-f]{6}$/i.test(c), `couleur invalide : ${c}`);
   });
 
@@ -197,7 +199,7 @@ function menuNavigation(json) {
     const panneau = buildHelpPanel("g1", owner, null, owner.id);
     const json = panneau.components[0].toJSON();
     assert.strictEqual(json.type, 17, "le conteneur Components V2 doit rester la racine");
-    assert.ok(json.accent_color, "la couleur d'accent partagée avec &panel doit rester");
+    assert.strictEqual(json.accent_color, undefined, "aucune couleur d'accent ne doit subsister");
     const galerie = json.components.find((c) => c.type === 12);
     assert.ok(galerie, "une MediaGallery doit porter l'image du tableau de bord");
     assert.strictEqual(galerie.items[0].media.url, "attachment://centre-de-commandes.png");
@@ -260,10 +262,8 @@ function menuNavigation(json) {
     }
   });
 
-  await cas("les trois paliers ont une légende — sinon les couleurs de pastilles ne veulent rien dire", () => {
-    const legende = spec().legende;
-    assert.strictEqual(legende.length, 3);
-    assert.deepStrictEqual(legende.map((l) => l.texte), ["Publiques", "Configurables (accordées par rôle)", "Sys (réservées)"]);
+  await cas("plus de légende de couleurs — elle n'aurait plus rien à expliquer", () => {
+    assert.ok(!spec().legende?.length, "la légende décrivait des teintes qui n'existent plus");
   });
 
   await cas("une pastille ne promet jamais une commande que le membre ne peut pas lancer", () => {

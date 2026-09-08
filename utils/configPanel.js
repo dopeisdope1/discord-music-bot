@@ -208,31 +208,11 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 // l'image. Les sujets proches partagent une famille de couleur (protection en
 // vert, communauté en ambre, réglages du bot en gris-bleu) pour que le panel
 // garde une cohérence malgré le nombre d'entrées.
-const FAMILY_COLORS = {
-  securite: "#4ade80",
-  logs: "#60a5fa",
-  bienvenue: "#fbbf24",
-  depart: "#f59e0b",
-  vocaux: "#2dd4bf",
-  permissions: "#a78bfa",
-  autorole: "#8b5cf6",
-  verification: "#22d3ee",
-  tickets: "#38bdf8",
-  giveaways: "#fb923c",
-  sondages: "#f472b6",
-  annonces: "#ec4899",
-  musique: "#2dd4bf",
-  historique: "#94a3b8",
-  statistiques: "#60a5fa",
-  diagnostics: "#818cf8",
-  sauvegardes: "#fb923c",
-  profil: "#94a3b8",
-  prefixes: "#94a3b8",
-  acces: "#a3a3a3",
-  sys: "#ff6b6b",
-  banall: "#ff6b6b",
-  dispenses: "#a3a3a3",
-};
+// Plus AUCUNE couleur : demande explicite. Une seule teinte neutre sert de
+// gris de tracé pour les liserés et les titres des images, de sorte que le
+// rendu reste lisible sans rien colorer.
+const TEINTE_NEUTRE = "#8b849f";
+const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
 // Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Vocaux
 // temporaires, Permissions, Giveaways — et non plus des familles abstraites
@@ -958,53 +938,45 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   const available = sectionsFor(member, isOwner);
   const meta = available.find((s) => s.key === current) || available[0];
   const famille = familyOf(meta.key);
-  // Même couleur que utils/helpPanel.js::ACCENT_COLOR (valeur dupliquée
-  // volontairement, pas importée : configPanel.js <-> helpPanel.js sont déjà
-  // reliés par un require différé dans l'autre sens — un import direct ici
-  // fermerait la boucle, voir le commentaire de hasAnyPanelAccessLazy).
-  const container = new ContainerBuilder().setAccentColor(0x2c2f5c);
-  // Pièces jointes accumulées par l'écran courant (fiche membre en image).
+  // AUCUNE couleur d'accent : demande explicite. La barre colorée à gauche du
+  // conteneur ne portait aucune information, elle ne faisait que teinter le
+  // message.
+  const container = new ContainerBuilder();
+  // Pièces jointes accumulées par l'écran courant.
   const fichiers = [];
 
-  const enteteLignes = ["## 🎛️ 「 CENTRE DE GESTION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
+  const enteteLignes = ["## 「 PANEL DE CONFIGURATION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
   // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
   // "### Accueil" juste au-dessus n'apporterait rien. Le statut et les
   // alertes ne sont plus écrits ici non plus : en texte, les mentions
   // brutes sortaient en pastilles — un `@everyone` cité dans une alerte de
   // sécurité, notamment. Ils sont désormais DESSINÉS dans l'image de
   // l'accueil, où ils informent sans pouvoir notifier personne.
-  if (meta.key !== "home") enteteLignes.push(`### ${famille.emoji} ${meta.label}`);
+  if (meta.key !== "home") enteteLignes.push(`### ${meta.label}`);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enteteLignes.join("\n")));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   if (meta.key === "home") {
-    // Accueil = le MÊME tableau de bord en image que l'accueil de &help
-    // (utils/dashboardImage.js) : Discord ne sait pas disposer du texte en
-    // colonnes, donc la grille est dessinée puis affichée dans le Container
-    // Components V2. Les familles, leurs rubriques et leurs droits restent
-    // ceux du panel réel — aucune fonction inventée, seulement une mise en
-    // page.
-    const homeSpec = buildHomeSpec(guild, member, isOwner);
-    // `null` = le dessin a échoué (rendreEnCache journalise le motif) : on
-    // repasse sur la MÊME grille en texte plutôt que de laisser &panel sans
-    // rien afficher. Le menu de navigation, lui, ne dépend pas de l'image.
-    const png = sansImage ? null : rendreEnCache(homeSpec);
-    if (png) {
-      container.addMediaGalleryComponents(
-        new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_PANEL}`))
-      );
-    } else {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enTexte(homeSpec)));
+    // PLUS de grille de cartes ici : elle listait les 23 rubriques une par
+    // une, ce que le menu de navigation juste en dessous fait déjà — d'où une
+    // image interminable qui répétait le menu. L'accueil se contente donc de
+    // l'essentiel : es-tu en ligne, et qu'est-ce qui cloche.
+    const info = computeStatus(guild.client);
+    const enVocal = guild.voiceStates.cache.filter((v) => v.channelId).size;
+    const lignes = [
+      `> En ligne — ${formatUptime(info.uptimeMs)} · ${info.ping}ms`,
+      `> ${guild.memberCount.toLocaleString("fr-FR")} membres · ${guild.channels.cache.size} salons · ${enVocal} en vocal`,
+    ];
+    // Les alertes sont écrites SANS mention brute : `<@&...>` sortirait en
+    // pastille cliquable, et un `@everyone` cité dans une alerte de sécurité
+    // notifierait tout le serveur.
+    for (const alerte of alertesSecurite(guild, member)) {
+      lignes.push(`> ${alerte.texte.replace(/@everyone/g, "everyone").replace(/@here/g, "here")}`);
     }
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
     container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
-    return {
-      flags: MessageFlags.IsComponentsV2,
-      components: [container],
-      // Sans image, PAS de `files` : un MediaGallery qui pointe sur une pièce
-      // jointe absente ferait refuser tout le message par Discord.
-      ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE_PANEL })] } : {}),
-    };
+    return { flags: MessageFlags.IsComponentsV2, components: [container] };
   }
 
   // TOUTES les rubriques sont dessinées : demande explicite d'un bot "rempli

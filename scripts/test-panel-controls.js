@@ -155,26 +155,34 @@ function actionsDe(json) {
     }
   });
 
-  await cas("chaque rubrique porte une couleur valide, et la palette reste variée", () => {
-    // Des sujets proches partagent volontairement une teinte (les réglages du
-    // bot en gris, les actions dangereuses en rouge) : l'invariant utile n'est
-    // pas l'unicité mais que chacune SOIT colorée, et que la palette distingue
-    // encore les grands ensembles.
-    const couleurs = buildHomeSpec(guild, member).cartes.map((c) => c.couleur);
-    for (const c of couleurs) assert.ok(/^#[0-9a-f]{6}$/i.test(c), `couleur invalide : ${c}`);
-    assert.ok(new Set(couleurs).size >= 10, `palette trop pauvre : ${new Set(couleurs).size} teintes pour ${couleurs.length} rubriques`);
+  await cas("AUCUNE couleur : les rubriques sont toutes dessinées dans la même teinte neutre", () => {
+    // Demande explicite. Ce qui distingue une rubrique, c'est son titre.
+    const couleurs = SECTIONS.filter((k) => k !== "home").map((k) => buildSectionSpec(guild, k, member, {}).couleur);
+    assert.strictEqual(new Set(couleurs).size, 1, `plusieurs teintes subsistent : ${[...new Set(couleurs)].join(", ")}`);
   });
 
-  await cas("l'accueil du panel est une IMAGE dans un Container Components V2, avec la MÊME identité que &help", () => {
+  await cas("l'accueil est COURT : statut, alertes, menu — plus la grille des 23 rubriques", () => {
+    // Elle répétait le menu de navigation juste en dessous, d'où une image
+    // interminable qui n'apprenait rien de plus.
     const panneau = buildConfigPanel(guild, "home", member);
     const json = panneau.components[0].toJSON();
     assert.strictEqual(json.type, 17, "le Container Components V2 reste la racine");
-    assert.strictEqual(json.accent_color, ACCENT_COLOR, "la couleur d'accent doit être celle partagée avec &help");
-    const galerie = json.components.find((c) => c.type === 12);
-    assert.ok(galerie, "une MediaGallery doit porter l'image du tableau de bord");
-    assert.strictEqual(galerie.items[0].media.url, "attachment://centre-de-gestion.png");
-    assert.strictEqual(panneau.files[0].name, "centre-de-gestion.png");
-    assert.strictEqual(panneau.files[0].attachment.subarray(1, 4).toString(), "PNG");
+    assert.strictEqual(json.accent_color, undefined, "aucune couleur d'accent ne doit subsister");
+    assert.ok(!json.components.some((c) => c.type === 12), "l'accueil ne doit plus porter d'image");
+    assert.strictEqual(panneau.files, undefined, "et donc aucune pièce jointe");
+    assert.ok(json.components.some((c) => c.type === 1), "le menu de navigation doit rester");
+  });
+
+  await cas("le titre est \"PANEL DE CONFIGURATION\", sans emoji", () => {
+    const entete = buildConfigPanel(guild, "home", member).components[0].toJSON().components.find((c) => c.type === 10).content;
+    assert.ok(entete.includes("PANEL DE CONFIGURATION"), entete);
+    assert.ok(!entete.includes("CENTRE DE GESTION"), entete);
+    assert.ok(!/\p{Extended_Pictographic}/u.test(entete), `un emoji subsiste dans l'en-tête : ${entete}`);
+  });
+
+  await cas("aucune alerte n'affiche @everyone en clair — elle notifierait tout le serveur", () => {
+    const entete = buildConfigPanel(guild, "home", member).components[0].toJSON().components.find((c) => c.type === 10).content;
+    assert.ok(!entete.includes("@everyone") && !entete.includes("@here"), entete);
   });
 
   await cas("le tableau de bord reste sous le plafond Discord (40 composants, 4000 caractères)", () => {

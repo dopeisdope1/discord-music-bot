@@ -30,18 +30,12 @@ const PAGE_SELECT_ID = "help_page";
 // est référencé par "attachment://" dans le composant MediaGallery.
 const NOM_IMAGE = "centre-de-commandes.png";
 
-// Une couleur par catégorie — impossible en texte Discord (un Container n'a
-// qu'UNE couleur d'accent), c'est justement ce que l'image permet.
-const TIER_COLORS = {
-  moderation: "#ff6b6b",
-  securite: "#4ade80",
-  serveurroles: "#a78bfa",
-  communaute: "#fbbf24",
-  informations: "#38bdf8",
-  outils: "#f472b6",
-  bot: "#94a3b8",
-};
-const COULEUR_PAR_DEFAUT = "#94a3b8";
+// Plus AUCUNE couleur : demande explicite, sur &help comme sur &panel. Une
+// seule teinte neutre sert de gris de tracé pour les liserés et les titres,
+// de sorte que le rendu reste lisible sans rien colorer. Le palier d'une
+// commande reste indiqué par son libellé de colonne, plus par une teinte.
+const COULEUR_PAR_DEFAUT = "#8b849f";
+const TIER_COLORS = new Proxy({}, { get: () => COULEUR_PAR_DEFAUT });
 
 // Les trois PALIERS de l'ancien &help, réintroduits comme colonnes de la
 // grille : c'est ce qui donne du sens aux 3 colonnes (avant, elles étaient
@@ -51,9 +45,9 @@ const COULEUR_PAR_DEFAUT = "#94a3b8";
 //   permission "sys"   -> réservé au rang sys
 //   toute autre clé    -> accordable par rôle depuis &panel
 const PALIERS = [
-  { cle: "public", titre: "Publiques", couleur: "#4ade80" },
-  { cle: "configurable", titre: "Configurables", couleur: "#38bdf8" },
-  { cle: "sys", titre: "Sys", couleur: "#ff6b6b" },
+  { cle: "public", titre: "Publiques", couleur: COULEUR_PAR_DEFAUT },
+  { cle: "configurable", titre: "Configurables", couleur: COULEUR_PAR_DEFAUT },
+  { cle: "sys", titre: "Sys", couleur: COULEUR_PAR_DEFAUT },
 ];
 function palierDe(cmd) {
   if (!cmd.permission) return "public";
@@ -387,11 +381,6 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
       }),
       // Légende des pastilles : sans elle, les trois couleurs ne veulent rien
       // dire pour qui découvre le bot.
-      legende: [
-        { couleur: PALIERS[0].couleur, texte: "Publiques" },
-        { couleur: PALIERS[1].couleur, texte: "Configurables (accordées par rôle)" },
-        { couleur: PALIERS[2].couleur, texte: "Sys (réservées)" },
-      ],
       pied: "Tape une commande pour commencer",
     };
     if (!availableTiers.length) {
@@ -427,7 +416,9 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0, { sans
   // repasse en texte plutôt que de ne rien répondre.
   const png = sansImage ? null : rendreEnCache(spec);
 
-  const container = new ContainerBuilder().setAccentColor(ACCENT_COLOR);
+  // AUCUNE couleur d'accent : demande explicite, sur &help comme sur
+  // &panel. La barre teintée à gauche du conteneur n'apportait rien.
+  const container = new ContainerBuilder();
   if (png) {
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))

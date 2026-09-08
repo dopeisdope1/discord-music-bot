@@ -202,20 +202,20 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
 
   console.log("\n&panel sans image :");
 
-  await cas("l'accueil du panel garde son image en temps normal", () => {
-    const panel = buildConfigPanel(makeGuild(), "home", membre);
-    assert.strictEqual(panel.files.length, 1);
+  await cas("l'accueil n'a plus d'image du tout — une RUBRIQUE, si", () => {
+    // L'accueil listait les 23 rubriques que le menu affiche déjà : l'image
+    // était interminable et redondante. Les rubriques, elles, dessinent bien
+    // leur contenu.
+    assert.strictEqual(buildConfigPanel(makeGuild(), "home", membre).files, undefined);
+    assert.strictEqual(buildConfigPanel(makeGuild(), "tickets", membre).files.length, 1);
   });
 
-  await cas("sansImage : accueil en texte, sans pièce jointe, avec ses familles et sa navigation", () => {
-    const panel = buildConfigPanel(makeGuild(), "home", membre, {}, { sansImage: true });
+  await cas("sansImage : une rubrique repasse en texte, sans pièce jointe, navigation intacte", () => {
+    const panel = buildConfigPanel(makeGuild(), "tickets", membre, {}, { sansImage: true });
     assert.strictEqual(panel.files, undefined);
     assert.ok(!composantsDe(panel).some((c) => c.type === GALERIE));
-    assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "le menu des familles doit rester utilisable");
-    // "Modération" n'est plus une famille du panel : sanctionner un membre se
-    // fait par commande, avec une mention ou un identifiant. On vérifie donc
-    // une famille de configuration, qui est ce que le panel offre désormais.
-    assert.ok(texteDe(panel).includes("Sécurité"), texteDe(panel));
+    assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "le menu de navigation doit rester utilisable");
+    assert.ok(texteDe(panel).includes("Tickets"), texteDe(panel));
   });
 
   console.log("\nEnvoi refusé par Discord (pas de « Joindre des fichiers ») :");
@@ -234,11 +234,14 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.ok(texte.includes("CENTRE DE COMMANDES"), texte);
   });
 
-  await cas("&panel répond quand même, dans les mêmes conditions", async () => {
+  await cas("&panel n'a rien à replier : son accueil ne joint aucun fichier", async () => {
+    // Le repli existe toujours pour les RUBRIQUES, qui portent une image ;
+    // l'accueil, lui, n'en a plus, donc un salon qui refuse les pièces
+    // jointes ne change rien pour lui.
     const message = fakeMessage("panel", { refuseFichiers: true });
     await handleMusicTextCommand(message.client, message);
-    assert.strictEqual(message.envois.length, 2);
-    assert.strictEqual(message.envois[1].files, undefined);
+    assert.strictEqual(message.envois.length, 1, "un seul envoi, sans seconde tentative");
+    assert.strictEqual(message.envois[0].files, undefined);
   });
 
   await cas("un salon NORMAL n'envoie qu'une seule fois — pas de doublon dû au repli", async () => {
@@ -293,12 +296,22 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.ok(texte.includes("&kick"), texte);
   });
 
-  await cas("&panel : idem sur un clic de navigation vers l'accueil", async () => {
-    const clic = fakeClic(`${ID_PANEL}:nav:home`);
+  await cas("&panel : le repli joue sur une RUBRIQUE, la seule à porter une image", async () => {
+    // L'accueil n'a plus d'image : il n'y a rien à replier pour lui. Une
+    // rubrique, si — et un salon qui refuse les pièces jointes doit toujours
+    // pouvoir l'afficher en texte plutôt que de laisser le clic sans réponse.
+    const clic = fakeClic(`${ID_PANEL}:nav:tickets`);
     await handleConfigInteraction(clic);
     assert.strictEqual(clic.editions.length, 2);
     assert.strictEqual(clic.editions[1].files, undefined);
     assert.deepStrictEqual(clic.editions[1].attachments, []);
+  });
+
+  await cas("&panel : l'accueil passe du premier coup — il ne joint plus rien", async () => {
+    const clic = fakeClic(`${ID_PANEL}:nav:accueil`);
+    await handleConfigInteraction(clic);
+    assert.strictEqual(clic.editions.length, 1, "aucune seconde tentative nécessaire");
+    assert.strictEqual(clic.editions[0].files, undefined);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
