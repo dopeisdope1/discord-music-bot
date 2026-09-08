@@ -131,15 +131,20 @@ function membre(id, tag, { avatar = true } = {}) {
 
   console.log("\nCartes de sanction :");
 
-  await cas("chaque action de modération a son titre et sa teinte, jamais deux fois la même clé", () => {
+  await cas("chaque action de modération a son titre — c'est lui, et lui seul, qui la distingue", () => {
+    // La teinte distinguait les actions avant la demande « aucune couleur ».
+    // Toute la charge repose donc sur le titre : deux actions opposées qui
+    // partageraient le même laisseraient la carte illisible au coup d'œil.
     for (const [action, meta] of Object.entries(SANCTIONS)) {
       assert.ok(meta.titre, `${action} doit avoir un titre`);
-      assert.ok(/^#[0-9a-f]{6}$/i.test(meta.couleur), `${action} : couleur invalide`);
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(meta.couleur));
+      assert.ok(m, `${action} : couleur invalide`);
+      assert.ok(m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase(), `${action} : teinte non neutre — ${meta.couleur}`);
     }
-    // Vert = la contrainte est levée, rouge/orange = elle est posée. Si ces
-    // deux-là finissaient de la même couleur, la carte mentirait au coup d'œil.
-    assert.notStrictEqual(SANCTIONS.ban.couleur, SANCTIONS.unmute.couleur);
-    assert.strictEqual(SANCTIONS.untimeout.couleur, SANCTIONS.unmute.couleur, "les levées de sanction se lisent pareil");
+    // La contrainte posée et la contrainte levée doivent se lire différemment.
+    assert.notStrictEqual(SANCTIONS.ban.titre, SANCTIONS.unmute.titre);
+    assert.notStrictEqual(SANCTIONS.mute.titre, SANCTIONS.unmute.titre);
+    assert.notStrictEqual(SANCTIONS.timeout.titre, SANCTIONS.untimeout.titre);
   });
 
   await cas("une carte de sanction porte le nom de fichier de son action", async () => {

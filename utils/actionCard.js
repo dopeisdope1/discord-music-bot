@@ -21,6 +21,10 @@ const THEME = {
   texteFaible: "#9a9a9a",
 };
 
+// Teinte UNIQUE de toutes les cartes, gris pur : le titre dit déjà si le
+// membre est banni ou démute, la couleur n'ajoutait rien qu'une couleur.
+const TEINTE = "#d0d0d0";
+
 const LARGEUR = 900;
 const MARGE = 34;
 const AVATAR = 116;
@@ -215,14 +219,14 @@ function dessinerCarte(spec, image) {
 
   let y = 118;
   if (spec.membre.sousTitre) {
-    ctx.font = "13px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     ctx.fillText(tronquer(ctx, spec.membre.sousTitre, dispo), tx, 102);
     y = 132;
   }
 
   for (const ligne of lignes) {
-    ctx.font = "13px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     const labelLarge = 92;
     ctx.fillText(tronquer(ctx, ligne.label.toUpperCase(), labelLarge), tx, y);
@@ -237,14 +241,14 @@ function dessinerCarte(spec, image) {
       ctx.fill();
       vx += 18;
     }
-    ctx.font = "15px ChakraBold";
+    ctx.font = "17px ChakraBold";
     ctx.fillStyle = THEME.texte;
     ctx.fillText(tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
     y += 34;
   }
 
   if (spec.pied) {
-    ctx.font = "12px ChakraRegular";
+    ctx.font = "14px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     ctx.fillText(tronquer(ctx, spec.pied, dispo), tx, hauteur - MARGE + 4);
   }
@@ -290,7 +294,7 @@ async function prechargerAvatar(url) {
  * @returns {Buffer} PNG
  */
 function rendreCarteConfirmation(spec) {
-  const couleur = /^#[0-9a-f]{6}$/i.test(String(spec.couleur || "")) ? spec.couleur : "#fbbf24";
+  const couleur = /^#[0-9a-f]{6}$/i.test(String(spec.couleur || "")) ? spec.couleur : TEINTE;
   const lignes = (spec.lignes || []).filter((l) => l && l.valeur);
   const hauteur = 96 + lignes.length * 32 + (spec.avertissement ? 34 : 0);
 
@@ -338,7 +342,7 @@ function rendreCarteConfirmation(spec) {
 
   let y = 92;
   for (const ligne of lignes) {
-    ctx.font = "13px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     ctx.fillText(tronquer(ctx, ligne.label.toUpperCase(), 165), MARGE, y);
     let vx = MARGE + 178;
@@ -349,14 +353,14 @@ function rendreCarteConfirmation(spec) {
       ctx.fill();
       vx += 18;
     }
-    ctx.font = "15px ChakraBold";
+    ctx.font = "17px ChakraBold";
     ctx.fillStyle = THEME.texte;
     ctx.fillText(tronquer(ctx, ligne.valeur, LARGEUR - vx - MARGE), vx, y);
     y += 32;
   }
 
   if (spec.avertissement) {
-    ctx.font = "13px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = couleur;
     ctx.fillText(tronquer(ctx, spec.avertissement, LARGEUR - MARGE * 2), MARGE, y + 6);
   }
@@ -399,16 +403,16 @@ async function carteActionMessage(spec, nomFichier = "action.png") {
 // pour que &kick et &ban ne puissent pas dériver l'un de l'autre, et que le
 // vert/rouge veuille toujours dire la même chose.
 const SANCTIONS = {
-  kick: { titre: "Membre expulsé", couleur: "#fb923c" },
-  ban: { titre: "Membre banni", couleur: "#ff6b6b" },
-  tempban: { titre: "Bannissement temporaire", couleur: "#ff6b6b" },
-  softban: { titre: "Softban", couleur: "#f472b6" },
-  timeout: { titre: "Mise en timeout", couleur: "#fbbf24" },
-  untimeout: { titre: "Timeout levé", couleur: "#4ade80" },
-  mute: { titre: "Membre mute", couleur: "#fbbf24" },
-  tempmute: { titre: "Mute temporaire", couleur: "#fbbf24" },
-  unmute: { titre: "Démute", couleur: "#4ade80" },
-  warn: { titre: "Avertissement", couleur: "#facc15" },
+  kick: { titre: "Membre expulsé", couleur: TEINTE },
+  ban: { titre: "Membre banni", couleur: TEINTE },
+  tempban: { titre: "Bannissement temporaire", couleur: TEINTE },
+  softban: { titre: "Softban", couleur: TEINTE },
+  timeout: { titre: "Mise en timeout", couleur: TEINTE },
+  untimeout: { titre: "Timeout levé", couleur: TEINTE },
+  mute: { titre: "Membre mute", couleur: TEINTE },
+  tempmute: { titre: "Mute temporaire", couleur: TEINTE },
+  unmute: { titre: "Démute", couleur: TEINTE },
+  warn: { titre: "Avertissement", couleur: TEINTE },
 };
 
 /**
