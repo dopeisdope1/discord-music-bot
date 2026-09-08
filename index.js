@@ -54,6 +54,7 @@ const leaveStore = require("./utils/leaveStore");
 const { applyAutoroles } = require("./utils/autoroleCommands");
 const { handleVerifyButton } = require("./utils/verification");
 const statsStore = require("./utils/statsStore");
+const counters = require("./utils/counters");
 const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
@@ -1097,6 +1098,16 @@ client.on("guildMemberAdd", (member) => {
 // Statistiques historiques (&stats history, voir utils/statsStore.js).
 client.on("guildMemberAdd", (member) => statsStore.record(member.guild.id, "joins"));
 client.on("guildMemberRemove", (member) => statsStore.record(member.guild.id, "leaves"));
+
+// Compteurs de serveur (voir utils/counters.js). Chaque appel est borné à un
+// renommage par salon toutes les 6 minutes : Discord n'en autorise que deux
+// par tranche de 10, et un compteur qui dépasse ce quota se fige sur une
+// valeur périmée SANS erreur visible. On peut donc brancher les événements
+// sans précaution supplémentaire ici.
+client.on("guildMemberAdd", (member) => counters.mettreAJour(member.guild).catch(() => {}));
+client.on("guildMemberRemove", (member) => counters.mettreAJour(member.guild).catch(() => {}));
+// Le nombre de boosts change par une mise à jour de SERVEUR, pas de membre.
+client.on("guildUpdate", (_avant, apres) => counters.mettreAJour(apres).catch(() => {}));
 
 // Journal de modération (voir utils/moderationLog.js) : chaque entrée
 // d'audit Discord — ban, kick, timeout, salon/rôle supprimé, etc. — est

@@ -23,6 +23,7 @@ const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
 const customCommands = require("./customCommands");
+const counters = require("./counters");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
@@ -457,6 +458,8 @@ const modHandlers = {
   addcmd: customCommands.customCommandHandlers.addcmd,
   delcmd: customCommands.customCommandHandlers.delcmd,
   listcmd: customCommands.customCommandHandlers.listcmd,
+  // Compteurs de serveur (utils/counters.js).
+  compteur: counters.compteur,
   // Alias stricts : la même fonction, pas une seconde version du même écran.
   // &avatar et &serverinfo avaient chacun leur propre implémentation, qui
   // affichait les mêmes informations autrement (et moins bien : &avatar ne
@@ -730,6 +733,7 @@ const MOD_SUBCOMMANDS = {
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],
   ticket: ["setup", "settings"],
+  compteur: ["create", "list", "delete"],
   giveaway: ["start", "reroll"],
   end: ["giveaway"],
   search: ["wiki"],

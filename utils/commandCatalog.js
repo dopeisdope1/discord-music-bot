@@ -968,6 +968,24 @@ const CATEGORIES = [
         description: "Liste les commandes personnalisées du serveur, les plus utilisées d'abord",
       },
       {
+        name: "compteur create <type> [modèle]",
+        prefix: "mod",
+        permission: "server.channels.manage",
+        description: "Crée un salon dont le nom affiche un nombre tenu à jour (types : membres, humains, bots, boosts)",
+      },
+      {
+        name: "compteur list",
+        prefix: "mod",
+        permission: null,
+        description: "Liste les compteurs du serveur",
+      },
+      {
+        name: "compteur delete <#salon|id>",
+        prefix: "mod",
+        permission: "server.channels.manage",
+        description: "Retire un compteur ; le salon lui-même n'est pas supprimé",
+      },
+      {
         name: "embed",
         prefix: "mod",
         permission: "server.channels.manage",
