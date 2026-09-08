@@ -22,6 +22,7 @@ const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
+const profileCommands = require("./profileCommands");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
@@ -452,6 +453,9 @@ const modHandlers = {
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
   userinfo: moderationHandlers.userinfo,
+  // Cartes de profil et d'anciennete de boost (utils/profileCommands.js).
+  boost: profileCommands.boost,
+  profil: profileCommands.profil,
   // Alias stricts : la même fonction, pas une seconde version du même écran.
   // &avatar et &serverinfo avaient chacun leur propre implémentation, qui
   // affichait les mêmes informations autrement (et moins bien : &avatar ne
