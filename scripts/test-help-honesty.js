@@ -76,13 +76,22 @@ async function cas(nom, fn) {
 const owner = { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
 const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => false } };
 
-// Catégories entièrement gardées par une permission (aucune commande réelle
-// à permission null dedans) — vérifié directement sur le catalogue, pas
-// deviné : un membre sans AUCUN droit ne doit en voir aucune.
-const CATEGORIES_GARDEES = ["securite", "communaute", "bot"];
-// Catégories avec au moins une commande publique — un membre sans droit doit
-// voir CELLES-LÀ (et seulement celles-là).
-const CATEGORIES_PARTIELLEMENT_PUBLIQUES = ["moderation", "serveurroles", "informations", "outils"];
+// Les deux listes sont DÉDUITES du catalogue, pas recopiées à la main : la
+// version figée s'est démentie dès qu'une commande publique (`&help`) a été
+// ajoutée à « Bot & Accès », alors que le comportement testé, lui, était
+// correct. Un test qui doit être corrigé à chaque ajout légitime finit par
+// être corrigé sans être lu.
+//
+// `&panel` est le seul cas particulier : le catalogue ne lui donne aucune
+// permission, mais la vraie commande exige un accès à une rubrique du panel.
+// Elle ne rend donc pas sa catégorie publique.
+const aUneCommandePublique = (categorie) =>
+  categorie.commands.some((cmd) => cmd.permission === null && isImplemented(cmd) && identityOf(cmd) !== "panel");
+// Catégories avec au moins une commande publique : un membre sans aucun droit
+// doit voir CELLES-LÀ.
+const CATEGORIES_PARTIELLEMENT_PUBLIQUES = CATEGORIES.filter(aUneCommandePublique).map((c) => c.key);
+// Catégories entièrement gardées par une permission : il ne doit en voir aucune.
+const CATEGORIES_GARDEES = CATEGORIES.filter((c) => !aUneCommandePublique(c)).map((c) => c.key);
 
 /**
  * Le tableau de bord de &help est rendu en IMAGE (utils/dashboardImage.js) :

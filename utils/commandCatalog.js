@@ -241,6 +241,18 @@ const CATEGORIES = [
         description: "Retire tous les rôles d'un membre",
       },
       {
+        name: "nick @membre <pseudo>",
+        prefix: "mod",
+        permission: "members.nick",
+        description: "Change le pseudo d'un membre sur le serveur",
+      },
+      {
+        name: "resetnick @membre",
+        prefix: "mod",
+        permission: "members.nick",
+        description: "Rend à un membre son pseudo Discord d'origine",
+      },
+      {
         name: "unbanall",
         prefix: "mod",
         permission: "moderation.unbanall",
@@ -1246,6 +1258,7 @@ const CATEGORIES = [
         permission: "sys",
         description: "Diagnostics techniques du bot (uptime, latence, mémoire, versions, état des nœuds Lavalink)",
       },
+      { name: "help", prefix: "mod", permission: null, description: "Ouvre le centre de commandes : tout ce que tu peux taper, classé par palier" },
       { name: "changelogs", prefix: "mod", permission: null, description: "Affiche les dernières notes de mise à jour" },
       {
         name: "support",
