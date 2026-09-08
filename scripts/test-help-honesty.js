@@ -188,7 +188,14 @@ function menuNavigation(json) {
     // plus une teinte.
     const couleurs = spec().cartes.map((c) => c.couleur);
     assert.strictEqual(new Set(couleurs).size, 1, `plusieurs teintes subsistent : ${[...new Set(couleurs)].join(", ")}`);
-    for (const c of couleurs) assert.ok(/^#[0-9a-f]{6}$/i.test(c), `couleur invalide : ${c}`);
+    // Une teinte UNIQUE ne suffisait pas : le gris violacé précédent passait
+    // ce test et se voyait quand même à l'écran. Les trois composantes RVB
+    // doivent être égales — un gris pur, sans la moindre dominante.
+    for (const c of couleurs) {
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(c));
+      assert.ok(m, `couleur invalide : ${c}`);
+      assert.ok(m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase(), `teinte non neutre : ${c}`);
+    }
   });
 
   await cas("le préfixe est indiqué clairement, une seule fois, à l'accueil", () => {

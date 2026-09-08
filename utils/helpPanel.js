@@ -34,7 +34,7 @@ const NOM_IMAGE = "centre-de-commandes.png";
 // seule teinte neutre sert de gris de tracé pour les liserés et les titres,
 // de sorte que le rendu reste lisible sans rien colorer. Le palier d'une
 // commande reste indiqué par son libellé de colonne, plus par une teinte.
-const COULEUR_PAR_DEFAUT = "#8b849f";
+const COULEUR_PAR_DEFAUT = "#d0d0d0";
 const TIER_COLORS = new Proxy({}, { get: () => COULEUR_PAR_DEFAUT });
 
 // Les trois PALIERS de l'ancien &help, réintroduits comme colonnes de la

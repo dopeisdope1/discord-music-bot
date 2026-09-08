@@ -211,7 +211,7 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 // Plus AUCUNE couleur : demande explicite. Une seule teinte neutre sert de
 // gris de tracé pour les liserés et les titres des images, de sorte que le
 // rendu reste lisible sans rien colorer.
-const TEINTE_NEUTRE = "#8b849f";
+const TEINTE_NEUTRE = "#d0d0d0";
 const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
 // Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Vocaux
@@ -829,8 +829,10 @@ function accessRows(scope, label) {
 function alertesSecurite(guild, member) {
   if (!can(member, "protection.automod") && !can(member, "protection.guard.manage")) return [];
   const { critical, warnings } = computeSecurityScan(guild);
-  if (!critical.length && !warnings.length) return [{ couleur: "#4ade80", texte: "Tout est en ordre" }];
-  return [...critical.map((l) => ({ couleur: "#ff6b6b", texte: l })), ...warnings.map((l) => ({ couleur: "#fbbf24", texte: l }))].slice(0, 2);
+  // Plus aucune couleur ici non plus : la gravité se lit dans l'ordre (les
+  // critiques d'abord) et dans le texte, pas dans une pastille teintée.
+  if (!critical.length && !warnings.length) return [{ couleur: TEINTE_NEUTRE, texte: "Tout est en ordre" }];
+  return [...critical.map((l) => ({ couleur: TEINTE_NEUTRE, texte: l })), ...warnings.map((l) => ({ couleur: TEINTE_NEUTRE, texte: l }))].slice(0, 2);
 }
 
 function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) {
@@ -849,7 +851,7 @@ function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) 
       cle: f.key,
       titre: f.label,
       sousTitre: resumer(f.description),
-      couleur: FAMILY_COLORS[f.key] || "#94a3b8",
+      couleur: FAMILY_COLORS[f.key] || TEINTE_NEUTRE,
       items: familySections(f, member, isOwner).map((r) => ({ nom: r.label, description: resumer(r.description) })),
     })),
     pied: "Choisis une famille dans le menu ci-dessous",
@@ -871,7 +873,7 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
   const meta = SECTIONS.find((s) => s.key === section) || SECTIONS[0];
   return sectionDashboard.enSpec(corps ?? sectionBody(meta.key, guild, member, state), {
     titre: meta.label,
-    couleur: FAMILY_COLORS[familyOf(meta.key).key] || "#94a3b8",
+    couleur: FAMILY_COLORS[familyOf(meta.key).key] || TEINTE_NEUTRE,
     sousTitre: `${member.displayName || member.user?.username || meta.label} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
     guild,
     // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle

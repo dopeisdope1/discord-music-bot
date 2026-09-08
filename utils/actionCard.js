@@ -8,13 +8,17 @@ const { AttachmentBuilder } = require("discord.js");
 // l'enregistrement des polices Chakra Petch).
 require("./dashboardImage");
 
+// Mêmes gris purs et mêmes contrastes que le tableau de bord
+// (utils/dashboardImage.js) : les deux images se croisent dans le même salon,
+// des fonds légèrement violacés à côté de gris neutres se verraient.
+// Seule la teinte de la sanction subsiste, elle porte une information.
 const THEME = {
-  fond: "#0b0912",
-  fondHaut: "#141020",
-  cadre: "#241d38",
-  texte: "#e8e4f3",
-  texteDoux: "#8b849f",
-  texteFaible: "#635c78",
+  fond: "#0e0e0e",
+  fondHaut: "#1a1a1a",
+  cadre: "#3a3a3a",
+  texte: "#ffffff",
+  texteDoux: "#c4c4c4",
+  texteFaible: "#9a9a9a",
 };
 
 const LARGEUR = 900;
@@ -30,7 +34,7 @@ const AVATAR = 116;
  */
 function avecAlpha(couleur, alpha) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(couleur || "").trim());
-  if (!m) return `#94a3b8${alpha}`;
+  if (!m) return `#c4c4c4${alpha}`;
   const hex = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
   return `#${hex}${alpha}`;
 }
@@ -182,7 +186,7 @@ function dessinerCarte(spec, image) {
   if (image) {
     ctx.drawImage(image, ax, ay, AVATAR, AVATAR);
   } else {
-    ctx.fillStyle = "#1b1529";
+    ctx.fillStyle = "#242424";
     ctx.fillRect(ax, ay, AVATAR, AVATAR);
     ctx.font = "40px ChakraBold";
     ctx.fillStyle = spec.couleur;

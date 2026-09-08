@@ -43,6 +43,16 @@ function rendreServeurSain(guildId) {
   modLogStore.setLogChannelId(guildId, "moderation", "chan-logs-1");
 }
 
+/**
+ * Une teinte sans aucune couleur : les trois composantes RVB identiques.
+ * Vérifier « ce n'est pas #4ade80 » laisserait passer n'importe quel autre
+ * vert ; ici c'est la propriété demandée qui est testée, pas une valeur.
+ */
+function estGrisPur(couleur) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(couleur || ""));
+  return Boolean(m) && m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase();
+}
+
 let reussis = 0;
 async function cas(nom, fn) {
   try {
@@ -145,11 +155,13 @@ function mkMember(id, roleId) {
     guildSain.roles.cache.set("role-mute-1", { id: "role-mute-1", managed: false, permissions: { has: () => false } });
     rendreServeurSain("gdash");
     const member = mkMember("u-guard", "role-guard");
-    // Les alertes sont désormais structurées (texte + couleur) et dessinées :
-    // le vert ne vient plus d'un emoji collé dans une chaîne.
+    // Les alertes sont structurées (texte + couleur) et dessinées : le vert ne
+    // vient plus d'un emoji collé dans une chaîne. Depuis la demande « aucune
+    // couleur », cette teinte est un gris pur — la gravité se lit dans le
+    // texte et dans l'ordre, plus dans une pastille.
     const alertes = buildHomeSpec(guildSain, member).alertes;
     assert.deepStrictEqual(alertes.map((a) => a.texte), ["Tout est en ordre"], JSON.stringify(alertes));
-    assert.strictEqual(alertes[0].couleur, "#4ade80", "un serveur sain se lit en vert");
+    assert.ok(estGrisPur(alertes[0].couleur), `plus aucune couleur : ${alertes[0].couleur}`);
     assert.ok(!homeText(guildSain, member).includes("contrôle(s) OK"), "l'accueil épuré ne doit pas reprendre le détail complet de l'audit");
   });
 
@@ -167,7 +179,11 @@ function mkMember(id, roleId) {
     permStore.setRoleGrants("gdash", "role-guard", ["protection.guard.manage"]);
     const alertes = buildHomeSpec(guildAvecProblemes, member).alertes;
     assert.ok(alertes.length <= 2, `${alertes.length} alertes affichées — l'accueil épuré doit en garder 2 maximum`);
-    assert.strictEqual(alertes[0].couleur, "#ff6b6b", "une alerte critique se lit en rouge");
+    // Sans couleur de gravité, c'est l'ORDRE qui porte l'information : la
+    // critique passe devant les avertissements, et c'est elle qui survit à la
+    // coupe à deux.
+    assert.ok(estGrisPur(alertes[0].couleur), `plus aucune couleur : ${alertes[0].couleur}`);
+    assert.ok(alertes[0].texte.includes("@everyone"), `la critique doit être en tête : ${JSON.stringify(alertes)}`);
     const texte = homeText(guildAvecProblemes, member);
     assert.ok(texte.includes("@everyone"), "l'alerte la plus grave (critique) doit être celle gardée en premier");
   });

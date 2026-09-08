@@ -19,16 +19,23 @@ GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-Bold.ttf"), "ChakraBo
 GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-SemiBold.ttf"), "ChakraSemi");
 GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-Regular.ttf"), "ChakraRegular");
 
+// Gris PURS, sans la moindre teinte : demande explicite, et les gris violacés
+// précédents se lisaient encore comme une couleur.
+//
+// L'autre moitié du problème était le contraste. Discord réduit l'image à
+// ~500 px de large : un gris à 4,5:1 sur fond sombre, une fois écrasé de
+// moitié, devient illisible. Les descriptions sont donc nettement éclaircies
+// (~9:1), pas seulement désaturées.
 const THEME = {
-  fond: "#0b0912",
-  fondHaut: "#120e1c",
-  cadre: "#241d38",
-  carte: "#141020",
-  carteBord: "#272036",
-  carteEntete: "#1b1529",
-  texte: "#e8e4f3",
-  texteDoux: "#8b849f",
-  texteFaible: "#635c78",
+  fond: "#0e0e0e",
+  fondHaut: "#161616",
+  cadre: "#3a3a3a",
+  carte: "#1a1a1a",
+  carteBord: "#3a3a3a",
+  carteEntete: "#242424",
+  texte: "#ffffff",
+  texteDoux: "#c4c4c4",
+  texteFaible: "#9a9a9a",
 };
 
 // Discord réduit une image jointe à ~500 px de large dans le fil : plus
@@ -50,7 +57,7 @@ const COLONNES = 2;
  */
 function avecAlpha(couleur, alpha) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(couleur || "").trim());
-  if (!m) return `#94a3b8${alpha}`;
+  if (!m) return `#c4c4c4${alpha}`;
   const hex = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
   return `#${hex}${alpha}`;
 }
@@ -143,14 +150,14 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     ctx.fillRect(x, y, 5, 50);
     ctx.restore();
 
-    ctx.font = "21px ChakraBold";
+    ctx.font = "22px ChakraBold";
     ctx.fillStyle = carte.couleur;
     texteEspace(ctx, tronquer(ctx, carte.titre.toUpperCase(), largeur - 36), x + 18, y + 26, 1.1);
   }
 
   let ligneY = y + (avecTitre ? 50 + 30 : 32);
   if (carte.sousTitre) {
-    ctx.font = "14px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteFaible;
     ctx.fillText(tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 68);
     ligneY += 24;
@@ -179,12 +186,12 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
 
     const texteX = x + 52;
     const dispo = largeur - (texteX - x) - 16;
-    ctx.font = "18px ChakraBold";
+    ctx.font = "20px ChakraBold";
     ctx.fillStyle = THEME.texte;
     ctx.fillText(tronquer(ctx, item.nom, dispo), texteX, ligneY - 8);
 
     if (item.description) {
-      ctx.font = "14px ChakraRegular";
+      ctx.font = "16px ChakraRegular";
       ctx.fillStyle = THEME.texteDoux;
       ctx.fillText(tronquer(ctx, item.description, dispo), texteX, ligneY + 12);
     }
@@ -242,15 +249,15 @@ function rendre(spec) {
   const largeurTitre = largeurEspacee(ctx, spec.titre.toUpperCase(), 2.4);
   const boiteL = largeurTitre + 44;
   cheminArrondi(ctx, MARGE, 42, boiteL, 52, 10);
-  ctx.fillStyle = "#191327";
+  ctx.fillStyle = THEME.carteEntete;
   ctx.fill();
-  ctx.strokeStyle = "#332a4d";
+  ctx.strokeStyle = THEME.cadre;
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.fillStyle = THEME.texte;
   texteEspace(ctx, spec.titre.toUpperCase(), MARGE + 22, 68, 2.4);
 
-  ctx.font = "16px ChakraRegular";
+  ctx.font = "17px ChakraRegular";
   ctx.fillStyle = THEME.texteDoux;
   ctx.fillText(tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
 
@@ -262,9 +269,9 @@ function rendre(spec) {
     yEntete += 26;
     ctx.beginPath();
     ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
-    ctx.fillStyle = "#4ade80";
+    ctx.fillStyle = THEME.texte;
     ctx.fill();
-    ctx.font = "15px ChakraRegular";
+    ctx.font = "16px ChakraRegular";
     ctx.fillStyle = THEME.texte;
     ctx.fillText(tronquer(ctx, spec.banniere, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
@@ -272,9 +279,11 @@ function rendre(spec) {
     yEntete += 24;
     ctx.beginPath();
     ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
-    ctx.fillStyle = alerte.couleur;
+    // La gravité n'est plus portée par une couleur : le texte de l'alerte dit
+    // déjà ce qui cloche, et `&security scan` reste la vue détaillée.
+    ctx.fillStyle = THEME.texteDoux;
     ctx.fill();
-    ctx.font = "14px ChakraRegular";
+    ctx.font = "15px ChakraRegular";
     ctx.fillStyle = THEME.texteDoux;
     ctx.fillText(tronquer(ctx, alerte.texte, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
