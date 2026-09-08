@@ -1095,18 +1095,6 @@ const CATEGORIES = [
         aliases: ["member"],
         description: "Informations sur un membre (rôles, arrivée, timeout en cours)",
       },
-      {
-        name: "profil [@membre|id]",
-        prefix: "mod",
-        permission: null,
-        description: "Carte de profil : identifiant, création du compte, ancienneté de boost, serveurs en commun",
-      },
-      {
-        name: "boost [@membre|id]",
-        prefix: "mod",
-        permission: null,
-        description: "Ancienneté de boost du serveur et progression vers le palier suivant (0 à 24 mois)",
-      },
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
       {
         name: "vc",
