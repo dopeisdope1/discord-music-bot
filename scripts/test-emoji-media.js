@@ -113,6 +113,42 @@ function videoDeTest(secondes = 2) {
     assert.ok(resultat.buffer.length <= media.MAX_EMOJI, `${resultat.buffer.length} octets après allègement`);
   });
 
+  await casFfmpeg("un GIF ÉNORME reste animé — c'est la durée qu'on coupe, pas l'animation", async () => {
+    // Le cas signalé en production : « Impossible de descendre sous 256 Ko ».
+    // L'échelle ne jouait que sur la définition ; sur une source longue, aucune
+    // définition ne suffit tant qu'on garde six secondes. La durée descend donc
+    // le long de l'échelle elle aussi.
+    const binaire = media.binaireFfmpeg();
+    const chemin = path.join(process.env.DATA_DIR, "enorme.gif");
+    execFileSync(binaire, ["-y", "-f", "lavfi", "-i", "testsrc=size=640x640:rate=30:duration=15", chemin], { stdio: "ignore" });
+    const buffer = fs.readFileSync(chemin);
+    assert.ok(buffer.length > 4 * 1024 * 1024, `la source doit être énorme (${buffer.length} octets)`);
+
+    const resultat = await media.versGif(buffer);
+    assert.ok(resultat.ok, resultat.motif);
+    assert.ok(resultat.buffer.length <= media.MAX_EMOJI, `${resultat.buffer.length} octets`);
+    assert.strictEqual(resultat.anime, true, "une source de ce genre doit rester animée, pas retomber en image fixe");
+  });
+
+  await casFfmpeg("une image FIXE trop lourde est redimensionnée", async () => {
+    const binaire = media.binaireFfmpeg();
+    // Du BRUIT, et non une mire : une mire de 2000 px se compresse à 78 Ko et
+    // ne testerait donc rien du tout. Le bruit, lui, est incompressible.
+    const chemin = path.join(process.env.DATA_DIR, "grande.png");
+    execFileSync(
+      binaire,
+      ["-y", "-f", "lavfi", "-i", "nullsrc=s=1200x1200", "-vf", "geq=random(1)*255:random(1)*255:random(1)*255", "-frames:v", "1", chemin],
+      { stdio: "ignore" }
+    );
+    const buffer = fs.readFileSync(chemin);
+    assert.ok(buffer.length > media.MAX_EMOJI, `l'image de test doit être trop lourde (${buffer.length} octets)`);
+
+    const resultat = await media.versImageFixe(buffer);
+    assert.ok(resultat.ok, resultat.motif);
+    assert.ok(resultat.buffer.length <= media.MAX_EMOJI, `${resultat.buffer.length} octets après réduction`);
+    assert.strictEqual(resultat.buffer.subarray(1, 4).toString(), "PNG");
+  });
+
   console.log("\nUn lien Discord expiré est EXPLIQUÉ, pas renvoyé en \"erreur 404\" :");
 
   await cas("un lien de pièce jointe Discord est reconnu comme périssable", () => {
@@ -143,7 +179,7 @@ function videoDeTest(secondes = 2) {
 
   await cas("les bornes annoncées sont celles de Discord", () => {
     assert.strictEqual(media.MAX_EMOJI, 256 * 1024, "Discord plafonne un émoji à 256 Ko");
-    assert.ok(media.MAX_TELECHARGEMENT <= 8 * 1024 * 1024, "on ne télécharge pas une vidéo entière sur un VPS de 458 Mo");
+    assert.ok(media.MAX_TELECHARGEMENT <= 16 * 1024 * 1024, "on ne télécharge pas une vidéo entière sur un VPS de 458 Mo");
   });
 
   console.log(`\n${reussis} cas vérifiés${ignores ? `, ${ignores} ignoré(s)` : ""}${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

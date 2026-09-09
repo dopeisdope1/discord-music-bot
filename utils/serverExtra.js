@@ -151,7 +151,9 @@ async function createEmoji(client, message, args) {
     moderator: message.author,
     channelId: message.channel.id,
   });
-  return reply(message, "success", `Émoji ${created} créé.`);
+  // La note dit ce qui a ete degrade (animation perdue, image reduite) :
+  // sans elle, on decouvrirait la perte en regardant l'emoji.
+  return reply(message, "success", `Émoji ${created} créé${prepare.note ? ` — ${prepare.note}` : ""}.`);
 }
 
 // --- &massiverole / &unmassiverole ---
