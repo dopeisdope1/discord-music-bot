@@ -48,7 +48,13 @@ function makeChannel(answers) {
     awaitMessages: async () => {
       const next = queue.shift();
       if (next === "__TIMEOUT__") throw new Error("time");
-      return new Collection([["m1", { author: { id: "owner-1" }, content: next }]]);
+      // Une reponse peut etre un texte OU une piece jointe : `{ fichier: url }`
+      // reproduit le message sans contenu qu'on obtient en deposant une image.
+      const message =
+        next && typeof next === "object" && next.fichier
+          ? { author: { id: "owner-1" }, content: "", attachments: new Collection([["a1", { url: next.fichier }]]) }
+          : { author: { id: "owner-1" }, content: next, attachments: new Collection() };
+      return new Collection([["m1", message]]);
     },
     _sent: sent,
   };
@@ -62,6 +68,18 @@ function makeInteraction(formKey, channel) {
     member: { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() } },
     channel,
     customId: `${commandForms.CARD_ID}:textopen:${formKey}`,
+    guild: { id: "g1" },
+    client: {},
+    // Presentes des lors que le formulaire complet s'EXECUTE : sans elles,
+    // l'execution echouait sur `followUp is not a function` — ce qui prouvait
+    // au passage que le correctif fonctionne.
+    deferUpdate: async () => {},
+    followUp: async (payload) => {
+      replies.push(payload);
+    },
+    editReply: async (payload) => {
+      replies.push(payload);
+    },
     reply: async (payload) => {
       replies.push(payload);
     },
@@ -169,6 +187,58 @@ function makeInteraction(formKey, channel) {
     assert.ok(interactionB._replies[0].content.includes("déjà en cours"));
 
     await pending; // laisse la première saisie se terminer (timeout du test sinon)
+  });
+
+  console.log("\nRépondre en JOIGNANT un fichier vaut réponse :");
+
+  await cas("&create : une image déposée remplit le champ du lien, et l'action PART", async () => {
+    // Le cas signalé : la vidéo était jointe au message, donc `content` était
+    // vide. Le champ restait vide, le formulaire n'était jamais complet, et le
+    // bot répondait « Champs enregistrés » sans rien créer.
+    //
+    // On remplace `run` le temps du test : ce qui est vérifié ici, c'est la
+    // VALEUR transmise à l'exécution, pas la création d'émoji elle-même (qui
+    // demanderait un vrai serveur Discord).
+    const form = commandForms.FORMS.create_emoji;
+    const vrai = form.run;
+    let recu = null;
+    form.run = async (client, interaction, v) => {
+      recu = v;
+    };
+    try {
+      commandForms.clearFormState("owner-1", "create_emoji");
+      const lien = "https://cdn.discordapp.com/attachments/1/2/bibendum.gif?ex=1&is=2&hm=abc";
+      const channel = makeChannel([{ fichier: lien }, "oeoe"]);
+      await commandForms.handleFormCardInteraction(makeInteraction("create_emoji", channel));
+
+      assert.ok(recu, "le formulaire complet doit s'exécuter, pas s'arrêter à « Champs enregistrés »");
+      assert.strictEqual(recu.text.url, lien, "le lien de la pièce jointe doit remplir le champ");
+      assert.strictEqual(recu.text.name, "oeoe");
+      assert.ok(
+        channel._sent.some((m) => String(m).includes("C'est parti")),
+        `le salon devait annoncer le lancement : ${channel._sent.join(" | ")}`
+      );
+      assert.ok(
+        !channel._sent.some((m) => String(m).includes("Champs enregistrés")),
+        "« Champs enregistrés » signifierait que rien n'a été lancé"
+      );
+    } finally {
+      form.run = vrai;
+    }
+  });
+
+  await cas("le formulaire est alors COMPLET — il part au lieu de dire « Champs enregistrés »", () => {
+    const form = commandForms.FORMS.create_emoji;
+    assert.strictEqual(form.ready({ text: { url: "https://x/y.gif", name: "oeoe" } }), true);
+    // Sans le lien, il reste incomplet : c'est exactement ce qui se passait.
+    assert.strictEqual(form.ready({ text: { url: "", name: "oeoe" } }), false);
+  });
+
+  await cas("un lien Discord signé n'est PAS tronqué — la signature deviendrait invalide", () => {
+    const champ = commandForms.FORMS.create_emoji.textFields.find((f) => f.key === "url");
+    // Un lien signé fait environ 260 caractères ; le couper renverrait 404.
+    assert.ok(champ.max >= 400, `max=${champ.max} : trop court pour un lien signé`);
+    assert.strictEqual(champ.fichier, true, "le champ doit accepter une pièce jointe");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

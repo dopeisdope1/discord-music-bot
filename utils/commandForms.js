@@ -703,7 +703,13 @@ const FORMS = {
     permission: "server.channels.manage",
     fields: [],
     textFields: [
-      { key: "url", label: "Lien de l'image", max: 300 },
+      // `fichier` : répondre en JOIGNANT l'image vaut réponse. C'est le geste
+      // naturel — et c'est ce qui échouait, le message n'ayant alors aucun
+      // texte, donc un champ vide et un formulaire jamais complet.
+      // `max` généreux : un lien de pièce jointe Discord signé (`?ex=…&is=…
+      // &hm=…`, 64 caractères de signature) frôle les 300, et le tronquer
+      // invaliderait la signature — le lien renverrait alors 404.
+      { key: "url", label: "Lien de l'image (ou joins-la directement)", max: 600, fichier: true },
       { key: "name", label: "Nom de l'émoji", max: 32 },
     ],
     ready: (v) => Boolean(v.text?.url && v.text?.name),
@@ -1726,7 +1732,13 @@ async function collectTextFields(interaction, form, formKey, fields = form.textF
       return interaction.message?.edit({ ...buildFormCard(formKey, interaction.member), attachments: [] }).catch(() => {});
     }
 
-    const raw = collected.first().content.trim();
+    const reponse = collected.first();
+    // Un champ marqué `fichier` accepte une pièce jointe à la place du texte :
+    // face à « Lien de l'image », on dépose l'image. Sans ça, le message n'a
+    // aucun contenu, le champ reste vide, et le formulaire ne part jamais — en
+    // annonçant « Champs enregistrés », ce qui laisse croire que ça a marché.
+    const piece = tf.fichier ? reponse.attachments?.first?.()?.url : null;
+    const raw = (reponse.content || "").trim() || piece || "";
     if (tf.required === false && (raw === "-" || raw === "")) {
       // champ optionnel passé
     } else {
