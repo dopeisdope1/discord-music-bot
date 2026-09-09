@@ -22,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panelctrl-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
-const { buildConfigPanel, buildHomeSpec, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
+const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
 const { ACCENT_COLOR } = require("../utils/helpPanel");
 const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
@@ -129,42 +129,17 @@ function actionsDe(json) {
     }
   });
 
-  await cas("sur le tableau de bord, aucune LIGNE ne devient un paragraphe (elle serait coupée à l'affichage)", () => {
-    // L'accueil est rendu en IMAGE : on vérifie la spec réellement dessinée
-    // (buildHomeSpec), pas du texte Discord qui n'existe plus. Ce qui compte
-    // ici n'est pas le total de la carte mais la longueur de CHAQUE ligne :
-    // au-delà, le rendu la tronque avec une ellipse et l'information est
-    // perdue pour le lecteur.
-    const s = buildHomeSpec(guild, member);
-    assert.ok(s.cartes.length, "l'accueil doit être fait de cartes");
-    for (const carte of s.cartes) {
-      assert.ok(carte.sousTitre.length <= 60, `la description de "${carte.titre}" est trop longue : ${carte.sousTitre}`);
-      for (const item of carte.items) {
-        const ligne = `${item.nom} ${item.description || ""}`.trim();
-        assert.ok(ligne.length <= 90, `la ligne "${ligne}" (${ligne.length}) sera tronquée sur la carte "${carte.titre}"`);
-      }
-    }
-  });
-
-  await cas("chaque carte ne liste que de VRAIES rubriques du panel, jamais une fonction inventée", () => {
-    const vraisLabels = new Set(SECTIONS_META.map((sec) => sec.label));
-    for (const carte of buildHomeSpec(guild, member).cartes) {
-      assert.ok(carte.items.length, `la carte "${carte.titre}" ne doit pas être vide`);
-      for (const item of carte.items) {
-        assert.ok(vraisLabels.has(item.nom), `"${item.nom}" n'est pas une rubrique réelle de SECTIONS`);
-      }
-    }
-  });
-
   await cas("AUCUNE couleur : les rubriques sont toutes dessinées dans la même teinte neutre", () => {
     // Demande explicite. Ce qui distingue une rubrique, c'est son titre.
     const couleurs = SECTIONS.filter((k) => k !== "home").map((k) => buildSectionSpec(guild, k, member, {}).couleur);
     assert.strictEqual(new Set(couleurs).size, 1, `plusieurs teintes subsistent : ${[...new Set(couleurs)].join(", ")}`);
   });
 
-  await cas("l'accueil est COURT : statut, alertes, menu — plus la grille des 23 rubriques", () => {
-    // Elle répétait le menu de navigation juste en dessous, d'où une image
-    // interminable qui n'apprenait rien de plus.
+  await cas("l'accueil ne porte QUE le menu — ni grille, ni bandeau d'état, ni alertes", () => {
+    // Les trois ont été retirés tour à tour : la grille répétait le menu juste
+    // en dessous, le bandeau et les alertes faisaient un rapport là où on
+    // vient seulement ouvrir une rubrique. &panel est un point d'entrée, pas
+    // un écran de veille.
     const panneau = buildConfigPanel(guild, "home", member);
     const json = panneau.components[0].toJSON();
     assert.strictEqual(json.type, 17, "le Container Components V2 reste la racine");
@@ -172,6 +147,11 @@ function actionsDe(json) {
     assert.ok(!json.components.some((c) => c.type === 12), "l'accueil ne doit plus porter d'image");
     assert.strictEqual(panneau.files, undefined, "et donc aucune pièce jointe");
     assert.ok(json.components.some((c) => c.type === 1), "le menu de navigation doit rester");
+
+    // Un seul bloc de texte : l'en-tête. Tout le reste a disparu.
+    const textes = json.components.filter((c) => c.type === 10);
+    assert.strictEqual(textes.length, 1, `${textes.length} blocs de texte : ${textes.map((t) => t.content).join(" | ")}`);
+    assert.ok(!/En ligne|membres ·|en vocal/.test(textes[0].content), textes[0].content);
   });
 
   await cas("le titre est \"PANEL DE CONFIGURATION\", sans emoji", () => {

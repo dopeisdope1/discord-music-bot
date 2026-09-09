@@ -892,46 +892,16 @@ function accessRows(scope, label) {
  * autrement invérifiable une fois rendue en PNG.
  */
 
-/**
- * Au plus deux alertes de sécurité, les plus graves d'abord — même détection
- * que `&security scan` (utils/securityScan.js), jamais une seconde logique.
- * Réservé à qui peut réellement y remédier.
- */
-function alertesSecurite(guild, member) {
-  if (!can(member, "protection.automod") && !can(member, "protection.guard.manage")) return [];
-  const { critical, warnings } = computeSecurityScan(guild);
-  // Plus aucune couleur ici non plus : la gravité se lit dans l'ordre (les
-  // critiques d'abord) et dans le texte, pas dans une pastille teintée.
-  if (!critical.length && !warnings.length) return [{ couleur: TEINTE_NEUTRE, texte: "Tout est en ordre" }];
-  return [...critical.map((l) => ({ couleur: TEINTE_NEUTRE, texte: l })), ...warnings.map((l) => ({ couleur: TEINTE_NEUTRE, texte: l }))].slice(0, 2);
-}
-
-function buildHomeSpec(guild, member, isOwner = accessStore.isOwner(member.id)) {
-  const familles = FAMILIES.filter((f) => f.key !== "accueil" && familySections(f, member, isOwner).length);
-  // Statut et alertes sont DESSINÉS ici plutôt qu'écrits sous l'en-tête : une
-  // mention citée dans une alerte y sortait en pastille cliquable.
-  const info = computeStatus(guild.client);
-  const enVocal = guild.voiceStates.cache.filter((v) => v.channelId).size;
-
-  return {
-    titre: "Centre de gestion",
-    sousTitre: `${member.displayName || member.user?.username || `Membre ${member.id}`} · ${guild.name} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
-    banniere: `En ligne ${formatUptime(info.uptimeMs)} · ${info.ping}ms · ${guild.memberCount.toLocaleString("fr-FR")} membres · ${guild.channels.cache.size} salons · ${enVocal} en vocal`,
-    alertes: alertesSecurite(guild, member),
-    cartes: familles.map((f) => ({
-      cle: f.key,
-      titre: f.label,
-      sousTitre: resumer(f.description),
-      couleur: FAMILY_COLORS[f.key] || TEINTE_NEUTRE,
-      items: familySections(f, member, isOwner).map((r) => ({ nom: r.label, description: resumer(r.description) })),
-    })),
-    pied: "Choisis une famille dans le menu ci-dessous",
-    // Chaque carte prend sa hauteur réelle : les familles à une seule
-    // rubrique laissaient sinon un grand rectangle vide à côté des autres.
-    hauteursLibres: true,
-  };
-}
-
+// L'accueil du panel ne dessine plus rien : ni grille de rubriques, ni
+// bandeau d'état, ni alertes de sécurité. `buildHomeSpec` et
+// `alertesSecurite` ont donc été retirés — ils n'étaient plus appelés que par
+// leurs propres tests, ce qui donne l'illusion d'une couverture sur du code
+// que personne n'exécute.
+//
+// Rien n'est perdu : l'état du bot est dans Diagnostics, les compteurs dans
+// Statistiques, et la détection de sécurité vit là où elle a toujours vécu —
+// utils/securityScan.js, exposée par Sécurité > Vue d'ensemble et par
+// `&security scan`, qui la donne en entier.
 /**
  * Ce qui est réellement DESSINÉ sur la rubrique `section` : la même donnée que
  * le corps texte, en structuré. Exporté pour que les tests vérifient le
@@ -1029,24 +999,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   if (meta.key === "home") {
-    // PLUS de grille de cartes ici : elle listait les 23 rubriques une par
-    // une, ce que le menu de navigation juste en dessous fait déjà — d'où une
-    // image interminable qui répétait le menu. L'accueil se contente donc de
-    // l'essentiel : es-tu en ligne, et qu'est-ce qui cloche.
-    const info = computeStatus(guild.client);
-    const enVocal = guild.voiceStates.cache.filter((v) => v.channelId).size;
-    const lignes = [
-      `> En ligne — ${formatUptime(info.uptimeMs)} · ${info.ping}ms`,
-      `> ${guild.memberCount.toLocaleString("fr-FR")} membres · ${guild.channels.cache.size} salons · ${enVocal} en vocal`,
-    ];
-    // Les alertes sont écrites SANS mention brute : `<@&...>` sortirait en
-    // pastille cliquable, et un `@everyone` cité dans une alerte de sécurité
-    // notifierait tout le serveur.
-    for (const alerte of alertesSecurite(guild, member)) {
-      lignes.push(`> ${alerte.texte.replace(/@everyone/g, "everyone").replace(/@here/g, "here")}`);
-    }
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    // L'accueil ne porte plus RIEN : ni grille de rubriques (le menu juste en
+    // dessous les liste déjà), ni bandeau d'état, ni alertes de sécurité.
+    // Chacun de ces blocs a été retiré sur demande, le dernier au motif qu'il
+    // était moche — et aucun n'était à sa place ici : &panel sert à ouvrir une
+    // rubrique, pas à faire un rapport.
+    //
+    // Rien n'est perdu pour autant : l'uptime et la latence sont dans
+    // Diagnostics, les compteurs dans Statistiques, et les alertes de sécurité
+    // dans Sécurité > Vue d'ensemble comme dans `&security scan` — qui les
+    // donne en entier plutôt que les deux plus graves.
     container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
   }
@@ -2821,5 +2783,4 @@ async function handleHistorySearchModal(interaction, carried = {}) {
 }
 
 module.exports = {
-  buildHomeSpec,
   buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
