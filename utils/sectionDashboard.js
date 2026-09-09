@@ -1,6 +1,6 @@
 const { DateTime } = require("luxon");
 const { AttachmentBuilder } = require("discord.js");
-const { rendreEnCache } = require("./dashboardImage");
+const { rendreEnCache, texteAlternatif } = require("./dashboardImage");
 
 // Transforme le corps TEXTE d'une rubrique du panel (utils/configPanel.js ::
 // sectionBody) en spec de tableau de bord dessinable (utils/dashboardImage.js).
@@ -255,27 +255,6 @@ function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
     pied: notes.length ? notes.join(" · ") : undefined,
     hauteursLibres: true,
   };
-}
-
-// Discord plafonne le texte alternatif d'une pièce jointe à 1024 caractères.
-const ALT_MAX = 1024;
-
-/**
- * Texte alternatif de l'image : ce qu'un lecteur d'écran lira, et la seule
- * façon pour quelqu'un qui ne voit pas l'image d'accéder au contenu. Un bot
- * dont les réponses sont des images le rend indispensable — sans lui, tout ce
- * qui a été dessiné est perdu pour ces personnes.
- */
-function texteAlternatif(spec) {
-  const lignes = [spec.titre];
-  for (const carte of spec.cartes) {
-    if (carte.titre && carte.titre !== spec.titre) lignes.push(`— ${carte.titre} —`);
-    if (!carte.items.length && carte.vide) lignes.push(carte.vide);
-    for (const item of carte.items) lignes.push(item.description ? `${item.nom} : ${item.description}` : item.nom);
-  }
-  if (spec.pied) lignes.push(spec.pied);
-  const texte = lignes.filter(Boolean).join("\n");
-  return texte.length > ALT_MAX ? `${texte.slice(0, ALT_MAX - 1)}…` : texte;
 }
 
 /**

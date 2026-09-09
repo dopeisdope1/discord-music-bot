@@ -24,7 +24,7 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
-const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
+const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
 const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
@@ -1022,7 +1022,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   const specRubrique = buildSectionSpec(guild, meta.key, member, state, corps);
   const pngRubrique = sansImage ? null : rendreEnCache(specRubrique);
   if (pngRubrique) {
-    fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE }));
+    fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE, description: texteAlternatif(specRubrique) }));
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
     );

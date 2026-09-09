@@ -15,7 +15,7 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
+const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
 
 // Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
 // identité visuelle pour les deux "pages" du même système, demande
@@ -487,7 +487,11 @@ function buildHelpPanel(guildId, member, tier = null, authorId, page = 0, { sans
   return {
     flags: MessageFlags.IsComponentsV2,
     components: [container],
-    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE })] } : {}),
+    // `description` = le texte alternatif de la piece jointe. C'est la SEULE
+    // facon d'acceder au contenu quand l'image ne s'affiche pas : images
+    // desactivees, connexion lente, lecteur d'ecran. Un bot dont l'aide est
+    // une image le rend indispensable.
+    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE, description: texteAlternatif(spec) })] } : {}),
   };
 }
 
