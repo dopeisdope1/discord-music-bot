@@ -38,6 +38,18 @@ function binaireFfmpeg() {
   }
 }
 
+/**
+ * Un lien de pièce jointe Discord, donc soumis à expiration ?
+ *
+ * On ne cherche PAS à deviner si la signature est encore valable : elle peut
+ * être présente et périmée. La question posée est seulement « ce 404
+ * s'explique-t-il par l'expiration ? », et pour un lien d'attachement Discord
+ * la réponse est oui dans l'immense majorité des cas.
+ */
+function lienDiscordExpire(url) {
+  return /^https?:\/\/(cdn\.discordapp\.com|media\.discordapp\.net)\/attachments\//i.test(String(url));
+}
+
 /** Une vidéo, qu'il faudra convertir ? */
 function estVideo(url, contentType = "") {
   return /^video\//i.test(contentType) || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(String(url));
@@ -57,7 +69,23 @@ async function telecharger(url) {
   } catch (err) {
     return { ok: false, motif: `Le lien n'a pas répondu (${err.message}).` };
   }
-  if (!reponse.ok) return { ok: false, motif: `Le lien renvoie une erreur ${reponse.status}.` };
+  if (!reponse.ok) {
+    // Cas de loin le plus fréquent, et le plus déroutant : depuis 2023, les
+    // liens de pièces jointes Discord sont SIGNÉS et expirent au bout de
+    // quelques heures. Un lien recopié sans ses paramètres `?ex=…&is=…&hm=…`,
+    // ou simplement trop vieux, renvoie 404 à tout le monde — y compris à
+    // Discord lui-même. « erreur 404 » n'aidait personne à comprendre ça.
+    if (lienDiscordExpire(url)) {
+      return {
+        ok: false,
+        motif: [
+          "Ce lien Discord a expiré — ils ne sont valables que quelques heures.",
+          "Joins directement le fichier à ton message : `create <nom>` avec l'image en pièce jointe.",
+        ].join("\n"),
+      };
+    }
+    return { ok: false, motif: `Le lien renvoie une erreur ${reponse.status}.` };
+  }
 
   const annoncee = Number(reponse.headers.get("content-length") || 0);
   if (annoncee > MAX_TELECHARGEMENT) {
@@ -148,13 +176,20 @@ async function preparerEmoji(url) {
     return { ok: true, attachment: gif.buffer, converti: true };
   }
 
-  if (buffer.length > MAX_EMOJI) {
+  if (buffer.length > MARGE_EMOJI) {
+    // Une image trop lourde n'est pas une impasse : la même chaîne qui allège
+    // une vidéo allège aussi un GIF (ffmpeg le lit sans rien changer d'autre).
+    // C'est le cas le PLUS courant en pratique — un GIF du web dépasse
+    // presque toujours 256 Ko — et refuser sans essayer aurait laissé la
+    // commande inutilisable pour ce à quoi elle sert le plus.
+    const allege = await versGif(buffer);
+    if (allege.ok) return { ok: true, attachment: allege.buffer, converti: true };
     return {
       ok: false,
-      motif: `Image trop lourde (${Math.round(buffer.length / 1024)} Ko) — Discord plafonne un émoji à 256 Ko.`,
+      motif: `Image trop lourde (${Math.round(buffer.length / 1024)} Ko) et impossible à alléger sous les 256 Ko de Discord.`,
     };
   }
   return { ok: true, attachment: buffer, converti: false };
 }
 
-module.exports = { preparerEmoji, telecharger, versGif, estVideo, binaireFfmpeg, MAX_EMOJI, MAX_TELECHARGEMENT };
+module.exports = { preparerEmoji, telecharger, versGif, estVideo, lienDiscordExpire, binaireFfmpeg, MAX_EMOJI, MAX_TELECHARGEMENT };

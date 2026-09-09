@@ -97,6 +97,40 @@ function videoDeTest(secondes = 2) {
     assert.ok(resultat.motif, "un motif doit être donné à l'utilisateur");
   });
 
+  await casFfmpeg("un GIF trop lourd est ALLÉGÉ, pas refusé", async () => {
+    // Le cas le plus courant en pratique : un GIF du web dépasse presque
+    // toujours 256 Ko. Refuser sans essayer rendait la commande inutilisable
+    // pour ce à quoi elle sert le plus.
+    const binaire = media.binaireFfmpeg();
+    const gros = path.join(process.env.DATA_DIR, "gros.gif");
+    execFileSync(binaire, ["-y", "-f", "lavfi", "-i", "testsrc=size=480x480:rate=25:duration=5", gros], { stdio: "ignore" });
+    const buffer = fs.readFileSync(gros);
+    assert.ok(buffer.length > media.MAX_EMOJI, `le GIF de test doit être trop lourd (${buffer.length} octets)`);
+
+    const resultat = await media.versGif(buffer);
+    assert.ok(resultat.ok, resultat.motif);
+    assert.strictEqual(resultat.buffer.subarray(0, 3).toString(), "GIF");
+    assert.ok(resultat.buffer.length <= media.MAX_EMOJI, `${resultat.buffer.length} octets après allègement`);
+  });
+
+  console.log("\nUn lien Discord expiré est EXPLIQUÉ, pas renvoyé en \"erreur 404\" :");
+
+  await cas("un lien de pièce jointe Discord est reconnu comme périssable", () => {
+    assert.strictEqual(media.lienDiscordExpire("https://cdn.discordapp.com/attachments/1/2/x.gif"), true);
+    assert.strictEqual(media.lienDiscordExpire("https://media.discordapp.net/attachments/1/2/x.gif"), true);
+    // Un émoji Discord, lui, ne périme pas : son lien doit rester traité
+    // comme n'importe quel autre.
+    assert.strictEqual(media.lienDiscordExpire("https://cdn.discordapp.com/emojis/123.gif"), false);
+    assert.strictEqual(media.lienDiscordExpire("https://static.klipy.com/a.mp4"), false);
+  });
+
+  await cas("le message dit QUOI FAIRE, pas seulement que ça a échoué", async () => {
+    const resultat = await media.telecharger("https://cdn.discordapp.com/attachments/1494209241651613756/1499453607676743860/togif.gif");
+    assert.strictEqual(resultat.ok, false);
+    assert.ok(/expiré/i.test(resultat.motif), resultat.motif);
+    assert.ok(/pièce jointe/i.test(resultat.motif), "il faut indiquer la solution de repli");
+  });
+
   console.log("\nGarde-fous de téléchargement :");
 
   await cas("un lien qui ne répond pas donne un motif, pas une attente sans fin", async () => {
