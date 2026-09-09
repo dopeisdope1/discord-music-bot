@@ -135,6 +135,7 @@ const SECTIONS = [
   { key: "mute", label: "Mute", description: "Rôle utilisé par &mute/&tempmute/&cmute", permission: "protection.automod" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
   { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
+  { key: "channels", label: "Salons", description: "Sélectionner plusieurs salons et les supprimer d'un coup", permission: "channels.manage" },
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
   { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
   { key: "polls", label: "Sondages", description: "Créer un sondage (2 à 5 options)", permission: "server.polls.manage" },
@@ -213,6 +214,36 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 // rendu reste lisible sans rien colorer.
 const TEINTE_NEUTRE = "#d0d0d0";
 
+// Salons cochés dans la rubrique "Salons", en attente de suppression.
+//
+// En mémoire, PAR PERSONNE et par serveur : le `state` du panel ne survit pas
+// au clic suivant, et les identifiants ne tiendraient pas dans un customId
+// (100 caractères, contre 19 par salon). Rien n'est écrit sur disque — une
+// sélection en cours n'a aucun intérêt après un redémarrage, et la faire
+// survivre reviendrait à garder une liste de suppression armée.
+const selectionsSalons = new Map();
+const DUREE_SELECTION_MS = 10 * 60_000;
+
+const cleSelection = (guildId, userId) => `${guildId}:${userId}`;
+
+/** @returns {string[]} identifiants choisis, vide si rien ou si trop ancien */
+function selectionSalons(guildId, userId) {
+  const entree = selectionsSalons.get(cleSelection(guildId, userId));
+  if (!entree) return [];
+  // Périmée : une sélection oubliée une heure plus tôt ne doit pas pouvoir
+  // être lancée par un clic distrait.
+  if (Date.now() - entree.a > DUREE_SELECTION_MS) {
+    selectionsSalons.delete(cleSelection(guildId, userId));
+    return [];
+  }
+  return entree.ids;
+}
+
+function definirSelectionSalons(guildId, userId, ids) {
+  if (!ids.length) selectionsSalons.delete(cleSelection(guildId, userId));
+  else selectionsSalons.set(cleSelection(guildId, userId), { ids: [...new Set(ids)], a: Date.now() });
+}
+
 // Commandes listées nommément sur la fiche d'un rôle. Un rôle très doté en
 // débloque plus de cent : les dessiner toutes ferait une image de plusieurs
 // milliers de pixels de haut, où plus rien ne se lit. Le compte exact reste
@@ -246,6 +277,7 @@ const FAMILIES = [
   { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
   { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
   { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", sections: ["voice"] },
+  { key: "salons", label: "Salons", description: "Supprimer plusieurs salons d'un coup", sections: ["channels"] },
   { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions"] },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
   { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
@@ -690,6 +722,25 @@ function sectionBody(section, guild, member, state) {
       `> **Le demandeur peut fermer son ticket** : ${config.ownerCanClose ? "oui" : "non"}`,
       `> **Catégorie des tickets** : ${categorie ? `<#${categorie.id}>` : "*aucune — créés à la racine*"}`,
     ].join("\n");
+  }
+
+  if (section === "channels") {
+    const choisis = selectionSalons(guildId, member.id);
+    const existants = choisis.map((id) => guild.channels.cache.get(id)).filter(Boolean);
+    const lignes = [
+      "> Choisis les salons à supprimer dans le menu, puis lance la suppression.",
+      `> **Sélection** : ${existants.length ? existants.map((c) => `<#${c.id}>`).join(", ") : "*aucun salon choisi*"}`,
+    ];
+    if (existants.length) {
+      // Le rappel est délibérément explicite : c'est la seule action du panel
+      // qui détruit des messages, et rien ne permet de les récupérer ensuite.
+      lignes.push(
+        "",
+        `**${existants.length} salon(s) seront supprimés DÉFINITIVEMENT**, avec tout leur historique de messages.`,
+        "-# `&backup` ne sauvegarde que la structure du serveur, jamais les messages."
+      );
+    }
+    return lignes.join("\n");
   }
 
   if (section === "voice") {
@@ -1391,6 +1442,35 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${ID}:guardcreationlimit`).setLabel("Régler le seuil de création de compte").setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
+  } else if (meta.key === "channels") {
+    const choisis = selectionSalons(guild.id, member.id).filter((id) => guild.channels.cache.has(id));
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(`${ID}:channelsdelpick`)
+          .setPlaceholder("Choisir les salons à supprimer")
+          // Toutes les sortes de salon : il n'y a aucune raison de pouvoir
+          // nettoyer les salons textuels et pas les vocaux ou les catégories.
+          .setMinValues(0)
+          .setMaxValues(25)
+          .setDefaultChannels(choisis)
+      )
+    );
+    if (choisis.length) {
+      // Bouton distinct, et non une suppression dès le choix : c'est la seule
+      // action irréversible du panel, et un menu à sélection multiple se
+      // manipule par petites touches — un clic de trop détruirait des salons
+      // que personne n'avait décidé de perdre.
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:channelsdelgo`)
+            .setLabel(`Supprimer ${choisis.length} salon(s)`)
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`${ID}:channelsdelclear`).setLabel("Vider la sélection").setStyle(ButtonStyle.Secondary)
         )
       );
     }
@@ -2249,6 +2329,65 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       for (const id of choisis) antiLink.setChannelAllowed(guildId, id, true);
     }
     return goto("protection", { protectionAction: action === "spamexempt" ? "spam_exempt" : "link_allow" });
+  }
+
+  // --- Rubrique "Salons" : suppression groupée ---
+  if (action === "channelsdelpick" || action === "channelsdelclear" || action === "channelsdelgo") {
+    if (!can(member, "channels.manage")) {
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    }
+
+    if (action === "channelsdelpick") {
+      // Un menu à sélection multiple renvoie l'état COMPLET des cases cochées,
+      // pas la différence : on remplace donc, sinon décocher n'aurait aucun
+      // effet et la liste ne ferait que grossir.
+      definirSelectionSalons(guildId, member.id, interaction.values || []);
+      return goto("channels");
+    }
+
+    if (action === "channelsdelclear") {
+      definirSelectionSalons(guildId, member.id, []);
+      return goto("channels");
+    }
+
+    const choisis = selectionSalons(guildId, member.id);
+    if (!choisis.length) return goto("channels");
+
+    const supprimes = [];
+    const refuses = [];
+    for (const id of choisis) {
+      const salon = guild.channels.cache.get(id);
+      if (!salon) continue; // déjà supprimé entre-temps
+      // Le salon qui PORTE le panel est écarté : le supprimer ferait échouer
+      // la mise à jour du message juste après, et le compte-rendu de ce qui a
+      // été détruit serait perdu avec lui.
+      if (id === interaction.channelId) {
+        refuses.push(`${salon.name} (c'est le salon où tu es)`);
+        continue;
+      }
+      if (!salon.deletable) {
+        refuses.push(`${salon.name} (droits insuffisants)`);
+        continue;
+      }
+      try {
+        await salon.delete(`Suppression groupée depuis le panel par ${interaction.user.tag}`);
+        supprimes.push(salon.name);
+      } catch (err) {
+        refuses.push(`${salon.name} (${err.message})`);
+      }
+    }
+    definirSelectionSalons(guildId, member.id, []);
+
+    // Le compte-rendu part en éphémère : la rubrique elle-même se recharge
+    // derrière, et l'écrire dans le panel le ferait disparaître au clic
+    // suivant, avant même d'avoir pu le lire.
+    const lignes = [];
+    if (supprimes.length) lignes.push(`**${supprimes.length} salon(s) supprimé(s)** : ${supprimes.join(", ")}`);
+    if (refuses.length) lignes.push(`**${refuses.length} conservé(s)** : ${refuses.join(", ")}`);
+    await interaction.reply({ content: lignes.join("\n") || "Aucun salon à supprimer.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    // `goto` a déjà répondu via `reply` : on édite donc le message du panel
+    // directement pour le remettre à jour.
+    return interaction.message?.edit({ ...buildConfigPanel(guild, "channels", member), attachments: [] }).catch(() => {});
   }
 
   if (action === "wladd" || action === "wldel") {

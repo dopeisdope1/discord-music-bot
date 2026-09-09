@@ -30,7 +30,7 @@ const PERMISSIONS = [
   // --- Salons ---
   { key: "channels.lock", category: "channels", label: "Verrouiller/déverrouiller un salon (&lock, &unlock)" },
   { key: "channels.slowmode", category: "channels", label: "Mode lent (&slowmode)" },
-  { key: "channels.manage", category: "channels", label: "Masquer/renouveler un salon (&hide, &unhide, &renew)" },
+  { key: "channels.manage", category: "channels", label: "Masquer/renouveler un salon, supprimer en lot depuis le panel (&hide, &unhide, &renew)" },
   // Séparée de channels.manage pour la même raison que moderation.unbanall
   // ci-dessus : &hide/&unhide touchent UN salon, &hideall/&unhideall
   // touchent TOUT le serveur d'un coup — ne doivent pas être débloquées
