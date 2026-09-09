@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Autorisations accordées à la main par le propriétaire, par "portée" :
 //   clear  -> dispense du quota des déclencheurs "uo clear" & consorts
@@ -26,7 +27,7 @@ let cache = null;
 
 function readLegacyClear() {
   try {
-    const parsed = JSON.parse(fs.readFileSync(LEGACY_FILE, "utf8"));
+    const parsed = lireJson(LEGACY_FILE);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -38,7 +39,7 @@ function load() {
 
   let parsed = null;
   try {
-    parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    parsed = lireJson(DATA_FILE);
   } catch {
     parsed = null;
   }
@@ -55,7 +56,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[accessStore] échec de la sauvegarde :", err);
   }

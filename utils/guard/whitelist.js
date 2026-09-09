@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("../jsonFile");
 
 // Bypass anti-nuke par utilisateur/rôle — délibérément séparé de
 // utils/automod/antiSpam.js (protection.whitelist) : exempter quelqu'un du
@@ -14,7 +15,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    cache = lireJson(DATA_FILE);
   } catch {
     cache = {};
   }
@@ -24,7 +25,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[guard/whitelist] échec de la sauvegarde :", err);
   }

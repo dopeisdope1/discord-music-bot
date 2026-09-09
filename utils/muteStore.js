@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Rôle de mute (distinct du timeout natif Discord, voir &mute/&tempmute) +
 // suivi des mutes temporaires pour les lever automatiquement à l'échéance.
@@ -16,7 +17,7 @@ let tempCache = null;
 function loadRoles() {
   if (roleCache) return roleCache;
   try {
-    roleCache = JSON.parse(fs.readFileSync(ROLE_FILE, "utf8"));
+    roleCache = lireJson(ROLE_FILE);
   } catch {
     roleCache = {};
   }
@@ -25,7 +26,7 @@ function loadRoles() {
 function saveRoles() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(ROLE_FILE, JSON.stringify(roleCache, null, 2));
+    ecrireJson(ROLE_FILE, roleCache);
   } catch (err) {
     console.error("[muteStore] échec de la sauvegarde (rôle) :", err);
   }
@@ -34,7 +35,7 @@ function saveRoles() {
 function loadTemp() {
   if (tempCache) return tempCache;
   try {
-    const parsed = JSON.parse(fs.readFileSync(TEMP_FILE, "utf8"));
+    const parsed = lireJson(TEMP_FILE);
     tempCache = Array.isArray(parsed) ? parsed : [];
   } catch {
     tempCache = [];
@@ -44,7 +45,7 @@ function loadTemp() {
 function saveTemp() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(TEMP_FILE, JSON.stringify(tempCache, null, 2));
+    ecrireJson(TEMP_FILE, tempCache);
   } catch (err) {
     console.error("[muteStore] échec de la sauvegarde (temp) :", err);
   }

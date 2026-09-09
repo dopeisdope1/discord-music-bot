@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Compteurs journaliers par serveur (messages/arrivées/départs), pour
 // &stats history. Écriture VOLONTAIREMENT différée (flush() périodique
@@ -20,7 +21,7 @@ let dirty = false;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    cache = lireJson(DATA_FILE);
   } catch {
     cache = {};
   }
@@ -32,7 +33,7 @@ function flush() {
   if (!dirty) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
     dirty = false;
   } catch (err) {
     console.error("[statsStore] échec de la sauvegarde :", err);

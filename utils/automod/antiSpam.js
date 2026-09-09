@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { report } = require("../moderation/actions");
+const { ecrireJson, lireJson } = require("../jsonFile");
 
 // Anti-spam/anti-flood léger (section 22 du cahier des charges) : c'est la
 // SEULE brique d'automod ajoutée à ce bot. Anti-lien, anti-@everyone,
@@ -22,7 +23,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    cache = lireJson(DATA_FILE);
   } catch {
     cache = {};
   }
@@ -32,7 +33,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[antiSpam] échec de la sauvegarde :", err);
   }

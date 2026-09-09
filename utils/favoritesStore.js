@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Favoris PAR UTILISATEUR et non par serveur : "mes favoris" suit la personne
 // d'un serveur à l'autre. Stocké dans DATA_DIR, monté sur un Volume Railway
@@ -16,7 +17,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    cache = lireJson(DATA_FILE);
   } catch {
     cache = {};
   }
@@ -26,7 +27,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[favoritesStore] échec de la sauvegarde :", err);
   }

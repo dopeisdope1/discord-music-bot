@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Message de bienvenue à l'arrivée d'un membre (voir &panel > Bienvenue et
 // index.js, listener "guildMemberAdd"). `data/welcome.json` contenait déjà
@@ -15,7 +16,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    cache = lireJson(DATA_FILE);
   } catch {
     cache = {};
   }
@@ -25,7 +26,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[welcomeStore] échec de la sauvegarde :", err);
   }

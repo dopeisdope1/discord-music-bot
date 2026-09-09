@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const caseCounterStore = require("./caseCounterStore");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Historique de modération centralisé (section 20 du cahier des charges).
 // JSON append-only : suffisant à l'échelle d'un serveur Discord (quelques
@@ -30,7 +31,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const parsed = lireJson(DATA_FILE);
     cache = Array.isArray(parsed) ? parsed : [];
   } catch {
     cache = [];
@@ -65,7 +66,7 @@ function migrateCaseNumbers() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(DATA_FILE, cache);
   } catch (err) {
     console.error("[moderationHistoryStore] échec de la sauvegarde :", err);
   }

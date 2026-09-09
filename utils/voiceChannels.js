@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Salons vocaux temporaires : un salon "générateur" (le hub) configuré par
 // serveur ; le rejoindre crée un salon vocal personnel et y déplace le
@@ -21,7 +22,7 @@ let configCache = null;
 function loadHubs() {
   if (hubCache) return hubCache;
   try {
-    hubCache = JSON.parse(fs.readFileSync(HUB_FILE, "utf8"));
+    hubCache = lireJson(HUB_FILE);
   } catch {
     hubCache = {};
   }
@@ -31,7 +32,7 @@ function loadHubs() {
 function saveHubs() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(HUB_FILE, JSON.stringify(hubCache, null, 2));
+    ecrireJson(HUB_FILE, hubCache);
   } catch (err) {
     console.error("[voiceChannels] échec de la sauvegarde (hub) :", err);
   }
@@ -40,7 +41,7 @@ function saveHubs() {
 function loadChannels() {
   if (channelsCache) return channelsCache;
   try {
-    channelsCache = JSON.parse(fs.readFileSync(CHANNELS_FILE, "utf8"));
+    channelsCache = lireJson(CHANNELS_FILE);
   } catch {
     channelsCache = {};
   }
@@ -50,7 +51,7 @@ function loadChannels() {
 function saveChannels() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CHANNELS_FILE, JSON.stringify(channelsCache, null, 2));
+    ecrireJson(CHANNELS_FILE, channelsCache);
   } catch (err) {
     console.error("[voiceChannels] échec de la sauvegarde (salons) :", err);
   }
@@ -91,7 +92,7 @@ function unregisterChannel(channelId) {
 function loadConfig() {
   if (configCache) return configCache;
   try {
-    configCache = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    configCache = lireJson(CONFIG_FILE);
   } catch {
     configCache = {};
   }
@@ -101,7 +102,7 @@ function loadConfig() {
 function saveConfig() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configCache, null, 2));
+    ecrireJson(CONFIG_FILE, configCache);
   } catch (err) {
     console.error("[voiceChannels] échec de la sauvegarde (config) :", err);
   }

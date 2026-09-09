@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Sauvegardes de structure de serveur (&backup) : stockage GLOBAL, pas par
 // serveur — tout l'intérêt est de pouvoir sauvegarder depuis un serveur et
@@ -12,7 +13,7 @@ let cache = null;
 function load() {
   if (cache) return cache;
   try {
-    cache = JSON.parse(fs.readFileSync(FILE, "utf8"));
+    cache = lireJson(FILE);
   } catch {
     cache = {};
   }
@@ -22,7 +23,7 @@ function load() {
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(cache, null, 2));
+    ecrireJson(FILE, cache);
   } catch (err) {
     console.error("[serverBackupStore] échec de la sauvegarde :", err);
   }

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Tickets : un salon "annonce" (message + bouton "Ouvrir un ticket"), un
 // rôle staff qui voit les tickets ouverts, et le suivi des tickets ouverts
@@ -14,7 +15,7 @@ let openCache = null;
 function loadConfig() {
   if (configCache) return configCache;
   try {
-    configCache = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    configCache = lireJson(CONFIG_FILE);
   } catch {
     configCache = {};
   }
@@ -23,7 +24,7 @@ function loadConfig() {
 function saveConfig() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configCache, null, 2));
+    ecrireJson(CONFIG_FILE, configCache);
   } catch (err) {
     console.error("[ticketStore] échec de la sauvegarde (config) :", err);
   }
@@ -32,7 +33,7 @@ function saveConfig() {
 function loadOpen() {
   if (openCache) return openCache;
   try {
-    openCache = JSON.parse(fs.readFileSync(OPEN_FILE, "utf8"));
+    openCache = lireJson(OPEN_FILE);
   } catch {
     openCache = {};
   }
@@ -41,7 +42,7 @@ function loadOpen() {
 function saveOpen() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(OPEN_FILE, JSON.stringify(openCache, null, 2));
+    ecrireJson(OPEN_FILE, openCache);
   } catch (err) {
     console.error("[ticketStore] échec de la sauvegarde (ouverts) :", err);
   }
