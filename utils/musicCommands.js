@@ -23,6 +23,7 @@ const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
 const customCommands = require("./customCommands");
+const messageOwner = require("./messageOwner");
 const counters = require("./counters");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
@@ -313,10 +314,12 @@ async function repondreAvecTableauDeBord(message, construire) {
   // pour un problème de permission dans les logs.
   const avecImage = construire(false);
   try {
-    return await message.reply(avecImage);
+    // `repondreEtRetenir` : le panneau appartient a qui l'a ouvert, et lui
+    // seul peut cliquer dessus (voir utils/messageOwner.js).
+    return await messageOwner.repondreEtRetenir(message, avecImage);
   } catch (err) {
     console.error(`[dashboard] envoi de l'image refusé (permission « Joindre des fichiers » ?) : ${err.message}`);
-    return message.reply(construire(true));
+    return messageOwner.repondreEtRetenir(message, construire(true));
   }
 }
 
@@ -646,7 +649,7 @@ async function handleMusicTextCommand(client, message) {
     if (bareFormKey) {
       const form = commandForms.FORMS[bareFormKey];
       if (form && (form.permission == null || can(message.member, form.permission))) {
-        return message.reply(commandForms.buildFormCard(bareFormKey, message.member));
+        return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(bareFormKey, message.member));
       }
     }
 
@@ -679,7 +682,7 @@ async function handleMusicTextCommand(client, message) {
         const extracted = commandForms.extractFormValues(form, message, modArgs);
         if (!commandForms.structuralFieldsSatisfied(form, extracted)) {
           commandForms.setFormState(message.author.id, directFormKey, extracted);
-          return message.reply(commandForms.buildFormCard(directFormKey, message.member));
+          return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(directFormKey, message.member));
         }
       }
     }

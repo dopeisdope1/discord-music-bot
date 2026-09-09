@@ -55,6 +55,7 @@ const { applyAutoroles } = require("./utils/autoroleCommands");
 const { handleVerifyButton } = require("./utils/verification");
 const statsStore = require("./utils/statsStore");
 const counters = require("./utils/counters");
+const messageOwner = require("./utils/messageOwner");
 const voiceChannels = require("./utils/voiceChannels");
 const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
@@ -447,6 +448,32 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
     return;
+  }
+
+  // UN PANNEAU APPARTIENT À QUI L'A OUVERT.
+  //
+  // `&panel` et les cartes de commande sont des messages publics : n'importe
+  // qui pouvait cliquer sur les menus de la carte ouverte par quelqu'un
+  // d'autre — au minimum en la faisant changer sous ses yeux, au pire en
+  // lançant une action à sa place s'il avait lui aussi le droit. Les
+  // permissions ne couvrent pas ce cas : deux modérateurs ont les mêmes, et ce
+  // n'est pas une raison pour piloter le panneau de l'autre.
+  //
+  // Les autres panneaux (bannissement, ban de masse, confirmations
+  // d'administration) portaient déjà cette vérification, chacun avec son
+  // jeton ; ces deux-là ne l'avaient pas.
+  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`];
+  if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
+    const { autorise, proprietaire } = await messageOwner.verifier(interaction);
+    if (!autorise) {
+      await interaction
+        .reply({
+          content: `Ce panneau a été ouvert par <@${proprietaire}>. Lance la commande toi-même pour avoir le tien.`,
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => {});
+      return;
+    }
   }
 
   // Panneau de configuration : boutons, menus ET modales passent tous par là
