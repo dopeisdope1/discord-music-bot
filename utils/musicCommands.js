@@ -24,6 +24,7 @@ const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
 const customCommands = require("./customCommands");
 const messageOwner = require("./messageOwner");
+const { createRateLimiter } = require("./rateLimiter");
 const counters = require("./counters");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
@@ -48,6 +49,15 @@ const { securityScan } = require("./securityScan");
 // répondraient encore en essayant d'utiliser un client.kazagumo sans aucun
 // nœud connecté.
 const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
+
+// Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
+// Ce sont les seules a etre limitees en frequence : elles sont accessibles
+// sans droit particulier, et chaque appel mobilise le moteur de rendu.
+const COMMANDES_DESSINEES = new Set(["help", "panel"]);
+// Genereux a dessein : personne ne tape `&help` six fois en trente secondes
+// sans le faire expres. Le but est d'arreter une boucle, pas de gener
+// quelqu'un qui navigue.
+const limiteurDessin = createRateLimiter(6, 30_000);
 
 const URL_REGEX = /^https?:\/\//i;
 const LOOP_KEYWORDS = {
@@ -684,6 +694,27 @@ async function handleMusicTextCommand(client, message) {
           commandForms.setFormState(message.author.id, directFormKey, extracted);
           return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(directFormKey, message.member));
         }
+      }
+    }
+
+    // Quota sur les commandes qui DESSINENT une image. Chaque appel fait
+    // tourner le moteur canvas, et le VPS n'a que 458 Mo : quelqu'un qui
+    // enchaîne `&help` en boucle mobilise la machine pour rien. Le cache
+    // amortit les rendus identiques, pas ceux qui changent de page à chaque
+    // fois.
+    //
+    // Les commandes de MODÉRATION en sont volontairement exclues : bannir dix
+    // personnes d'affilée est un usage légitime, et se faire refuser au
+    // huitième serait bien pire que le coût du dessin.
+    if (COMMANDES_DESSINEES.has(cmdLower)) {
+      const { allowed, retryAfterMs } = limiteurDessin.check(message.author.id);
+      if (!allowed) {
+        const secondes = Math.ceil(retryAfterMs / 1000);
+        return message
+          .reply({
+            embeds: [buildStatusEmbed("error", `Doucement — réessaie dans ${secondes} seconde(s).`)],
+          })
+          .catch(() => {});
       }
     }
 
