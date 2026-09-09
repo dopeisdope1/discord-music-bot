@@ -71,7 +71,14 @@ const DEFINITIONS = [
     auditEvent: AuditLogEvent.MemberBanRemove,
     threshold: BURST,
     revert: async (entry, guild) => {
-      if (entry.targetId) await guild.members.ban(entry.targetId, { reason: "Anti-nuke : re-bannissement automatique" }).catch(() => {});
+      // Un echec ici est une DEFENSE QUI N'A PAS EU LIEU : la personne
+      // debannie en rafale reste sur le serveur. Avale en silence, rien nulle
+      // part ne permettait de s'en apercevoir.
+      if (entry.targetId) {
+        await guild.members
+          .ban(entry.targetId, { reason: "Anti-nuke : re-bannissement automatique" })
+          .catch((err) => console.error(`[guard/antiunban] re-bannissement de ${entry.targetId} impossible : ${err.message}`));
+      }
     },
   },
 ];

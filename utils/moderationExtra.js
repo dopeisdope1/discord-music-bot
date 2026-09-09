@@ -192,9 +192,20 @@ async function unmuteall(client, message) {
 
   const members = [...role.members.values()];
   let count = 0;
+  const echecs = [];
   for (const m of members) {
-    await m.roles.remove(role, `Démute de masse par ${message.author.tag}`).catch(() => {});
-    count++;
+    // `count++` etait incremente MEME quand le retrait echouait : la commande
+    // annoncait donc des demutes qui n'avaient pas eu lieu. Un rapport faux
+    // est pire qu'un silence.
+    try {
+      await m.roles.remove(role, `Démute de masse par ${message.author.tag}`);
+      count++;
+    } catch (err) {
+      echecs.push(`${m.user?.tag || m.id} (${err.message})`);
+    }
+  }
+  if (echecs.length) {
+    console.error(`[unmuteall] ${echecs.length} echec(s) : ${echecs.join(", ")}`);
   }
   muteStore.clearTempMutes(message.guild.id);
 
@@ -225,7 +236,15 @@ async function checkExpiredMutes(client) {
     if (!role) continue;
     const member = await guild.members.fetch(entry.userId).catch(() => null);
     if (!member || !member.roles.cache.has(role.id)) continue;
-    await member.roles.remove(role, "Fin du mute temporaire").catch(() => {});
+    // Un echec laisse la personne MUETTE indefiniment, alors que sa sanction
+    // est terminee. On journalise, et surtout on n'annonce pas une fin de mute
+    // qui n'a pas eu lieu.
+    try {
+      await member.roles.remove(role, "Fin du mute temporaire");
+    } catch (err) {
+      console.error(`[tempmute] fin de mute impossible pour ${member.id} : ${err.message}`);
+      continue;
+    }
     await report(client, {
       guildId: entry.guildId,
       category: "moderation",

@@ -357,7 +357,15 @@ async function untemprole(client, message, args) {
   if (!role) return reply(message, "error", "Indique un rôle : `untemprole @membre @rôle`.");
 
   tempRoleStore.remove(message.guild.id, target.id, role.id);
-  if (target.roles.cache.has(role.id)) await target.roles.remove(role, `Rôle temporaire retiré par ${message.author.tag}`).catch(() => {});
+  if (target.roles.cache.has(role.id)) {
+    // Le succes etait annonce meme quand le retrait echouait (role trop haut,
+    // permission manquante) : le role restait, et personne ne le savait.
+    try {
+      await target.roles.remove(role, `Rôle temporaire retiré par ${message.author.tag}`);
+    } catch (err) {
+      return reply(message, "error", `Retrait impossible : ${err.message}. L'échéance a bien été annulée, mais le rôle est toujours là.`);
+    }
+  }
   return reply(message, "success", `**${role.name}** retiré de **${target.user.tag}**.`);
 }
 
@@ -370,7 +378,14 @@ async function checkExpiredTempRoles(client) {
     const role = guild.roles.cache.get(entry.roleId);
     const member = await guild.members.fetch(entry.userId).catch(() => null);
     if (!role || !member || !member.roles.cache.has(role.id)) continue;
-    await member.roles.remove(role, "Fin du rôle temporaire").catch(() => {});
+    // Un echec laisse le role en place alors qu'il devait expirer. On
+    // journalise, et on n'annonce pas une fin d'echeance qui n'a pas eu lieu.
+    try {
+      await member.roles.remove(role, "Fin du rôle temporaire");
+    } catch (err) {
+      console.error(`[temprole] retrait impossible pour ${member.id} : ${err.message}`);
+      continue;
+    }
     await report(client, {
       guildId: entry.guildId,
       category: "members",
@@ -446,8 +461,16 @@ async function cleanup(client, message) {
   }
   if (!toDelete.length) return reply(message, "info", "Rien à nettoyer sur les 100 derniers messages.");
 
-  await channel.bulkDelete(toDelete, true).catch(() => {});
-  return reply(message, "success", `**${toDelete.length}** message(s) nettoyé(s) (webhooks / membres partis) dans ${channel}.`);
+  // Le nombre annonce etait celui des messages VISES, pas des supprimes : un
+  // bulkDelete refuse (messages de plus de 14 jours, permission manquante)
+  // laissait la commande annoncer un nettoyage qui n'avait pas eu lieu.
+  let supprimes;
+  try {
+    supprimes = (await channel.bulkDelete(toDelete, true)).size;
+  } catch (err) {
+    return reply(message, "error", `Nettoyage impossible : ${err.message}`);
+  }
+  return reply(message, "success", `**${supprimes}** message(s) nettoyé(s) (webhooks / membres partis) dans ${channel}.`);
 }
 
 // --- &autoreact add/del/list ---
