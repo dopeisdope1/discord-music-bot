@@ -15,6 +15,7 @@ const { checkHierarchy, checkBotPermission, report } = require("./moderation/act
 const { formatDuration, parseDuration } = require("./moderationCommands");
 const { requestConfirmation } = require("./serverAdminCommands");
 const { majSure } = require("./componentsV2");
+const { preparerEmoji } = require("./emojiMedia");
 const tempRoleStore = require("./tempRoleStore");
 const autoReactStore = require("./autoReactStore");
 
@@ -113,17 +114,29 @@ async function createEmoji(client, message, args) {
   if (botPerm) return reply(message, "error", botPerm);
 
   const attachment = message.attachments.first()?.url;
-  const customEmojiMatch = args[0]?.match(/^<a?:\w+:(\d+)>$/);
-  const url = attachment || (customEmojiMatch ? `https://cdn.discordapp.com/emojis/${customEmojiMatch[1]}.png` : args[0]);
+  // `<a:nom:id>` = émoji ANIMÉ. Il était recopié en `.png`, ce qui produisait
+  // une image fixe : l'animation était perdue sans que rien ne le signale.
+  const customEmojiMatch = args[0]?.match(/^<(a?):\w+:(\d+)>$/);
+  const extension = customEmojiMatch?.[1] === "a" ? "gif" : "png";
+  const url = attachment || (customEmojiMatch ? `https://cdn.discordapp.com/emojis/${customEmojiMatch[2]}.${extension}` : args[0]);
   const name = (customEmojiMatch ? args[1] : args.slice(attachment ? 0 : 1).join(" ")).trim() || "emoji";
 
   if (!url || !/^https?:\/\//i.test(url)) {
     return reply(message, "error", "Indique un lien d'image, un émoji existant, ou joins un fichier : `create <lien|émoji> <nom>`.");
   }
 
+  // La plupart des « GIF » du web sont en réalité des MP4, que Discord refuse
+  // pour un émoji. On télécharge donc, on convertit au besoin, et on rétrécit
+  // jusqu'à passer sous les 256 Ko — voir utils/emojiMedia.js.
+  const prepare = await preparerEmoji(url);
+  if (!prepare.ok) return reply(message, "error", prepare.motif);
+
   let created;
   try {
-    created = await message.guild.emojis.create({ attachment: url, name: name.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || "emoji" });
+    created = await message.guild.emojis.create({
+      attachment: prepare.attachment,
+      name: name.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || "emoji",
+    });
   } catch (err) {
     return reply(message, "error", `Discord a refusé : ${err.message}`);
   }
