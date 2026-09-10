@@ -1099,6 +1099,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       }
       if (peutModifier) {
         boutons.push(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:renamerole:${state.permissionsRoleId}`)
+            .setLabel("Renommer")
+            .setStyle(ButtonStyle.Secondary)
+        );
+        boutons.push(
           exclusif
             ? new ButtonBuilder()
                 .setCustomId(`${ID}:roleexclusiveoff:${state.permissionsRoleId}`)
@@ -2043,6 +2049,28 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     modal.addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder().setCustomId("name").setLabel("Nom du rôle").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "renamerole") {
+    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const name = interaction.fields.getTextInputValue("name").trim();
+      if (!name) return interaction.reply({ content: "Nom vide, rôle inchangé.", flags: MessageFlags.Ephemeral });
+      // roleAdmin résout la cible via un ID brut dans les args (mentions.roles
+      // reste toujours vide sur messageFromInteraction) — voir "roledelete"
+      // juste en dessous, même mécanique.
+      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["rename", extra, ...name.split(/\s+/)]);
+      return;
+    }
+    const role = guild.roles.cache.get(extra);
+    if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
+    const modal = new ModalBuilder().setCustomId(`${ID}:renamerole:${extra}`).setTitle("Renommer le rôle");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(role.name)
       )
     );
     return interaction.showModal(modal);
