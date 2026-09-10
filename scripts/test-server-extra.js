@@ -17,6 +17,7 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const tempRoleStore = require("../utils/tempRoleStore");
 const autoReactStore = require("../utils/autoReactStore");
 const serverExtra = require("../utils/serverExtra");
+const permStore = require("../utils/permissions/store");
 const giveawayStore = require("../utils/giveawayStore");
 const { endGiveaway } = require("../utils/giveaways");
 
@@ -129,6 +130,46 @@ console.log("\n&choose :");
     const message2 = { ...message, reply: async (p) => (message2._reply = p) };
     await endGiveaway(client, message2, ["gm1"]);
     assert.ok(message2._reply.embeds[0].data.description.includes("déjà terminé"));
+  });
+
+  console.log("\n&mv — déplace UN membre précis vers un salon vocal :");
+
+  function fakeVoiceGuild() {
+    return { id: "gmv", members: { me: { permissions: { has: () => true } } } };
+  }
+
+  await casAsync("déplace le membre vers le salon vocal indiqué", async () => {
+    const guild = fakeVoiceGuild();
+    const destination = { id: "voc-2", type: 2 /* GuildVoice */ };
+    let deplaceVers = null;
+    const target = { id: "111111111111111111", user: { tag: "u1#0001" }, voice: { channel: { id: "voc-1" }, setChannel: async (c) => (deplaceVers = c) } };
+    permStore.setRoleGrants("gmv", "role-vc", ["server.voice.manage"]);
+    const message = {
+      author: { id: "mod-1", tag: "mod#0001" },
+      member: { id: "mod-1", guild, roles: { cache: new Collection([["role-vc", { id: "role-vc" }]]) } },
+      guild: { ...guild, members: { ...guild.members, fetch: async (id) => (id === "111111111111111111" ? target : null) } },
+      mentions: { users: new Collection([["111111111111111111", target.user]]), channels: new Collection([["voc-2", destination]]) },
+      reply: async (p) => (message._reply = p),
+    };
+    await serverExtra.mv({}, message, ["<@111111111111111111>", "<#voc-2>"]);
+    assert.strictEqual(deplaceVers, destination);
+  });
+
+  await casAsync("sans salon vocal indiqué, message d'erreur et aucun déplacement", async () => {
+    const guild = fakeVoiceGuild();
+    let deplaceVers = null;
+    const target = { id: "111111111111111111", user: { tag: "u1#0001" }, voice: { channel: { id: "voc-1" }, setChannel: async (c) => (deplaceVers = c) } };
+    permStore.setRoleGrants("gmv", "role-vc", ["server.voice.manage"]);
+    const message = {
+      author: { id: "mod-1", tag: "mod#0001" },
+      member: { id: "mod-1", guild, roles: { cache: new Collection([["role-vc", { id: "role-vc" }]]) } },
+      guild: { ...guild, members: { ...guild.members, fetch: async (id) => (id === "111111111111111111" ? target : null) } },
+      mentions: { users: new Collection([["111111111111111111", target.user]]), channels: new Collection() },
+      reply: async (p) => (message._reply = p),
+    };
+    await serverExtra.mv({}, message, ["<@111111111111111111>"]);
+    assert.strictEqual(deplaceVers, null);
+    assert.ok(message._reply.embeds[0].data.description.includes("salon vocal"));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

@@ -56,6 +56,28 @@ const DEFINITIONS = {
     }),
   },
 
+  find: {
+    build: (guild, query) => {
+      const q = (query || "").trim().toLowerCase();
+      if (!q) return { title: "Rechercher un membre", description: "Indique une partie du pseudo à chercher : `find <texte>`.", items: [] };
+      const matches = sortMembers(
+        guild.members.cache
+          .filter(
+            (m) =>
+              m.user.username.toLowerCase().includes(q) ||
+              (m.nickname || "").toLowerCase().includes(q) ||
+              (m.user.globalName || "").toLowerCase().includes(q)
+          )
+          .values()
+      );
+      return {
+        title: `Recherche : "${query.trim()}"`,
+        description: matches.length ? `${matches.length} membre(s) trouvé(s).` : "Aucun membre ne correspond à cette recherche.",
+        items: matches.map(formatMember),
+      };
+    },
+  },
+
   rolemembers: {
     build: (guild, roleId) => {
       const role = guild.roles.cache.get(roleId);

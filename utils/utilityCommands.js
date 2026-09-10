@@ -126,6 +126,13 @@ const handlers = {
     await postList(message, "rolemembers", role.id);
   },
 
+  async find(client, message, args) {
+    if (!can(message.member, "server.members.list")) return;
+    const query = args.join(" ").trim();
+    if (!query) return reply(message, "error", "Indique une partie du pseudo à chercher : `find <texte>`.");
+    await postList(message, "find", query);
+  },
+
   // --- Fiches d'information ---
 
   /**

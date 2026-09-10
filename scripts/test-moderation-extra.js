@@ -155,5 +155,47 @@ function fakeClearMessage(mentionsUsers) {
     assert.deepStrictEqual(msg._replies, [], "et rien n'est répondu à la place du CrowBot");
   });
 
+  // Remis à sa valeur d'origine : le bloc &clear ci-dessus l'a changé en
+  // "staff-1" et ne le restaure jamais, ce qui aurait fait échouer &baninfo
+  // ci-dessous (owner-1 n'aurait plus été reconnu comme propriétaire).
+  process.env.BOT_OWNER_IDS = "owner-1";
+
+  console.log("\n&baninfo — détail d'un bannissement, MÊME si la personne n'est plus sur le serveur :");
+
+  await casAsync("affiche le dernier bannissement enregistré pour cet identifiant", async () => {
+    const TARGET_ID = "222222222222222222";
+    historyStore.record({
+      guildId: "gban",
+      action: "ban",
+      targetId: TARGET_ID,
+      targetTag: "parti#0001",
+      moderatorId: "owner-1",
+      moderatorTag: "owner#0001",
+      reason: "raid",
+      source: "bot",
+    });
+    const message = {
+      member: { id: "owner-1", guild: { id: "gban" }, roles: { cache: new Collection() } },
+      guild: { id: "gban" },
+      reply: async (p) => (message._reply = p),
+    };
+    // Pas de guild.members.fetch ici : &baninfo ne doit JAMAIS en avoir besoin,
+    // contrairement à &sanctions — c'est précisément ce qui le distingue.
+    await moderationExtra.baninfo({}, message, [`<@${TARGET_ID}>`]);
+    const texte = message._reply.embeds[0].data.description;
+    assert.ok(texte.includes("raid"), texte);
+    assert.ok(texte.includes("owner#0001"), texte);
+  });
+
+  await casAsync("aucun bannissement enregistré pour cet identifiant : message clair", async () => {
+    const message = {
+      member: { id: "owner-1", guild: { id: "gban" }, roles: { cache: new Collection() } },
+      guild: { id: "gban" },
+      reply: async (p) => (message._reply = p),
+    };
+    await moderationExtra.baninfo({}, message, ["<@333333333333333333>"]);
+    assert.ok(message._reply.embeds[0].data.description.includes("Aucun bannissement"));
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

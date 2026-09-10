@@ -53,13 +53,14 @@ function fakeRole(id, name, position = 1, extra = {}) {
   };
 }
 
-function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSince = null, joined = 1700000000000, presence = null, voice = {} }) {
+function fakeMember({ id, tag, bot = false, admin = false, roles = [], premiumSince = null, joined = 1700000000000, presence = null, voice = {}, nickname = null }) {
   const roleCache = new Collection();
   for (const r of roles) roleCache.set(r.id, r);
   const highest = roles.length ? roles.reduce((a, b) => (a.position > b.position ? a : b)) : fakeRole("everyone", "@everyone", 0);
   return {
     id,
-    user: { id, tag, bot, createdTimestamp: 1600000000000, displayAvatarURL: () => "https://avatar" },
+    nickname,
+    user: { id, tag, username: tag.split("#")[0], globalName: null, bot, createdTimestamp: 1600000000000, displayAvatarURL: () => "https://avatar" },
     permissions: { has: (flag) => admin && flag === PermissionFlagsBits.Administrator },
     roles: { cache: roleCache, highest },
     premiumSince,
@@ -200,6 +201,33 @@ const embedTitle = (payload) =>
     await utilityHandlers.rolemembers(null, msg, []);
     assert.ok(embedText(msg._replies[0]).includes("rôle"));
   });
+
+  await cas("&find trouve par pseudo, par surnom, insensible à la casse", () => {
+    const nommes = fakeGuild({
+      roles: [staff],
+      members: [
+        fakeMember({ id: "u1", tag: "alice#0001", roles: [staff] }),
+        fakeMember({ id: "u2", tag: "bob#0002", nickname: "Alicia" }),
+        fakeMember({ id: "u3", tag: "carol#0003" }),
+      ],
+    });
+    const { items } = DEFINITIONS.find.build(nommes, "aLi");
+    assert.strictEqual(items.length, 2, items.join(" | "));
+    assert.ok(items.join(" ").includes("alice#0001") && items.join(" ").includes("bob#0002"));
+  });
+
+  await cas("&find sans résultat le dit clairement, sans planter", () => {
+    const { items, description } = DEFINITIONS.find.build(guild, "xyzxyz");
+    assert.strictEqual(items.length, 0);
+    assert.ok(description.includes("Aucun membre"));
+  });
+
+  await cas("&find sans argument rappelle la syntaxe plutôt que de tout lister", () => {
+    const { items, description } = DEFINITIONS.find.build(guild, "");
+    assert.strictEqual(items.length, 0);
+    assert.ok(description.includes("find"));
+  });
+
 
   console.log("\nPagination des listes en lecture seule :");
 
@@ -379,7 +407,7 @@ const embedTitle = (payload) =>
     assert.strictEqual(msg._replies.length, 1);
   });
 
-  await cas("&alladmins/&botadmins/&boosters/&rolemembers exigent server.members.list", async () => {
+  await cas("&alladmins/&botadmins/&boosters/&rolemembers/&find exigent server.members.list", async () => {
     const g = fakeGuild({ roles: [fakeRole("role-x", "Rôle X")] });
     const msg = fakeMessage(g, { mentions: { roles: new Collection([["role-x", fakeRole("role-x", "Rôle X")]]) } });
     msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
@@ -387,10 +415,11 @@ const embedTitle = (payload) =>
     await utilityHandlers.botadmins(null, msg);
     await utilityHandlers.boosters(null, msg);
     await utilityHandlers.rolemembers(null, msg, msg._args);
-    assert.strictEqual(msg._replies.length, 0, "aucune des quatre ne doit répondre sans server.members.list");
+    await utilityHandlers.find(null, msg, ["ali"]);
+    assert.strictEqual(msg._replies.length, 0, "aucune des cinq ne doit répondre sans server.members.list");
   });
 
-  await cas("un rôle qui a UNIQUEMENT server.members.list débloque &alladmins/&botadmins/&boosters/&rolemembers", async () => {
+  await cas("un rôle qui a UNIQUEMENT server.members.list débloque &alladmins/&botadmins/&boosters/&rolemembers/&find", async () => {
     const roleTarget = fakeRole("role-x", "Rôle X");
     const g = fakeGuild({ roles: [roleTarget] });
     const roleId = "role-members-list-only";
@@ -401,7 +430,8 @@ const embedTitle = (payload) =>
     await utilityHandlers.botadmins(null, msg);
     await utilityHandlers.boosters(null, msg);
     await utilityHandlers.rolemembers(null, msg, msg._args);
-    assert.strictEqual(msg._replies.length, 4);
+    await utilityHandlers.find(null, msg, ["ali"]);
+    assert.strictEqual(msg._replies.length, 5);
   });
 
   await cas("&vocinfo/&user/&emoji exigent server.info.view", async () => {

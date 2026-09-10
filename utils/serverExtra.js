@@ -235,6 +235,26 @@ async function voicekick(client, message, args) {
   return reply(message, "success", `**${target.user.tag}** expulsé du vocal.`);
 }
 
+/** &mv <@membre|id> <#salon> — déplace UN membre précis vers un salon vocal (voir &voicemove pour tout un salon d'un coup). */
+async function mv(client, message, args) {
+  if (!can(message.member, "server.voice.manage")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+
+  const destination = message.mentions.channels.first();
+  if (!destination || destination.type !== ChannelType.GuildVoice) {
+    return reply(message, "error", "Indique un salon vocal : `mv @membre #salon`.");
+  }
+  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
+
+  await target.voice.setChannel(destination, `Déplacement par ${message.author.tag}`).catch(() => {});
+  return reply(message, "success", `**${target.user.tag}** déplacé vers ${destination}.`);
+}
+
 async function bringall(client, message) {
   if (!can(message.member, "server.voice.moveall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
@@ -520,6 +540,7 @@ module.exports = {
   unmassiverole: (client, message) => massRole(client, message, { remove: true }),
   voicemove,
   voicekick,
+  mv,
   bringall,
   unbanall,
   temprole,

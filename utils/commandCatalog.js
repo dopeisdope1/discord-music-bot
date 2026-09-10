@@ -223,6 +223,12 @@ const CATEGORIES = [
         description: "Affiche la liste des membres bannis",
       },
       {
+        name: "baninfo <@membre|id>",
+        prefix: "mod",
+        permission: "logs.view",
+        description: "Détail du dernier bannissement enregistré pour cet identifiant (fonctionne même si la personne n'est plus sur le serveur)",
+      },
+      {
         name: "hideall",
         prefix: "mod",
         permission: "channels.manageall",
@@ -819,6 +825,12 @@ const CATEGORIES = [
         description: "Expulse un membre du salon vocal",
       },
       {
+        name: "mv <membre> <#salon>",
+        prefix: "mod",
+        permission: "server.voice.manage",
+        description: "Déplace un membre précis vers un salon vocal (voir aussi &voicemove pour tout un salon d'un coup)",
+      },
+      {
         name: "bringall [salon]",
         prefix: "mod",
         permission: "server.voice.moveall",
@@ -1153,6 +1165,12 @@ const CATEGORIES = [
         prefix: "mod",
         permission: "server.members.list",
         description: "Affiche la liste des membres ayant un rôle précis (mention, ID ou nom)",
+      },
+      {
+        name: "find <texte>",
+        prefix: "mod",
+        permission: "server.members.list",
+        description: "Cherche un membre par pseudo ou surnom (correspondance partielle)",
       },
       {
         name: "vocinfo",

@@ -277,6 +277,30 @@ async function sanctions(client, message, args) {
   return reply(message, "info", `**Sanctions de ${target.user.tag}** (${entries.length}) :\n${lines.join("\n")}`);
 }
 
+/**
+ * &baninfo <@membre|id> — détail du DERNIER bannissement enregistré pour cet
+ * identifiant. Contrairement à &sanctions, ne résout PAS la cible via
+ * guild.members.fetch : la personne bannie n'est justement plus sur le
+ * serveur, un fetch échouerait toujours.
+ */
+async function baninfo(client, message, args) {
+  if (!can(message.member, "logs.view")) return;
+  const targetId = parseTarget(args);
+  if (!targetId) return reply(message, "error", "Indique un membre (mention ou identifiant) : `baninfo <@membre|id>`.");
+
+  const entry = historyStore.search(message.guild.id, { targetId, action: "ban", limit: 1 })[0];
+  if (!entry) return reply(message, "info", "Aucun bannissement enregistré pour cet identifiant.");
+
+  const when = `<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:F>`;
+  const lignes = [
+    `**Case #${entry.caseNumber}** — <@${targetId}> (${targetId})`,
+    `Par : ${entry.moderatorTag || entry.moderatorId}`,
+    `Quand : ${when}`,
+  ];
+  if (entry.reason) lignes.push(`Raison : ${entry.reason}`);
+  return reply(message, "info", lignes.join("\n"));
+}
+
 async function delSanction(client, message, args) {
   if (!can(message.member, "logs.manage")) return;
   const targetId = parseTarget(args);
@@ -574,6 +598,7 @@ module.exports = {
   unmuteall,
   checkExpiredMutes,
   sanctions,
+  baninfo,
   delSanction,
   clearSanctions,
   clearAllSanctions,
