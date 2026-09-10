@@ -149,7 +149,9 @@ function actionOptions(guild, member, state) {
       channel: { id: "chan-1" },
       isModalSubmit: () => true,
       fields: { getTextInputValue: () => "Modérateur en chef" },
-      reply: async (p) => {
+      // update(), pas reply() : le succès passe par roleAdmin ->
+      // messageFromInteraction, qui remplace le panneau (voir configPanel.js).
+      update: async (p) => {
         reponse = p;
       },
     });

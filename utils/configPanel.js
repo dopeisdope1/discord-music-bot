@@ -861,7 +861,15 @@ function messageFromInteraction(interaction) {
     channel: interaction.channel,
     author: interaction.user,
     mentions: { roles: { first: () => null } },
-    reply: (payload) => interaction.reply(payload),
+    // update(), pas reply() : on vient toujours d'un clic sur LE panneau
+    // (bouton, modale ouverte depuis un bouton), donc le résultat doit
+    // remplacer son contenu, pas ouvrir un second message replié
+    // ("Clique pour voir le message") à côté. Même principe que la carte de
+    // formulaire lancée depuis le panel (voir utils/fakeMessage.js::
+    // remplacerParLaReponse), appliqué ici aux commandes admin de rôle/salon
+    // (create/rename/delete...) et à leur confirmation
+    // (utils/serverAdminCommands.js::requestConfirmation).
+    reply: (payload) => interaction.update(payload),
   };
 }
 

@@ -117,7 +117,7 @@ function libellesActions(json) {
       guild,
       isModalSubmit: () => true,
       fields: { getTextInputValue: () => "MaSauvegarde" },
-      reply: async (p) => { replied = p; },
+      update: async (p) => { replied = p; },
     });
     assert.ok(backupStore.getBackup("MaSauvegarde"), "la sauvegarde doit exister dans le VRAI store");
     assert.ok(replied, "backup() doit avoir répondu directement via l'interaction");
@@ -161,7 +161,7 @@ function libellesActions(json) {
       member: owner,
       guild,
       user: { id: "owner-1" },
-      reply: async (p) => { firstCard = p; },
+      update: async (p) => { firstCard = p; },
     });
     assert.ok(firstCard, "la première carte de confirmation aurait dû être postée");
 
@@ -176,6 +176,9 @@ function libellesActions(json) {
       user: { id: "owner-1" },
       member: owner,
       guild,
+      // Ici .reply(), volontairement : c'est le clic "Restaurer" de la
+      // PREMIÈRE carte qui n'a pas encore accusé réception — voir le
+      // commentaire dans utils/serverBackup.js sur la double confirmation.
       reply: async (p) => { secondCard = p; },
     });
     assert.ok(secondCard, "une SECONDE carte de confirmation aurait dû être postée");
@@ -206,7 +209,7 @@ function libellesActions(json) {
       guild,
       client: guild.client,
       user: { id: "owner-1" },
-      reply: async () => {},
+      update: async () => {},
     });
     assert.strictEqual(botProfileStore.getConfig().status, "idle", "le VRAI store doit refléter le changement");
   });
@@ -231,7 +234,7 @@ function libellesActions(json) {
       user: { id: "owner-1" },
       isModalSubmit: () => true,
       fields: { getTextInputValue: () => "NouveauNom" },
-      reply: async (p) => { replied = p; },
+      update: async (p) => { replied = p; },
     });
     assert.strictEqual(guild.client.user._name, "NouveauNom");
     assert.ok(replied);

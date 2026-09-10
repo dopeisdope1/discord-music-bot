@@ -384,7 +384,10 @@ function actionsDe(json) {
       user: { id: "owner-1", tag: "owner#0001" },
       isModalSubmit: () => true,
       fields: { getTextInputValue: () => "Nouveau Rôle" },
-      reply: async (p) => {
+      // update(), pas reply() : le résultat remplace le panneau au lieu
+      // d'ouvrir un second message replié à côté (voir configPanel.js::
+      // messageFromInteraction).
+      update: async (p) => {
         replies.push(p);
         return {};
       },
@@ -410,7 +413,8 @@ function actionsDe(json) {
       client: { users: { fetch: async () => null } },
       user: { id: "owner-1", tag: "owner#0001" },
       isModalSubmit: () => false,
-      reply: async (p) => {
+      // update(), pas reply() : voir la remarque plus haut.
+      update: async (p) => {
         replies.push(p);
         return {};
       },
@@ -452,7 +456,8 @@ function actionsDe(json) {
       client: { users: { fetch: async () => null } },
       user: { id: "owner-1", tag: "owner#0001" },
       isModalSubmit: () => false,
-      reply: async (p) => {
+      // update(), pas reply() : voir la remarque plus haut.
+      update: async (p) => {
         confirmCard = p;
         return {};
       },
