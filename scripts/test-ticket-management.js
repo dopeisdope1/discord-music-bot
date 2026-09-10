@@ -21,6 +21,7 @@ const { Collection } = require("discord.js");
 const ticketStore = require("../utils/ticketStore");
 const permissionsStore = require("../utils/permissions/store");
 const { claimTicket, addTicketMember, removeTicketMember, renameTicket, closeTicketCommand } = require("../utils/tickets");
+const { handleMusicTextCommand } = require("../utils/musicCommands");
 
 // "staff-1" représente un membre du staff avec le droit accordé normalement
 // (&set perm), PAS le propriétaire du bot — pour vérifier le vrai chemin de
@@ -91,6 +92,26 @@ function fakeMessage({ author, member, guild, channel, mentionedMember = null })
 }
 
 const embedText = (reply) => reply?.embeds?.[0]?.data?.description || "";
+
+/** Message complet (content + mentions en Collection) pour passer par le VRAI routage de &-commandes, pas juste le handler. */
+function fakeDispatchMessage({ content, author, member, guild, channel, mentionedMember = null }) {
+  const replies = [];
+  const members = new Collection();
+  if (mentionedMember) members.set(mentionedMember.id, mentionedMember);
+  return {
+    content,
+    author,
+    member,
+    guild,
+    channel,
+    mentions: { users: new Collection(), members, roles: new Collection(), channels: new Collection(), everyone: false },
+    reply: async (p) => {
+      replies.push(p);
+      return { id: "msg-1" };
+    },
+    _replies: replies,
+  };
+}
 
 (async () => {
   console.log("&ticket claim/add/remove/rename : n'agissent que dans un ticket suivi :");
@@ -219,6 +240,127 @@ const embedText = (reply) => reply?.embeds?.[0]?.data?.description || "";
     assert.ok(ticketStore.getTicketInfo("t5") !== null);
     assert.ok(embedText(message._replies[0]).includes("staff peut fermer"));
     ticketStore.setConfig("g1", { ownerCanClose: true });
+  });
+
+  console.log('\nRaccourcis sans "ticket" devant (&close/&claim/&add/&remove/&rename) — demande explicite pour ne pas avoir à retaper "ticket" à chaque fois, ' +
+    "MAIS seulement dans un salon de ticket suivi, jamais ailleurs :");
+
+  await cas("&close ferme le ticket courant, sans écrire \"ticket\"", async () => {
+    ticketStore.registerOpenTicket("t6", "g1", "requester-6");
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("t6", "ticket-6");
+    const message = fakeDispatchMessage({ content: "&close", author: { id: "staff-1", tag: "staff#0001" }, member: fakeMember("staff-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    assert.strictEqual(ticketStore.getTicketInfo("t6"), null);
+    assert.ok(embedText(message._replies[0]).includes("fermé"));
+  });
+
+  await cas("&close tapé hors d'un ticket ne fait RIEN (silence, comme une commande inconnue sur ce préfixe)", async () => {
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("chan-normal", "général");
+    const message = fakeDispatchMessage({ content: "&close", author: { id: "staff-1", tag: "staff#0001" }, member: fakeMember("staff-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    assert.strictEqual(message._replies.length, 0);
+  });
+
+  await cas("&claim prend en charge le ticket courant", async () => {
+    ticketStore.registerOpenTicket("t7", "g1", "requester-7");
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("t7", "ticket-7");
+    const message = fakeDispatchMessage({ content: "&claim", author: { id: "staff-1", tag: "staff#0001" }, member: fakeMember("staff-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    assert.strictEqual(ticketStore.getTicketInfo("t7").claimedBy, "staff-1");
+  });
+
+  await cas("&claim tapé hors d'un ticket ne fait rien", async () => {
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("chan-normal", "général");
+    const message = fakeDispatchMessage({ content: "&claim", author: { id: "staff-1", tag: "staff#0001" }, member: fakeMember("staff-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    assert.strictEqual(message._replies.length, 0);
+  });
+
+  await cas("&add <mention> ajoute bien le membre, dans un ticket", async () => {
+    ticketStore.registerOpenTicket("t8", "g1", "requester-8");
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("t8", "ticket-8");
+    const helper = { id: "helper-1" };
+    const message = fakeDispatchMessage({
+      content: "&add <@helper-1>",
+      author: { id: "staff-1", tag: "staff#0001" },
+      member: fakeMember("staff-1"),
+      guild,
+      channel,
+      mentionedMember: helper,
+    });
+
+    await handleMusicTextCommand({}, message);
+    assert.ok(channel._overwrites.has("helper-1"));
+  });
+
+  await cas("&add tapé hors d'un ticket ne fait rien (même avec une cible)", async () => {
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("chan-normal", "général");
+    const helper = { id: "helper-1" };
+    const message = fakeDispatchMessage({
+      content: "&add <@helper-1>",
+      author: { id: "staff-1", tag: "staff#0001" },
+      member: fakeMember("staff-1"),
+      guild,
+      channel,
+      mentionedMember: helper,
+    });
+
+    await handleMusicTextCommand({}, message);
+    assert.ok(!channel._overwrites.has("helper-1"));
+  });
+
+  await cas("&rename renomme bien le ticket courant", async () => {
+    ticketStore.registerOpenTicket("t9", "g1", "requester-9");
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("t9", "ticket-9");
+    const message = fakeDispatchMessage({ content: "&rename support prioritaire", author: { id: "staff-1", tag: "staff#0001" }, member: fakeMember("staff-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    assert.strictEqual(channel.name, "support prioritaire");
+  });
+
+  await cas("&remove garde son ANCIEN sens (remove activity) hors d'un ticket — pas de régression", async () => {
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("chan-normal", "général");
+    // owner-1 : contourne la permission "sys" exigée par "remove activity", pour isoler ce qu'on teste ici.
+    const message = fakeDispatchMessage({ content: "&remove", author: { id: "owner-1", tag: "owner#0001" }, member: fakeMember("owner-1"), guild, channel });
+
+    await handleMusicTextCommand({}, message);
+    // "&remove" seul (sans cible) déclenche le rappel de syntaxe habituel (une image, pas un
+    // embed texte comme &ticket répond) : la preuve qu'on est tombé dans l'ANCIEN chemin
+    // (remove activity / remove <membre>, en carte de rappel), jamais dans la gestion de ticket
+    // — qui, elle, n'a jamais de raison de s'activer hors d'un ticket suivi.
+    assert.strictEqual(message._replies.length, 1);
+    assert.ok(!message._replies[0].embeds, "une réponse de gestion de ticket a toujours un embed (buildStatusEmbed)");
+  });
+
+  await cas("&remove <mention> retire bien le membre, DANS un ticket", async () => {
+    ticketStore.registerOpenTicket("t10", "g1", "requester-10");
+    const guild = fakeGuild("g1");
+    const channel = fakeChannel("t10", "ticket-10");
+    channel._overwrites.set("helper-1", true);
+    const helper = { id: "helper-1" };
+    const message = fakeDispatchMessage({
+      content: "&remove <@helper-1>",
+      author: { id: "staff-1", tag: "staff#0001" },
+      member: fakeMember("staff-1"),
+      guild,
+      channel,
+      mentionedMember: helper,
+    });
+
+    await handleMusicTextCommand({}, message);
+    assert.ok(!channel._overwrites.has("helper-1"));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

@@ -34,6 +34,7 @@ const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { backup } = require("./serverBackup");
 const { setupTickets, claimTicket, addTicketMember, removeTicketMember, renameTicket, closeTicketCommand } = require("./tickets");
+const ticketStore = require("./ticketStore");
 const { createPoll } = require("./polls");
 const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
@@ -454,11 +455,34 @@ const modHandlers = {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "setup") return setupTickets(client, message, args.slice(1));
     if (sub === "settings") return configHandlers.ticketSettings(client, message, args.slice(1));
-    if (sub === "claim") return claimTicket(client, message);
-    if (sub === "add") return addTicketMember(client, message, args.slice(1));
-    if (sub === "remove") return removeTicketMember(client, message, args.slice(1));
-    if (sub === "rename") return renameTicket(client, message, args.slice(1));
-    if (sub === "close") return closeTicketCommand(client, message, args.slice(1));
+  },
+  // &claim/&add/&remove/&rename/&close — SANS "ticket" devant, demande
+  // explicite pour ne pas avoir à le retaper à chaque fois DANS un ticket déjà
+  // ouvert (donc pas de "ticket claim" en parallèle : un seul chemin pour
+  // chacune, pas deux syntaxes à maintenir pour la même chose). Un mot aussi
+  // générique que "close"/"add"/"rename" ne doit rien faire ailleurs (silence,
+  // comme une commande inconnue sur ce préfixe partagé avec le CrowBot), donc
+  // chacun vérifie d'ABORD que le salon est un ticket suivi avant même de
+  // regarder les droits — sinon &add ou &close tapé dans un salon quelconque
+  // répondrait une erreur qui n'a pas de sens en dehors d'un ticket.
+  claim: (client, message) => {
+    if (!ticketStore.getTicketInfo(message.channel.id)) return;
+    return claimTicket(client, message);
+  },
+  add: (client, message, args) => {
+    if (!ticketStore.getTicketInfo(message.channel.id)) return;
+    return addTicketMember(client, message, args);
+  },
+  // PAS de "remove:" ici : "&remove" existe déjà plus bas (remove activity,
+  // rang sys) — voir juste avant "online/idle/dnd/invisible" où les deux sont
+  // fusionnés en un seul handler, selon qu'on est dans un ticket ou non.
+  rename: (client, message, args) => {
+    if (!ticketStore.getTicketInfo(message.channel.id)) return;
+    return renameTicket(client, message, args);
+  },
+  close: (client, message, args) => {
+    if (!ticketStore.getTicketInfo(message.channel.id)) return;
+    return closeTicketCommand(client, message, args);
   },
   poll: createPoll,
   giveaway: (client, message, args) => {
@@ -527,7 +551,15 @@ const modHandlers = {
   watch: botProfileHandlers.watch,
   compet: botProfileHandlers.compet,
   stream: botProfileHandlers.stream,
-  remove: botProfileHandlers.remove,
+  // "&remove" fait double emploi volontairement : retirer un membre du
+  // ticket courant s'il y en a un (raccourci sans "ticket" devant, demande
+  // explicite), sinon "remove activity" comme avant — les deux ne se
+  // recoupent jamais en pratique (retirer l'activité du bot depuis un salon
+  // de ticket serait un accident, pas un usage réel).
+  remove: (client, message, args) => {
+    if (ticketStore.getTicketInfo(message.channel.id)) return removeTicketMember(client, message, args);
+    return botProfileHandlers.remove(client, message, args);
+  },
   online: botProfileHandlers.online,
   idle: botProfileHandlers.idle,
   dnd: botProfileHandlers.dnd,
@@ -771,7 +803,7 @@ const MOD_SUBCOMMANDS = {
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],
-  ticket: ["setup", "settings", "claim", "add", "remove", "rename", "close"],
+  ticket: ["setup", "settings"],
   compteur: ["create", "list", "delete"],
   giveaway: ["start", "reroll"],
   end: ["giveaway"],
