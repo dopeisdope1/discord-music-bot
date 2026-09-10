@@ -56,6 +56,113 @@ async function setupTickets(client, message, args) {
   await reply(message, "success", "Message de tickets envoyé dans ce salon.");
 }
 
+/** Le salon courant est-il un ticket suivi par le bot ? Sinon, les commandes de gestion n'ont pas de sens ici. */
+function requireTicket(message) {
+  const info = ticketStore.getTicketInfo(message.channel.id);
+  if (!info) {
+    reply(message, "error", "Cette commande s'utilise dans un ticket ouvert.");
+    return null;
+  }
+  return info;
+}
+
+/** Même droit de fermeture que le bouton : rôle dédié, rôle staff, permission, ou le demandeur si autorisé. */
+function peutFermer(member, info, config) {
+  const roleFermeture = config.closeRoleId || config.staffRoleId;
+  return (
+    (roleFermeture && member.roles.cache.has(roleFermeture)) ||
+    can(member, "server.tickets.manage") ||
+    (config.ownerCanClose && member.id === info.ownerId)
+  );
+}
+
+/** &ticket claim — prend le ticket courant en charge. */
+async function claimTicket(client, message) {
+  if (!can(message.member, "server.tickets.manage")) return;
+  const info = requireTicket(message);
+  if (!info) return;
+
+  ticketStore.claimTicket(message.channel.id, message.author.id);
+  await reply(message, "success", `Ticket pris en charge par <@${message.author.id}>.`);
+}
+
+/** &ticket add <membre> — donne l'accès au ticket courant à un membre en plus de son propriétaire. */
+async function addTicketMember(client, message, args) {
+  if (!can(message.member, "server.tickets.manage")) return;
+  const info = requireTicket(message);
+  if (!info) return;
+
+  const target = message.mentions.members?.first() || (await message.guild.members.fetch(args[0]?.replace(/\D/g, "") || "").catch(() => null));
+  if (!target) return reply(message, "error", "Indique un membre (mention ou identifiant) à ajouter au ticket.");
+
+  await message.channel
+    .permissionOverwrites.edit(target.id, { ViewChannel: true, SendMessages: true })
+    .catch(() => null);
+  await reply(message, "success", `<@${target.id}> a maintenant accès à ce ticket.`);
+}
+
+/** &ticket remove <membre> — retire l'accès au ticket courant à un membre (jamais son propriétaire). */
+async function removeTicketMember(client, message, args) {
+  if (!can(message.member, "server.tickets.manage")) return;
+  const info = requireTicket(message);
+  if (!info) return;
+
+  const target = message.mentions.members?.first() || (await message.guild.members.fetch(args[0]?.replace(/\D/g, "") || "").catch(() => null));
+  if (!target) return reply(message, "error", "Indique un membre (mention ou identifiant) à retirer du ticket.");
+  if (target.id === info.ownerId) return reply(message, "error", "Impossible de retirer le créateur de son propre ticket.");
+
+  await message.channel.permissionOverwrites.delete(target.id).catch(() => null);
+  await reply(message, "success", `<@${target.id}> n'a plus accès à ce ticket.`);
+}
+
+/** &ticket rename <nom> — renomme le ticket courant. */
+async function renameTicket(client, message, args) {
+  if (!can(message.member, "server.tickets.manage")) return;
+  const info = requireTicket(message);
+  if (!info) return;
+
+  const nom = args.join(" ").trim().slice(0, 100);
+  if (!nom) return reply(message, "error", "Indique le nouveau nom du ticket.");
+
+  await message.channel.setName(nom).catch(() => null);
+  await reply(message, "success", "Ticket renommé.");
+}
+
+/** &ticket close [raison] — équivalent en commande du bouton "Fermer". */
+async function closeTicketCommand(client, message, args) {
+  const info = requireTicket(message);
+  if (!info) return;
+
+  const config = ticketStore.getConfig(message.guild.id);
+  if (!peutFermer(message.member, info, config)) {
+    return reply(
+      message,
+      "error",
+      config.ownerCanClose ? "Seul le demandeur ou le staff peut fermer ce ticket." : "Seul le staff peut fermer ce ticket."
+    );
+  }
+
+  const raison = args.join(" ").trim() || null;
+  ticketStore.unregisterTicket(message.channel.id);
+  await report(client, {
+    guildId: message.guild.id,
+    category: "server",
+    title: "Ticket fermé",
+    fields: [
+      { label: "Salon", value: `${message.channel.name} (${message.channel.id})` },
+      ...(raison ? [{ label: "Raison", value: raison }] : []),
+    ],
+    action: "ticket_close",
+    targetId: message.channel.id,
+    targetTag: null,
+    moderator: message.author,
+    channelId: null,
+  });
+
+  await reply(message, "success", "Ticket fermé, ce salon va disparaître.");
+  setTimeout(() => message.channel.delete("Ticket fermé").catch(() => {}), 3000);
+}
+
 async function handleTicketButton(interaction) {
   const [, action] = interaction.customId.split(":");
 
@@ -127,17 +234,10 @@ async function handleTicketButton(interaction) {
     const info = ticketStore.getTicketInfo(interaction.channelId);
     if (!info) return interaction.reply({ content: "Ce salon n'est pas un ticket suivi par le bot.", flags: MessageFlags.Ephemeral });
 
-    const { staffRoleId, closeRoleId, ownerCanClose } = ticketStore.getConfig(interaction.guild.id);
-    // Le rôle autorisé à fermer peut être distinct de celui qui voit les
-    // tickets ; sans réglage dédié, c'est le rôle staff, comme avant.
-    const roleFermeture = closeRoleId || staffRoleId;
-    const peutFermer =
-      (roleFermeture && interaction.member.roles.cache.has(roleFermeture)) ||
-      can(interaction.member, "server.tickets.manage") ||
-      (ownerCanClose && interaction.user.id === info.ownerId);
-    if (!peutFermer) {
+    const config = ticketStore.getConfig(interaction.guild.id);
+    if (!peutFermer(interaction.member, info, config)) {
       return interaction.reply({
-        content: ownerCanClose
+        content: config.ownerCanClose
           ? "Seul le demandeur ou le staff peut fermer ce ticket."
           : "Seul le staff peut fermer ce ticket.",
         flags: MessageFlags.Ephemeral,
@@ -162,4 +262,13 @@ async function handleTicketButton(interaction) {
   }
 }
 
-module.exports = { setupTickets, handleTicketButton, ID };
+module.exports = {
+  setupTickets,
+  handleTicketButton,
+  claimTicket,
+  addTicketMember,
+  removeTicketMember,
+  renameTicket,
+  closeTicketCommand,
+  ID,
+};

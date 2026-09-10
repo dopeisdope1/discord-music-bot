@@ -95,4 +95,13 @@ function unregisterTicket(channelId) {
   return true;
 }
 
-module.exports = { getConfig, setConfig, setStaffRole, registerOpenTicket, getTicketInfo, unregisterTicket };
+/** &ticket claim — mémorise qui a pris le ticket en charge (écrase une prise en charge précédente). */
+function claimTicket(channelId, userId) {
+  const data = loadOpen();
+  if (!data[channelId]) return false;
+  data[channelId].claimedBy = userId;
+  saveOpen();
+  return true;
+}
+
+module.exports = { getConfig, setConfig, setStaffRole, registerOpenTicket, getTicketInfo, unregisterTicket, claimTicket };

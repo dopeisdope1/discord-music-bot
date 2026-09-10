@@ -33,7 +33,7 @@ const { guardHandlers } = require("./guardCommands");
 const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { backup } = require("./serverBackup");
-const { setupTickets } = require("./tickets");
+const { setupTickets, claimTicket, addTicketMember, removeTicketMember, renameTicket, closeTicketCommand } = require("./tickets");
 const { createPoll } = require("./polls");
 const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
 const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
@@ -454,6 +454,11 @@ const modHandlers = {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "setup") return setupTickets(client, message, args.slice(1));
     if (sub === "settings") return configHandlers.ticketSettings(client, message, args.slice(1));
+    if (sub === "claim") return claimTicket(client, message);
+    if (sub === "add") return addTicketMember(client, message, args.slice(1));
+    if (sub === "remove") return removeTicketMember(client, message, args.slice(1));
+    if (sub === "rename") return renameTicket(client, message, args.slice(1));
+    if (sub === "close") return closeTicketCommand(client, message, args.slice(1));
   },
   poll: createPoll,
   giveaway: (client, message, args) => {
@@ -766,7 +771,7 @@ const MOD_SUBCOMMANDS = {
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
   del: ["sanction", "perm"],
-  ticket: ["setup", "settings"],
+  ticket: ["setup", "settings", "claim", "add", "remove", "rename", "close"],
   compteur: ["create", "list", "delete"],
   giveaway: ["start", "reroll"],
   end: ["giveaway"],
