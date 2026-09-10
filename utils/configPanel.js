@@ -31,7 +31,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
-const { commandsForKeys, nonCommandGrants } = require("./permsCommands");
+const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
@@ -110,6 +110,12 @@ const SECTIONS = [
     // Consultable avec l'un OU l'autre droit ; seul panel.permissions.manage
     // fait apparaître les menus qui modifient.
     visible: (member) => can(member, "panel.permissions.manage") || can(member, "panel.roles.manage"),
+  },
+  {
+    key: "roletiers",
+    label: "Rôles (paliers)",
+    description: "Tous les paliers de permissions et leurs rôles d'un coup (comme &perms + &helpall réunis)",
+    permission: "panel.permissions.manage",
   },
   {
     key: "logs",
@@ -278,7 +284,7 @@ const FAMILIES = [
   { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
   { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", sections: ["voice"] },
   { key: "salons", label: "Salons", description: "Supprimer plusieurs salons d'un coup", sections: ["channels"] },
-  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions"] },
+  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions", "roletiers"] },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
   { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
   { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", sections: ["tickets"] },
@@ -475,6 +481,31 @@ function sectionBody(section, guild, member, state) {
     }
 
     return lines.join("\n");
+  }
+
+  // Même contenu que &perms + &helpall réunis (utils/permsCommands.js), mais
+  // dans le panel : demande explicite pour voir tous les paliers ET tous les
+  // rôles d'un coup, sans taper deux commandes séparées.
+  if (section === "roletiers") {
+    const tiers = computeTiers(guildId);
+    const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
+    if (!tiers.length && !exclusiveRoleIds.length) {
+      return "> *Aucune permission n'est encore accordée à un rôle (voir la rubrique Rôles et permissions).*";
+    }
+    const lines = [];
+    for (const tier of tiers) {
+      const roles = tier.roleIds.length ? tier.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun*";
+      const commands = commandsForKeys(tier.keys);
+      lines.push(`**Permission ${tier.index}**`);
+      lines.push(`> **Rôles** : ${roles}`);
+      lines.push(`> **Commandes débloquées (${commands.length})** : ${commands.length ? commands.join(", ") : "*aucune*"}`);
+      lines.push("");
+    }
+    if (exclusiveRoleIds.length) {
+      lines.push("**Exclusives**");
+      lines.push(`> **Rôles** : ${exclusiveRoleIds.map((id) => `<@&${id}>`).join(", ")}`);
+    }
+    return lines.join("\n").trim();
   }
 
   if (section === "logs") {
@@ -1172,6 +1203,17 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         }
       }
     }
+  } else if (meta.key === "roletiers") {
+    // Vue d'ensemble façon &perms/&helpall (mêmes paliers, calculés par
+    // utils/permsCommands.js::computeTiers — rien de nouveau à stocker),
+    // mais DANS le panel et avec un raccourci direct vers le renommage,
+    // plutôt que deux commandes texte à lire côte à côte puis retourner
+    // choisir le rôle à la main dans "Rôles et permissions".
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId(`${ID}:tierrenamepick`).setPlaceholder("Choisir un rôle à renommer")
+      )
+    );
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
       container.addActionRowComponents(
@@ -1906,6 +1948,15 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   }
 
   if (action === "permrole") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
+  // Choisi depuis la vue d'ensemble des paliers (rubrique "Rôles (paliers)") :
+  // saute direct dans "Rôles et permissions", où vivent déjà la fiche
+  // complète du rôle ET le bouton "Renommer" — pas une deuxième modale à
+  // maintenir en parallèle pour la même action.
+  if (action === "tierrenamepick") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
