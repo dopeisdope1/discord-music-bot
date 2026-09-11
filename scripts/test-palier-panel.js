@@ -155,7 +155,7 @@ function fakeMessage(authorId, guild, member) {
     const [supp, ajout, ren] = rangee.components;
     assert.strictEqual(supp.custom_id, `${palierPanel.CUSTOM_ID}:del:${ROLE_B}`);
     assert.strictEqual(supp.style, 4);
-    assert.strictEqual(ajout.custom_id, `${palierPanel.CUSTOM_ID}:addopen:t-1`);
+    assert.strictEqual(ajout.custom_id, `${palierPanel.CUSTOM_ID}:addopen:t-1:0`);
     assert.strictEqual(ajout.style, 3);
     assert.strictEqual(ren.custom_id, `${palierPanel.CUSTOM_ID}:ren:${ROLE_B}`);
     assert.strictEqual(ren.style, 1);
@@ -169,13 +169,13 @@ function fakeMessage(authorId, guild, member) {
     assert.deepStrictEqual(doublons, []);
   });
 
-  console.log('\n"Ajouter" — sélecteur qui apparaît juste sous le palier concerné :');
+  console.log('\n"Ajouter" — ouvre le palier (remplace la liste, budget de composants oblige) :');
 
-  await cas('cliquer "Ajouter" révèle un RoleSelectMenu juste sous CE palier', async () => {
+  await cas('cliquer "Ajouter" REMPLACE la liste par CE palier seul, avec son RoleSelectMenu et un retour', async () => {
     const owner = mkMember("owner-1", null);
     let updated = null;
     await palierPanel.handlePalierInteraction({
-      customId: `${palierPanel.CUSTOM_ID}:addopen:t-1`,
+      customId: `${palierPanel.CUSTOM_ID}:addopen:t-1:0`,
       member: owner,
       guild,
       client: {},
@@ -183,10 +183,12 @@ function fakeMessage(authorId, guild, member) {
     });
     const composants = updated.components[0].toJSON().components;
     const iLigne = composants.findIndex((c) => c.content?.includes("Permission 1"));
-    const iSelecteur = composants.findIndex((c) => c.components?.[0]?.custom_id === `${palierPanel.CUSTOM_ID}:add:t-1`);
+    assert.ok(iLigne >= 0);
+    assert.ok(!composants.some((c) => c.content?.includes("Permission 2")), "un palier ouvert REMPLACE la liste — sinon le budget de 40 composants explose");
+    const iSelecteur = composants.findIndex((c) => c.components?.[0]?.custom_id === `${palierPanel.CUSTOM_ID}:add:t-1:0`);
     assert.ok(iSelecteur > iLigne);
-    const iLigne2 = composants.findIndex((c) => c.content?.includes("Permission 2"));
-    assert.ok(iSelecteur < iLigne2, "le sélecteur doit rester sous Permission 1, pas glisser après Permission 2");
+    const labels = composants.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
+    assert.ok(labels.includes("◀ Retour à la liste"));
   });
 
   await cas("choisir un rôle dans ce sélecteur copie les clés du palier", async () => {
@@ -194,7 +196,7 @@ function fakeMessage(authorId, guild, member) {
     const owner = mkMember("owner-1", null);
     let updated = null;
     await palierPanel.handlePalierInteraction({
-      customId: `${palierPanel.CUSTOM_ID}:add:t-1`,
+      customId: `${palierPanel.CUSTOM_ID}:add:t-1:0`,
       values: [ROLE_C],
       member: owner,
       guild,
@@ -220,7 +222,7 @@ function fakeMessage(authorId, guild, member) {
     const owner = mkMember("owner-1", null);
     let updated = null;
     await palierPanel.handlePalierInteraction({
-      customId: `${palierPanel.CUSTOM_ID}:manopen:t-1`,
+      customId: `${palierPanel.CUSTOM_ID}:manopen:t-1:0`,
       member: owner,
       guild,
       client: {},
@@ -348,6 +350,100 @@ function fakeMessage(authorId, guild, member) {
     owner.guild = { id: "gvide-p", ownerId: "owner-1" };
     const texte = jsonDe(palierPanel.buildPalierPanel(guildVide, owner, {}));
     assert.ok(texte.includes("Aucune permission"));
+  });
+
+  console.log("\nBudget de 40 composants Discord — bug réel rencontré en production :");
+
+  await cas("un serveur à 16 paliers (comme en prod) ne dépasse JAMAIS 40 composants, sur aucune page ni aucun état", () => {
+    // Bug réel : le premier calcul ("un palier ne coûte que 2 composants")
+    // ne comptait pas les boutons D'UNE RANGÉE comme des composants à part
+    // entière — Discord, si. Un palier à un seul rôle en coûte en réalité
+    // jusqu'à 5 (texte + rangée + 3 boutons). Sans pagination, un serveur à
+    // 16 paliers (13 numérotés + 3 exclusifs, exactement la config
+    // rencontrée en prod) envoyait déjà ~82 composants dès le premier "&p" —
+    // Discord refusait le message entier, silencieusement pour qui tapait la
+    // commande ("L'application n'a pas répondu"). Ce test compte les VRAIS
+    // composants (boutons inclus) pour re-produire exactement ce scénario.
+    const grosGuild = {
+      id: "ggros",
+      name: "GrosServeur",
+      ownerId: "owner-1",
+      roles: { cache: new Collection(), everyone: { permissions: new PermissionsBitField([]) } },
+      channels: { cache: new Collection() },
+      members: { cache: new Collection(), me: { roles: { highest: { position: 99 } }, permissions: { has: () => true } } },
+      client: { uptime: 1, ws: { ping: 1 }, guilds: { cache: new Collection() } },
+    };
+    // 16 rôles, chacun avec un ensemble de clés STRICTEMENT différent (donc
+    // 16 paliers numérotés distincts, tous à un seul rôle — le pire cas pour
+    // le coût en composants, 5 chacun).
+    for (let i = 0; i < 16; i++) {
+      const roleId = `9${String(i).padStart(17, "0")}`;
+      grosGuild.roles.cache.set(roleId, {
+        id: roleId,
+        name: `Rôle ${i}`,
+        position: i + 1,
+        hexColor: "#000000",
+        members: { size: 0 },
+        permissions: { toArray: () => [], has: () => false },
+        toString() {
+          return `<@&${this.id}>`;
+        },
+      });
+      permStore.setRoleGrants("ggros", roleId, Array.from({ length: i + 1 }, (_, k) => `perm${k}`));
+    }
+    const owner = { id: "owner-1", guild: { id: "ggros", ownerId: "owner-1" }, roles: { cache: new Collection() }, permissions: { has: () => false }, user: { tag: "owner#0001" } };
+
+    const compter = (c) => 1 + (c.components ? c.components.reduce((s, x) => s + compter(x), 0) : 0);
+    const lignes = palierPanel.lignesPaliers(grosGuild);
+    assert.strictEqual(lignes.length, 16, "16 paliers attendus, comme en prod");
+
+    const cles = lignes.map((l) => l.cle);
+    for (const page of [0, 1, 2, 3]) {
+      for (const ouvertKey of [null, ...cles]) {
+        const json = palierPanel.buildPalierPanel(grosGuild, owner, { page, addOpenKey: ouvertKey }).components[0].toJSON();
+        const total = json.components.reduce((s, c) => s + compter(c), 0);
+        assert.ok(total <= 40, `page ${page} / ouvert=${ouvertKey} : ${total} composants`);
+      }
+    }
+  });
+
+  await cas("au-delà d'une page, le pager apparaît ; aucun custom_id en double sur aucune page", () => {
+    const grosGuild = {
+      id: "ggros2",
+      name: "GrosServeur2",
+      ownerId: "owner-1",
+      roles: { cache: new Collection(), everyone: { permissions: new PermissionsBitField([]) } },
+      channels: { cache: new Collection() },
+      members: { cache: new Collection(), me: { roles: { highest: { position: 99 } }, permissions: { has: () => true } } },
+      client: { uptime: 1, ws: { ping: 1 }, guilds: { cache: new Collection() } },
+    };
+    for (let i = 0; i < 16; i++) {
+      const roleId = `8${String(i).padStart(17, "0")}`;
+      grosGuild.roles.cache.set(roleId, {
+        id: roleId,
+        name: `Rôle ${i}`,
+        position: i + 1,
+        hexColor: "#000000",
+        members: { size: 0 },
+        permissions: { toArray: () => [], has: () => false },
+        toString() {
+          return `<@&${this.id}>`;
+        },
+      });
+      permStore.setRoleGrants("ggros2", roleId, Array.from({ length: i + 1 }, (_, k) => `permB${k}`));
+    }
+    const owner = { id: "owner-1", guild: { id: "ggros2", ownerId: "owner-1" }, roles: { cache: new Collection() }, permissions: { has: () => false }, user: { tag: "owner#0001" } };
+
+    const brut = palierPanel.buildPalierPanel(grosGuild, owner, {}).components[0].toJSON();
+    const labels = brut.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
+    assert.ok(labels.some((l) => l?.startsWith("Page ")), "16 paliers doivent être paginés (6 par page)");
+
+    for (const page of [0, 1, 2]) {
+      const json = palierPanel.buildPalierPanel(grosGuild, owner, { page }).components[0].toJSON();
+      const ids = json.components.flatMap((c) => idsDe(c));
+      const doublons = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+      assert.deepStrictEqual(doublons, [], `page ${page} : custom_id en double : ${doublons.join(", ")}`);
+    }
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

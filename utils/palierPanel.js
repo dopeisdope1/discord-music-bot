@@ -74,10 +74,21 @@ function trouverLigne(guild, cle) {
   return lignesPaliers(guild).find((l) => l.cle === cle) || null;
 }
 
+// Discord plafonne un message à 40 composants, en comptant CHAQUE bouton
+// d'une rangée séparément (pas juste la rangée) — erreur commise à
+// l'écriture initiale de ce fichier, découverte en production
+// (COMPONENT_MAX_TOTAL_COMPONENTS_EXCEEDED dès le premier "&p" sur un
+// serveur à 16 paliers). Un palier à un seul rôle coûte jusqu'à 5
+// composants (texte + rangée + 3 boutons) : 6 par page, mesuré avec marge,
+// pas deviné — voir le test dédié qui compte les VRAIS composants pour
+// chaque page et chaque état.
+const PAR_PAGE = 6;
+
 /**
- * @param {{ addOpenKey?: string, manOpenKey?: string }} [state] quel palier a
- *   son sélecteur "Ajouter" ou "Renommer/Supprimer" déplié — jamais persisté,
- *   reconstruit à chaque clic à partir du bouton pressé.
+ * @param {{ addOpenKey?: string, manOpenKey?: string, page?: number }} [state]
+ *   quel palier a son sélecteur "Ajouter" ou "Renommer/Supprimer" déplié, et
+ *   quelle page de la liste afficher — jamais persisté, reconstruit à chaque
+ *   clic à partir du bouton pressé (customId).
  */
 function buildPalierPanel(guild, member, state = {}) {
   const container = new ContainerBuilder();
@@ -94,8 +105,17 @@ function buildPalierPanel(guild, member, state = {}) {
 
   const peutGerer = can(member, "panel.permissions.manage");
   const peutRoles = can(member, "server.roles.manage");
+  const ouvert = lignes.find((l) => l.cle === state.addOpenKey || l.cle === state.manOpenKey) || null;
+  const pages = Math.max(1, Math.ceil(lignes.length / PAR_PAGE));
+  const page = Math.min(Math.max(0, Number(state.page) || 0), pages - 1);
 
-  for (const ligne of lignes) {
+  // Un palier "ouvert" (Ajouter/Renommer/Supprimer en cours) REMPLACE la
+  // liste plutôt que d'empiler ses contrôles en plus : à plusieurs dizaines
+  // de composants déjà pour la liste seule, les additionner aurait vite
+  // dépassé le plafond de 40.
+  const aAfficher = ouvert ? [ouvert] : lignes.slice(page * PAR_PAGE, (page + 1) * PAR_PAGE);
+
+  for (const ligne of aAfficher) {
     const roles = ligne.roleIds.length ? ligne.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${ligne.libelle}** : ${roles}`));
     if (!peutGerer) continue;
@@ -106,7 +126,7 @@ function buildPalierPanel(guild, member, state = {}) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:del:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:ren:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
         )
       );
@@ -116,9 +136,9 @@ function buildPalierPanel(guild, member, state = {}) {
       // sélecteurs juste en dessous.
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
           new ButtonBuilder()
-            .setCustomId(`${CUSTOM_ID}:manopen:${ligne.cle}`)
+            .setCustomId(`${CUSTOM_ID}:manopen:${ligne.cle}:${page}`)
             .setLabel("Renommer/Supprimer")
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(!ligne.roleIds.length || !peutRoles)
@@ -130,7 +150,7 @@ function buildPalierPanel(guild, member, state = {}) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new RoleSelectMenuBuilder()
-            .setCustomId(`${CUSTOM_ID}:add:${ligne.cle}`)
+            .setCustomId(`${CUSTOM_ID}:add:${ligne.cle}:${page}`)
             .setPlaceholder(`Choisir le rôle à ajouter à ${ligne.libelle}`.slice(0, 150))
         )
       );
@@ -150,6 +170,29 @@ function buildPalierPanel(guild, member, state = {}) {
         )
       );
     }
+  }
+
+  if (ouvert) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:page:${page}`).setLabel("◀ Retour à la liste").setStyle(ButtonStyle.Secondary)
+      )
+    );
+  } else if (pages > 1) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${CUSTOM_ID}:page:${page - 1}`)
+          .setLabel("◀ Précédent")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page === 0),
+        new ButtonBuilder()
+          .setCustomId(`${CUSTOM_ID}:page:${page + 1}`)
+          .setLabel(`Page ${page + 1}/${pages}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page >= pages - 1)
+      )
+    );
   }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
@@ -183,23 +226,31 @@ function ouvrirModaleRenommage(interaction, role) {
 }
 
 async function handlePalierInteraction(interaction) {
-  const [, action, cle] = interaction.customId.split(":");
+  // p1/p2 selon l'action : "addopen"/"manopen"/"add" portent <cle>:<page> ;
+  // "page" porte juste <page> ; "ren"/"del" portent <roleId> ; "renpick"/
+  // "delpick" sont des sélecteurs, la cible vient de interaction.values.
+  const [, action, p1, p2] = interaction.customId.split(":");
   const { member, guild } = interaction;
 
   if (!can(member, "panel.permissions.manage")) {
     return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
   }
 
-  if (action === "addopen") return interaction.update(buildPalierPanel(guild, member, { addOpenKey: cle }));
-  if (action === "manopen") return interaction.update(buildPalierPanel(guild, member, { manOpenKey: cle }));
+  if (action === "addopen") return interaction.update(buildPalierPanel(guild, member, { addOpenKey: p1, page: Number(p2) || 0 }));
+  if (action === "manopen") return interaction.update(buildPalierPanel(guild, member, { manOpenKey: p1, page: Number(p2) || 0 }));
+  // "page" sert aussi de "Retour à la liste" — sans addOpenKey/manOpenKey,
+  // buildPalierPanel retombe sur la liste paginée normale.
+  if (action === "page") return interaction.update(buildPalierPanel(guild, member, { page: Number(p1) || 0 }));
 
   if (action === "add") {
+    const cle = p1;
+    const page = Number(p2) || 0;
     const ligne = trouverLigne(guild, cle);
     if (!ligne) return interaction.reply({ content: "Ce palier n'existe plus — retape &p.", flags: MessageFlags.Ephemeral });
     const roleId = interaction.values[0];
     permStore.setRoleGrants(guild.id, roleId, ligne.keys);
     if (ligne.exclusiveLabel) permStore.setRoleExclusive(guild.id, roleId, true, ligne.exclusiveLabel);
-    return interaction.update(buildPalierPanel(guild, member, {}));
+    return interaction.update(buildPalierPanel(guild, member, { page }));
   }
 
   // Renommer/Supprimer un rôle exigent en plus server.roles.manage (même
@@ -213,16 +264,16 @@ async function handlePalierInteraction(interaction) {
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, rôle inchangé.", flags: MessageFlags.Ephemeral });
-      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["rename", cle, ...name.split(/\s+/)]);
+      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["rename", p1, ...name.split(/\s+/)]);
       return;
     }
-    const role = guild.roles.cache.get(cle);
+    const role = guild.roles.cache.get(p1);
     if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
     return ouvrirModaleRenommage(interaction, role);
   }
 
   if (action === "del") {
-    return roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", cle]);
+    return roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", p1]);
   }
 
   if (action === "renpick") {
