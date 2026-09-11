@@ -134,7 +134,7 @@ casser une lecture en cours).
 
 ## 2ter. Déploiement automatique sur le VPS
 
-Le bot tourne en **Docker Compose** sur un VPS. Le déploiement est automatisé
+Le bot tourne sous **pm2** sur un VPS Ubuntu (droplet DigitalOcean à 512 Mo). Le déploiement est automatisé
 par `.github/workflows/deploy.yml` : à chaque push sur `main`, la CI
 (`tests.yml`) s'exécute, et **seulement si elle est verte**, le VPS est mis à
 jour et les conteneurs redémarrés. Un build rouge ne part jamais en
@@ -151,9 +151,10 @@ Dans *Settings → Secrets and variables → Actions* du dépôt :
 | Secret | Obligatoire | Rôle |
 |---|---|---|
 | `VPS_HOST` | oui | Adresse ou nom d'hôte du VPS. |
-| `VPS_USER` | oui | Utilisateur SSH (celui qui peut lancer `docker compose`). |
+| `VPS_USER` | oui | Utilisateur SSH (celui qui peut lancer `pm2`). |
 | `VPS_SSH_KEY` | oui | Clé privée SSH **dédiée au déploiement**, au format OpenSSH complet. |
-| `VPS_PATH` | non | Chemin du dépôt sur le VPS (défaut : `/opt/discord-music-bot`). |
+| `VPS_PATH` | non | Chemin du dépôt sur le VPS (défaut : `/root/bot`). |
+| `VPS_PM2_APP` | non | Nom de l'application pm2 (défaut : `discord-bot`). |
 | `VPS_PORT` | non | Port SSH (défaut : `22`). |
 | `VPS_KNOWN_HOSTS` | recommandé | Empreinte du serveur, via `ssh-keyscan -H <hôte>`. |
 
@@ -173,16 +174,25 @@ cat deploy_key                                       # -> VPS_SSH_KEY
 
 ### Ce que fait le déploiement
 
-`git fetch` puis `git reset --hard` sur la révision testée, `docker compose up
--d --build --remove-orphans`, puis vérification que des conteneurs tournent
-vraiment. **Un déploiement qui laisse le bot éteint échoue bruyamment** au
-lieu de finir en vert : sinon une image qui ne démarre plus passerait
-inaperçue jusqu'au premier message sur Discord.
+`git fetch` puis `git reset --hard` sur la révision testée, réinstallation des
+dépendances **uniquement si `package.json`/`package-lock.json` ont bougé**, puis
+`pm2 restart`.
+
+Pourquoi `npm install` et pas `npm ci` : `ci` efface `node_modules` avant de
+réinstaller, donc un échec à mi-chemin laisserait le bot sans ses modules au
+prochain redémarrage. Sur un droplet à 512 Mo, on évite aussi de réinstaller
+pour rien.
+
+**Un déploiement qui laisse le bot mort ou en boucle de plantage échoue
+bruyamment**, avec les 40 dernières lignes de log : un workflow vert sur un bot
+HS ne serait découvert qu'au premier message sur Discord. Le contrôle ne se
+contente pas du statut `online` — il compare le compteur de redémarrages de pm2
+avant et après, car un bot qui meurt à la première ligne d'`index.js`
+apparaîtrait « online » une fraction de seconde.
 
 Le `reset --hard` ne touche NI `data/` NI `.env` : tous deux sont ignorés par
 git (voir `.gitignore`), donc jamais suivis. La configuration du serveur et
-l'historique de modération survivent à chaque déploiement — c'est aussi
-pourquoi `DATA_DIR` doit pointer vers un volume persistant du conteneur.
+l'historique de modération survivent donc à chaque déploiement.
 
 ### Déclencher un déploiement à la main
 
