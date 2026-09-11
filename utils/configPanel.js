@@ -1343,7 +1343,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     for (const ligne of aAfficher) {
       const roles = ligne.roleIds.length ? ligne.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${ligne.libelle}** : ${roles}`));
-      if (!peutGerer) continue;
+      // Le palier OUVERT n'affiche pas ses propres boutons de ligne : le bloc
+      // de détail plus bas les recrée déjà (Renommer/Supprimer sur le même
+      // rôle) — les deux à la fois donnait un custom id en double, que
+      // Discord refuse (l'interaction restait alors sans réponse : "L'application
+      // n'a pas répondu").
+      if (!peutGerer || (ouvert && ligne.cle === ouvert.key)) continue;
 
       const boutons = [];
       if (ligne.roleIds.length === 1 && peutRoles) {
@@ -1356,10 +1361,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           new ButtonBuilder().setCustomId(`${ID}:renamerole:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
         );
       } else {
+        // Bug corrigé ici : les deux boutons partageaient le MÊME customId
+        // ("paladd") — Discord refusait le message entier (custom id
+        // dupliqué). Les deux ouvrent bien le même palier (voir "paladd"/
+        // "palopen" dans handleConfigInteraction), mais chaque composant d'un
+        // même message doit avoir un identifiant distinct.
         boutons.push(
           new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
           new ButtonBuilder()
-            .setCustomId(`${ID}:paladd:${ligne.cle}`)
+            .setCustomId(`${ID}:palopen:${ligne.cle}`)
             .setLabel(ligne.roleIds.length ? "Choisir un rôle" : "Aucun rôle")
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(!ligne.roleIds.length)
@@ -2309,7 +2319,10 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   // Bouton d'une LIGNE de la rubrique : met ce palier en gestion, ce qui fait
   // apparaître juste en dessous le sélecteur "Ajouter un rôle" et, si le
   // palier compte plusieurs rôles, celui qui choisit lequel viser.
-  if (action === "paladd") {
+  // "palopen" = "Choisir un rôle" (palier à plusieurs rôles ou sans rôle) :
+  // même effet que "paladd", juste un identifiant distinct — deux composants
+  // d'un même message ne peuvent pas partager le même customId.
+  if (action === "paladd" || action === "palopen") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("roletiers", { tierManageKey: extra2 ? `${extra}:${extra2}` : extra });
   }

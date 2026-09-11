@@ -511,6 +511,33 @@ function texteDe(guild, member, state) {
     }
   });
 
+  await cas("aucune page ne répète un custom_id — Discord refuse sinon le message ENTIER (interaction sans réponse)", () => {
+    // Bug réel rencontré en production : deux boutons d'une même ligne
+    // partageaient le même custom_id ("paladd"), et le bloc de détail d'un
+    // palier ouvert recréait "renamerole"/"roledelete" déjà posés par sa
+    // propre ligne juste au-dessus. Discord répond alors
+    // COMPONENT_CUSTOM_ID_DUPLICATED, interaction.update échoue, et
+    // l'utilisateur voit juste "L'application n'a pas répondu" — aucune
+    // erreur visible côté Discord pour deviner pourquoi. Ce test balaie
+    // toutes les pages et tous les états pour que ça ne puisse plus revenir
+    // en silence.
+    const idsDe = (composant, acc) => {
+      if (composant.custom_id) acc.push(composant.custom_id);
+      if (composant.components) for (const sous of composant.components) idsDe(sous, acc);
+      return acc;
+    };
+    for (const page of [0, 1, 2, 3]) {
+      for (const cle of [null, "t-1", "t-2"]) {
+        for (const roleId of [null, ROLE_A]) {
+          const json = buildConfigPanel(guild, "roletiers", owner, { palierPage: page, tierManageKey: cle, tierManageRoleId: roleId }).components[0].toJSON();
+          const ids = json.components.flatMap((c) => idsDe(c, []));
+          const doublons = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+          assert.deepStrictEqual(doublons, [], `page ${page + 1} / ouvert=${cle} / rôle=${roleId} : custom_id en double : ${doublons.join(", ")}`);
+        }
+      }
+    }
+  });
+
   await cas("ouvrir un palier REMPLACE la liste — sinon le budget de composants explose", () => {
     const seul = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-1" }).components[0].toJSON();
     // On ne compte que les LIGNES de palier (elles commencent par `**`) : la
