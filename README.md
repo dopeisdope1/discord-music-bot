@@ -194,6 +194,33 @@ Le `reset --hard` ne touche NI `data/` NI `.env` : tous deux sont ignorés par
 git (voir `.gitignore`), donc jamais suivis. La configuration du serveur et
 l'historique de modération survivent donc à chaque déploiement.
 
+### Alternative sans aucune clé : `scripts/autodeploy.sh`
+
+Le workflow ci-dessus pousse depuis GitHub vers le VPS, ce qui exige d'y
+déposer une clé SSH privée — donc un copier-coller, impossible depuis la
+console web d'un téléphone. `scripts/autodeploy.sh` inverse le sens : c'est le
+VPS qui va chercher les nouvelles versions. **Aucune clé, aucun secret, rien à
+copier.**
+
+Installation, une seule fois, dans le dossier du bot :
+
+```bash
+bash scripts/autodeploy.sh --install
+```
+
+Il pose une tâche planifiée qui, toutes les 5 minutes, regarde si `main` a
+bougé. Si oui : mise à jour, réinstallation des dépendances seulement si elles
+ont changé, `pm2 restart`. Sinon il ne fait **rien** — sans ce test, le bot
+redémarrerait toutes les 5 minutes et couperait la musique en cours.
+
+**Retour arrière automatique** : personne ne surveille ces déploiements. Si le
+bot ne repasse pas « online » après le redémarrage, le script revient à la
+version précédente, réinstalle et relance. Laisser un bot mort jusqu'à ce que
+quelqu'un le remarque serait pire que de ne pas déployer.
+
+Journal dans `/var/log/autodeploy-bot.log`. Relancer `--install` ne duplique
+pas la tâche et ne touche pas aux autres tâches planifiées de la machine.
+
 ### Déclencher un déploiement à la main
 
 Onglet *Actions* → *Déploiement VPS* → *Run workflow*. Utile après une
