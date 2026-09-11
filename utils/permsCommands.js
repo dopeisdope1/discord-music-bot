@@ -1,4 +1,4 @@
-const { ContainerBuilder, TextDisplayBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder, MessageFlags } = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
@@ -6,8 +6,6 @@ const permCatalog = require("./permissions/catalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
-const { resoudre } = require("./sectionDashboard");
-const { rendreEnCache, enTexte } = require("./dashboardImage");
 
 // &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
 // dans le même style "Permission 1, 2, 3..." qu'une référence montrée par
@@ -76,66 +74,58 @@ function nonCommandGrants(keys) {
   return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
 }
 
-// DESSINÉ en image (utils/dashboardImage.js), comme &panel — pas du texte
-// Discord brut. Une carte de texte (TextDisplayComponent) est plafonnée à
-// 4000 caractères, ET Discord plafonne aussi le total de texte affichable
-// sur TOUT le message à 4000 : avec des paliers CUMULATIFS (utils/
+// Texte brut Discord, comme avant — demande explicite (le rendu en image
+// essayé entre-temps ne convenait pas). Discord plafonne le texte affichable
+// à 4000 caractères, et ce plafond porte sur le TOTAL du message, pas
+// composant par composant : avec des paliers CUMULATIFS (utils/
 // rolePresets.js, chaque palier liste toutes les commandes de tous les
-// paliers en dessous), le palier le plus haut peut à lui seul dépasser ce
-// plafond une fois les 13 additionnés — DiscordAPIError constaté en
-// conditions réelles avec une répartition sur plusieurs composants texte,
-// qui ne suffisait pas puisque le plafond porte sur le TOTAL. Une image n'a
-// pas cette limite.
-const NOM_IMAGE = "permissions.png";
-const COULEUR = "#d0d0d0";
+// paliers en dessous), le palier le plus haut peut, une fois les 13
+// additionnés, largement dépasser ce total — DiscordAPIError constaté en
+// conditions réelles. La seule répartition qui tienne est donc PAR MESSAGE :
+// plusieurs messages séparés ("1/2", "2/2"...) plutôt qu'un mur de texte.
+const LIMITE_PAGE = 3800;
 
-// Repli TEXTE si le rendu échoue : un dessin raté ne doit pas rendre la
-// commande muette (même principe que &help/&panel/utils/familyHelp.js). Le
-// texte de repli peut lui-même dépasser 4000 caractères pour les mêmes
-// raisons que ci-dessus — réparti sur plusieurs composants au besoin plutôt
-// que de faire échouer jusqu'au repli.
-const LIMITE_COMPOSANT = 3800;
-function ajouterTexteReparti(container, texte) {
-  const blocs = texte.split("\n\n");
-  let courant = "";
+/**
+ * @returns {string[]} une ou plusieurs pages de texte, chacune sous la limite.
+ */
+function paginerBlocs(blocs) {
+  const pages = [];
+  let courante = "";
   for (let bloc of blocs) {
-    if (bloc.length > LIMITE_COMPOSANT) bloc = `${bloc.slice(0, LIMITE_COMPOSANT - 1)}…`;
-    const candidat = courant ? `${courant}\n\n${bloc}` : bloc;
-    if (candidat.length > LIMITE_COMPOSANT && courant) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(courant));
-      courant = bloc;
+    if (bloc.length > LIMITE_PAGE) bloc = `${bloc.slice(0, LIMITE_PAGE - 1)}…`;
+    const candidate = courante ? `${courante}\n\n${bloc}` : bloc;
+    if (candidate.length > LIMITE_PAGE && courante) {
+      pages.push(courante);
+      courante = bloc;
     } else {
-      courant = candidat;
+      courante = candidate;
     }
   }
-  if (courant) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(courant));
+  if (courante) pages.push(courante);
+  return pages;
 }
 
 /**
- * Spec (utils/dashboardImage.js) séparée du rendu, pour rester testable sans
- * dépendre de l'image produite — même principe que utils/configPanel.js::
- * buildSectionSpec.
- * @param {import('discord.js').Guild} guild pour résoudre les mentions de rôle en noms affichables sur l'image
- * @param {string} lineLabel "Rôles" (&helpall) ou "Commandes débloquées" (&perms)
+ * @returns {object[]} un ou plusieurs payloads de message à envoyer dans
+ *   l'ordre (le premier en reply, les suivants en envoi normal — voir perms/
+ *   helpall) — jamais un seul message qui dépasserait le plafond Discord.
  */
-function buildTierSpec(guild, title, intro, tiers, lineLabel, renderTierLine) {
-  const cartes = tiers.map((tier) => ({
-    titre: `Permission ${tier.index}`,
-    couleur: COULEUR,
-    items: [{ nom: lineLabel, description: resoudre(renderTierLine(tier) || "*aucune*", guild) }],
-  }));
-
+function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
+  const blocs = [];
+  for (const tier of tiers) {
+    blocs.push(`**Permission ${tier.index}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
+  }
   // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
   // store.js) : une simple étiquette, affichée à part des paliers numérotés
   // puisqu'elle ne dépend pas des clés accordées. Un rôle avec un NOM propre
-  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre carte
-  // plutôt que d'être noyé dans une carte "Exclusives" générique.
-  const exclusiveRoleIds = permStore.listExclusiveRoles(guild.id);
+  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre ligne
+  // plutôt que d'être noyé dans un bloc "Exclusives" générique.
+  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
   if (exclusiveRoleIds.length) {
     const parLabel = new Map();
     const sansLabel = [];
     for (const id of exclusiveRoleIds) {
-      const label = permStore.getExclusiveLabel(guild.id, id);
+      const label = permStore.getExclusiveLabel(guildId, id);
       if (label) {
         if (!parLabel.has(label)) parLabel.set(label, []);
         parLabel.get(label).push(id);
@@ -144,40 +134,29 @@ function buildTierSpec(guild, title, intro, tiers, lineLabel, renderTierLine) {
       }
     }
     for (const [label, ids] of parLabel) {
-      cartes.push({
-        titre: `${label} (hors hiérarchie)`,
-        couleur: COULEUR,
-        items: [{ nom: "Rôles", description: resoudre(ids.map((id) => `<@&${id}>`).join(", "), guild) }],
-      });
+      blocs.push(`**${label}** *(hors hiérarchie)*\n> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
     }
     if (sansLabel.length) {
-      cartes.push({
-        titre: "Exclusives",
-        couleur: COULEUR,
-        items: [{ nom: "Rôles", description: resoudre(sansLabel.map((id) => `<@&${id}>`).join(", "), guild) }],
-      });
+      blocs.push(`**Exclusives**\n> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
     }
   }
 
-  return { titre: title, sousTitre: intro, cartes, colonnes: 1, hauteursLibres: true };
+  const pages = paginerBlocs([intro, ...blocs]);
+  return pages.map((page, i) => {
+    const container = new ContainerBuilder();
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`## ${title}${pages.length > 1 ? ` (${i + 1}/${pages.length})` : ""}`)
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(page.trim()));
+    return { flags: MessageFlags.IsComponentsV2, components: [container] };
+  });
 }
 
-function buildTierCard(guild, title, intro, tiers, lineLabel, renderTierLine) {
-  const spec = buildTierSpec(guild, title, intro, tiers, lineLabel, renderTierLine);
-  const png = rendreEnCache(spec);
-  const container = new ContainerBuilder();
-  if (png) {
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
-    );
-  } else {
-    ajouterTexteReparti(container, enTexte(spec));
-  }
-  return {
-    flags: MessageFlags.IsComponentsV2,
-    components: [container],
-    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE })] } : {}),
-  };
+/** Envoie une ou plusieurs pages : la première en réponse, les suivantes à la suite dans le salon. */
+async function envoyerPages(message, pages) {
+  await message.reply(pages[0]);
+  for (const page of pages.slice(1)) await message.channel.send(page);
 }
 
 /** &perms — les commandes débloquées par chaque palier de permissions. */
@@ -189,13 +168,13 @@ async function perms(client, message) {
   if (!tiers.length && !exclusiveRoleIds.length) {
     return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
   }
-  return message.reply(
+  return envoyerPages(
+    message,
     buildTierCard(
-      message.guild,
+      guildId,
       "Permissions liées aux commandes",
       "Voici les différentes permissions ainsi que les commandes accessibles",
       tiers,
-      "Commandes débloquées",
       (tier) => commandsForKeys(tier.keys).join(", ")
     )
   );
@@ -210,26 +189,16 @@ async function helpall(client, message) {
   if (!tiers.length && !exclusiveRoleIds.length) {
     return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
   }
-  return message.reply(
+  return envoyerPages(
+    message,
     buildTierCard(
-      message.guild,
+      guildId,
       "Permissions",
       "Voici les différentes permissions ainsi que les rôles associés",
       tiers,
-      "Rôles",
       (tier) => tier.roleIds.map((id) => `<@&${id}>`).join(", ")
     )
   );
 }
 
-module.exports = {
-  perms,
-  helpall,
-  computeTiers,
-  commandsForKeys,
-  nonCommandGrants,
-  buildTierCard,
-  buildTierSpec,
-  ajouterTexteReparti,
-  LIMITE_COMPOSANT,
-};
+module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_PAGE };
