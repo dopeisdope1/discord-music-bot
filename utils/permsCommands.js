@@ -1,4 +1,4 @@
-const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, AttachmentBuilder, MessageFlags } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
@@ -6,6 +6,8 @@ const permCatalog = require("./permissions/catalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
+const { resoudre } = require("./sectionDashboard");
+const { rendreEnCache, enTexte } = require("./dashboardImage");
 
 // &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
 // dans le même style "Permission 1, 2, 3..." qu'une référence montrée par
@@ -74,21 +76,29 @@ function nonCommandGrants(keys) {
   return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
 }
 
-// Un TextDisplayComponent est plafonné à 4000 caractères par Discord. Avec
-// des paliers CUMULATIFS (utils/rolePresets.js), le palier le plus haut liste
-// toutes les commandes de tous les paliers en dessous — largement de quoi
-// dépasser ce plafond une fois les 13 paliers concaténés dans un seul bloc de
-// texte, comme c'était le cas avant (DiscordAPIError constaté en conditions
-// réelles). Marge de sécurité sous 4000 pour rester tranquille même avec des
-// noms de rôle très longs dans les mentions.
-const LIMITE_COMPOSANT = 3800;
+// DESSINÉ en image (utils/dashboardImage.js), comme &panel — pas du texte
+// Discord brut. Une carte de texte (TextDisplayComponent) est plafonnée à
+// 4000 caractères, ET Discord plafonne aussi le total de texte affichable
+// sur TOUT le message à 4000 : avec des paliers CUMULATIFS (utils/
+// rolePresets.js, chaque palier liste toutes les commandes de tous les
+// paliers en dessous), le palier le plus haut peut à lui seul dépasser ce
+// plafond une fois les 13 additionnés — DiscordAPIError constaté en
+// conditions réelles avec une répartition sur plusieurs composants texte,
+// qui ne suffisait pas puisque le plafond porte sur le TOTAL. Une image n'a
+// pas cette limite.
+const NOM_IMAGE = "permissions.png";
+const COULEUR = "#d0d0d0";
 
-/** Répartit des blocs de texte sur plusieurs TextDisplayComponents plutôt qu'un seul, qui dépasserait le plafond Discord. */
-function ajouterBlocsRepartis(container, blocs) {
+// Repli TEXTE si le rendu échoue : un dessin raté ne doit pas rendre la
+// commande muette (même principe que &help/&panel/utils/familyHelp.js). Le
+// texte de repli peut lui-même dépasser 4000 caractères pour les mêmes
+// raisons que ci-dessus — réparti sur plusieurs composants au besoin plutôt
+// que de faire échouer jusqu'au repli.
+const LIMITE_COMPOSANT = 3800;
+function ajouterTexteReparti(container, texte) {
+  const blocs = texte.split("\n\n");
   let courant = "";
   for (let bloc of blocs) {
-    // Un bloc seul plus gros que la limite (cas extrême) : tronqué plutôt que
-    // de faire échouer tout le message.
     if (bloc.length > LIMITE_COMPOSANT) bloc = `${bloc.slice(0, LIMITE_COMPOSANT - 1)}…`;
     const candidat = courant ? `${courant}\n\n${bloc}` : bloc;
     if (candidat.length > LIMITE_COMPOSANT && courant) {
@@ -101,26 +111,31 @@ function ajouterBlocsRepartis(container, blocs) {
   if (courant) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(courant));
 }
 
-function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+/**
+ * Spec (utils/dashboardImage.js) séparée du rendu, pour rester testable sans
+ * dépendre de l'image produite — même principe que utils/configPanel.js::
+ * buildSectionSpec.
+ * @param {import('discord.js').Guild} guild pour résoudre les mentions de rôle en noms affichables sur l'image
+ * @param {string} lineLabel "Rôles" (&helpall) ou "Commandes débloquées" (&perms)
+ */
+function buildTierSpec(guild, title, intro, tiers, lineLabel, renderTierLine) {
+  const cartes = tiers.map((tier) => ({
+    titre: `Permission ${tier.index}`,
+    couleur: COULEUR,
+    items: [{ nom: lineLabel, description: resoudre(renderTierLine(tier) || "*aucune*", guild) }],
+  }));
 
-  const blocs = [intro];
-  for (const tier of tiers) {
-    blocs.push(`**Permission ${tier.index}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
-  }
   // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
   // store.js) : une simple étiquette, affichée à part des paliers numérotés
   // puisqu'elle ne dépend pas des clés accordées. Un rôle avec un NOM propre
-  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre ligne
-  // plutôt que d'être noyé dans un bloc "Exclusives" générique.
-  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
+  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre carte
+  // plutôt que d'être noyé dans une carte "Exclusives" générique.
+  const exclusiveRoleIds = permStore.listExclusiveRoles(guild.id);
   if (exclusiveRoleIds.length) {
     const parLabel = new Map();
     const sansLabel = [];
     for (const id of exclusiveRoleIds) {
-      const label = permStore.getExclusiveLabel(guildId, id);
+      const label = permStore.getExclusiveLabel(guild.id, id);
       if (label) {
         if (!parLabel.has(label)) parLabel.set(label, []);
         parLabel.get(label).push(id);
@@ -129,14 +144,40 @@ function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
       }
     }
     for (const [label, ids] of parLabel) {
-      blocs.push(`**${label}** *(hors hiérarchie)*\n> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
+      cartes.push({
+        titre: `${label} (hors hiérarchie)`,
+        couleur: COULEUR,
+        items: [{ nom: "Rôles", description: resoudre(ids.map((id) => `<@&${id}>`).join(", "), guild) }],
+      });
     }
     if (sansLabel.length) {
-      blocs.push(`**Exclusives**\n> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+      cartes.push({
+        titre: "Exclusives",
+        couleur: COULEUR,
+        items: [{ nom: "Rôles", description: resoudre(sansLabel.map((id) => `<@&${id}>`).join(", "), guild) }],
+      });
     }
   }
-  ajouterBlocsRepartis(container, blocs);
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+
+  return { titre: title, sousTitre: intro, cartes, colonnes: 1, hauteursLibres: true };
+}
+
+function buildTierCard(guild, title, intro, tiers, lineLabel, renderTierLine) {
+  const spec = buildTierSpec(guild, title, intro, tiers, lineLabel, renderTierLine);
+  const png = rendreEnCache(spec);
+  const container = new ContainerBuilder();
+  if (png) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
+    );
+  } else {
+    ajouterTexteReparti(container, enTexte(spec));
+  }
+  return {
+    flags: MessageFlags.IsComponentsV2,
+    components: [container],
+    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE })] } : {}),
+  };
 }
 
 /** &perms — les commandes débloquées par chaque palier de permissions. */
@@ -150,10 +191,11 @@ async function perms(client, message) {
   }
   return message.reply(
     buildTierCard(
-      guildId,
+      message.guild,
       "Permissions liées aux commandes",
       "Voici les différentes permissions ainsi que les commandes accessibles",
       tiers,
+      "Commandes débloquées",
       (tier) => commandsForKeys(tier.keys).join(", ")
     )
   );
@@ -170,13 +212,24 @@ async function helpall(client, message) {
   }
   return message.reply(
     buildTierCard(
-      guildId,
+      message.guild,
       "Permissions",
       "Voici les différentes permissions ainsi que les rôles associés",
       tiers,
+      "Rôles",
       (tier) => tier.roleIds.map((id) => `<@&${id}>`).join(", ")
     )
   );
 }
 
-module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_COMPOSANT };
+module.exports = {
+  perms,
+  helpall,
+  computeTiers,
+  commandsForKeys,
+  nonCommandGrants,
+  buildTierCard,
+  buildTierSpec,
+  ajouterTexteReparti,
+  LIMITE_COMPOSANT,
+};
