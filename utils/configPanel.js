@@ -32,6 +32,7 @@ const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
 const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
+const rolePresets = require("./rolePresets");
 const { sweepGuild } = require("./permissions/cleanup");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
@@ -1214,6 +1215,23 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         new RoleSelectMenuBuilder().setCustomId(`${ID}:tierrenamepick`).setPlaceholder("Choisir un rôle à renommer")
       )
     );
+    // Provisionnement en masse (utils/rolePresets.js) : la hiérarchie de
+    // rôles vue sur les deux screens fournis, avec les permissions déjà
+    // réglées — demande explicite, rang sys (ça touche TOUS les rôles du
+    // serveur, effet largement plus grand qu'une action de modération).
+    if (can(member, "sys")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:rolepresets`)
+            .setPlaceholder("Provisionnement en masse")
+            .addOptions(
+              new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
+              new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
+            )
+        )
+      );
+    }
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
       container.addActionRowComponents(
@@ -1959,6 +1977,18 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "tierrenamepick") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
+  // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans
+  // la rubrique "Rôles (paliers)". Passe par messageFromInteraction comme le
+  // reste des commandes admin du panel : la confirmation ET son exécution
+  // remplacent le panel en place, jamais un second message à côté.
+  if (action === "rolepresets") {
+    if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const choix = interaction.values[0];
+    if (choix === "create") return rolePresets.createPresetRoles(interaction.client, messageFromInteraction(interaction));
+    if (choix === "deleteall") return rolePresets.deleteAllRoles(interaction.client, messageFromInteraction(interaction));
+    return;
   }
 
   // Revenir au sélecteur de rôle : il disparaît une fois un rôle choisi, donc
