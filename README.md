@@ -214,8 +214,16 @@ seul accès à ce VPS est la console web d'un iPhone, sans copier-coller, et
 contient que des lettres. Il installe la tâche au premier lancement puis
 déploie dans la foulée ; relancé ensuite, il se contente de vérifier.
 
-Il pose une tâche planifiée qui, toutes les 5 minutes, regarde si `main` a
-bougé. Si oui : mise à jour, réinstallation des dépendances seulement si elles
+Il pose une tâche planifiée qui, **toutes les minutes**, regarde si `main` a
+bougé. Une minute est le plus court que cron accepte ; pour du vraiment
+instantané il faudrait un webhook, donc un port ouvert sur la machine — un
+compromis qui ne vaut pas la minute gagnée. Le script sort immédiatement quand
+rien n'a changé, et un `git fetch` sur ce dépôt ne coûte que quelques
+kilo-octets : la fréquence ne pèse ni sur le droplet ni sur le réseau.
+
+La ligne de cron **se corrige toute seule** si elle change (fréquence, chemin).
+Sans ça, modifier l'intervalle obligerait à retourner taper une commande sur le
+serveur. Si oui : mise à jour, réinstallation des dépendances seulement si elles
 ont changé, `pm2 restart`. Sinon il ne fait **rien** — sans ce test, le bot
 redémarrerait toutes les 5 minutes et couperait la musique en cours.
 

@@ -20,9 +20,14 @@ JOURNAL=${AUTODEPLOY_LOG:-/var/log/autodeploy-bot.log}
 
 dire() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-# --- Installation de la tâche planifiée ---
-if [ "${1:-}" = "--install" ]; then
-  LIGNE="*/5 * * * * bash $DOSSIER/scripts/autodeploy.sh >> $JOURNAL 2>&1"
+# Toutes les MINUTES : c'est le plus court que cron accepte. Le script sort
+# immédiatement quand rien n'a bougé (un `git fetch` sur ce dépôt ne coûte que
+# quelques kilo-octets), donc la fréquence ne pèse ni sur le droplet ni sur le
+# réseau. Pour du vraiment instantané il faudrait un webhook, donc un port
+# ouvert sur la machine — un compromis qui ne vaut pas la minute gagnée.
+LIGNE="* * * * * bash $DOSSIER/scripts/autodeploy.sh >> $JOURNAL 2>&1"
+
+poser_tache() {
   # Le crontab actuel est lu ENTIÈREMENT avant d'écrire quoi que ce soit.
   # `(crontab -l; echo ...) | crontab -` semble équivalent mais les deux côtés
   # du tuyau démarrent en même temps : l'écriture peut vider le fichier avant
@@ -36,7 +41,12 @@ if [ "${1:-}" = "--install" ]; then
   else
     printf '%s\n' "$LIGNE" | crontab -
   fi
-  dire "Tâche installée : vérification toutes les 5 minutes."
+}
+
+# --- Installation de la tâche planifiée ---
+if [ "${1:-}" = "--install" ]; then
+  poser_tache
+  dire "Tâche installée : vérification toutes les minutes."
   dire "Journal : $JOURNAL"
   crontab -l | grep autodeploy
   exit 0
@@ -44,6 +54,17 @@ fi
 
 # --- Vérification périodique ---
 cd "$DOSSIER" || { dire "Dossier introuvable : $DOSSIER"; exit 1; }
+
+# La tâche planifiée se corrige elle-même si sa ligne a changé (fréquence,
+# chemin…). Sans ça, modifier l'intervalle obligerait à retourner taper une
+# commande sur le serveur — or le seul accès est une console de téléphone sans
+# copier-coller. Le nouveau réglage arrive donc avec le code, tout seul.
+if crontab -l 2>/dev/null | grep -q "autodeploy.sh"; then
+  if ! crontab -l 2>/dev/null | grep -qxF "$LIGNE"; then
+    poser_tache
+    dire "Tâche planifiée mise à jour : $LIGNE"
+  fi
+fi
 
 git fetch --quiet origin "$BRANCHE" || { dire "git fetch a échoué (réseau ?)"; exit 0; }
 AVANT=$(git rev-parse HEAD)
