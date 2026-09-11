@@ -134,7 +134,7 @@ casser une lecture en cours).
 
 ## 2ter. Déploiement automatique sur le VPS
 
-Le bot tourne en **Docker Compose** sur un VPS. Le déploiement est automatisé
+Le bot tourne sous **pm2** sur un VPS Ubuntu (droplet DigitalOcean à 512 Mo). Le déploiement est automatisé
 par `.github/workflows/deploy.yml` : à chaque push sur `main`, la CI
 (`tests.yml`) s'exécute, et **seulement si elle est verte**, le VPS est mis à
 jour et les conteneurs redémarrés. Un build rouge ne part jamais en
@@ -151,9 +151,10 @@ Dans *Settings → Secrets and variables → Actions* du dépôt :
 | Secret | Obligatoire | Rôle |
 |---|---|---|
 | `VPS_HOST` | oui | Adresse ou nom d'hôte du VPS. |
-| `VPS_USER` | oui | Utilisateur SSH (celui qui peut lancer `docker compose`). |
+| `VPS_USER` | oui | Utilisateur SSH (celui qui peut lancer `pm2`). |
 | `VPS_SSH_KEY` | oui | Clé privée SSH **dédiée au déploiement**, au format OpenSSH complet. |
-| `VPS_PATH` | non | Chemin du dépôt sur le VPS (défaut : `/opt/discord-music-bot`). |
+| `VPS_PATH` | non | Chemin du dépôt sur le VPS (défaut : `/root/bot`). |
+| `VPS_PM2_APP` | non | Nom de l'application pm2 (défaut : `discord-bot`). |
 | `VPS_PORT` | non | Port SSH (défaut : `22`). |
 | `VPS_KNOWN_HOSTS` | recommandé | Empreinte du serveur, via `ssh-keyscan -H <hôte>`. |
 
@@ -173,16 +174,66 @@ cat deploy_key                                       # -> VPS_SSH_KEY
 
 ### Ce que fait le déploiement
 
-`git fetch` puis `git reset --hard` sur la révision testée, `docker compose up
--d --build --remove-orphans`, puis vérification que des conteneurs tournent
-vraiment. **Un déploiement qui laisse le bot éteint échoue bruyamment** au
-lieu de finir en vert : sinon une image qui ne démarre plus passerait
-inaperçue jusqu'au premier message sur Discord.
+`git fetch` puis `git reset --hard` sur la révision testée, réinstallation des
+dépendances **uniquement si `package.json`/`package-lock.json` ont bougé**, puis
+`pm2 restart`.
+
+Pourquoi `npm install` et pas `npm ci` : `ci` efface `node_modules` avant de
+réinstaller, donc un échec à mi-chemin laisserait le bot sans ses modules au
+prochain redémarrage. Sur un droplet à 512 Mo, on évite aussi de réinstaller
+pour rien.
+
+**Un déploiement qui laisse le bot mort ou en boucle de plantage échoue
+bruyamment**, avec les 40 dernières lignes de log : un workflow vert sur un bot
+HS ne serait découvert qu'au premier message sur Discord. Le contrôle ne se
+contente pas du statut `online` — il compare le compteur de redémarrages de pm2
+avant et après, car un bot qui meurt à la première ligne d'`index.js`
+apparaîtrait « online » une fraction de seconde.
 
 Le `reset --hard` ne touche NI `data/` NI `.env` : tous deux sont ignorés par
 git (voir `.gitignore`), donc jamais suivis. La configuration du serveur et
-l'historique de modération survivent à chaque déploiement — c'est aussi
-pourquoi `DATA_DIR` doit pointer vers un volume persistant du conteneur.
+l'historique de modération survivent donc à chaque déploiement.
+
+### Alternative sans aucune clé : `scripts/autodeploy.sh`
+
+Le workflow ci-dessus pousse depuis GitHub vers le VPS, ce qui exige d'y
+déposer une clé SSH privée — donc un copier-coller, impossible depuis la
+console web d'un téléphone. `scripts/autodeploy.sh` inverse le sens : c'est le
+VPS qui va chercher les nouvelles versions. **Aucune clé, aucun secret, rien à
+copier.**
+
+Installation, une seule fois, dans le dossier du bot :
+
+```bash
+bash autodeploy
+```
+
+Le raccourci `autodeploy` est à la racine et sans extension **exprès** : le
+seul accès à ce VPS est la console web d'un iPhone, sans copier-coller, et
+`/`, `.` et `-` y sont tous derrière la touche « 123 ». « bash autodeploy » ne
+contient que des lettres. Il installe la tâche au premier lancement puis
+déploie dans la foulée ; relancé ensuite, il se contente de vérifier.
+
+Il pose une tâche planifiée qui, **toutes les minutes**, regarde si `main` a
+bougé. Une minute est le plus court que cron accepte ; pour du vraiment
+instantané il faudrait un webhook, donc un port ouvert sur la machine — un
+compromis qui ne vaut pas la minute gagnée. Le script sort immédiatement quand
+rien n'a changé, et un `git fetch` sur ce dépôt ne coûte que quelques
+kilo-octets : la fréquence ne pèse ni sur le droplet ni sur le réseau.
+
+La ligne de cron **se corrige toute seule** si elle change (fréquence, chemin).
+Sans ça, modifier l'intervalle obligerait à retourner taper une commande sur le
+serveur. Si oui : mise à jour, réinstallation des dépendances seulement si elles
+ont changé, `pm2 restart`. Sinon il ne fait **rien** — sans ce test, le bot
+redémarrerait toutes les 5 minutes et couperait la musique en cours.
+
+**Retour arrière automatique** : personne ne surveille ces déploiements. Si le
+bot ne repasse pas « online » après le redémarrage, le script revient à la
+version précédente, réinstalle et relance. Laisser un bot mort jusqu'à ce que
+quelqu'un le remarque serait pire que de ne pas déployer.
+
+Journal dans `/var/log/autodeploy-bot.log`. Relancer `--install` ne duplique
+pas la tâche et ne touche pas aux autres tâches planifiées de la machine.
 
 ### Déclencher un déploiement à la main
 
@@ -430,10 +481,10 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
-Ses vingt-huit rubriques sont regroupées en **onze familles** : le menu
+Ses vingt-neuf rubriques sont regroupées en **onze familles** : le menu
 principal propose les familles, un second menu n'apparaît que pour choisir à
 l'intérieur d'une famille qui en contient plusieurs. Sans ce regroupement, un
-seul menu aurait dû tenir les 28 rubriques, alors que Discord en plafonne un à
+seul menu aurait dû tenir les 29 rubriques, alors que Discord en plafonne un à
 25 options. Les écrans, eux, ne sont **pas** fusionnés — chacun garde ses
 contrôles et ses avertissements. « Rang sys » et « Ban de masse » voisinent
 dans la même famille sans jamais partager le même écran : l'un donne accès à
@@ -447,7 +498,7 @@ complètement du menu — le panel ne montre jamais une porte fermée.
 | Accueil | Vue d'ensemble : statut, alertes, accès rapides |
 | Sécurité | Vue d'ensemble, Protection, Anti-nuke, Mute |
 | Modération | Recherche de membre, Historique |
-| Serveur | Rôles et permissions, Rôles automatiques, Vérification |
+| Serveur | Rôles et permissions, Rôles (paliers) |
 | Communauté | Bienvenue, Départ, Vocaux, Giveaways |
 | Support | Tickets |
 | Communication | Constructeur d'embed, Sondages |
@@ -532,6 +583,22 @@ si tu y as droit. Quelques-unes méritent un mot :
   menu unique : Discord plafonne un menu à 25 options et le catalogue de
   permissions a vocation à grandir, chaque catégorie restant largement sous
   la limite indéfiniment.
+- **Rôles (paliers)** — la vue « Permission 1, 2, 3… » de `&perms`/`&helpall`,
+  mais DANS le panel et modifiable : choisir un palier, y ajouter un rôle, en
+  retirer un, renommer un de ses rôles. Un palier n'est **pas** une entité
+  stockée : c'est le groupe des rôles ayant exactement les mêmes clés
+  accordées, calculé à la volée. Ajouter un rôle revient donc à lui recopier
+  les clés du palier ; il le rejoint au calcul suivant.
+  Un palier peut aussi être **nommé** (« Permission 4 — Modération ») :
+  purement de l'affichage, aucune permission n'est touchée. Le nom est
+  rattaché à la SIGNATURE du palier (ses clés triées), jamais à son numéro —
+  le numéro n'est qu'un rang d'affichage et se décale dès qu'un palier
+  disparaît ou qu'un plus petit apparaît. Le nom apparaît partout où le palier
+  est cité : la rubrique, le menu de gestion, `&perms` et `&helpall`.
+  Cette rubrique reste en **texte** (pas en image, contrairement aux autres) :
+  sa liste change à chaque ajout ou retrait de rôle, et les actions juste en
+  dessous s'y réfèrent — le vrai texte Discord, qui résout les mentions tout
+  seul, sert mieux qu'une image à régénérer à chaque clic.
 - **Recherche de membre** — cherche un membre, puis agis sur sa **fiche**
   (dessinée en carte : avatar, arrivée, rôles, casier). Chaque bouton
   d'action rouvre la carte de formulaire que `&kick`/`&ban`/`&timeout`/

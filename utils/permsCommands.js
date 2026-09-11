@@ -28,13 +28,21 @@ const ALL_COMMANDS = commandCatalog.CATEGORIES.flatMap((c) => c.commands);
  * (voir buildTierCard) — pas doublés entre un palier numéroté et cette
  * section.
  */
+/**
+ * Signature d'un palier : ses clés triées. C'est l'identité STABLE d'un
+ * palier, par opposition à son numéro, qui n'est qu'un rang d'affichage et se
+ * décale dès qu'un palier plus petit apparaît. Tout ce qui doit rester
+ * attaché au même ensemble de droits (son nom, par exemple) s'y rattache.
+ */
+const tierSignature = (keys) => [...keys].sort().join("|");
+
 function computeTiers(guildId) {
   const grants = permStore.listRoleGrants(guildId);
   const exclusiveRoleIds = new Set(permStore.listExclusiveRoles(guildId));
   const bySignature = new Map();
   for (const [roleId, keys] of grants) {
     if (exclusiveRoleIds.has(roleId)) continue;
-    const signature = [...keys].sort().join("|");
+    const signature = tierSignature(keys);
     if (!bySignature.has(signature)) bySignature.set(signature, { keys: [...keys], roleIds: [] });
     bySignature.get(signature).roleIds.push(roleId);
   }
@@ -113,7 +121,14 @@ function paginerBlocs(blocs) {
 function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
   const blocs = [];
   for (const tier of tiers) {
-    blocs.push(`**Permission ${tier.index}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
+    // Le nom donné au palier depuis &panel > Rôles (paliers) apparaît ICI
+    // aussi : sans ça, le panel et les commandes texte désigneraient le même
+    // palier de deux façons différentes.
+    // `keys` est absent des paliers synthétiques que les tests de pagination
+    // fabriquent : buildTierCard n'a jamais exigé ce champ, le nom est donc
+    // optionnel ici aussi.
+    const nomPalier = tier.keys ? permStore.getTierName(guildId, tierSignature(tier.keys)) : null;
+    blocs.push(`**Permission ${tier.index}${nomPalier ? ` — ${nomPalier}` : ""}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
   }
   // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
   // store.js) : une simple étiquette, affichée à part des paliers numérotés
@@ -212,4 +227,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_PAGE };
+module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_PAGE };

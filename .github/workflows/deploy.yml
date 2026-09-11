@@ -1,4 +1,4 @@
-# Déploiement automatique sur le VPS (Docker Compose).
+# Déploiement automatique sur le VPS (Ubuntu + pm2).
 #
 # Ne se déclenche QU'APRÈS une CI verte sur `main` : le workflow "Tests" est
 # le dernier endroit où une régression peut être arrêtée, déployer en
@@ -68,12 +68,13 @@ jobs:
           fi
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Déployer et redémarrer les conteneurs
+      - name: Déployer et redémarrer le bot
         env:
           HOTE: ${{ secrets.VPS_HOST }}
           UTILISATEUR: ${{ secrets.VPS_USER }}
           PORT: ${{ secrets.VPS_PORT }}
           CHEMIN: ${{ secrets.VPS_PATH }}
+          APP: ${{ secrets.VPS_PM2_APP }}
           # Le commit RÉELLEMENT validé par la CI, pas "le dernier sur main" :
           # entre-temps un autre push a pu arriver, et il n'a pas été testé.
           REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -81,13 +82,15 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/id_deploy -p "${PORT:-22}" -o StrictHostKeyChecking=yes \
             "$UTILISATEUR@$HOTE" \
-            "CHEMIN='${CHEMIN:-/opt/discord-music-bot}' REVISION='$REVISION' bash -s" <<'DISTANT'
+            "CHEMIN='${CHEMIN:-/root/bot}' APP='${APP:-discord-bot}' REVISION='$REVISION' bash -s" <<'DISTANT'
           set -euo pipefail
 
           cd "$CHEMIN" || { echo "Chemin introuvable sur le VPS : $CHEMIN (secret VPS_PATH)"; exit 1; }
           git rev-parse --git-dir >/dev/null 2>&1 || { echo "$CHEMIN n'est pas un dépôt git."; exit 1; }
+          command -v pm2 >/dev/null || { echo "pm2 est introuvable sur le VPS."; exit 1; }
 
           echo "== Mise à jour du code =="
+          AVANT=$(git rev-parse HEAD)
           git fetch --prune origin
           # `reset --hard` sur la révision testée : `data/` et `.env` sont
           # ignorés par git (voir .gitignore), la configuration du bot et ses
@@ -95,23 +98,51 @@ jobs:
           git reset --hard "$REVISION"
           git log --oneline -1
 
-          echo "== Reconstruction et redémarrage =="
-          # `--build` est sans effet si les services n'ont pas de section
-          # `build:` ; `--remove-orphans` nettoie un service supprimé du
-          # compose. `docker compose` trouve seul compose.yaml ou
-          # docker-compose.yml.
-          docker compose up -d --build --remove-orphans
+          # Dépendances réinstallées UNIQUEMENT si elles ont bougé : sur ce
+          # droplet à 512 Mo, une réinstallation inutile coûte cher en temps
+          # et en mémoire. `npm install` plutôt que `npm ci` : `ci` efface
+          # node_modules d'abord, donc un échec en cours de route laisserait
+          # le bot sans ses modules au prochain redémarrage.
+          if ! git diff --quiet "$AVANT" "$REVISION" -- package.json package-lock.json; then
+            echo "== Dépendances modifiées : installation =="
+            npm install --omit=dev --no-audit --no-fund
+          else
+            echo "== Dépendances inchangées, rien à installer =="
+          fi
 
-          echo "== État des conteneurs =="
-          docker compose ps
-          # Un déploiement qui laisse le bot éteint doit ÉCHOUER bruyamment,
-          # pas se terminer en vert : sans ça, une image qui ne démarre plus
-          # passerait inaperçue jusqu'au prochain message sur Discord.
-          if [ -z "$(docker compose ps --status running --quiet)" ]; then
-            echo "Aucun conteneur en cours d'exécution après le déploiement."
-            docker compose logs --tail 50
+          echo "== Redémarrage de $APP =="
+          # Nombre de redémarrages AVANT : s'il grimpe de plusieurs unités
+          # juste après, c'est que le bot plante en boucle au démarrage.
+          REDEM_AVANT=$(pm2 jlist 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).find(x=>x.name===process.env.APP);console.log(a?a.pm2_env.restart_time:-1)})')
+          # `if`, PAS `[ ... ] && { ... }` : sous `set -e`, une liste `&&` dont
+          # le test est faux renvoie 1 et ferait sortir le script — c'est-à-dire
+          # précisément dans le cas NORMAL où l'application existe.
+          if [ "$REDEM_AVANT" = "-1" ]; then
+            echo "Aucune application pm2 nommée '$APP'. Noms connus :"
+            pm2 jlist 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).map(x=>x.name).join(", ")))'
             exit 1
           fi
+
+          pm2 restart "$APP" --update-env
+          # Laisse le temps à un plantage au démarrage de se manifester : un
+          # process qui meurt à la première ligne de index.js apparaîtrait
+          # sinon "online" une fraction de seconde.
+          sleep 10
+
+          ETAT=$(pm2 jlist 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const a=JSON.parse(d).find(x=>x.name===process.env.APP);console.log(a?`${a.pm2_env.status} ${a.pm2_env.restart_time}`:"absent -1")})')
+          STATUT=${ETAT% *}
+          REDEM_APRES=${ETAT#* }
+          echo "== État : $STATUT (redémarrages : $REDEM_AVANT -> $REDEM_APRES) =="
+
+          # Un déploiement qui laisse le bot mort ou en boucle de plantage doit
+          # ÉCHOUER bruyamment : un workflow vert sur un bot HS ne serait
+          # découvert qu'au premier message sur Discord.
+          if [ "$STATUT" != "online" ] || [ "$REDEM_APRES" -gt "$((REDEM_AVANT + 1))" ]; then
+            echo "Le bot ne tourne pas correctement après le déploiement."
+            pm2 logs "$APP" --lines 40 --nostream || true
+            exit 1
+          fi
+          echo "Déploiement terminé, $APP est en ligne."
           DISTANT
 
       - name: Effacer la clé

@@ -31,7 +31,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
-const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
+const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { card: simpleCard } = require("./listCard");
@@ -492,48 +492,16 @@ function sectionBody(section, guild, member, state) {
   // vraies actions (renommer/ajouter/supprimer) vivent juste en dessous, via
   // "Choisir un palier à gérer".
   if (section === "roletiers") {
-    const tiers = computeTiers(guildId);
-    const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
-    if (!tiers.length && !exclusiveRoleIds.length) {
+    const lignes = lignesPaliers(guild);
+    if (!lignes.length) {
       return "> *Aucune permission n'est encore accordée à un rôle (voir la rubrique Rôles et permissions).*";
     }
-    const lines = [];
-    for (const tier of tiers) {
-      const roles = tier.roleIds.length ? tier.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun*";
-      lines.push(`**Permission ${tier.index}** : ${roles} — modifier/supprimer/ajouter`);
-    }
-    if (exclusiveRoleIds.length) {
-      // Un rôle avec un nom propre (posé par utils/rolePresets.js, ex:
-      // "Syndicat") a droit à sa propre ligne — même logique que
-      // utils/permsCommands.js::buildTierCard (&perms/&helpall), pour que
-      // les deux affichages se lisent pareil.
-      const parLabel = new Map();
-      const sansLabel = [];
-      for (const id of exclusiveRoleIds) {
-        const label = permStore.getExclusiveLabel(guildId, id);
-        if (label) {
-          if (!parLabel.has(label)) parLabel.set(label, []);
-          parLabel.get(label).push(id);
-        } else {
-          sansLabel.push(id);
-        }
-      }
-      for (const [label, ids] of parLabel) {
-        lines.push(`**${label}** *(hors hiérarchie)* : ${ids.map((id) => `<@&${id}>`).join(", ")} — modifier/supprimer/ajouter`);
-      }
-      if (sansLabel.length) {
-        lines.push(`**Exclusives** : ${sansLabel.map((id) => `<@&${id}>`).join(", ")} — modifier/supprimer/ajouter`);
-      }
-    }
-    // Palier choisi dans "Choisir un palier à gérer" ci-dessous : recopie
-    // rapide (ajouter un rôle) et raccourcis renommer/supprimer, sans sortir
-    // de cette rubrique — voir le bloc de composants pour les contrôles eux-mêmes.
+    // Les paliers ne sont plus DANS ce texte : chacun est une ligne AVEC SES
+    // BOUTONS dans le bloc de composants (demande explicite, capture d'écran à
+    // l'appui). Les répéter ici les afficherait deux fois.
     const gere = findManagedTier(guild, state.tierManageKey);
-    if (gere) {
-      lines.push("");
-      lines.push(`*Palier en cours de gestion : **${gere.label}** — utilise les menus ci-dessous.*`);
-    }
-    return lines.join("\n").trim();
+    if (gere) return `> *Palier en cours de gestion : **${gere.label}** — utilise les menus ci-dessous.*`;
+    return "> *Chaque palier a ses propres boutons. « Ajouter » ouvre un sélecteur de rôle sous la liste.*";
   }
 
   if (section === "logs") {
@@ -940,31 +908,81 @@ function messageFromInteraction(interaction) {
  * du palier supprimé/renommé entre-temps, par exemple).
  * @returns {{ key: string, label: string, keys: string[], roleIds: string[], exclusiveLabel: string|null } | null}
  */
-function findManagedTier(guild, tierManageKey) {
-  if (!tierManageKey) return null;
-  return allTierGroups(guild).find((g) => g.key === tierManageKey) || null;
+/**
+ * Libellé affiché d'un palier numéroté : « Permission 4 », ou
+ * « Permission 4 — Modération » s'il a été nommé depuis le panel. Une seule
+ * définition, partagée par le corps de la rubrique, le menu de gestion et les
+ * placeholders — trois formulations différentes du même palier se
+ * contrediraient à l'écran.
+ */
+function tierLabel(guildId, tier) {
+  const nom = permStore.getTierName(guildId, tierSignature(tier.keys));
+  return nom ? `Permission ${tier.index} — ${nom}` : `Permission ${tier.index}`;
 }
 
-/**
- * TOUS les groupes gérables de la rubrique "Rôles (paliers)" — un par palier
- * numéroté, un par étiquette de groupe exclusif — dans l'ordre d'affichage.
- * Une seule fonction pour construire la ligne ET les boutons
- * Supprimer/Ajouter/Renommer propres à chacun (voir buildTierGroupBlock).
- * @returns {{ key: string, label: string, keys: string[], roleIds: string[], exclusiveLabel: string|null }[]}
- */
-function allTierGroups(guild) {
+function findManagedTier(guild, tierManageKey) {
+  if (!tierManageKey) return null;
   const guildId = guild.id;
-  const groupes = computeTiers(guildId).map((t) => ({
-    key: `t-${t.index}`,
-    label: `Permission ${t.index}`,
-    keys: t.keys,
+
+  if (tierManageKey.startsWith("t-")) {
+    const index = Number(tierManageKey.slice(2));
+    const tier = computeTiers(guildId).find((t) => t.index === index);
+    if (!tier) return null;
+    return {
+      key: tierManageKey,
+      label: tierLabel(guildId, tier),
+      signature: tierSignature(tier.keys),
+      keys: tier.keys,
+      roleIds: tier.roleIds.filter((id) => guild.roles.cache.has(id)),
+      exclusiveLabel: null,
+    };
+  }
+
+  if (tierManageKey.startsWith("e-")) {
+    const label = tierManageKey.slice(2);
+    const enGroupe = permStore
+      .listExclusiveRoles(guildId)
+      .filter((id) => guild.roles.cache.has(id))
+      .filter((id) => (permStore.getExclusiveLabel(guildId, id) || "__sans_label__") === label);
+    if (!enGroupe.length) return null;
+    // Les rôles "exclusifs" ne partagent pas forcément le même ensemble de
+    // clés (le label n'est qu'un regroupement cosmétique, pas une garantie
+    // de permissions identiques) — "Ajouter un rôle" reprend celles du
+    // premier rôle du groupe comme base la plus raisonnable.
+    return {
+      key: tierManageKey,
+      label: label === "__sans_label__" ? "Exclusives" : label,
+      keys: permStore.getRoleGrants(guildId, enGroupe[0]),
+      roleIds: enGroupe,
+      exclusiveLabel: label === "__sans_label__" ? null : label,
+    };
+  }
+
+  return null;
+}
+
+/** Options du sélecteur "Choisir un palier à gérer" — mêmes paliers que le corps de la rubrique. */
+/**
+ * Les LIGNES de la rubrique "Rôles (paliers)" : les paliers numérotés, puis
+ * les groupes hors hiérarchie. Une seule énumération, utilisée par l'affichage,
+ * par les boutons de chaque ligne ET par le menu de gestion — trois listes
+ * séparées se seraient contredites au premier changement de permissions.
+ * Les clés (`t-<numéro>`, `e-<étiquette>`) sont celles que findManagedTier
+ * sait résoudre.
+ * @returns {{cle: string, libelle: string, roleIds: string[]}[]}
+ */
+function lignesPaliers(guild) {
+  const guildId = guild.id;
+  const lignes = computeTiers(guildId).map((t) => ({
+    cle: `t-${t.index}`,
+    libelle: tierLabel(guildId, t),
     roleIds: t.roleIds.filter((id) => guild.roles.cache.has(id)),
-    exclusiveLabel: null,
   }));
-  // Les rôles "exclusifs" ne partagent pas forcément le même ensemble de
-  // clés (le label n'est qu'un regroupement cosmétique, pas une garantie de
-  // permissions identiques) — "Ajouter un rôle" reprend celles du premier
-  // rôle du groupe comme base la plus raisonnable.
+
+  // Un rôle exclusif avec une étiquette propre (posée par utils/rolePresets.js,
+  // ex. "Syndicat") a sa propre ligne — même regroupement que
+  // utils/permsCommands.js::buildTierCard, pour que le panel et &helpall se
+  // lisent pareil.
   const parLabel = new Map();
   for (const id of permStore.listExclusiveRoles(guildId)) {
     if (!guild.roles.cache.has(id)) continue;
@@ -973,90 +991,22 @@ function allTierGroups(guild) {
     parLabel.get(label).push(id);
   }
   for (const [label, ids] of parLabel) {
-    groupes.push({
-      key: `e-${label}`,
-      label: label === "__sans_label__" ? "Exclusives" : label,
-      keys: permStore.getRoleGrants(guildId, ids[0]),
+    lignes.push({
+      cle: `e-${label}`,
+      libelle: label === "__sans_label__" ? "Exclusives (hors hiérarchie)" : `${label} (hors hiérarchie)`,
       roleIds: ids,
-      exclusiveLabel: label === "__sans_label__" ? null : label,
     });
   }
-  return groupes;
+  return lignes;
 }
 
-/**
- * Une ligne "Permission N : @rôle(s)" suivie IMMÉDIATEMENT de ses 3 boutons
- * — jamais groupés ailleurs dans le panel (demande explicite). Un palier à
- * plusieurs rôles ne sait pas lequel viser pour Renommer/Supprimer : un
- * petit sélecteur apparaît juste en dessous DE CE PALIER pour trancher,
- * jamais en bas de la rubrique.
- */
-function buildTierGroupBlock(container, guild, member, state, groupe) {
-  const roles = groupe.roleIds.length ? groupe.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
-  const titre = groupe.exclusiveLabel !== null || groupe.key.startsWith("e-") ? `**${groupe.label}** *(hors hiérarchie)*` : `**${groupe.label}**`;
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`${titre} : ${roles}`));
-
-  if (!can(member, "panel.permissions.manage")) return;
-
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${ID}:tierbtn:del:${groupe.key}`)
-        .setLabel("Supprimer")
-        .setEmoji("🔴")
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!groupe.roleIds.length),
-      new ButtonBuilder().setCustomId(`${ID}:tierbtn:add:${groupe.key}`).setLabel("Ajouter").setEmoji("🟢").setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`${ID}:tierbtn:ren:${groupe.key}`)
-        .setLabel("Renommer")
-        .setEmoji("🔵")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!groupe.roleIds.length)
-    )
+function tierManageOptions(guild) {
+  return lignesPaliers(guild).map((l) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(l.libelle.slice(0, 100))
+      .setValue(l.cle)
+      .setDescription(`${l.roleIds.length} rôle(s)`)
   );
-
-  if (state.tierManageKey !== groupe.key || !state.tierManageMode) return;
-
-  if (state.tierManageMode === "add") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder().setCustomId(`${ID}:tieraddrole:${groupe.key}`).setPlaceholder(`Choisir le rôle à ajouter à ${groupe.label}`.slice(0, 150))
-      )
-    );
-  } else if (groupe.roleIds.length > 1) {
-    // Renommer/Supprimer sur un palier à PLUSIEURS rôles : lequel ? — pas
-    // besoin de ce sélecteur pour un seul rôle, le bouton vise déjà celui-là
-    // directement (voir le handler "tierbtn").
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:tierbtnpick:${state.tierManageMode}:${groupe.key}`)
-          .setPlaceholder(`Quel rôle de ${groupe.label} ${state.tierManageMode === "del" ? "supprimer" : "renommer"} ?`.slice(0, 150))
-          .addOptions(
-            groupe.roleIds
-              .slice(0, 25)
-              .map((id) => new StringSelectMenuOptionBuilder().setLabel((guild.roles.cache.get(id)?.name || id).slice(0, 100)).setValue(id))
-          )
-      )
-    );
-  }
-}
-
-/** Ouvre la modale de renommage pour CE rôle — factorisé pour être appelé aussi bien depuis "renamerole" que depuis les boutons par palier ("tierbtn"/"tierbtnpick"). */
-function openRoleRenameModal(interaction, role) {
-  const modal = new ModalBuilder().setCustomId(`${ID}:renamerole:${role.id}`).setTitle("Renommer le rôle");
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(role.name)
-    )
-  );
-  return interaction.showModal(modal);
-}
-
-/** Supprime CE rôle (confirmation + journal inclus, voir utils/serverAdminCommands.js::roleAdmin) — même factorisation que ci-dessus. */
-function panelDeleteRole(interaction, roleId) {
-  return roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", roleId]);
 }
 
 /** Menus d'ajout/retrait pour une portée legacy (accessStore). */
@@ -1222,17 +1172,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   const texteForce = meta.key === "roletiers";
   const specRubrique = texteForce ? null : buildSectionSpec(guild, meta.key, member, state, corps);
   const pngRubrique = sansImage || texteForce ? null : rendreEnCache(specRubrique);
-  const groupesPaliers = meta.key === "roletiers" ? allTierGroups(guild) : null;
   if (pngRubrique) {
     fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE, description: texteAlternatif(specRubrique) }));
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
     );
-  } else if (groupesPaliers && groupesPaliers.length) {
-    // Une ligne "Permission N : @rôle(s)" PUIS ses 3 boutons juste en
-    // dessous, palier par palier — demande explicite ("ne pas grouper les
-    // boutons en bas du panel"). Voir buildTierGroupBlock.
-    for (const groupe of groupesPaliers) buildTierGroupBlock(container, guild, member, state, groupe);
   } else {
     // Le corps d'origine, pas enTexte(spec) : ici le texte Discord est
     // MEILLEUR que sa transposition (il résout les mentions et les dates
@@ -1372,11 +1316,89 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       }
     }
   } else if (meta.key === "roletiers") {
-    // Les actions par palier (renommer/ajouter/supprimer un rôle) sont
-    // directement sous chaque "Permission N" — voir buildTierGroupBlock,
-    // appelé plus haut. Ne restent ici que les outils qui ne visent PAS un
-    // palier précis : nettoyage global, provisionnement en masse.
-    //
+    // UNE LIGNE PAR PALIER, AVEC SES BOUTONS — la mise en page demandée.
+    // Discord plafonne un message à 40 composants, et chaque ligne en coûte 5
+    // (le texte, sa rangée, ses trois boutons) : d'où la pagination, mesurée
+    // plutôt que devinée. Un palier à plusieurs rôles n'affiche qu'un bouton
+    // « Choisir un rôle » : « Supprimer » y désignerait sinon un rôle au
+    // hasard parmi plusieurs.
+    const lignes = lignesPaliers(guild);
+    // QUATRE par page, mesuré et non deviné : à cinq, la page atteignait
+    // 44 composants et Discord (plafond 40) aurait refusé le message. Le
+    // budget doit tenir même quand un palier est en gestion, ce qui ajoute
+    // deux sélecteurs plus bas.
+    const PAR_PAGE = 4;
+    // Un palier ouvert REMPLACE la liste : ses contrôles (ajouter un rôle,
+    // choisir lequel viser, renommer) coûtent une dizaine de composants, et les
+    // empiler SOUS la liste faisait dépasser le plafond de 40 — Discord aurait
+    // refusé le message. Une vue de détail est aussi plus claire qu'une liste
+    // surmontée de menus qui s'y réfèrent.
+    const ouvert = findManagedTier(guild, state.tierManageKey);
+    const pages = Math.max(1, Math.ceil(lignes.length / PAR_PAGE));
+    const page = Math.min(Math.max(0, Number(state.palierPage) || 0), pages - 1);
+    const peutGerer = can(member, "panel.permissions.manage");
+    const peutRoles = can(member, "server.roles.manage");
+
+    const aAfficher = ouvert ? lignes.filter((l) => l.cle === ouvert.key) : lignes.slice(page * PAR_PAGE, (page + 1) * PAR_PAGE);
+    for (const ligne of aAfficher) {
+      const roles = ligne.roleIds.length ? ligne.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${ligne.libelle}** : ${roles}`));
+      if (!peutGerer) continue;
+
+      const boutons = [];
+      if (ligne.roleIds.length === 1 && peutRoles) {
+        // Un seul rôle : les boutons agissent directement dessus, en
+        // réutilisant les actions existantes (mêmes droits, même confirmation
+        // de suppression) — aucune logique dupliquée.
+        boutons.push(
+          new ButtonBuilder().setCustomId(`${ID}:roledelete:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${ID}:renamerole:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
+        );
+      } else {
+        boutons.push(
+          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`${ID}:paladd:${ligne.cle}`)
+            .setLabel(ligne.roleIds.length ? "Choisir un rôle" : "Aucun rôle")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(!ligne.roleIds.length)
+        );
+      }
+      container.addActionRowComponents(new ActionRowBuilder().addComponents(boutons));
+    }
+
+    if (ouvert) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:palpage:${page}`).setLabel("◀ Retour à la liste").setStyle(ButtonStyle.Secondary)
+        )
+      );
+    } else if (pages > 1) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:palpage:${page - 1}`)
+            .setLabel("◀ Précédent")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page === 0),
+          new ButtonBuilder()
+            .setCustomId(`${ID}:palpage:${page + 1}`)
+            .setLabel(`Page ${page + 1}/${pages}`)
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page >= pages - 1)
+        )
+      );
+    }
+    // Vue d'ensemble façon &perms/&helpall (mêmes paliers, calculés par
+    // utils/permsCommands.js::computeTiers — rien de nouveau à stocker),
+    // mais DANS le panel et avec un raccourci direct vers le renommage,
+    // plutôt que deux commandes texte à lire côte à côte puis retourner
+    // choisir le rôle à la main dans "Rôles et permissions".
+    // Plus de sélecteur "Choisir un rôle à renommer" ni de "Choisir un palier
+    // à gérer" : chaque ligne porte maintenant ses propres boutons, ces deux
+    // menus faisaient doublon — et leur budget manquait pour afficher les
+    // lignes elles-mêmes.
     // Un rôle supprimé (à la main, ou via "Supprimer les rôles" ci-dessous)
     // laisse son octroi traîner dans permissions.json : ça fait apparaître
     // un palier fantôme au numéro faussé (voir utils/permissions/
@@ -1388,6 +1410,68 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
         )
       );
+    }
+    // Gestion rapide d'UN palier précis (demande explicite) : renommer un de
+    // ses rôles, en ajouter un autre dans le MÊME palier (copie ses clés
+    // accordées), ou en supprimer un — sans sortir de cette rubrique.
+    // Renommer/Supprimer réutilisent TELS QUELS "renamerole"/"roledelete"
+    // (même permission server.roles.manage, même confirmation de suppression
+    // — voir plus bas dans handleConfigInteraction) : aucune logique dupliquée.
+    if (can(member, "panel.permissions.manage")) {
+      const gere = ouvert;
+      if (gere) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new RoleSelectMenuBuilder().setCustomId(`${ID}:tieraddrole:${gere.key}`).setPlaceholder(`Ajouter un rôle à ${gere.label}`.slice(0, 150))
+          )
+        );
+        // Un palier n'a qu'un seul rôle la plupart du temps (voir
+        // utils/rolePresets.js) : pas besoin d'un sélecteur supplémentaire
+        // dans ce cas, les boutons Renommer/Supprimer visent directement ce
+        // rôle-là. Avec plusieurs rôles sur le même palier, on en choisit un.
+        // Nommer le PALIER — distinct de « Renommer » plus bas, qui renomme un
+        // ROLE Discord. Un palier n'a pas de nom en propre par défaut : il est
+        // désigné par son numéro, qui ne dit pas à quoi il sert. Réservé aux
+        // paliers numérotés : un groupe hors hiérarchie porte déjà son
+        // étiquette (utils/permissions/store.js::exclusiveLabels).
+        if (gere.signature) {
+          const nomActuel = permStore.getTierName(guild.id, gere.signature);
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`${ID}:tiername:${gere.key}`)
+                .setLabel(nomActuel ? `Renommer le palier "${nomActuel}"`.slice(0, 80) : "Nommer ce palier")
+                .setStyle(ButtonStyle.Primary)
+            )
+          );
+        }
+        const rolePreChoisi = state.tierManageRoleId && gere.roleIds.includes(state.tierManageRoleId) ? state.tierManageRoleId : null;
+        if (gere.roleIds.length > 1 && !rolePreChoisi) {
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`${ID}:tierrolepick:${gere.key}`)
+                .setPlaceholder(`Choisir un rôle de ${gere.label} à renommer/supprimer`.slice(0, 150))
+                .addOptions(
+                  gere.roleIds.slice(0, 25).map((id) => {
+                    const role = guild.roles.cache.get(id);
+                    return new StringSelectMenuOptionBuilder().setLabel((role?.name || id).slice(0, 100)).setValue(id);
+                  })
+                )
+            )
+          );
+        }
+        const roleActif = gere.roleIds.length === 1 ? gere.roleIds[0] : rolePreChoisi;
+        if (roleActif && can(member, "server.roles.manage")) {
+          const nom = (guild.roles.cache.get(roleActif)?.name || roleActif).slice(0, 60);
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`${ID}:renamerole:${roleActif}`).setLabel(`Renommer "${nom}"`).setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder().setCustomId(`${ID}:roledelete:${roleActif}`).setLabel(`Supprimer "${nom}"`).setStyle(ButtonStyle.Danger)
+            )
+          );
+        }
+      }
     }
     // Provisionnement en masse (utils/rolePresets.js) : la hiérarchie de
     // rôles vue sur les deux screens fournis, avec les permissions déjà
@@ -2045,11 +2129,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
   }
 
-  // Dernière étape du rendu : les boutons d'action deviennent un seul menu —
-  // SAUF "Rôles (paliers)", demande explicite à l'opposé de la règle
-  // générale ci-dessus : là, ce sont VRAIMENT trois boutons colorés
-  // (rouge/vert/bleu) par palier qui sont voulus, pas un menu qui les
-  // fondrait tous ensemble et perdrait le lien visuel avec CHAQUE palier.
+  // Dernière étape du rendu : les boutons d'action deviennent un seul menu.
+  // "Rôles (paliers)" garde ses VRAIS boutons : ils sont attachés à une ligne
+  // précise (« Permission 3 : @rôle » + Supprimer/Ajouter/Renommer), ce qu'un
+  // menu unique ne sait pas rendre — il les fondrait tous ensemble et on ne
+  // saurait plus quel palier chaque action vise. C'est l'exception assumée à
+  // la règle « les actions passent dans un menu déroulant ».
   if (meta.key !== "roletiers") regrouperBoutonsEnMenu(container);
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
@@ -2148,6 +2233,15 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
   }
 
+  // Choisi depuis la vue d'ensemble des paliers (rubrique "Rôles (paliers)") :
+  // saute direct dans "Rôles et permissions", où vivent déjà la fiche
+  // complète du rôle ET le bouton "Renommer" — pas une deuxième modale à
+  // maintenir en parallèle pour la même action.
+  if (action === "tierrenamepick") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
   if (action === "pruneroles") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const removed = pruneDeletedRoles(guild);
@@ -2156,49 +2250,19 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     );
   }
 
-  // Boutons Supprimer/Ajouter/Renommer sous CHAQUE "Permission N" (rubrique
-  // "Rôles (paliers)", voir buildTierGroupBlock) — jamais un sélecteur
-  // générique groupé en bas, demande explicite. `extra` = "del"/"add"/"ren",
-  // `extra2` = clé du palier ("t-5" ou "e-Syndicat").
-  if (action === "tierbtn") {
+  // Gestion rapide d'un palier (rubrique "Rôles (paliers)") : choisir le
+  // palier à gérer, puis — si plusieurs rôles y sont regroupés — lequel
+  // renommer/supprimer. Reste dans "roletiers" (ne saute pas vers
+  // "permissions", contrairement à tierrenamepick ci-dessus) : le but est de
+  // tout faire sans quitter cette vue d'ensemble.
+  if (action === "tierselect") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const op = extra;
-    const gere = findManagedTier(guild, extra2);
-    if (!gere) return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste.", flags: MessageFlags.Ephemeral });
-
-    if (op === "add") return goto("roletiers", { tierManageKey: extra2, tierManageMode: "add" });
-
-    if (!gere.roleIds.length) return interaction.reply({ content: "Ce palier n'a aucun rôle à cibler.", flags: MessageFlags.Ephemeral });
-    // Plusieurs rôles sur ce palier : impossible de savoir lequel viser sans
-    // demander — le sélecteur apparaît juste sous CE palier (voir
-    // buildTierGroupBlock), jamais en bas de la rubrique.
-    if (gere.roleIds.length > 1) return goto("roletiers", { tierManageKey: extra2, tierManageMode: op });
-
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const roleId = gere.roleIds[0];
-    if (op === "ren") {
-      const role = guild.roles.cache.get(roleId);
-      if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-      return openRoleRenameModal(interaction, role);
-    }
-    if (op === "del") return panelDeleteRole(interaction, roleId);
-    return;
+    return goto("roletiers", { tierManageKey: interaction.values[0] });
   }
 
-  // Palier à plusieurs rôles : quel rôle viser pour Renommer("ren")/
-  // Supprimer("del") — `extra` = l'opération, la valeur choisie = le rôle.
-  if (action === "tierbtnpick") {
-    if (!can(member, "panel.permissions.manage") || !can(member, "server.roles.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    const roleId = interaction.values[0];
-    if (extra === "ren") {
-      const role = guild.roles.cache.get(roleId);
-      if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-      return openRoleRenameModal(interaction, role);
-    }
-    if (extra === "del") return panelDeleteRole(interaction, roleId);
-    return;
+  if (action === "tierrolepick") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("roletiers", { tierManageKey: extra, tierManageRoleId: interaction.values[0] });
   }
 
   // "Ajouter un rôle à ce palier" : copie les clés du palier (ou, pour un
@@ -2206,6 +2270,55 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   // findManagedTier) sur le rôle choisi. Il rejoint le palier au prochain
   // calcul de computeTiers(), automatiquement (même mécanique qui regroupe
   // déjà les rôles à ensemble de clés identique).
+  // Nommer un palier : une étiquette posée sur un groupe qui existe déjà,
+  // rattachée à la SIGNATURE de ses permissions et non à son numéro (voir
+  // utils/permissions/store.js::setTierName). Ne touche à aucune permission.
+  if (action === "tiername") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const gere = findManagedTier(guild, extra);
+    // Le palier est désigné par son NUMÉRO dans le customId : entre
+    // l'affichage et le clic, une permission accordée ailleurs a pu décaler
+    // la numérotation. On le relit donc, et on refuse proprement s'il a
+    // disparu plutôt que de nommer le palier voisin.
+    if (!gere || !gere.signature) {
+      return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.isModalSubmit()) {
+      permStore.setTierName(guildId, gere.signature, interaction.fields.getTextInputValue("nom"));
+      // Pas de `tierManageRoleId` : `state` n'existe pas dans les
+      // gestionnaires (il est reconstruit à chaque `goto`). On revient donc
+      // sur le palier, sans rôle présélectionné — comme le fait déjà
+      // "tierselect".
+      return goto("roletiers", { tierManageKey: gere.key });
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:tiername:${gere.key}`).setTitle("Nommer ce palier");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("nom")
+          .setLabel("Nom du palier (vide pour le retirer)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(permStore.NOM_PALIER_MAX)
+          .setRequired(false)
+          .setValue(permStore.getTierName(guildId, gere.signature) || "")
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  // Bouton d'une LIGNE de la rubrique : met ce palier en gestion, ce qui fait
+  // apparaître juste en dessous le sélecteur "Ajouter un rôle" et, si le
+  // palier compte plusieurs rôles, celui qui choisit lequel viser.
+  if (action === "paladd") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("roletiers", { tierManageKey: extra2 ? `${extra}:${extra2}` : extra });
+  }
+
+  if (action === "palpage") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    return goto("roletiers", { palierPage: Number(extra) || 0 });
+  }
+
   if (action === "tieraddrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const gere = findManagedTier(guild, extra);
@@ -2213,7 +2326,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     const roleId = interaction.values[0];
     permStore.setRoleGrants(guildId, roleId, gere.keys);
     if (gere.exclusiveLabel) permStore.setRoleExclusive(guildId, roleId, true, gere.exclusiveLabel);
-    return goto("roletiers", {});
+    return goto("roletiers", { tierManageKey: gere.key, tierManageRoleId: roleId });
   }
 
   // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans
@@ -2393,12 +2506,19 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     }
     const role = guild.roles.cache.get(extra);
     if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-    return openRoleRenameModal(interaction, role);
+    const modal = new ModalBuilder().setCustomId(`${ID}:renamerole:${extra}`).setTitle("Renommer le rôle");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(role.name)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "roledelete") {
     if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return panelDeleteRole(interaction, extra);
+    await roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
+    return;
   }
 
   // "Exclusif" : simple étiquette côté panel, aucun effet sur le calcul des
