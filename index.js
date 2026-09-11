@@ -12,7 +12,7 @@ require("dotenv").config();
 require("events").EventEmitter.defaultMaxListeners = 30;
 
 const path = require("path");
-const { Client, GatewayIntentBits, Collection, MessageFlags, ChannelType } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, Collection, MessageFlags, ChannelType } = require("discord.js");
 const { Kazagumo } = require("kazagumo");
 const { Connectors, Constants: ShoukakuConstants } = require("shoukaku");
 const ShoukakuState = ShoukakuConstants.State;
@@ -26,7 +26,7 @@ const personalProtection = require("./utils/personalProtection");
 // états de &panel — voir utils/palierPanel.js.
 const palierPanel = require("./utils/palierPanel");
 // Confessions anonymes ("!!confess") — voir utils/confessions.js.
-const { handleConfessTextCommand } = require("./utils/confessions");
+const { handleConfessTextCommand, handleConfessDM, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
@@ -98,7 +98,15 @@ const client = new Client({
     // salon de logs configuré via &panel ne reçoit jamais rien. Non
     // privilégié, aucune activation manuelle requise sur le portail.
     GatewayIntentBits.GuildModeration,
+    // Nécessaire aux confessions anonymes (voir utils/confessions.js,
+    // étape "envoie ton message en DM au bot") : sans lui, messageCreate ne
+    // se déclenche jamais pour un message privé. Non privilégié.
+    GatewayIntentBits.DirectMessages,
   ],
+  // Un salon de MP jamais vu par le cache (première fois qu'on écrit au
+  // bot) arrive "partiel" — sans ceci, message.author/message.content y
+  // seraient absents pile pour les confessions envoyées en DM.
+  partials: [Partials.Channel],
   // AUCUN ping par défaut, nulle part : ni @everyone/@here, ni rôles, ni
   // utilisateurs, ni ping de réponse. Les mentions restent affichées et
   // cliquables (<@id> s'affiche toujours "@pseudo"), elles ne déclenchent
@@ -506,6 +514,15 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // Confessions anonymes ("!!confess", voir utils/confessions.js) — PAS dans
+  // PANNEAUX_PRIVES : la carte publique doit rester cliquable par tout le
+  // monde (c'est son but), et les boutons Approuver/Refuser par n'importe
+  // quel membre du staff, pas seulement celui qui l'a postée.
+  if (interaction.customId?.startsWith(`${CONFESS_CUSTOM_ID}:`)) {
+    await handleConfessInteraction(interaction).catch((err) => console.error("[confessions]", err));
+    return;
+  }
+
   // Constructeur d'embed (&embed, voir utils/serverExtra.js) : bouton ouvre
   // la modale, la modale postée déclenche l'envoi.
   if (interaction.customId === "srvextra:embedopen") {
@@ -810,6 +827,10 @@ client.on("messageCreate", (message) => {
   // "!!confess" — confessions anonymes (voir utils/confessions.js), même
   // préfixe que !!panel ci-dessus, mot différent après ("confess").
   handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
+  // Étape 3 du parcours de confession : le message privé envoyé au bot une
+  // fois qu'on l'attend pour cette personne (voir utils/confessions.js) —
+  // ne fait rien pour qui n'a pas cliqué "Je souhaite participer" avant.
+  handleConfessDM(client, message).catch((err) => console.error("[confessions]", err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));

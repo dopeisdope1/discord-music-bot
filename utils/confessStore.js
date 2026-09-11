@@ -2,8 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
-// Salon des confessions anonymes ("!!confess", voir utils/confessions.js).
-// { [guildId]: { channelId: string|null, compteur: number } }
+// Confessions anonymes ("!!confess", voir utils/confessions.js).
+// { [guildId]: { channelId: string|null, validationChannelId: string|null,
+//                compteur: number, notifOptIns: string[] } }
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "confess.json");
 
@@ -33,17 +34,25 @@ function guildEntry(guildId) {
   if (!data[guildId]) data[guildId] = {};
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
+  if (entry.validationChannelId === undefined) entry.validationChannelId = null;
   if (typeof entry.compteur !== "number") entry.compteur = 0;
+  if (!Array.isArray(entry.notifOptIns)) entry.notifOptIns = [];
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId, compteur } = guildEntry(guildId);
-  return { channelId, compteur };
+  const { channelId, validationChannelId, compteur, notifOptIns } = guildEntry(guildId);
+  return { channelId, validationChannelId, compteur, notifOptIns: [...notifOptIns] };
 }
 
 function setChannel(guildId, channelId) {
   guildEntry(guildId).channelId = channelId;
+  save();
+}
+
+/** Salon staff où les confessions attendent Approuver/Refuser avant publication (facultatif — sans lui, publication directe). */
+function setValidationChannel(guildId, channelId) {
+  guildEntry(guildId).validationChannelId = channelId;
   save();
 }
 
@@ -55,4 +64,15 @@ function prochainNumero(guildId) {
   return entry.compteur;
 }
 
-module.exports = { getConfig, setChannel, prochainNumero };
+/** @returns {boolean} le nouvel état (activé/désactivé), après bascule. */
+function toggleNotif(guildId, userId) {
+  const entry = guildEntry(guildId);
+  const index = entry.notifOptIns.indexOf(userId);
+  const actif = index === -1;
+  if (actif) entry.notifOptIns.push(userId);
+  else entry.notifOptIns.splice(index, 1);
+  save();
+  return actif;
+}
+
+module.exports = { getConfig, setChannel, setValidationChannel, prochainNumero, toggleNotif };
