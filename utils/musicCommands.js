@@ -12,6 +12,7 @@ const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
 const { buildHelpPanel } = require("./helpPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
+const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
@@ -356,6 +357,13 @@ const modHandlers = {
       buildConfigPanel(message.guild, "home", message.member, {}, { sansImage })
     );
   },
+
+  // Raccourci direct vers les paliers de permissions (voir
+  // utils/palierPanel.js) : une ligne par palier, Supprimer/Ajouter/Renommer
+  // juste dessous — sans passer par accueil -> menu -> sous-menu comme
+  // &panel. Public en lecture (comme &helpall) : les boutons de gestion ne
+  // s'affichent que pour qui a le droit de s'en servir.
+  p: palierPanel.handlePalierTextCommand,
 
   // Dit d'où le son peut encore venir (voir utils/sourcesDiagnostic.js) : la
   // seule façon de trancher, depuis la production, entre "ce morceau n'existe

@@ -1399,6 +1399,12 @@ const CATEGORIES = [
         description: "Panneau de configuration (rubriques visibles selon tes droits)",
       },
       {
+        name: "p",
+        prefix: "mod",
+        permission: null,
+        description: "Raccourci direct vers les paliers de permissions, avec Supprimer/Ajouter/Renommer par palier",
+      },
+      {
         name: "sources [titre ou lien]",
         prefix: "mod",
         permission: "sys",

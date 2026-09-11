@@ -22,6 +22,9 @@ const { handleMusicTextCommand } = require("./utils/musicCommands");
 // séparé de &panel (config serveur) pour ne jamais se mélanger — voir
 // utils/personalProtection.js.
 const personalProtection = require("./utils/personalProtection");
+// Raccourci "&p" vers les paliers de permissions, en dehors de la machine à
+// états de &panel — voir utils/palierPanel.js.
+const palierPanel = require("./utils/palierPanel");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
@@ -466,7 +469,7 @@ client.on("interactionCreate", async (interaction) => {
   // Les autres panneaux (bannissement, ban de masse, confirmations
   // d'administration) portaient déjà cette vérification, chacun avec son
   // jeton ; ces deux-là ne l'avaient pas.
-  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`];
+  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`, `${palierPanel.CUSTOM_ID}:`];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
     if (!autorise) {
@@ -492,6 +495,12 @@ client.on("interactionCreate", async (interaction) => {
   // Panel de protection personnelle ("!!panel", voir utils/personalProtection.js).
   if (interaction.customId?.startsWith(`${personalProtection.CUSTOM_ID}:`)) {
     await personalProtection.handleProtectionInteraction(interaction).catch((err) => console.error("[personalProtection]", err));
+    return;
+  }
+
+  // Raccourci "&p" vers les paliers de permissions (voir utils/palierPanel.js).
+  if (interaction.customId?.startsWith(`${palierPanel.CUSTOM_ID}:`)) {
+    await palierPanel.handlePalierInteraction(interaction).catch((err) => console.error("[palierPanel]", err));
     return;
   }
 
