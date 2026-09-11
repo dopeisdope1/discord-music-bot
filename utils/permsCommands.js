@@ -133,15 +133,21 @@ function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
         sansLabel.push(id);
       }
     }
+    // Même `renderTierLine` que les paliers numérotés (pas une deuxième
+    // logique) : sur &perms elle rend des commandes (le texte figé de
+    // utils/rolePresets.js en priorité, sinon les vraies débloquées), sur
+    // &helpall des mentions de rôle — un rôle exclusif suit la même règle.
     for (const [label, ids] of parLabel) {
-      blocs.push(`**${label}** *(hors hiérarchie)*\n> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
+      const ligne = renderTierLine({ keys: permStore.getRoleGrants(guildId, ids[0]), roleIds: ids });
+      blocs.push(`**◆ ${label}** *(hors hiérarchie)*\n> ↳ ${ligne || "*aucune*"}`);
     }
     if (sansLabel.length) {
-      blocs.push(`**Exclusives**\n> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+      const ligne = renderTierLine({ keys: permStore.getRoleGrants(guildId, sansLabel[0]), roleIds: sansLabel });
+      blocs.push(`**Exclusives**\n> ↳ ${ligne || "*aucune*"}`);
     }
   }
 
-  const pages = paginerBlocs([intro, ...blocs]);
+  const pages = paginerBlocs([`> ${intro}`, ...blocs]);
   return pages.map((page, i) => {
     const container = new ContainerBuilder();
     container.addTextDisplayComponents(
@@ -175,7 +181,12 @@ async function perms(client, message) {
       "Permissions liées aux commandes",
       "Voici les différentes permissions ainsi que les commandes accessibles",
       tiers,
-      (tier) => commandsForKeys(tier.keys).join(", ")
+      // Un texte figé (utils/permissions/store.js::setPermsDisplay, posé par
+      // utils/rolePresets.js) prime sur les commandes RÉELLEMENT débloquées —
+      // demande explicite de reproduire une référence fournie telle quelle.
+      // Tous les rôles d'un même palier partagent le même texte (même
+      // ensemble de clés = même origine), un seul suffit à le retrouver.
+      (tier) => permStore.getPermsDisplay(guildId, tier.roleIds[0]) || commandsForKeys(tier.keys).join(", ")
     )
   );
 }

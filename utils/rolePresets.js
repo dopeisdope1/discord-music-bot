@@ -28,14 +28,32 @@ const permStore = require("./permissions/store");
 // d'origine. Cumulatif de bout en bout : chaque palier garde TOUTES les clés
 // du précédent, plus au moins une nouvelle (garanti par un test dédié, voir
 // scripts/test-role-presets.js).
+// `display` : le texte EXACT fourni par l'utilisateur pour ce palier, montré
+// tel quel sur &perms (utils/permissions/store.js::setPermsDisplay) à la
+// place des commandes RÉELLEMENT débloquées par `keys`. Certains de ces noms
+// (absence reset/set, staff check, blrank/bl, rank...) ne correspondent à
+// AUCUNE commande de ce bot — assumé, demande explicite de reproduire la
+// référence fournie telle quelle plutôt que la liste réelle. `keys` reste ce
+// qui détermine le REGROUPEMENT en paliers distincts (voir plus haut) et les
+// permissions du bot réellement accordées ; `display` n'affecte que ce qui
+// s'affiche sur &perms.
 const TIERS = [
-  { names: ["Perm I"], keys: ["server.tools.use"] },
-  { names: ["Perm II"], keys: ["server.tools.use", "channels.slowmode"] },
-  { names: ["Perm III"], keys: ["server.tools.use", "channels.slowmode", "server.info.view"] },
-  { names: ["Perm IV"], keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list"] },
+  { names: ["Perm I"], keys: ["server.tools.use"], display: "absence reset, absence set, snipe" },
+  { names: ["Perm II"], keys: ["server.tools.use", "channels.slowmode"], display: "absence reset, absence set, pic, snipe" },
+  {
+    names: ["Perm III"],
+    keys: ["server.tools.use", "channels.slowmode", "server.info.view"],
+    display: "absence reset, absence set, pic, snipe, user",
+  },
+  {
+    names: ["Perm IV"],
+    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list"],
+    display: "absence reset, absence set, find, pic, snipe, user",
+  },
   {
     names: ["Perm V", "🎤"],
     keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout"],
+    display: "absence reset, absence set, find, pic, sanctions, snipe, tempmute, user",
   },
   {
     names: ["(GAP/GS)", "✗", "🚩"],
@@ -43,6 +61,7 @@ const TIERS = [
       "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
       "members.role", "members.nick", "server.voice.manage",
     ],
+    display: "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, snipe, tempmute, user",
   },
   {
     names: ["Célestial", "🐋", "🦅"],
@@ -50,6 +69,8 @@ const TIERS = [
       "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
       "members.role", "members.nick", "server.voice.manage", "server.stats.view",
     ],
+    display:
+      "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
   },
   {
     names: ["🎗️", "🌹", "🦋"],
@@ -57,6 +78,8 @@ const TIERS = [
       "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
       "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage",
     ],
+    display:
+      "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
   },
   {
     names: ["Kina", "⛪", "🎣"],
@@ -64,6 +87,8 @@ const TIERS = [
       "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
       "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
     ],
+    display:
+      "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
   },
   {
     names: ["Crown", "Top"],
@@ -72,6 +97,8 @@ const TIERS = [
       "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
       "server.giveaways.manage",
     ],
+    display:
+      "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
   },
   {
     names: ["Ordre", "Maître", "BOT=BOT"],
@@ -80,6 +107,8 @@ const TIERS = [
       "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
       "server.giveaways.manage", "moderation.ban", "moderation.unban",
     ],
+    display:
+      "absence reset, absence set, addrole, ban, baninfo, banlist, banner, blrank add, blrank list, blrank remove, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
   },
   {
     names: ["—", "=", "≡", "♂"],
@@ -88,6 +117,8 @@ const TIERS = [
       "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
       "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
     ],
+    display:
+      "absence reset, absence set, addrole, ban, baninfo, banlist, banner, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, mv, nick, pic, rank, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, user, vc",
   },
   {
     names: ["者", "Couronne", "SECURE"],
@@ -97,6 +128,8 @@ const TIERS = [
       "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
       "moderation.warn", "logs.manage", "server.channels.manage", "channels.manage", "channels.lock", "server.voice.moveall",
     ],
+    display:
+      "absence reset, absence set, addrole, avert, avertissements, ban, baninfo, banlist, banner, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, create, derank, embed, find, hide, lock, mv, nick, pic, rank, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, unhide, unlock, user, vc, voicemove",
   },
 ];
 
@@ -112,6 +145,8 @@ const EXCLUSIVE = [
       "server.members.list", "moderation.timeout", "server.voice.manage", "members.nick", "logs.view",
       "server.info.view", "server.stats.view",
     ],
+    display:
+      "addrole, avert, avertissements, ban, baninfo, banlist, blrank add, blrank list, blrank remove, derank, find, mutelist, mv, nick, pic, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur pic, snipe, tempmute, unban, unmute, user, vc",
   },
   {
     name: "🏅",
@@ -120,8 +155,10 @@ const EXCLUSIVE = [
       "members.role", "moderation.ban", "moderation.unban", "moderation.clear", "server.members.list",
       "server.voice.manage", "members.nick", "server.info.view", "server.stats.view",
     ],
+    display:
+      "addrole, ban, baninfo, banlist, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, limitrole, mv, nick, pic, rank, removerole, rolemembers, serveur banner, serveur pic, snipe, staff check, user, vc",
   },
-  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"] },
+  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"], display: "addrole, derank" },
 ];
 
 const TOTAL_ROLES = TIERS.reduce((n, t) => n + t.names.length, 0) + EXCLUSIVE.length;
@@ -152,6 +189,7 @@ async function createPresetRoles(client, message) {
           const role = await guild.roles.create({ name, reason: `Rôles prédéfinis créés par ${interaction.user.tag}` }).catch(() => null);
           if (!role) continue;
           if (tier.keys.length) permStore.setRoleGrants(guild.id, role.id, tier.keys);
+          permStore.setPermsDisplay(guild.id, role.id, tier.display);
           created++;
         }
       }
@@ -160,17 +198,23 @@ async function createPresetRoles(client, message) {
         if (!role) continue;
         permStore.setRoleGrants(guild.id, role.id, entry.keys);
         permStore.setRoleExclusive(guild.id, role.id, true, entry.label);
+        permStore.setPermsDisplay(guild.id, role.id, entry.display);
         created++;
       }
 
-      // Le rôle géré du bot lui-même (ex: "PROTECT") reçoit les mêmes clés que
-      // le palier le plus haut, pour qu'il se retrouve groupé AVEC "Permission
-      // 13" dans &perms/&helpall/"Rôles (paliers)" — demande explicite, plutôt
-      // qu'une rubrique "Bot" séparée. Il reste de toute façon toujours au-
-      // dessus de tout le reste dans la hiérarchie Discord (un bot ne peut pas
-      // créer de rôle plus haut que le sien).
+      // Le rôle géré du bot lui-même (ex: "PROTECT") reçoit les mêmes clés ET
+      // le même texte affiché que le palier le plus haut, pour qu'il se
+      // retrouve groupé AVEC "Permission 13" dans &perms/&helpall/"Rôles
+      // (paliers)" — demande explicite, plutôt qu'une rubrique "Bot" séparée.
+      // Il reste de toute façon toujours au-dessus de tout le reste dans la
+      // hiérarchie Discord (un bot ne peut pas créer de rôle plus haut que le
+      // sien).
       const botRole = guild.members.me?.roles.botRole;
-      if (botRole) permStore.setRoleGrants(guild.id, botRole.id, TIERS[TIERS.length - 1].keys);
+      if (botRole) {
+        const dernierPalier = TIERS[TIERS.length - 1];
+        permStore.setRoleGrants(guild.id, botRole.id, dernierPalier.keys);
+        permStore.setPermsDisplay(guild.id, botRole.id, dernierPalier.display);
+      }
 
       await report(interaction.client, {
         guildId: guild.id,

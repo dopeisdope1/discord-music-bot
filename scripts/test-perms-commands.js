@@ -120,7 +120,10 @@ function texteEnvoye(msg) {
     await perms(null, msgPerms);
     const textePerms = texteEnvoye(msgPerms);
     assert.ok(textePerms.includes("Exclusives"), textePerms);
-    assert.ok(textePerms.includes("<@&role-C>"), textePerms);
+    // &perms montre des COMMANDES dans la section exclusive elle aussi (pas
+    // une mention de rôle, réservée à &helpall) — role-C débloque "ban".
+    const exclusivesPerms = textePerms.slice(textePerms.indexOf("Exclusives"));
+    assert.ok(exclusivesPerms.includes("ban"), textePerms);
 
     const msgHelpall = fakeMessage("g1");
     await helpall(null, msgHelpall);
@@ -151,13 +154,14 @@ function texteEnvoye(msg) {
   });
 
   await cas("un serveur SANS permission accordée mais avec un rôle exclusif affiche quand même la carte", async () => {
+    permStore.setRoleGrants("g-vide-exclusif", "role-solo", ["moderation.kick"]);
     permStore.setRoleExclusive("g-vide-exclusif", "role-solo", true);
     const msg = fakeMessage("g-vide-exclusif");
     await perms(null, msg);
     assert.ok(!msg._replies[0].embeds, "ce n'est plus le message \"Aucune permission\"");
     const texte = texteEnvoye(msg);
     assert.ok(texte.includes("Exclusives"));
-    assert.ok(texte.includes("<@&role-solo>"));
+    assert.ok(texte.includes("kick"), texte);
   });
 
   await cas("retirer l'exclusivité fait disparaître la section", async () => {
@@ -226,6 +230,35 @@ function texteEnvoye(msg) {
       const texte = page.components[0].toJSON().components[2].content;
       assert.ok(texte.length <= LIMITE_PAGE, `une page dépasse la limite (${texte.length})`);
     }
+  });
+
+  console.log("\nTexte figé (utils/rolePresets.js::setPermsDisplay) — reproduction exacte d'une référence fournie :");
+
+  await cas("&perms montre le texte figé TEL QUEL, pas les vraies commandes débloquées par les clés", async () => {
+    permStore.setRoleGrants("g5", "role-figé", ["moderation.kick"]);
+    permStore.setPermsDisplay("g5", "role-figé", "absence reset, absence set, snipe");
+    const msg = fakeMessage("g5");
+    await perms(null, msg);
+    const texte = texteEnvoye(msg);
+    assert.ok(texte.includes("absence reset, absence set, snipe"), texte);
+    // "kick" est la VRAIE commande débloquée par la clé accordée — elle ne
+    // doit PAS apparaître, le texte figé prend toute la place sur cette ligne.
+    assert.ok(!texte.includes("kick"), texte);
+  });
+
+  await cas("&helpall n'est PAS affecté par le texte figé (il montre des rôles, pas des commandes)", async () => {
+    const msg = fakeMessage("g5");
+    await helpall(null, msg);
+    const texte = texteEnvoye(msg);
+    assert.ok(texte.includes("<@&role-figé>"), texte);
+  });
+
+  await cas("sans texte figé, &perms retombe sur les vraies commandes débloquées (comportement inchangé)", async () => {
+    permStore.setRoleGrants("g6", "role-normal", ["moderation.kick"]);
+    const msg = fakeMessage("g6");
+    await perms(null, msg);
+    const texte = texteEnvoye(msg);
+    assert.ok(texte.includes("kick"), texte);
   });
 
   await cas("&perms/&helpall RÉPONDENT avec les VRAIS 13 paliers cumulatifs de utils/rolePresets.js, sans exception", async () => {

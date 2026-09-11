@@ -35,11 +35,12 @@ function save() {
 
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [], exclusiveLabels: {} };
+  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [], exclusiveLabels: {}, permsDisplay: {} };
   if (!data[guildId].roleGrants) data[guildId].roleGrants = {};
   if (!data[guildId].userGrants) data[guildId].userGrants = {};
   if (!data[guildId].exclusiveRoles) data[guildId].exclusiveRoles = [];
   if (!data[guildId].exclusiveLabels) data[guildId].exclusiveLabels = {};
+  if (!data[guildId].permsDisplay) data[guildId].permsDisplay = {};
   return data[guildId];
 }
 
@@ -132,6 +133,23 @@ function setRoleExclusive(guildId, roleId, exclusive, label = null) {
 const listExclusiveRoles = (guildId) => [...guildData(guildId).exclusiveRoles];
 const getExclusiveLabel = (guildId, roleId) => guildData(guildId).exclusiveLabels[roleId] || null;
 
+/**
+ * Texte affiché tel quel sur &perms pour ce rôle, au lieu des commandes
+ * RÉELLEMENT débloquées par ses clés (utils/permsCommands.js::
+ * commandsForKeys) — posé par utils/rolePresets.js pour reproduire
+ * exactement la référence fournie (avec des noms de commandes qui n'existent
+ * pas toutes dans ce bot). N'affecte ni les vraies permissions ni &helpall
+ * (qui montre des rôles, pas des commandes) : purement cosmétique sur une
+ * seule ligne d'affichage.
+ */
+function setPermsDisplay(guildId, roleId, texte) {
+  const data = guildData(guildId);
+  if (texte) data.permsDisplay[roleId] = texte;
+  else delete data.permsDisplay[roleId];
+  save();
+}
+const getPermsDisplay = (guildId, roleId) => guildData(guildId).permsDisplay[roleId] || null;
+
 module.exports = {
   getRoleGrants,
   getUserGrants,
@@ -145,4 +163,6 @@ module.exports = {
   setRoleExclusive,
   listExclusiveRoles,
   getExclusiveLabel,
+  setPermsDisplay,
+  getPermsDisplay,
 };

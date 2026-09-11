@@ -15,7 +15,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "role-presets-test-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS } = require("../utils/rolePresets");
+const { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS, EXCLUSIVE } = require("../utils/rolePresets");
 const { handleConfigInteraction, ID } = require("../utils/configPanel");
 const permStore = require("../utils/permissions/store");
 
@@ -130,6 +130,13 @@ function extractConfirmToken(reply) {
       permStore.getRoleGrants("g1", "role-bot-protect").sort(),
       [...TIERS[TIERS.length - 1].keys].sort()
     );
+
+    // Le texte figé de &perms (utils/permissions/store.js::setPermsDisplay)
+    // est bien posé sur chaque rôle, PROTECT compris — reproduction exacte
+    // d'une référence fournie, demande explicite.
+    assert.strictEqual(permStore.getPermsDisplay("g1", parNom.get("Perm III").id), TIERS[2].display);
+    assert.strictEqual(permStore.getPermsDisplay("g1", gerant.id), EXCLUSIVE.find((e) => e.label === "Gérant gestion").display);
+    assert.strictEqual(permStore.getPermsDisplay("g1", "role-bot-protect"), TIERS[TIERS.length - 1].display);
   });
 
   await cas("les 13 paliers ont des ensembles de clés TOUS DIFFÉRENTS (aucun ne se retrouve fondu avec un autre dans &perms)", () => {
