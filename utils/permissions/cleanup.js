@@ -57,4 +57,34 @@ function sweepGuild(client, guild) {
   return revoked;
 }
 
-module.exports = { isStillReachable, revokeIfGone, sweepGuild };
+/**
+ * Retire les octrois (et l'étiquette "exclusif") des rôles qui n'existent
+ * plus sur le serveur — un rôle supprimé (à la main, ou via &role delete /
+ * le provisionnement en masse de utils/rolePresets.js) laisse sinon sa
+ * clé traîner indéfiniment dans permissions.json. Sans effet visible sur
+ * les permissions elles-mêmes (un rôle inexistant n'en accorde déjà plus
+ * aucune, voir utils/permissions/engine.js::can qui lit member.roles.cache),
+ * mais ces entrées mortes polluent &perms/&helpall/la rubrique "Rôles
+ * (paliers)" : elles y apparaissent comme un palier fantôme, avec une
+ * mention de rôle qui ne résout plus rien, et faussent la numérotation des
+ * VRAIS paliers (triée par nombre de clés).
+ * @param {import('discord.js').Guild} guild
+ * @returns {string[]} IDs des rôles dont l'entrée a été retirée
+ */
+function pruneDeletedRoles(guild) {
+  const vivants = guild.roles.cache;
+  const removed = [];
+  for (const [roleId] of permStore.listRoleGrants(guild.id)) {
+    if (vivants.has(roleId)) continue;
+    permStore.setRoleGrants(guild.id, roleId, []);
+    removed.push(roleId);
+  }
+  for (const roleId of permStore.listExclusiveRoles(guild.id)) {
+    if (vivants.has(roleId)) continue;
+    permStore.setRoleExclusive(guild.id, roleId, false);
+    if (!removed.includes(roleId)) removed.push(roleId);
+  }
+  return removed;
+}
+
+module.exports = { isStillReachable, revokeIfGone, sweepGuild, pruneDeletedRoles };

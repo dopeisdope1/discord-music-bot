@@ -21,7 +21,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 const accessStore = require("../utils/accessStore");
 const permStore = require("../utils/permissions/store");
 const { can } = require("../utils/permissions/engine");
-const { revokeIfGone, sweepGuild } = require("../utils/permissions/cleanup");
+const { revokeIfGone, sweepGuild, pruneDeletedRoles } = require("../utils/permissions/cleanup");
 
 const GUILD_ID = "guild-1";
 
@@ -157,6 +157,29 @@ cas("sweepGuild révoque tous les absents d'un coup, épargne les présents", ()
   const revoked = sweepGuild(fakeClient([guild]), guild);
   assert.ok(revoked.includes("absent-1"));
   assert.ok(!revoked.includes("present-1"));
+});
+
+cas("pruneDeletedRoles retire les octrois des rôles qui n'existent plus, garde ceux qui existent encore", () => {
+  const roleVivant = { id: "role-vivant" };
+  const guild = { id: "guild-prune", roles: { cache: new Collection([[roleVivant.id, roleVivant]]) } };
+  permStore.setRoleGrants("guild-prune", "role-vivant", ["moderation.kick"]);
+  permStore.setRoleGrants("guild-prune", "role-mort", ["moderation.ban"]);
+  permStore.setRoleExclusive("guild-prune", "role-mort-2", true);
+
+  const removed = pruneDeletedRoles(guild);
+  assert.ok(removed.includes("role-mort"));
+  assert.ok(removed.includes("role-mort-2"));
+  assert.ok(!removed.includes("role-vivant"));
+  assert.deepStrictEqual(permStore.getRoleGrants("guild-prune", "role-vivant"), ["moderation.kick"]);
+  assert.deepStrictEqual(permStore.getRoleGrants("guild-prune", "role-mort"), []);
+  assert.strictEqual(permStore.isRoleExclusive("guild-prune", "role-mort-2"), false);
+});
+
+cas("pruneDeletedRoles n'a rien à faire quand tout existe encore", () => {
+  const roleVivant = { id: "role-vivant-2" };
+  const guild = { id: "guild-prune-2", roles: { cache: new Collection([[roleVivant.id, roleVivant]]) } };
+  permStore.setRoleGrants("guild-prune-2", "role-vivant-2", ["moderation.kick"]);
+  assert.deepStrictEqual(pruneDeletedRoles(guild), []);
 });
 
 console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

@@ -153,5 +153,35 @@ function texteDe(guild, member, state) {
     assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
   });
 
+  console.log('\nBouton "Nettoyer les rôles supprimés" :');
+
+  await cas("retire les octrois des rôles qui n'existent plus, DANS le panel (pas un second message)", async () => {
+    permStore.setRoleGrants("gtiers", "role-mort-depuis-longtemps", ["moderation.kick"]);
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:pruneroles`,
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    assert.ok(updated, "le panneau aurait dû être mis à jour, pas un message à côté");
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", "role-mort-depuis-longtemps"), []);
+  });
+
+  await cas("sans rien à nettoyer, le dit clairement plutôt que de prétendre avoir agi", async () => {
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:pruneroles`,
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    assert.ok(JSON.stringify(updated).includes("Rien à nettoyer"), JSON.stringify(updated));
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();

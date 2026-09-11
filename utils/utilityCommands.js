@@ -4,6 +4,9 @@ const { buildListCard } = require("./listCard");
 const readOnlyLists = require("./readOnlyLists");
 const { moderationHandlers } = require("./moderationCommands");
 const { can } = require("./permissions/engine");
+const permStore = require("./permissions/store");
+const { commandsForKeys } = require("./permsCommands");
+const { getPrefixes } = require("./prefixStore");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
 const statsStore = require("./statsStore");
@@ -309,6 +312,34 @@ const handlers = {
       `**Mentionnable** : ${role.mentionable ? "oui" : "non"}`,
       `**Créé le** : <t:${Math.floor(role.createdTimestamp / 1000)}:D>`,
     ];
+
+    // Demande explicite : voir d'un coup, sur la fiche du rôle, QUI l'a et
+    // ce qu'il débloque — jusque-là il fallait &rolemembers ET &panel >
+    // Rôles et permissions séparément pour la même information.
+    const granted = permStore.getRoleGrants(message.guild.id, role.id);
+    const commands = commandsForKeys(granted);
+    const prefixe = getPrefixes(message.guild.id).musicMod;
+    lines.push("", `**Commandes débloquées (${commands.length})** :`);
+    if (!commands.length) {
+      lines.push("*aucune*");
+    } else {
+      const MAX = 20;
+      lines.push(commands.slice(0, MAX).map((c) => `\`${prefixe}${c}\``).join(", "));
+      const resteCommandes = commands.length - MAX;
+      if (resteCommandes > 0) lines.push(`+${resteCommandes} autre(s) — voir \`&panel\` > Rôles et permissions`);
+    }
+
+    const membres = [...role.members.values()];
+    const MAX_MEMBRES = 30;
+    lines.push("", `**Membres ayant ce rôle (${membres.length})** :`);
+    if (!membres.length) {
+      lines.push("*personne*");
+    } else {
+      lines.push(membres.slice(0, MAX_MEMBRES).map((m) => m.user?.tag || m.id).join(", "));
+      const resteMembres = membres.length - MAX_MEMBRES;
+      if (resteMembres > 0) lines.push(`+${resteMembres} autre(s)`);
+    }
+
     await reply(message, "info", lines.join("\n"), { title: "Informations rôle" });
   },
 

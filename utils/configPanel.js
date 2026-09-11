@@ -33,7 +33,8 @@ const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
 const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
-const { sweepGuild } = require("./permissions/cleanup");
+const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
+const { card: simpleCard } = require("./listCard");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const statsStore = require("./statsStore");
@@ -1215,6 +1216,18 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         new RoleSelectMenuBuilder().setCustomId(`${ID}:tierrenamepick`).setPlaceholder("Choisir un rôle à renommer")
       )
     );
+    // Un rôle supprimé (à la main, ou via "Supprimer les rôles" ci-dessous)
+    // laisse son octroi traîner dans permissions.json : ça fait apparaître
+    // un palier fantôme au numéro faussé (voir utils/permissions/
+    // cleanup.js::pruneDeletedRoles). Accessible à qui gère les permissions,
+    // pas seulement au rang sys — c'est un rangement, pas une action lourde.
+    if (can(member, "panel.permissions.manage")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
     // Provisionnement en masse (utils/rolePresets.js) : la hiérarchie de
     // rôles vue sur les deux screens fournis, avec les permissions déjà
     // réglées — demande explicite, rang sys (ça touche TOUS les rôles du
@@ -1977,6 +1990,14 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "tierrenamepick") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
+  }
+
+  if (action === "pruneroles") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const removed = pruneDeletedRoles(guild);
+    return interaction.update(
+      simpleCard("Terminé", removed.length ? `**${removed.length}** octroi(s) de rôle supprimé retiré(s).` : "Rien à nettoyer, tous les rôles avec des permissions accordées existent encore.")
+    );
   }
 
   // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans

@@ -47,7 +47,7 @@ function fakeRole(id, name, position = 1, extra = {}) {
     hoist: false,
     mentionable: false,
     createdTimestamp: 1600000000000,
-    members: { size: 0 },
+    members: new Collection(),
     toString: () => `<@&${id}>`,
     ...extra,
   };
@@ -464,6 +464,32 @@ const embedTitle = (payload) =>
     const texte = embedText(msg._replies[0]);
     assert.ok(texte.includes("Modérateur") || texte.includes(role.id), texte);
     assert.ok(texte.includes("#ff0000"), texte);
+  });
+
+  await cas("&role affiche aussi QUI a le rôle et les commandes qu'il débloque", async () => {
+    const role = fakeRole("role-info-cmds", "Staff");
+    role.members = new Collection([
+      ["u1", { id: "u1", user: { tag: "alice#0001" } }],
+      ["u2", { id: "u2", user: { tag: "bob#0002" } }],
+    ]);
+    const g = fakeGuild({ roles: [role] });
+    permStore.setRoleGrants(g.id, role.id, ["moderation.kick", "moderation.ban"]);
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
+    await utilityHandlers.roleInfo(null, msg, []);
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("alice#0001") && texte.includes("bob#0002"), texte);
+    assert.ok(texte.includes("kick") && texte.includes("ban"), texte);
+    assert.ok(texte.includes("Membres ayant ce rôle (2)"), texte);
+  });
+
+  await cas("&role sur un rôle sans permission accordée le dit clairement (aucune commande)", async () => {
+    const role = fakeRole("role-info-vide", "Vide");
+    const g = fakeGuild({ roles: [role] });
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
+    await utilityHandlers.roleInfo(null, msg, []);
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("Commandes débloquées (0)"), texte);
+    assert.ok(texte.includes("Membres ayant ce rôle (0)"), texte);
   });
 
   await cas("&role sans sous-commande reconnue affiche l'info, ne renvoie jamais silencieusement rien", async () => {
