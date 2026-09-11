@@ -18,6 +18,10 @@ const { Connectors, Constants: ShoukakuConstants } = require("shoukaku");
 const ShoukakuState = ShoukakuConstants.State;
 const { buildNowPlayingPanel, buildStoppedPanel } = require("./utils/nowPlayingPanel");
 const { handleMusicTextCommand } = require("./utils/musicCommands");
+// Panel de protection PERSONNELLE ("!!panel"), volontairement sur un préfixe
+// séparé de &panel (config serveur) pour ne jamais se mélanger — voir
+// utils/personalProtection.js.
+const personalProtection = require("./utils/personalProtection");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
@@ -462,7 +466,7 @@ client.on("interactionCreate", async (interaction) => {
   // Les autres panneaux (bannissement, ban de masse, confirmations
   // d'administration) portaient déjà cette vérification, chacun avec son
   // jeton ; ces deux-là ne l'avaient pas.
-  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`];
+  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
     if (!autorise) {
@@ -482,6 +486,12 @@ client.on("interactionCreate", async (interaction) => {
   // et ne sont donc pas concernées.
   if (interaction.customId?.startsWith("cfg:")) {
     await handleConfigInteraction(interaction).catch((err) => console.error("[configPanel]", err));
+    return;
+  }
+
+  // Panel de protection personnelle ("!!panel", voir utils/personalProtection.js).
+  if (interaction.customId?.startsWith(`${personalProtection.CUSTOM_ID}:`)) {
+    await personalProtection.handleProtectionInteraction(interaction).catch((err) => console.error("[personalProtection]", err));
     return;
   }
 
@@ -782,6 +792,10 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
       .catch(() => {});
   });
+  // "!!panel" — panel de protection personnelle, préfixe séparé exprès (voir
+  // utils/personalProtection.js). Pas de risque de collision : &panel ne
+  // matche jamais sur "!!".
+  personalProtection.handleProtectionTextCommand(client, message).catch((err) => console.error("[personalProtection]", err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
@@ -1078,6 +1092,13 @@ client.on("guildMemberRemove", async (member) => {
 // sans action manuelle. Ne fait rien si aucun rôle n'est configuré.
 client.on("channelCreate", (channel) => {
   applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
+});
+
+// Anti-Retrait Rôle (protection personnelle, "!!panel") : réapplique un rôle
+// qu'on vient de retirer à un membre qui a activé cette protection pour
+// lui-même — voir utils/personalProtection.js.
+client.on("guildMemberUpdate", (oldMember, newMember) => {
+  personalProtection.enforceRoleProtection(oldMember, newMember).catch((err) => console.error("[personalProtection]", err));
 });
 
 // Message de bienvenue (voir &panel > Bienvenue, utils/welcomeStore.js) : un

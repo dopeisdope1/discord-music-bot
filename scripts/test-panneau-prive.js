@@ -138,13 +138,16 @@ function interaction(clic, { origine, messages = {}, messageId = "panneau-1" } =
 
   console.log("\nLe garde couvre bien les deux panneaux concernés :");
 
-  await cas("index.js protège `cfg:` (panel) ET les cartes de commande", () => {
+  await cas("index.js protège `cfg:` (panel), les cartes de commande ET le panel de protection perso", () => {
     // Vérifié dans la source : c'est un routage, il n'a pas d'autre point
     // d'observation. Les autres panneaux (ban, ban de masse, confirmations)
     // portent déjà leur propre contrôle d'auteur.
     const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
     assert.ok(/PANNEAUX_PRIVES/.test(source), "le garde doit exister");
-    assert.ok(/PANNEAUX_PRIVES = \["cfg:", `\$\{commandForms\.CARD_ID\}:`\]/.test(source), "les deux préfixes doivent être couverts");
+    assert.ok(
+      /PANNEAUX_PRIVES = \["cfg:", `\$\{commandForms\.CARD_ID\}:`, `\$\{personalProtection\.CUSTOM_ID\}:`\]/.test(source),
+      "les trois préfixes doivent être couverts"
+    );
     assert.ok(/messageOwner\.verifier\(interaction\)/.test(source), "la vérification doit être appelée");
   });
 

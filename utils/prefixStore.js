@@ -12,8 +12,11 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
 // Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
 // main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
-// avec le CrowBot du serveur (voir utils/musicCommands.js).
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&" };
+// avec le CrowBot du serveur (voir utils/musicCommands.js) ; protection =
+// préfixe du panel de protection PERSONNELLE (utils/personalProtection.js),
+// volontairement séparé pour ne jamais se mélanger avec &panel (config
+// serveur) — demande explicite.
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!" };
 
 let cache = null;
 
@@ -47,7 +50,7 @@ function getPrefixes(guildId) {
 
 /**
  * @param {string} guildId
- * @param {"main"|"musicMod"} type
+ * @param {"main"|"musicMod"|"protection"} type
  * @param {string} value
  */
 function setPrefix(guildId, type, value) {
