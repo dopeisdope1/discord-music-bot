@@ -1,0 +1,23 @@
+#!/bin/bash
+# Raccourci volontairement placé À LA RACINE et sans extension.
+#
+# Le seul accès à ce VPS est la console web depuis un iPhone, sans
+# copier-coller : tout se tape au doigt. Or `/`, `.` et `-` sont derrière la
+# touche « 123 » du clavier iOS. « bash autodeploy », lui, ne contient que des
+# lettres et une espace — d'où ce fichier, qui n'existe que pour ça.
+#
+# Il installe la tâche planifiée au premier lancement, puis se contente de
+# vérifier s'il y a du nouveau. Toute la logique vit dans
+# scripts/autodeploy.sh ; ce fichier ne fait que choisir le bon mode.
+set -uo pipefail
+ICI=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REEL="$ICI/scripts/autodeploy.sh"
+
+[ -f "$REEL" ] || { echo "scripts/autodeploy.sh est introuvable — lance 'git pull' d'abord."; exit 1; }
+
+# Déjà installé ? On fait une simple vérification. Sinon on installe, puis on
+# vérifie dans la foulée pour que le premier lancement déploie tout de suite.
+if crontab -l 2>/dev/null | grep -q "autodeploy.sh"; then
+  exec bash "$REEL"
+fi
+bash "$REEL" --install && bash "$REEL"

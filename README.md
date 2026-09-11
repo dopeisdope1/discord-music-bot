@@ -205,8 +205,14 @@ copier.**
 Installation, une seule fois, dans le dossier du bot :
 
 ```bash
-bash scripts/autodeploy.sh --install
+bash autodeploy
 ```
+
+Le raccourci `autodeploy` est à la racine et sans extension **exprès** : le
+seul accès à ce VPS est la console web d'un iPhone, sans copier-coller, et
+`/`, `.` et `-` y sont tous derrière la touche « 123 ». « bash autodeploy » ne
+contient que des lettres. Il installe la tâche au premier lancement puis
+déploie dans la foulée ; relancé ensuite, il se contente de vérifier.
 
 Il pose une tâche planifiée qui, toutes les 5 minutes, regarde si `main` a
 bougé. Si oui : mise à jour, réinstallation des dépendances seulement si elles
