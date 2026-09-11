@@ -101,7 +101,14 @@ function texteDe(guild, member, state) {
     assert.ok(texte.includes(ROLE_B) && texte.includes(`<@&${ROLE_B}>`), "le palier à 1 permission (Support) doit apparaître, en mention brute (vrai texte Discord)");
     assert.ok(texte.includes("Permission 2"), texte);
     assert.ok(texte.includes(ROLE_A) && texte.includes(`<@&${ROLE_A}>`), "le palier à 2 permissions (Modérateur) doit aussi apparaître");
-    assert.ok(texte.includes("modifier/supprimer/ajouter"), "le rappel des actions doit être collé à chaque palier — demande explicite");
+    // Les actions ne sont plus un RAPPEL ÉCRIT en bout de ligne : chaque palier
+    // porte désormais ses vrais boutons (demande explicite, capture à l'appui).
+    // On vérifie donc qu'ils existent, ce qui est une garantie plus forte que
+    // la présence d'un texte.
+    const boutons = brut.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
+    for (const attendu of ["Supprimer", "Ajouter", "Renommer"]) {
+      assert.ok(boutons.includes(attendu), `"${attendu}" doit être un bouton de ligne : ${boutons.join(", ")}`);
+    }
   });
 
   await cas("aucune permission accordée nulle part : message clair, pas une page vide", () => {
@@ -203,12 +210,17 @@ function texteDe(guild, member, state) {
     return JSON.stringify(payload);
   }
 
-  await cas('"Choisir un palier à gérer" liste bien Permission 1 (Support) et Permission 2 (Modérateur)', () => {
+  await cas("chaque palier est une LIGNE avec ses propres boutons — plus de menu \"choisir un palier\"", () => {
+    // Le sélecteur "Choisir un palier à gérer" a été retiré : il faisait
+    // doublon avec les boutons de ligne, et son budget de composants manquait
+    // pour afficher les lignes elles-mêmes.
     const owner = mkMember("owner-1", null);
-    const payload = buildConfigPanel(guild, "roletiers", owner, {});
-    const texte = jsonDe(payload.components[0].toJSON());
-    assert.ok(texte.includes(`${ID}:tierselect`), texte);
-    assert.ok(texte.includes("t-1") && texte.includes("t-2"), texte);
+    const json = buildConfigPanel(guild, "roletiers", owner, {}).components[0].toJSON();
+    const texte = jsonDe(json);
+    assert.ok(!texte.includes(`${ID}:tierselect`), "le menu redondant ne doit plus être là");
+    assert.ok(texte.includes(`${ID}:paladd:t-1`) && texte.includes(`${ID}:paladd:t-2`), "chaque palier doit avoir son bouton Ajouter");
+    const lignes = json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(lignes.includes("Permission 1") && lignes.includes("Permission 2"), lignes);
   });
 
   await cas("sans panel.permissions.manage, aucun contrôle de gestion de palier n'apparaît", () => {
@@ -258,7 +270,20 @@ function texteDe(guild, member, state) {
     const payload = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-1" });
     const texte = jsonDe(payload.components[0].toJSON());
     assert.ok(texte.includes(`${ID}:tierrolepick:t-1`), texte);
-    assert.ok(!texte.includes(`${ID}:renamerole:`), "ambigu entre 2 rôles : pas de bouton tant qu'on n'a pas choisi lequel");
+    // La ligne d'un palier à plusieurs rôles ne propose PAS Renommer/Supprimer :
+    // ils désigneraient un rôle au hasard parmi plusieurs. Seuls "Ajouter" et
+    // "Choisir un rôle" y figurent — c'est l'intention d'origine du test, que
+    // les boutons de ligne ne doivent pas contourner.
+    // L'assertion porte sur les rôles DE CE PALIER, pas sur toute la page : les
+    // autres lignes affichent légitimement leurs propres boutons directs, et
+    // les y interdire ferait échouer le test pour la mauvaise raison.
+    const { computeTiers } = require("../utils/permsCommands");
+    const ambigu = computeTiers("gtiers").find((t) => t.index === 1);
+    assert.ok(ambigu.roleIds.length > 1, "ce cas suppose un palier à plusieurs rôles");
+    for (const id of ambigu.roleIds) {
+      assert.ok(!texte.includes(`${ID}:renamerole:${id}`), `action directe sur ${id} alors que le palier est ambigu`);
+      assert.ok(!texte.includes(`${ID}:roledelete:${id}`), `suppression directe de ${id} alors que le palier est ambigu`);
+    }
   });
 
   await cas("choisir un rôle précis dans le palier fait apparaître Renommer/Supprimer POUR CE RÔLE-LÀ", async () => {
@@ -378,17 +403,19 @@ function texteDe(guild, member, state) {
     // Le panel replie TOUS ses boutons dans un menu unique en fin de rendu
     // (regrouperBoutonsEnMenu) : l'action est donc une OPTION de "cfg:action",
     // dont la valeur est le customId du bouton d'origine.
-    const actions = (state) =>
+    // Cette rubrique garde ses VRAIS boutons (elle est exemptée du repli en
+    // menu, voir regrouperBoutonsEnMenu) : on cherche donc un bouton, pas une
+    // option de menu.
+    const boutons = (state) =>
       buildConfigPanel(guild, "roletiers", owner, state)
         .components[0].toJSON()
         .components.filter((c) => c.type === 1)
         .flatMap((r) => r.components)
-        .filter((c) => c.custom_id === `${ID}:action`)
-        .flatMap((c) => c.options || []);
-    assert.ok(!actions({}).some((o) => o.value.includes("tiername")), "aucun palier choisi : pas d'action de nommage");
-    const choisi = actions({ tierManageKey: "t-1" });
-    assert.ok(choisi.some((o) => o.value.startsWith(`${ID}:tiername:`)), JSON.stringify(choisi));
-    assert.ok(choisi.some((o) => o.label === "Nommer ce palier"), JSON.stringify(choisi));
+        .filter((c) => c.type === 2);
+    assert.ok(!boutons({}).some((b) => (b.custom_id || "").includes("tiername")), "aucun palier choisi : pas d'action de nommage");
+    const choisi = boutons({ tierManageKey: "t-1" });
+    assert.ok(choisi.some((b) => (b.custom_id || "").startsWith(`${ID}:tiername:`)), JSON.stringify(choisi.map((b) => b.custom_id)));
+    assert.ok(choisi.some((b) => b.label === "Nommer ce palier"), JSON.stringify(choisi.map((b) => b.label)));
   });
 
   await cas("nommer un palier l'affiche partout : rubrique, menu de gestion, &perms et &helpall", async () => {
@@ -396,13 +423,13 @@ function texteDe(guild, member, state) {
     const corps = corpsRubrique(owner);
     assert.ok(corps.includes("Permission 1 — Modération"), corps);
 
-    // Le menu de gestion doit dire la même chose que la liste.
-    const options = buildConfigPanel(guild, "roletiers", owner, {})
+    // La LIGNE du palier porte le nom (il n'y a plus de menu de sélection).
+    const lignes = buildConfigPanel(guild, "roletiers", owner, {})
       .components[0].toJSON()
-      .components.filter((c) => c.type === 1)
-      .flatMap((r) => r.components)
-      .find((c) => (c.custom_id || "").endsWith(":tierselect"))?.options;
-    assert.ok(options.some((o) => o.label === "Permission 1 — Modération"), JSON.stringify(options));
+      .components.filter((c) => c.type === 10)
+      .map((c) => c.content)
+      .join("\n");
+    assert.ok(lignes.includes("Permission 1 — Modération"), lignes);
 
     // &perms/&helpall passent par buildTierCard : même libellé, sinon le
     // panel et les commandes texte nommeraient le palier différemment.
@@ -463,6 +490,36 @@ function texteDe(guild, member, state) {
     );
     assert.ok(/permission|accès/i.test(repondu?.content || ""), JSON.stringify(repondu));
     assert.ok(!corpsRubrique(owner).includes("Pirate"), corpsRubrique(owner));
+  });
+
+  await cas("aucune page ne dépasse le plafond de 40 composants de Discord", () => {
+    // Défaut attrapé DEUX FOIS pendant l'écriture : à 5 paliers par page, ou
+    // avec les contrôles d'un palier ouvert empilés sous la liste, la page
+    // atteignait 42-44 composants et Discord aurait REFUSÉ le message — donc
+    // une rubrique totalement vide en production. Ce test rend l'erreur
+    // impossible à réintroduire en silence.
+    const compter = (c) => 1 + (c.components ? c.components.reduce((s, x) => s + compter(x), 0) : 0) + (c.accessory ? 1 : 0);
+    for (const page of [0, 1, 2, 3]) {
+      for (const cle of [null, "t-1", "t-2"]) {
+        for (const roleId of [null, ROLE_A]) {
+          const json = buildConfigPanel(guild, "roletiers", owner, { palierPage: page, tierManageKey: cle, tierManageRoleId: roleId })
+            .components[0].toJSON();
+          const total = json.components.reduce((s, c) => s + compter(c), 0);
+          assert.ok(total <= 40, `page ${page + 1} / ouvert=${cle} / rôle=${roleId} : ${total} composants`);
+        }
+      }
+    }
+  });
+
+  await cas("ouvrir un palier REMPLACE la liste — sinon le budget de composants explose", () => {
+    const seul = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-1" }).components[0].toJSON();
+    // On ne compte que les LIGNES de palier (elles commencent par `**`) : la
+    // phrase d'introduction cite elle aussi le palier ouvert, sans être une
+    // ligne de la liste.
+    const lignes = seul.components.filter((c) => c.type === 10).map((c) => c.content).filter((t) => t.startsWith("**"));
+    assert.strictEqual(lignes.length, 1, `un seul palier doit rester affiché : ${JSON.stringify(lignes)}`);
+    const labels = seul.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
+    assert.ok(labels.includes("◀ Retour à la liste"), `il faut un retour vers la liste : ${labels.join(", ")}`);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

@@ -23,6 +23,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel, handleConfigInteraction, ID, SECTIONS } = require("../utils/configPanel");
+const permStore = require("../utils/permissions/store");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -72,11 +73,30 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
 (async () => {
   console.log("Les actions du panel tiennent dans un menu, pas dans une pile de boutons :");
 
-  await cas("aucun écran n'affiche de bouton à custom_id — tous sont devenus des options", () => {
-    for (const section of SECTIONS.map((s) => s.key)) {
+  // "Rôles (paliers)" est la SEULE exception, demandée explicitement (capture
+  // d'écran à l'appui) : ses boutons sont attachés à une ligne précise
+  // (« Permission 3 : @rôle » + Supprimer/Ajouter/Renommer). Un menu unique
+  // les fondrait tous ensemble et on ne saurait plus quel palier chaque action
+  // vise. L'exception est nommée ici plutôt que le test affaibli : tout autre
+  // écran qui se remettrait à aligner des boutons doit encore échouer.
+  const AVEC_BOUTONS = ["roletiers"];
+
+  await cas("aucun écran n'affiche de bouton à custom_id, hors l'exception nommée", () => {
+    for (const section of SECTIONS.map((s) => s.key).filter((k) => !AVEC_BOUTONS.includes(k))) {
       const restants = boutonsDe(section).filter((b) => b.custom_id);
       assert.deepStrictEqual(restants.map((b) => b.label), [], `${section} aligne encore des boutons`);
     }
+  });
+
+  await cas("\"Rôles (paliers)\" garde bien ses boutons de ligne — sinon la mise en page demandée disparaît", () => {
+    // Un palier n'existe que si un rôle a des clés accordées : sans ça la
+    // rubrique n'a aucune ligne, donc aucun bouton de ligne à vérifier.
+    permStore.setRoleGrants("g1", ROLE_ID, ["moderation.kick"]);
+    const labels = boutonsDe("roletiers").map((b) => b.label);
+    for (const attendu of ["Supprimer", "Ajouter", "Renommer"]) {
+      assert.ok(labels.includes(attendu), `"${attendu}" manque — boutons trouvés : ${labels.join(", ")}`);
+    }
+    permStore.setRoleGrants("g1", ROLE_ID, []);
   });
 
   await cas("l'écran des permissions regroupe ses CINQ actions dans un seul menu", () => {
