@@ -236,4 +236,4 @@ async function deleteAllRoles(client, message) {
   });
 }
 
-module.exports = { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS };
+module.exports = { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS, EXCLUSIVE };
