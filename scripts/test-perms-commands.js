@@ -18,7 +18,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
 const permStore = require("../utils/permissions/store");
-const { perms, helpall, computeTiers } = require("../utils/permsCommands");
+const { perms, helpall, computeTiers, buildTierCard, LIMITE_COMPOSANT } = require("../utils/permsCommands");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -173,6 +173,46 @@ function fakeMessage(guildId) {
     assert.strictEqual(permStore.getExclusiveLabel("g4", "role-syndicat"), "Syndicat");
     permStore.setRoleExclusive("g4", "role-syndicat", false);
     assert.strictEqual(permStore.getExclusiveLabel("g4", "role-syndicat"), null);
+  });
+
+  console.log("\nLimite Discord (4000 caractères par TextDisplayComponent) :");
+
+  await cas("un contenu qui dépasserait 4000 caractères est réparti sur PLUSIEURS composants, pas une erreur Discord", () => {
+    // Reproduit ce qui a réellement cassé &perms en conditions réelles : des
+    // paliers CUMULATIFS (utils/rolePresets.js) où le plus haut liste toutes
+    // les commandes des paliers en dessous — largement de quoi dépasser le
+    // plafond Discord une fois les 13 concaténés dans un seul bloc de texte.
+    const grosBloc = "x".repeat(2000);
+    const tiers = [{ index: 1 }, { index: 2 }, { index: 3 }];
+    const result = buildTierCard("guild-vide-pour-ce-test", "Titre", "Intro", tiers, () => grosBloc);
+    const textes = result.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content);
+    for (const t of textes) assert.ok(t.length <= LIMITE_COMPOSANT, `un composant dépasse la limite (${t.length})`);
+    assert.ok(textes.length > 1, "le contenu doit être réparti sur plusieurs composants, pas un seul géant");
+    const total = textes.join("\n\n");
+    for (const tier of tiers) assert.ok(total.includes(`Permission ${tier.index}`), `palier ${tier.index} manquant après répartition`);
+  });
+
+  await cas("un bloc UNIQUE plus gros que la limite est tronqué plutôt que de faire échouer tout le message", () => {
+    const enorme = "y".repeat(LIMITE_COMPOSANT + 500);
+    const result = buildTierCard("guild-vide-pour-ce-test-2", "Titre", "Intro", [{ index: 1 }], () => enorme);
+    const textes = result.components[0].toJSON().components.filter((c) => c.type === 10).map((c) => c.content);
+    for (const t of textes) assert.ok(t.length <= LIMITE_COMPOSANT, `un composant dépasse la limite (${t.length})`);
+  });
+
+  await cas("&perms/&helpall ne plantent plus avec les VRAIS 13 paliers de utils/rolePresets.js (reproduction exacte de la panne)", async () => {
+    const { TIERS, EXCLUSIVE } = require("../utils/rolePresets");
+    const guildId = "guild-vrais-paliers";
+    TIERS.forEach((tier, i) => permStore.setRoleGrants(guildId, `role-tier-${i}`, tier.keys));
+    EXCLUSIVE.forEach((entry, i) => {
+      permStore.setRoleGrants(guildId, `role-excl-${i}`, entry.keys);
+      permStore.setRoleExclusive(guildId, `role-excl-${i}`, true, entry.label);
+    });
+    const msgPerms = fakeMessage(guildId);
+    const msgHelpall = fakeMessage(guildId);
+    await perms(null, msgPerms);
+    await helpall(null, msgHelpall);
+    assert.strictEqual(msgPerms._replies.length, 1, "&perms doit répondre sans lever d'exception");
+    assert.strictEqual(msgHelpall._replies.length, 1, "&helpall doit répondre sans lever d'exception");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

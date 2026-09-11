@@ -74,15 +74,41 @@ function nonCommandGrants(keys) {
   return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
 }
 
+// Un TextDisplayComponent est plafonné à 4000 caractères par Discord. Avec
+// des paliers CUMULATIFS (utils/rolePresets.js), le palier le plus haut liste
+// toutes les commandes de tous les paliers en dessous — largement de quoi
+// dépasser ce plafond une fois les 13 paliers concaténés dans un seul bloc de
+// texte, comme c'était le cas avant (DiscordAPIError constaté en conditions
+// réelles). Marge de sécurité sous 4000 pour rester tranquille même avec des
+// noms de rôle très longs dans les mentions.
+const LIMITE_COMPOSANT = 3800;
+
+/** Répartit des blocs de texte sur plusieurs TextDisplayComponents plutôt qu'un seul, qui dépasserait le plafond Discord. */
+function ajouterBlocsRepartis(container, blocs) {
+  let courant = "";
+  for (let bloc of blocs) {
+    // Un bloc seul plus gros que la limite (cas extrême) : tronqué plutôt que
+    // de faire échouer tout le message.
+    if (bloc.length > LIMITE_COMPOSANT) bloc = `${bloc.slice(0, LIMITE_COMPOSANT - 1)}…`;
+    const candidat = courant ? `${courant}\n\n${bloc}` : bloc;
+    if (candidat.length > LIMITE_COMPOSANT && courant) {
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(courant));
+      courant = bloc;
+    } else {
+      courant = candidat;
+    }
+  }
+  if (courant) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(courant));
+}
+
 function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  const lines = [intro, ""];
+
+  const blocs = [intro];
   for (const tier of tiers) {
-    lines.push(`**Permission ${tier.index}**`);
-    lines.push(`> ↳ ${renderTierLine(tier) || "*aucune*"}`);
-    lines.push("");
+    blocs.push(`**Permission ${tier.index}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
   }
   // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
   // store.js) : une simple étiquette, affichée à part des paliers numérotés
@@ -103,16 +129,13 @@ function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
       }
     }
     for (const [label, ids] of parLabel) {
-      lines.push(`**${label}** *(hors hiérarchie)*`);
-      lines.push(`> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
-      lines.push("");
+      blocs.push(`**${label}** *(hors hiérarchie)*\n> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
     }
     if (sansLabel.length) {
-      lines.push("**Exclusives**");
-      lines.push(`> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+      blocs.push(`**Exclusives**\n> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
     }
   }
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n").trim()));
+  ajouterBlocsRepartis(container, blocs);
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
@@ -156,4 +179,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants };
+module.exports = { perms, helpall, computeTiers, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_COMPOSANT };
