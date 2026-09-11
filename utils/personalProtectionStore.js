@@ -5,7 +5,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 // Protections PERSONNELLES (!!panel, utils/personalProtection.js) : chaque
 // membre active/désactive pour LUI-MÊME, aucun effet sur le reste du
 // serveur — voir "Ça te concerne toi seul" dans la référence fournie.
-// { [guildId]: { [userId]: { antiRoleRemove: bool } } }
+// { [guildId]: { [userId]: { antiRoleRemove: bool, antiMove: bool, ... } } }
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "personalProtection.json");
 
@@ -16,6 +16,34 @@ const PROTECTIONS = {
   antiRoleRemove: {
     label: "Anti-Retrait Rôle",
     description: "Réapplique automatiquement un rôle qu'on t'a retiré",
+  },
+  antiMove: {
+    label: "Anti-Déplacement Vocal",
+    description: "Te replace dans ton salon vocal si quelqu'un t'en déplace de force",
+  },
+  antiMuteDeafen: {
+    label: "Anti-Sourdine Forcée",
+    description: "Annule un mute/sourdine vocal qu'on t'impose",
+  },
+  antiTimeout: {
+    label: "Anti-Timeout",
+    description: "Annule un timeout (mise en sourdine textuelle) qu'on t'inflige",
+  },
+  antiRename: {
+    label: "Anti-Renommage",
+    description: "Restaure ton pseudo si quelqu'un le change à ta place",
+  },
+  antiBan: {
+    label: "Anti-Bannissement",
+    description: "Te débannit automatiquement si quelqu'un d'autre te bannit",
+  },
+  antiKick: {
+    label: "Alerte Expulsion",
+    description: "T'envoie un lien pour revenir si on t'expulse (un bot ne peut pas te rajouter de force)",
+  },
+  antiGhostPing: {
+    label: "Anti Ping Fantôme",
+    description: "T'envoie en MP le contenu d'un message qui t'a mentionné puis a été supprimé",
   },
 };
 

@@ -829,6 +829,9 @@ client.on("messageDelete", (message) => {
   if (message.author) {
     logMessageDelete(client, message).catch((err) => console.error("[moderationLog]", err));
   }
+  // Anti-Ping-Fantôme (protection personnelle, "!!panel") — voir
+  // utils/personalProtection.js.
+  personalProtection.enforceGhostPingAlert(message).catch((err) => console.error("[personalProtection]", err));
 });
 
 // ---- Salon de logs "Messages" : édition (voir &panel > Logs) ----
@@ -1094,11 +1097,15 @@ client.on("channelCreate", (channel) => {
   applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
 });
 
-// Anti-Retrait Rôle (protection personnelle, "!!panel") : réapplique un rôle
-// qu'on vient de retirer à un membre qui a activé cette protection pour
-// lui-même — voir utils/personalProtection.js.
-client.on("guildMemberUpdate", (oldMember, newMember) => {
-  personalProtection.enforceRoleProtection(oldMember, newMember).catch((err) => console.error("[personalProtection]", err));
+// Anti-Déplacement Vocal (protection personnelle, "!!panel") : replace un
+// membre déplacé de force vers un autre salon vocal — voir
+// utils/personalProtection.js. Les autres protections qui annulent une
+// action (rôle, pseudo, sourdine, timeout, ban, kick) passent par l'audit
+// log ci-dessous plutôt que par cet événement : c'est le seul cas où
+// l'audit log ne donne pas de cible précise (voir le commentaire dans
+// enforceMoveProtection).
+client.on("voiceStateUpdate", (oldState, newState) => {
+  personalProtection.enforceMoveProtection(oldState, newState).catch((err) => console.error("[personalProtection]", err));
 });
 
 // Message de bienvenue (voir &panel > Bienvenue, utils/welcomeStore.js) : un
@@ -1173,6 +1180,13 @@ client.on("guildAuditLogEntryCreate", (entry, guild) => {
   // d'événement qu'aucun guard ne suit.
   checkAuditEntry(client, guild, entry).catch((err) => {
     console.error("[guard] échec du traitement d'une entrée d'audit :", err);
+  });
+  // Protections personnelles (!!panel, voir utils/personalProtection.js) :
+  // Anti-Retrait-Rôle, Anti-Renommage, Anti-Sourdine-Forcée, Anti-Timeout,
+  // Anti-Bannissement, Alerte-Expulsion — même entrée d'audit, troisième
+  // traitement indépendant.
+  personalProtection.handleAuditLogEntry(client, guild, entry).catch((err) => {
+    console.error("[personalProtection] échec du traitement d'une entrée d'audit :", err);
   });
 });
 
