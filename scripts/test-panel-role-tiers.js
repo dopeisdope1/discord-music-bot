@@ -90,17 +90,18 @@ function texteDe(guild, member, state) {
     assert.ok(spec, "la rubrique doit se construire pour le propriétaire");
   });
 
-  await cas("chaque palier montre SES rôles ET les commandes qu'il débloque, comme &perms + &helpall réunis", () => {
+  await cas("en TEXTE (pas en image, comme &helpall) : une ligne compacte par palier, rôle(s) puis les actions juste à côté", () => {
     const owner = mkMember("owner-1", null);
-    const texte = texteDe(guild, owner, {});
+    const payload = buildConfigPanel(guild, "roletiers", owner, {});
+    // Pas d'image pour cette rubrique : aucune galerie média, juste du texte.
+    const brut = payload.components[0].toJSON();
+    assert.ok(!JSON.stringify(brut).includes("media_gallery"), "roletiers ne doit plus être dessiné en image");
+    const texte = JSON.stringify(brut);
     assert.ok(texte.includes("Permission 1"), texte);
-    // La spec dessinée résout les mentions en noms affichables (@Support),
-    // pas en syntaxe brute <@&id> — Discord ne rendrait pas cette syntaxe
-    // dans une image de toute façon.
-    assert.ok(texte.includes("Support"), "le palier à 1 permission (Support) doit apparaître en premier");
-    assert.ok(texte.includes("kick"), texte);
-    assert.ok(texte.includes("Modérateur"), "le palier à 2 permissions (Modérateur) doit aussi apparaître");
-    assert.ok(texte.includes("ban"), texte);
+    assert.ok(texte.includes(ROLE_B) && texte.includes(`<@&${ROLE_B}>`), "le palier à 1 permission (Support) doit apparaître, en mention brute (vrai texte Discord)");
+    assert.ok(texte.includes("Permission 2"), texte);
+    assert.ok(texte.includes(ROLE_A) && texte.includes(`<@&${ROLE_A}>`), "le palier à 2 permissions (Modérateur) doit aussi apparaître");
+    assert.ok(texte.includes("modifier/supprimer/ajouter"), "le rappel des actions doit être collé à chaque palier — demande explicite");
   });
 
   await cas("aucune permission accordée nulle part : message clair, pas une page vide", () => {

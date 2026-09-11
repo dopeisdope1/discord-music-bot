@@ -156,7 +156,10 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
 
   console.log("\nToutes les rubriques du panel, sans exception :");
 
-  const rubriques = SECTIONS.filter((s) => s.key !== "home");
+  // "roletiers" ("Rôles (paliers)") est volontairement exclue : demande
+  // explicite de la garder en texte pur, comme &helpall, jamais dessinée —
+  // voir le cas dédié plus bas.
+  const rubriques = SECTIONS.filter((s) => s.key !== "home" && s.key !== "roletiers");
 
   await cas(`les ${rubriques.length} rubriques produisent une spec dessinable`, () => {
     for (const s of rubriques) {
@@ -214,6 +217,14 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
       assert.strictEqual(panel.files, undefined, `${s.key} joint un fichier alors qu'il n'y a pas d'image`);
       assert.ok(composants.some((c) => c.type === 10), `${s.key} : plus rien à lire du tout`);
     }
+  });
+
+  await cas('"Rôles (paliers)" reste en texte, jamais en image (demande explicite, comme &helpall)', () => {
+    const panel = buildConfigPanel(guild, "roletiers", owner);
+    const composants = panel.components[0].toJSON().components;
+    assert.ok(!composants.some((c) => c.type === 12), "roletiers ne doit jamais avoir de galerie média");
+    assert.strictEqual(panel.files, undefined, "roletiers ne doit jamais joindre de fichier");
+    assert.ok(composants.some((c) => c.type === 10), "roletiers doit rester lisible en texte");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

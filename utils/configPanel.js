@@ -485,9 +485,12 @@ function sectionBody(section, guild, member, state) {
     return lines.join("\n");
   }
 
-  // Même contenu que &perms + &helpall réunis (utils/permsCommands.js), mais
-  // dans le panel : demande explicite pour voir tous les paliers ET tous les
-  // rôles d'un coup, sans taper deux commandes séparées.
+  // Même contenu que &helpall (utils/permsCommands.js), mais dans le panel :
+  // une ligne compacte par palier, rôle(s) puis le rappel des actions
+  // disponibles juste à côté — demande explicite ("cote a coter des
+  // paliers"). En texte plutôt qu'en image (voir buildConfigPanel) : les
+  // vraies actions (renommer/ajouter/supprimer) vivent juste en dessous, via
+  // "Choisir un palier à gérer".
   if (section === "roletiers") {
     const tiers = computeTiers(guildId);
     const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
@@ -497,11 +500,7 @@ function sectionBody(section, guild, member, state) {
     const lines = [];
     for (const tier of tiers) {
       const roles = tier.roleIds.length ? tier.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun*";
-      const commands = commandsForKeys(tier.keys);
-      lines.push(`**Permission ${tier.index}**`);
-      lines.push(`> **Rôles** : ${roles}`);
-      lines.push(`> **Commandes débloquées (${commands.length})** : ${commands.length ? commands.join(", ") : "*aucune*"}`);
-      lines.push("");
+      lines.push(`**Permission ${tier.index}** : ${roles} — modifier/supprimer/ajouter`);
     }
     if (exclusiveRoleIds.length) {
       // Un rôle avec un nom propre (posé par utils/rolePresets.js, ex:
@@ -520,13 +519,10 @@ function sectionBody(section, guild, member, state) {
         }
       }
       for (const [label, ids] of parLabel) {
-        lines.push(`**${label}** *(hors hiérarchie)*`);
-        lines.push(`> **Rôles** : ${ids.map((id) => `<@&${id}>`).join(", ")}`);
-        lines.push("");
+        lines.push(`**${label}** *(hors hiérarchie)* : ${ids.map((id) => `<@&${id}>`).join(", ")} — modifier/supprimer/ajouter`);
       }
       if (sansLabel.length) {
-        lines.push("**Exclusives**");
-        lines.push(`> **Rôles** : ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+        lines.push(`**Exclusives** : ${sansLabel.map((id) => `<@&${id}>`).join(", ")} — modifier/supprimer/ajouter`);
       }
     }
     // Palier choisi dans "Choisir un palier à gérer" ci-dessous : recopie
@@ -535,8 +531,7 @@ function sectionBody(section, guild, member, state) {
     const gere = findManagedTier(guild, state.tierManageKey);
     if (gere) {
       lines.push("");
-      lines.push(`**Palier en cours de gestion : ${gere.label}**`);
-      lines.push(`> **Rôle(s) actuel(s)** : ${gere.roleIds.length ? gere.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}`);
+      lines.push(`*Palier en cours de gestion : **${gere.label}** — utilise les menus ci-dessous.*`);
     }
     return lines.join("\n").trim();
   }
@@ -1162,8 +1157,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // équivalentes — simplement converti en grille de cartes
   // (utils/sectionDashboard.js) au lieu d'être empilé en lignes de citation.
   const corps = sectionBody(meta.key, guild, member, state);
-  const specRubrique = buildSectionSpec(guild, meta.key, member, state, corps);
-  const pngRubrique = sansImage ? null : rendreEnCache(specRubrique);
+  // "Rôles (paliers)" reste en texte, comme &helpall — demande explicite,
+  // par contraste avec "TOUTES les rubriques sont dessinées" ci-dessus : la
+  // liste des paliers change souvent (ajout/suppression de rôle) et les
+  // actions rapides juste en dessous (renommer/ajouter/supprimer) s'y
+  // réfèrent directement, mieux servies par le vrai texte Discord (mentions
+  // résolues) que par une image à régénérer à chaque clic.
+  const texteForce = meta.key === "roletiers";
+  const specRubrique = texteForce ? null : buildSectionSpec(guild, meta.key, member, state, corps);
+  const pngRubrique = sansImage || texteForce ? null : rendreEnCache(specRubrique);
   if (pngRubrique) {
     fichiers.push(new AttachmentBuilder(pngRubrique, { name: NOM_IMAGE_RUBRIQUE, description: texteAlternatif(specRubrique) }));
     container.addMediaGalleryComponents(
