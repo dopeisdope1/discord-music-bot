@@ -25,6 +25,8 @@ const personalProtection = require("./utils/personalProtection");
 // Raccourci "&p" vers les paliers de permissions, en dehors de la machine à
 // états de &panel — voir utils/palierPanel.js.
 const palierPanel = require("./utils/palierPanel");
+// Confessions anonymes ("!!confess") — voir utils/confessions.js.
+const { handleConfessTextCommand } = require("./utils/confessions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
@@ -805,6 +807,9 @@ client.on("messageCreate", (message) => {
   // utils/personalProtection.js). Pas de risque de collision : &panel ne
   // matche jamais sur "!!".
   personalProtection.handleProtectionTextCommand(client, message).catch((err) => console.error("[personalProtection]", err));
+  // "!!confess" — confessions anonymes (voir utils/confessions.js), même
+  // préfixe que !!panel ci-dessus, mot différent après ("confess").
+  handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
   // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
   // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
