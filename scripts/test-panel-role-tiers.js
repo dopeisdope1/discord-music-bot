@@ -344,5 +344,126 @@ function texteDe(guild, member, state) {
     assert.strictEqual(permStore.getExclusiveLabel("gtiers", ROLE_EXCL2), "Syndicat");
   });
 
+  console.log("\nNommer un palier :");
+
+  const owner = mkMember("owner-1", null);
+
+  /** Le texte réellement affiché par la rubrique (elle reste en TEXTE). */
+  const corpsRubrique = (membre, state = {}) =>
+    buildConfigPanel(guild, "roletiers", membre, state)
+      .components[0].toJSON()
+      .components.filter((c) => c.type === 10)
+      .map((c) => c.content)
+      .join("\n");
+
+  const clic = (customId, extra = {}) => ({
+    customId: `${ID}:${customId}`,
+    member: owner,
+    guild,
+    client: {},
+    values: [],
+    isModalSubmit: () => false,
+    reply: async () => {},
+    update: async () => {},
+    ...extra,
+  });
+  const modale = (valeur) => ({ isModalSubmit: () => true, fields: { getTextInputValue: () => valeur } });
+
+  await cas("un palier sans nom reste désigné par son seul numéro", () => {
+    assert.ok(/Permission 1\b/.test(corpsRubrique(owner)), corpsRubrique(owner));
+    assert.ok(!corpsRubrique(owner).includes("—  "), corpsRubrique(owner));
+  });
+
+  await cas("l'action « Nommer ce palier » n'apparaît qu'une fois un palier choisi", () => {
+    // Le panel replie TOUS ses boutons dans un menu unique en fin de rendu
+    // (regrouperBoutonsEnMenu) : l'action est donc une OPTION de "cfg:action",
+    // dont la valeur est le customId du bouton d'origine.
+    const actions = (state) =>
+      buildConfigPanel(guild, "roletiers", owner, state)
+        .components[0].toJSON()
+        .components.filter((c) => c.type === 1)
+        .flatMap((r) => r.components)
+        .filter((c) => c.custom_id === `${ID}:action`)
+        .flatMap((c) => c.options || []);
+    assert.ok(!actions({}).some((o) => o.value.includes("tiername")), "aucun palier choisi : pas d'action de nommage");
+    const choisi = actions({ tierManageKey: "t-1" });
+    assert.ok(choisi.some((o) => o.value.startsWith(`${ID}:tiername:`)), JSON.stringify(choisi));
+    assert.ok(choisi.some((o) => o.label === "Nommer ce palier"), JSON.stringify(choisi));
+  });
+
+  await cas("nommer un palier l'affiche partout : rubrique, menu de gestion, &perms et &helpall", async () => {
+    await handleConfigInteraction(clic("tiername:t-1", modale("Modération")));
+    const corps = corpsRubrique(owner);
+    assert.ok(corps.includes("Permission 1 — Modération"), corps);
+
+    // Le menu de gestion doit dire la même chose que la liste.
+    const options = buildConfigPanel(guild, "roletiers", owner, {})
+      .components[0].toJSON()
+      .components.filter((c) => c.type === 1)
+      .flatMap((r) => r.components)
+      .find((c) => (c.custom_id || "").endsWith(":tierselect"))?.options;
+    assert.ok(options.some((o) => o.label === "Permission 1 — Modération"), JSON.stringify(options));
+
+    // &perms/&helpall passent par buildTierCard : même libellé, sinon le
+    // panel et les commandes texte nommeraient le palier différemment.
+    const { computeTiers, buildTierCard } = require("../utils/permsCommands");
+    const messages = buildTierCard("gtiers", "T", "i", computeTiers("gtiers"), () => "x");
+    const texte = JSON.stringify(messages);
+    assert.ok(texte.includes("Permission 1 — Modération"), texte);
+  });
+
+  await cas("le nom suit les PERMISSIONS, pas le numéro : renuméroter ne le déplace pas", async () => {
+    // Deux rôles isolés, pour ne pas dépendre de ce que les cas précédents
+    // ont laissé : un petit palier {logs.view} et un plus gros {logs.view,
+    // server.info.view}. On nomme le GROS (numéro 2), puis on fait
+    // disparaître le petit : le gros devient numéro 1 et le nom doit l'avoir
+    // suivi, pas être resté sur le numéro 2.
+    const PETIT = "777777777777777777";
+    const GROS = "888888888888888888";
+    for (const [id, nom] of [[PETIT, "Petit"], [GROS, "Gros"]]) {
+      guild.roles.cache.set(id, {
+        id,
+        name: nom,
+        position: 1,
+        hexColor: "#000000",
+        members: { size: 0 },
+        permissions: { toArray: () => [], has: () => false },
+        toString() { return `<@&${this.id}>`; },
+      });
+    }
+    for (const [id] of permStore.listRoleGrants("gtiers")) permStore.setRoleGrants("gtiers", id, []);
+    permStore.setRoleGrants("gtiers", PETIT, ["logs.view"]);
+    permStore.setRoleGrants("gtiers", GROS, ["logs.view", "server.info.view"]);
+
+    await handleConfigInteraction(clic("tiername:t-2", modale("Encadrement")));
+    assert.ok(corpsRubrique(owner).includes("Permission 2 — Encadrement"), corpsRubrique(owner));
+
+    permStore.setRoleGrants("gtiers", PETIT, []);
+    const corps = corpsRubrique(owner);
+    assert.ok(corps.includes("Permission 1 — Encadrement"), `le nom doit avoir suivi ses permissions : ${corps}`);
+  });
+
+  await cas("un nom vide retire le nom, sans toucher aux permissions", async () => {
+    const avant = permStore.getRoleGrants("gtiers", ROLE_B);
+    await handleConfigInteraction(clic("tiername:t-1", modale("   ")));
+    assert.ok(!corpsRubrique(owner).includes("Modération"), corpsRubrique(owner));
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", ROLE_B), avant, "nommer ne doit jamais changer une permission");
+  });
+
+  await cas("nommer un palier qui n'existe plus est refusé, sans rien enregistrer", async () => {
+    let repondu = null;
+    await handleConfigInteraction(clic("tiername:t-99", { ...modale("Fantôme"), reply: async (p) => { repondu = p; } }));
+    assert.ok(repondu?.content.includes("n'existe plus"), JSON.stringify(repondu));
+  });
+
+  await cas("sans panel.permissions.manage, nommer est refusé même si le bouton est forcé", async () => {
+    let repondu = null;
+    await handleConfigInteraction(
+      clic("tiername:t-1", { ...modale("Pirate"), member: mkMember("u-sans", null), reply: async (p) => { repondu = p; } })
+    );
+    assert.ok(/permission|accès/i.test(repondu?.content || ""), JSON.stringify(repondu));
+    assert.ok(!corpsRubrique(owner).includes("Pirate"), corpsRubrique(owner));
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();

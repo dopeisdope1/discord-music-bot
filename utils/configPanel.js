@@ -31,7 +31,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
-const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
+const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { card: simpleCard } = require("./listCard");
@@ -500,7 +500,7 @@ function sectionBody(section, guild, member, state) {
     const lines = [];
     for (const tier of tiers) {
       const roles = tier.roleIds.length ? tier.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun*";
-      lines.push(`**Permission ${tier.index}** : ${roles} — modifier/supprimer/ajouter`);
+      lines.push(`**${tierLabel(guildId, tier)}** : ${roles} — modifier/supprimer/ajouter`);
     }
     if (exclusiveRoleIds.length) {
       // Un rôle avec un nom propre (posé par utils/rolePresets.js, ex:
@@ -940,6 +940,18 @@ function messageFromInteraction(interaction) {
  * du palier supprimé/renommé entre-temps, par exemple).
  * @returns {{ key: string, label: string, keys: string[], roleIds: string[], exclusiveLabel: string|null } | null}
  */
+/**
+ * Libellé affiché d'un palier numéroté : « Permission 4 », ou
+ * « Permission 4 — Modération » s'il a été nommé depuis le panel. Une seule
+ * définition, partagée par le corps de la rubrique, le menu de gestion et les
+ * placeholders — trois formulations différentes du même palier se
+ * contrediraient à l'écran.
+ */
+function tierLabel(guildId, tier) {
+  const nom = permStore.getTierName(guildId, tierSignature(tier.keys));
+  return nom ? `Permission ${tier.index} — ${nom}` : `Permission ${tier.index}`;
+}
+
 function findManagedTier(guild, tierManageKey) {
   if (!tierManageKey) return null;
   const guildId = guild.id;
@@ -950,7 +962,8 @@ function findManagedTier(guild, tierManageKey) {
     if (!tier) return null;
     return {
       key: tierManageKey,
-      label: `Permission ${tier.index}`,
+      label: tierLabel(guildId, tier),
+      signature: tierSignature(tier.keys),
       keys: tier.keys,
       roleIds: tier.roleIds.filter((id) => guild.roles.cache.has(id)),
       exclusiveLabel: null,
@@ -984,7 +997,10 @@ function findManagedTier(guild, tierManageKey) {
 function tierManageOptions(guild) {
   const guildId = guild.id;
   const options = computeTiers(guildId).map((t) =>
-    new StringSelectMenuOptionBuilder().setLabel(`Permission ${t.index}`).setValue(`t-${t.index}`).setDescription(`${t.roleIds.length} rôle(s)`)
+    new StringSelectMenuOptionBuilder()
+      .setLabel(tierLabel(guildId, t).slice(0, 100))
+      .setValue(`t-${t.index}`)
+      .setDescription(`${t.roleIds.length} rôle(s)`)
   );
   const parLabel = new Map();
   for (const id of permStore.listExclusiveRoles(guildId)) {
@@ -1361,6 +1377,22 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         // utils/rolePresets.js) : pas besoin d'un sélecteur supplémentaire
         // dans ce cas, les boutons Renommer/Supprimer visent directement ce
         // rôle-là. Avec plusieurs rôles sur le même palier, on en choisit un.
+        // Nommer le PALIER — distinct de « Renommer » plus bas, qui renomme un
+        // ROLE Discord. Un palier n'a pas de nom en propre par défaut : il est
+        // désigné par son numéro, qui ne dit pas à quoi il sert. Réservé aux
+        // paliers numérotés : un groupe hors hiérarchie porte déjà son
+        // étiquette (utils/permissions/store.js::exclusiveLabels).
+        if (gere.signature) {
+          const nomActuel = permStore.getTierName(guild.id, gere.signature);
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`${ID}:tiername:${gere.key}`)
+                .setLabel(nomActuel ? `Renommer le palier "${nomActuel}"`.slice(0, 80) : "Nommer ce palier")
+                .setStyle(ButtonStyle.Primary)
+            )
+          );
+        }
         const rolePreChoisi = state.tierManageRoleId && gere.roleIds.includes(state.tierManageRoleId) ? state.tierManageRoleId : null;
         if (gere.roleIds.length > 1 && !rolePreChoisi) {
           container.addActionRowComponents(
@@ -2181,6 +2213,42 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   // findManagedTier) sur le rôle choisi. Il rejoint le palier au prochain
   // calcul de computeTiers(), automatiquement (même mécanique qui regroupe
   // déjà les rôles à ensemble de clés identique).
+  // Nommer un palier : une étiquette posée sur un groupe qui existe déjà,
+  // rattachée à la SIGNATURE de ses permissions et non à son numéro (voir
+  // utils/permissions/store.js::setTierName). Ne touche à aucune permission.
+  if (action === "tiername") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const gere = findManagedTier(guild, extra);
+    // Le palier est désigné par son NUMÉRO dans le customId : entre
+    // l'affichage et le clic, une permission accordée ailleurs a pu décaler
+    // la numérotation. On le relit donc, et on refuse proprement s'il a
+    // disparu plutôt que de nommer le palier voisin.
+    if (!gere || !gere.signature) {
+      return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
+    }
+    if (interaction.isModalSubmit()) {
+      permStore.setTierName(guildId, gere.signature, interaction.fields.getTextInputValue("nom"));
+      // Pas de `tierManageRoleId` : `state` n'existe pas dans les
+      // gestionnaires (il est reconstruit à chaque `goto`). On revient donc
+      // sur le palier, sans rôle présélectionné — comme le fait déjà
+      // "tierselect".
+      return goto("roletiers", { tierManageKey: gere.key });
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:tiername:${gere.key}`).setTitle("Nommer ce palier");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("nom")
+          .setLabel("Nom du palier (vide pour le retirer)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(permStore.NOM_PALIER_MAX)
+          .setRequired(false)
+          .setValue(permStore.getTierName(guildId, gere.signature) || "")
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
   if (action === "tieraddrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const gere = findManagedTier(guild, extra);

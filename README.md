@@ -430,10 +430,10 @@ les rôles Discord actuels de la personne : retirer un rôle coupe l'accès
 immédiatement, en redonner un le restaure, sans redémarrage ni action
 manuelle.
 
-Ses vingt-huit rubriques sont regroupées en **onze familles** : le menu
+Ses vingt-neuf rubriques sont regroupées en **onze familles** : le menu
 principal propose les familles, un second menu n'apparaît que pour choisir à
 l'intérieur d'une famille qui en contient plusieurs. Sans ce regroupement, un
-seul menu aurait dû tenir les 28 rubriques, alors que Discord en plafonne un à
+seul menu aurait dû tenir les 29 rubriques, alors que Discord en plafonne un à
 25 options. Les écrans, eux, ne sont **pas** fusionnés — chacun garde ses
 contrôles et ses avertissements. « Rang sys » et « Ban de masse » voisinent
 dans la même famille sans jamais partager le même écran : l'un donne accès à
@@ -447,7 +447,7 @@ complètement du menu — le panel ne montre jamais une porte fermée.
 | Accueil | Vue d'ensemble : statut, alertes, accès rapides |
 | Sécurité | Vue d'ensemble, Protection, Anti-nuke, Mute |
 | Modération | Recherche de membre, Historique |
-| Serveur | Rôles et permissions, Rôles automatiques, Vérification |
+| Serveur | Rôles et permissions, Rôles (paliers) |
 | Communauté | Bienvenue, Départ, Vocaux, Giveaways |
 | Support | Tickets |
 | Communication | Constructeur d'embed, Sondages |
@@ -532,6 +532,22 @@ si tu y as droit. Quelques-unes méritent un mot :
   menu unique : Discord plafonne un menu à 25 options et le catalogue de
   permissions a vocation à grandir, chaque catégorie restant largement sous
   la limite indéfiniment.
+- **Rôles (paliers)** — la vue « Permission 1, 2, 3… » de `&perms`/`&helpall`,
+  mais DANS le panel et modifiable : choisir un palier, y ajouter un rôle, en
+  retirer un, renommer un de ses rôles. Un palier n'est **pas** une entité
+  stockée : c'est le groupe des rôles ayant exactement les mêmes clés
+  accordées, calculé à la volée. Ajouter un rôle revient donc à lui recopier
+  les clés du palier ; il le rejoint au calcul suivant.
+  Un palier peut aussi être **nommé** (« Permission 4 — Modération ») :
+  purement de l'affichage, aucune permission n'est touchée. Le nom est
+  rattaché à la SIGNATURE du palier (ses clés triées), jamais à son numéro —
+  le numéro n'est qu'un rang d'affichage et se décale dès qu'un palier
+  disparaît ou qu'un plus petit apparaît. Le nom apparaît partout où le palier
+  est cité : la rubrique, le menu de gestion, `&perms` et `&helpall`.
+  Cette rubrique reste en **texte** (pas en image, contrairement aux autres) :
+  sa liste change à chaque ajout ou retrait de rôle, et les actions juste en
+  dessous s'y réfèrent — le vrai texte Discord, qui résout les mentions tout
+  seul, sert mieux qu'une image à régénérer à chaque clic.
 - **Recherche de membre** — cherche un membre, puis agis sur sa **fiche**
   (dessinée en carte : avatar, arrivée, rôles, casier). Chaque bouton
   d'action rouvre la carte de formulaire que `&kick`/`&ban`/`&timeout`/

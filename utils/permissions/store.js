@@ -35,12 +35,13 @@ function save() {
 
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [], exclusiveLabels: {}, permsDisplay: {} };
+  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [], exclusiveLabels: {}, permsDisplay: {}, tierNames: {} };
   if (!data[guildId].roleGrants) data[guildId].roleGrants = {};
   if (!data[guildId].userGrants) data[guildId].userGrants = {};
   if (!data[guildId].exclusiveRoles) data[guildId].exclusiveRoles = [];
   if (!data[guildId].exclusiveLabels) data[guildId].exclusiveLabels = {};
   if (!data[guildId].permsDisplay) data[guildId].permsDisplay = {};
+  if (!data[guildId].tierNames) data[guildId].tierNames = {};
   return data[guildId];
 }
 
@@ -150,6 +151,28 @@ function setPermsDisplay(guildId, roleId, texte) {
 }
 const getPermsDisplay = (guildId, roleId) => guildData(guildId).permsDisplay[roleId] || null;
 
+// Nom donné à un palier depuis le panel (« Permission 4 — Modération »).
+//
+// Rattaché à la SIGNATURE du palier (ses clés triées,
+// utils/permsCommands.js::tierSignature), jamais à son numéro : le numéro
+// n'est qu'un rang d'affichage et se décale dès qu'un palier plus petit
+// apparaît — un nom rattaché au numéro se retrouverait sur le mauvais palier.
+//
+// Purement de l'affichage : rien ici n'entre dans le calcul des permissions
+// (utils/permissions/engine.js ne lit pas ce champ). Un palier reste le groupe
+// des rôles ayant exactement les mêmes clés ; on ne fait que l'étiqueter.
+const NOM_PALIER_MAX = 60;
+
+function setTierName(guildId, signature, nom) {
+  const data = guildData(guildId);
+  const propre = String(nom || "").replace(/\s+/g, " ").trim().slice(0, NOM_PALIER_MAX);
+  if (propre) data.tierNames[signature] = propre;
+  else delete data.tierNames[signature];
+  save();
+  return propre || null;
+}
+const getTierName = (guildId, signature) => guildData(guildId).tierNames[signature] || null;
+
 module.exports = {
   getRoleGrants,
   getUserGrants,
@@ -165,4 +188,7 @@ module.exports = {
   getExclusiveLabel,
   setPermsDisplay,
   getPermsDisplay,
+  setTierName,
+  getTierName,
+  NOM_PALIER_MAX,
 };
