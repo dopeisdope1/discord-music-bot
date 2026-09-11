@@ -15,7 +15,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "role-presets-test-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { createPresetRoles, deleteAllRoles, TOTAL_ROLES } = require("../utils/rolePresets");
+const { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS } = require("../utils/rolePresets");
 const { handleConfigInteraction, ID } = require("../utils/configPanel");
 const permStore = require("../utils/permissions/store");
 
@@ -34,12 +34,16 @@ async function cas(nom, fn) {
 /** Fausse guild avec un guild.roles.create()/delete() qui manipulent VRAIMENT le cache, comme discord.js. */
 function fakeGuild(id) {
   let n = 1;
+  const botRole = { id: "role-bot-protect", name: "PROTECT", managed: true };
   const guild = {
     id,
     name: `Serveur ${id}`,
-    members: { me: { permissions: { has: () => true } } },
+    members: { me: { permissions: { has: () => true }, roles: { botRole } } },
     roles: {
-      cache: new Collection([[id, { id, name: "@everyone", managed: false }]]), // @everyone : id du rôle = id de la guild
+      cache: new Collection([
+        [id, { id, name: "@everyone", managed: false }],
+        [botRole.id, botRole], // rôle géré du bot lui-même, toujours déjà présent avant toute création
+      ]), // @everyone : id du rôle = id de la guild
       create: async ({ name }) => {
         const role = {
           id: `role-${n++}`,
@@ -86,7 +90,7 @@ function extractConfirmToken(reply) {
     const message = fakeMessage(guild);
     await createPresetRoles({}, message);
     assert.strictEqual(message._replies.length, 1, "une confirmation doit être demandée avant de créer quoi que ce soit");
-    assert.strictEqual(guild.roles.cache.size, 1, "rien n'est créé avant confirmation (seul @everyone reste)");
+    assert.strictEqual(guild.roles.cache.size, 2, "rien n'est créé avant confirmation (@everyone + le rôle géré du bot)");
 
     const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
     const token = extractConfirmToken(message._replies[0]);
@@ -100,8 +104,8 @@ function extractConfirmToken(reply) {
       update: async (p) => (updated = p),
     });
     assert.ok(updated, "un résultat final aurait dû être affiché");
-    // +1 pour @everyone déjà présent.
-    assert.strictEqual(guild.roles.cache.size, TOTAL_ROLES + 1, `les ${TOTAL_ROLES} rôles doivent tous exister`);
+    // +2 : @everyone et le rôle géré du bot étaient déjà présents.
+    assert.strictEqual(guild.roles.cache.size, TOTAL_ROLES + 2, `les ${TOTAL_ROLES} rôles doivent tous exister`);
 
     const parNom = new Map([...guild.roles.cache.values()].map((r) => [r.name, r]));
     assert.ok(parNom.has("Perm I") && parNom.has("SECURE") && parNom.has("Couronne"));
@@ -116,6 +120,23 @@ function extractConfirmToken(reply) {
     assert.ok(gerant, "le rôle \"Gérant gestion\" (🏅) doit exister");
     assert.strictEqual(permStore.isRoleExclusive("g1", gerant.id), true);
     assert.ok(permStore.getRoleGrants("g1", gerant.id).includes("moderation.ban"));
+
+    // Le rôle géré du bot ("PROTECT") reçoit les mêmes clés que le palier 13
+    // (le plus haut) : demande explicite, pour qu'il se retrouve groupé AVEC
+    // "Permission 13" dans &perms plutôt que d'apparaître à part.
+    assert.deepStrictEqual(
+      permStore.getRoleGrants("g1", "role-bot-protect").sort(),
+      [...TIERS[TIERS.length - 1].keys].sort()
+    );
+  });
+
+  await cas("chaque palier a TOUTES les clés du précédent, plus au moins une nouvelle (logique cumulative)", () => {
+    for (let i = 1; i < TIERS.length; i++) {
+      const precedent = new Set(TIERS[i - 1].keys);
+      const courant = new Set(TIERS[i].keys);
+      const manquante = [...precedent].find((k) => !courant.has(k));
+      assert.strictEqual(manquante, undefined, `le palier ${i + 1} doit garder "${manquante}" du palier ${i}`);
+    }
   });
 
   await cas("sans le rang sys, ne fait rien", async () => {
@@ -123,7 +144,7 @@ function extractConfirmToken(reply) {
     const message = fakeMessage(guild, "quidam-1");
     await createPresetRoles({}, message);
     assert.strictEqual(message._replies.length, 0);
-    assert.strictEqual(guild.roles.cache.size, 1);
+    assert.strictEqual(guild.roles.cache.size, 2);
   });
 
   console.log("\n&rolePresets — suppression en masse :");
@@ -138,7 +159,7 @@ function extractConfirmToken(reply) {
     const message = fakeMessage(guild);
     await deleteAllRoles({}, message);
     assert.strictEqual(message._replies.length, 1, "une confirmation doit être demandée");
-    assert.strictEqual(guild.roles.cache.size, 4, "rien n'est supprimé avant confirmation");
+    assert.strictEqual(guild.roles.cache.size, 5, "rien n'est supprimé avant confirmation");
 
     const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
     const token = extractConfirmToken(message._replies[0]);
@@ -152,9 +173,10 @@ function extractConfirmToken(reply) {
       update: async (p) => (updated = p),
     });
     assert.ok(updated);
-    assert.strictEqual(guild.roles.cache.size, 2, "@everyone et le rôle géré doivent survivre, les deux autres non");
+    assert.strictEqual(guild.roles.cache.size, 3, "@everyone et les deux rôles gérés doivent survivre, les deux autres non");
     assert.ok(guild.roles.cache.has("g3"), "@everyone ne doit jamais être supprimé");
     assert.ok(guild.roles.cache.has("role-managed"), "un rôle géré par une intégration ne doit jamais être supprimé");
+    assert.ok(guild.roles.cache.has("role-bot-protect"), "le rôle géré du bot lui-même ne doit jamais être supprimé");
   });
 
   await cas("aucun rôle à supprimer (juste @everyone) : le dit clairement, ne demande pas de confirmation pour rien", async () => {
@@ -172,7 +194,7 @@ function extractConfirmToken(reply) {
     const message = fakeMessage(guild, "quidam-1");
     await deleteAllRoles({}, message);
     assert.strictEqual(message._replies.length, 0);
-    assert.strictEqual(guild.roles.cache.size, 2);
+    assert.strictEqual(guild.roles.cache.size, 3);
   });
 
   console.log('\nMenu "Provisionnement en masse" dans le panel :');
@@ -217,7 +239,7 @@ function extractConfirmToken(reply) {
       update: async (p) => (updated = p),
     });
     assert.ok(updated, "la confirmation doit remplacer le panel, pas ouvrir un second message");
-    assert.strictEqual(guild.roles.cache.size, 1, "rien n'est créé avant confirmation");
+    assert.strictEqual(guild.roles.cache.size, 2, "rien n'est créé avant confirmation");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

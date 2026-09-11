@@ -125,6 +125,15 @@ async function createPresetRoles(client, message) {
         created++;
       }
 
+      // Le rôle géré du bot lui-même (ex: "PROTECT") reçoit les mêmes clés que
+      // le palier le plus haut, pour qu'il se retrouve groupé AVEC "Permission
+      // 13" dans &perms/&helpall/"Rôles (paliers)" — demande explicite, plutôt
+      // qu'une rubrique "Bot" séparée. Il reste de toute façon toujours au-
+      // dessus de tout le reste dans la hiérarchie Discord (un bot ne peut pas
+      // créer de rôle plus haut que le sien).
+      const botRole = guild.members.me?.roles.botRole;
+      if (botRole) permStore.setRoleGrants(guild.id, botRole.id, TIERS[TIERS.length - 1].keys);
+
       await report(interaction.client, {
         guildId: guild.id,
         category: "server",
@@ -189,4 +198,4 @@ async function deleteAllRoles(client, message) {
   });
 }
 
-module.exports = { createPresetRoles, deleteAllRoles, TOTAL_ROLES };
+module.exports = { createPresetRoles, deleteAllRoles, TOTAL_ROLES, TIERS };
