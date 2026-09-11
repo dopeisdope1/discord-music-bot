@@ -183,5 +183,165 @@ function texteDe(guild, member, state) {
     assert.ok(JSON.stringify(updated).includes("Rien à nettoyer"), JSON.stringify(updated));
   });
 
+  console.log('\nGestion rapide d\'un palier (renommer/ajouter/supprimer un rôle, sans quitter la rubrique) :');
+
+  const ROLE_C = "333333333333333333";
+  guild.roles.cache.set(ROLE_C, {
+    id: ROLE_C,
+    name: "Nouveau Rôle",
+    position: 3,
+    hexColor: "#000000",
+    members: { size: 0 },
+    permissions: { toArray: () => [], has: () => false },
+    toString() {
+      return `<@&${this.id}>`;
+    },
+  });
+
+  function jsonDe(payload) {
+    return JSON.stringify(payload);
+  }
+
+  await cas('"Choisir un palier à gérer" liste bien Permission 1 (Support) et Permission 2 (Modérateur)', () => {
+    const owner = mkMember("owner-1", null);
+    const payload = buildConfigPanel(guild, "roletiers", owner, {});
+    const texte = jsonDe(payload.components[0].toJSON());
+    assert.ok(texte.includes(`${ID}:tierselect`), texte);
+    assert.ok(texte.includes("t-1") && texte.includes("t-2"), texte);
+  });
+
+  await cas("sans panel.permissions.manage, aucun contrôle de gestion de palier n'apparaît", () => {
+    const sansDroit = mkMember("u-sans-gestion", null);
+    const payload = buildConfigPanel(guild, "roletiers", sansDroit, { tierManageKey: "t-1" });
+    const texte = jsonDe(payload.components[0].toJSON());
+    assert.ok(!texte.includes(`${ID}:tierselect`), texte);
+    assert.ok(!texte.includes(`${ID}:tieraddrole`), texte);
+  });
+
+  await cas("choisir Permission 1 (un seul rôle : Support) affiche direct Renommer/Supprimer POUR CE RÔLE", async () => {
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:tierselect`,
+      values: ["t-1"],
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    const texte = jsonDe(updated.components[0].toJSON());
+    assert.ok(texte.includes(`${ID}:tieraddrole:t-1`), "le sélecteur d'ajout doit viser le bon palier");
+    assert.ok(texte.includes(`${ID}:renamerole:${ROLE_B}`), "Renommer doit viser directement Support (seul rôle du palier)");
+    assert.ok(texte.includes(`${ID}:roledelete:${ROLE_B}`), "Supprimer doit viser directement Support");
+    assert.ok(!texte.includes(`${ID}:tierrolepick`), "un seul rôle : pas besoin du sélecteur intermédiaire");
+  });
+
+  await cas('"Ajouter un rôle à ce palier" copie les clés du palier sur le rôle choisi', async () => {
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", ROLE_C), []);
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:tieraddrole:t-1`,
+      values: [ROLE_C],
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", ROLE_C), permStore.getRoleGrants("gtiers", ROLE_B));
+    assert.ok(updated, "le panneau doit être mis à jour en place");
+  });
+
+  await cas("le palier a maintenant 2 rôles : le sélecteur intermédiaire apparaît, pas de bouton direct", () => {
+    const owner = mkMember("owner-1", null);
+    const payload = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-1" });
+    const texte = jsonDe(payload.components[0].toJSON());
+    assert.ok(texte.includes(`${ID}:tierrolepick:t-1`), texte);
+    assert.ok(!texte.includes(`${ID}:renamerole:`), "ambigu entre 2 rôles : pas de bouton tant qu'on n'a pas choisi lequel");
+  });
+
+  await cas("choisir un rôle précis dans le palier fait apparaître Renommer/Supprimer POUR CE RÔLE-LÀ", async () => {
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:tierrolepick:t-1`,
+      values: [ROLE_C],
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    const texte = jsonDe(updated.components[0].toJSON());
+    assert.ok(texte.includes(`${ID}:renamerole:${ROLE_C}`), texte);
+    assert.ok(texte.includes(`${ID}:roledelete:${ROLE_C}`), texte);
+  });
+
+  await cas("sans panel.permissions.manage, tierselect/tierrolepick/tieraddrole sont tous refusés", async () => {
+    // Octroi INDIVIDUEL (pas par rôle) : "role-basic" plus haut a depuis été
+    // nettoyé par le test "Nettoyer les rôles supprimés" (il ne correspond à
+    // aucun rôle réel de guild.roles.cache, donc pruneDeletedRoles l'a
+    // retiré) — un octroi direct à l'utilisateur donne juste assez pour VOIR
+    // le panel, sans dépendre de cet ordre d'exécution.
+    permStore.grantToUser("gtiers", "u-sans-gestion-2", "panel.roles.manage");
+    const sansDroit = mkMember("u-sans-gestion-2", null);
+    for (const customId of [`${ID}:tierselect`, `${ID}:tierrolepick:t-1`, `${ID}:tieraddrole:t-1`]) {
+      let refused = null;
+      await handleConfigInteraction({
+        customId,
+        values: [ROLE_C],
+        member: sansDroit,
+        guild,
+        client: {},
+        reply: async (p) => (refused = p),
+      });
+      assert.ok(refused?.content?.includes("pas la permission"), `${customId} : ${JSON.stringify(refused)}`);
+    }
+  });
+
+  await cas("un palier exclusif propose aussi \"Ajouter un rôle\", qui copie clés ET étiquette", async () => {
+    const ROLE_EXCL = "444444444444444444";
+    guild.roles.cache.set(ROLE_EXCL, {
+      id: ROLE_EXCL,
+      name: "Syndicat",
+      position: 4,
+      hexColor: "#000000",
+      members: { size: 0 },
+      permissions: { toArray: () => [], has: () => false },
+      toString() {
+        return `<@&${this.id}>`;
+      },
+    });
+    permStore.setRoleGrants("gtiers", ROLE_EXCL, ["server.roles.manage"]);
+    permStore.setRoleExclusive("gtiers", ROLE_EXCL, true, "Syndicat");
+
+    const owner = mkMember("owner-1", null);
+    const listPayload = buildConfigPanel(guild, "roletiers", owner, {});
+    assert.ok(jsonDe(listPayload.components[0].toJSON()).includes("e-Syndicat"), "l'option du groupe exclusif doit apparaître");
+
+    const ROLE_EXCL2 = "555555555555555555";
+    guild.roles.cache.set(ROLE_EXCL2, {
+      id: ROLE_EXCL2,
+      name: "Second Syndicat",
+      position: 5,
+      hexColor: "#000000",
+      members: { size: 0 },
+      permissions: { toArray: () => [], has: () => false },
+      toString() {
+        return `<@&${this.id}>`;
+      },
+    });
+    await handleConfigInteraction({
+      customId: `${ID}:tieraddrole:e-Syndicat`,
+      values: [ROLE_EXCL2],
+      member: owner,
+      guild,
+      client: {},
+      update: async () => {},
+    });
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", ROLE_EXCL2), ["server.roles.manage"]);
+    assert.strictEqual(permStore.isRoleExclusive("gtiers", ROLE_EXCL2), true);
+    assert.strictEqual(permStore.getExclusiveLabel("gtiers", ROLE_EXCL2), "Syndicat");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();
