@@ -73,7 +73,12 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
   console.log("Les actions du panel tiennent dans un menu, pas dans une pile de boutons :");
 
   await cas("aucun écran n'affiche de bouton à custom_id — tous sont devenus des options", () => {
-    for (const section of SECTIONS.map((s) => s.key)) {
+    // "roletiers" ("Rôles (paliers)") est l'exception délibérée et inverse :
+    // demande explicite de VRAIS boutons colorés par palier, justement pour
+    // ne PAS les fondre dans un menu — voir utils/configPanel.js,
+    // buildConfigPanel (juste avant regrouperBoutonsEnMenu) et
+    // scripts/test-panel-role-tiers.js.
+    for (const section of SECTIONS.map((s) => s.key).filter((k) => k !== "roletiers")) {
       const restants = boutonsDe(section).filter((b) => b.custom_id);
       assert.deepStrictEqual(restants.map((b) => b.label), [], `${section} aligne encore des boutons`);
     }
