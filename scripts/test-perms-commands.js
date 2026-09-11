@@ -149,5 +149,31 @@ function fakeMessage(guildId) {
     assert.ok(!body.includes("Exclusives"), body);
   });
 
+  await cas("un rôle exclusif NOMMÉ (utils/rolePresets.js) a sa PROPRE section, pas noyé dans \"Exclusives\"", async () => {
+    permStore.setRoleExclusive("g2", "role-syndicat", true, "Syndicat");
+    const msg = fakeMessage("g2");
+    await helpall(null, msg);
+    const body = msg._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("Syndicat") && body.includes("(hors hiérarchie)"), body);
+    assert.ok(!body.includes("**Exclusives**"), "un rôle nommé ne doit pas atterrir dans le bloc générique");
+  });
+
+  await cas("un exclusif nommé et un exclusif sans nom coexistent, chacun dans sa propre section", async () => {
+    permStore.setRoleExclusive("g3", "role-syndicat", true, "Syndicat");
+    permStore.setRoleExclusive("g3", "role-anonyme", true);
+    const msg = fakeMessage("g3");
+    await helpall(null, msg);
+    const body = msg._replies[0].components[0].toJSON().components[2].content;
+    assert.ok(body.includes("Syndicat") && body.includes("<@&role-syndicat>"), body);
+    assert.ok(body.includes("**Exclusives**") && body.includes("<@&role-anonyme>"), body);
+  });
+
+  await cas("retirer l'exclusivité d'un rôle nommé retire aussi son étiquette", async () => {
+    permStore.setRoleExclusive("g4", "role-syndicat", true, "Syndicat");
+    assert.strictEqual(permStore.getExclusiveLabel("g4", "role-syndicat"), "Syndicat");
+    permStore.setRoleExclusive("g4", "role-syndicat", false);
+    assert.strictEqual(permStore.getExclusiveLabel("g4", "role-syndicat"), null);
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

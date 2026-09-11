@@ -86,11 +86,31 @@ function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
   }
   // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
   // store.js) : une simple étiquette, affichée à part des paliers numérotés
-  // puisqu'elle ne dépend pas des clés accordées.
+  // puisqu'elle ne dépend pas des clés accordées. Un rôle avec un NOM propre
+  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre ligne
+  // plutôt que d'être noyé dans un bloc "Exclusives" générique.
   const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
   if (exclusiveRoleIds.length) {
-    lines.push("**Exclusives**");
-    lines.push(`> ↳ ${exclusiveRoleIds.map((id) => `<@&${id}>`).join(", ")}`);
+    const parLabel = new Map();
+    const sansLabel = [];
+    for (const id of exclusiveRoleIds) {
+      const label = permStore.getExclusiveLabel(guildId, id);
+      if (label) {
+        if (!parLabel.has(label)) parLabel.set(label, []);
+        parLabel.get(label).push(id);
+      } else {
+        sansLabel.push(id);
+      }
+    }
+    for (const [label, ids] of parLabel) {
+      lines.push(`**${label}** *(hors hiérarchie)*`);
+      lines.push(`> ↳ ${ids.map((id) => `<@&${id}>`).join(", ")}`);
+      lines.push("");
+    }
+    if (sansLabel.length) {
+      lines.push("**Exclusives**");
+      lines.push(`> ↳ ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+    }
   }
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n").trim()));
   return { flags: MessageFlags.IsComponentsV2, components: [container] };

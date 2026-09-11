@@ -35,10 +35,11 @@ function save() {
 
 function guildData(guildId) {
   const data = load();
-  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [] };
+  if (!data[guildId]) data[guildId] = { roleGrants: {}, userGrants: {}, exclusiveRoles: [], exclusiveLabels: {} };
   if (!data[guildId].roleGrants) data[guildId].roleGrants = {};
   if (!data[guildId].userGrants) data[guildId].userGrants = {};
   if (!data[guildId].exclusiveRoles) data[guildId].exclusiveRoles = [];
+  if (!data[guildId].exclusiveLabels) data[guildId].exclusiveLabels = {};
   return data[guildId];
 }
 
@@ -99,16 +100,37 @@ function listUserGrants(guildId) {
 // seule permission précise) des rôles cumulés normalement.
 const isRoleExclusive = (guildId, roleId) => guildData(guildId).exclusiveRoles.includes(roleId);
 
-function setRoleExclusive(guildId, roleId, exclusive) {
+/**
+ * @param {string|null} [label] Nom affiché à part pour ce rôle exclusif (ex:
+ *   "Syndicat") au lieu du bloc générique "Exclusives" — voir
+ *   utils/permsCommands.js::buildTierCard. Retiré automatiquement si le rôle
+ *   redevient non-exclusif.
+ */
+function setRoleExclusive(guildId, roleId, exclusive, label = null) {
   const data = guildData(guildId);
   const has = data.exclusiveRoles.includes(roleId);
-  if (exclusive && !has) data.exclusiveRoles.push(roleId);
-  else if (!exclusive && has) data.exclusiveRoles = data.exclusiveRoles.filter((id) => id !== roleId);
-  else return;
-  save();
+  let changed = false;
+  if (exclusive && !has) {
+    data.exclusiveRoles.push(roleId);
+    changed = true;
+  } else if (!exclusive && has) {
+    data.exclusiveRoles = data.exclusiveRoles.filter((id) => id !== roleId);
+    changed = true;
+  }
+  if (!exclusive) {
+    if (data.exclusiveLabels[roleId]) {
+      delete data.exclusiveLabels[roleId];
+      changed = true;
+    }
+  } else if (label && data.exclusiveLabels[roleId] !== label) {
+    data.exclusiveLabels[roleId] = label;
+    changed = true;
+  }
+  if (changed) save();
 }
 
 const listExclusiveRoles = (guildId) => [...guildData(guildId).exclusiveRoles];
+const getExclusiveLabel = (guildId, roleId) => guildData(guildId).exclusiveLabels[roleId] || null;
 
 module.exports = {
   getRoleGrants,
@@ -122,4 +144,5 @@ module.exports = {
   isRoleExclusive,
   setRoleExclusive,
   listExclusiveRoles,
+  getExclusiveLabel,
 };

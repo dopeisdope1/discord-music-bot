@@ -504,8 +504,30 @@ function sectionBody(section, guild, member, state) {
       lines.push("");
     }
     if (exclusiveRoleIds.length) {
-      lines.push("**Exclusives**");
-      lines.push(`> **Rôles** : ${exclusiveRoleIds.map((id) => `<@&${id}>`).join(", ")}`);
+      // Un rôle avec un nom propre (posé par utils/rolePresets.js, ex:
+      // "Syndicat") a droit à sa propre ligne — même logique que
+      // utils/permsCommands.js::buildTierCard (&perms/&helpall), pour que
+      // les deux affichages se lisent pareil.
+      const parLabel = new Map();
+      const sansLabel = [];
+      for (const id of exclusiveRoleIds) {
+        const label = permStore.getExclusiveLabel(guildId, id);
+        if (label) {
+          if (!parLabel.has(label)) parLabel.set(label, []);
+          parLabel.get(label).push(id);
+        } else {
+          sansLabel.push(id);
+        }
+      }
+      for (const [label, ids] of parLabel) {
+        lines.push(`**${label}** *(hors hiérarchie)*`);
+        lines.push(`> **Rôles** : ${ids.map((id) => `<@&${id}>`).join(", ")}`);
+        lines.push("");
+      }
+      if (sansLabel.length) {
+        lines.push("**Exclusives**");
+        lines.push(`> **Rôles** : ${sansLabel.map((id) => `<@&${id}>`).join(", ")}`);
+      }
     }
     return lines.join("\n").trim();
   }

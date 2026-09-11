@@ -11,65 +11,102 @@ const permStore = require("./permissions/store");
 // discussion) + 3 rôles "hors hiérarchie" marqués EXCLUSIFS (jamais mélangés
 // à un palier numéroté, voir utils/permsCommands.js::computeTiers). Les
 // commandes demandées mais pas construites (absence, staff check, blrank/bl,
-// rank) ou publiques (snipe, pic, banner, server...) n'ajoutent aucune clé.
+// rank) ou publiques (snipe, pic, banner, server...) n'ajoutent aucune clé
+// PAR ELLES-MÊMES.
 //
-// Plusieurs paliers finissent avec le MÊME ensemble de clés une fois filtrés
-// des commandes inexistantes (7≈8, 9≈10) : ils s'afficheront donc regroupés
-// dans &perms/&helpall/la rubrique "Rôles (paliers)", même si les rôles
-// eux-mêmes restent bien créés séparément sous leur propre nom.
+// Demande explicite : 13 paliers VISUELLEMENT distincts dans &perms/&helpall/
+// "Rôles (paliers)", comme la référence fournie — jamais deux paliers groupés
+// ensemble. Les listes de commandes d'origine donnaient pourtant le MÊME
+// contenu réel à plusieurs paliers de suite (1≈2 vides, 7≈8≈9≈10) une fois
+// filtrées des commandes inexistantes ou publiques — et deux rôles aux clés
+// strictement identiques s'affichent TOUJOURS groupés, quel que soit leur nom,
+// ce système regroupant par permission réellement accordée, pas par étiquette.
+// Chaque palier concerné reçoit donc UNE clé supplémentaire choisie parmi les
+// permissions du catalogue pas encore utilisées ailleurs dans cette liste
+// (outils annexes, rôles automatiques, sondages, giveaways, mode lent) —
+// purement pour les séparer visuellement, sans rapport avec les commandes
+// d'origine. Cumulatif de bout en bout : chaque palier garde TOUTES les clés
+// du précédent, plus au moins une nouvelle (garanti par un test dédié, voir
+// scripts/test-role-presets.js).
 const TIERS = [
-  { names: ["Perm I"], keys: [] },
-  { names: ["Perm II"], keys: [] },
-  { names: ["Perm III"], keys: ["server.info.view"] },
-  { names: ["Perm IV"], keys: ["server.info.view", "server.members.list"] },
-  { names: ["Perm V", "🎤"], keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout"] },
+  { names: ["Perm I"], keys: ["server.tools.use"] },
+  { names: ["Perm II"], keys: ["server.tools.use", "channels.slowmode"] },
+  { names: ["Perm III"], keys: ["server.tools.use", "channels.slowmode", "server.info.view"] },
+  { names: ["Perm IV"], keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list"] },
+  {
+    names: ["Perm V", "🎤"],
+    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout"],
+  },
   {
     names: ["(GAP/GS)", "✗", "🚩"],
-    keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick", "server.voice.manage"],
+    keys: [
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage",
+    ],
   },
   {
     names: ["Célestial", "🐋", "🦅"],
-    keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick", "server.voice.manage", "server.stats.view"],
+    keys: [
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view",
+    ],
   },
   {
     names: ["🎗️", "🌹", "🦋"],
-    keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick", "server.voice.manage", "server.stats.view"],
+    keys: [
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage",
+    ],
   },
   {
     names: ["Kina", "⛪", "🎣"],
-    keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick", "server.voice.manage", "server.stats.view"],
+    keys: [
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+    ],
   },
   {
     names: ["Crown", "Top"],
-    keys: ["server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick", "server.voice.manage", "server.stats.view"],
+    keys: [
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage",
+    ],
   },
   {
     names: ["Ordre", "Maître", "BOT=BOT"],
     keys: [
-      "server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick",
-      "server.voice.manage", "server.stats.view", "moderation.ban", "moderation.unban",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "moderation.ban", "moderation.unban",
     ],
   },
   {
     names: ["—", "=", "≡", "♂"],
     keys: [
-      "server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick",
-      "server.voice.manage", "server.stats.view", "moderation.ban", "moderation.unban", "moderation.clear",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
     ],
   },
   {
     names: ["者", "Couronne", "SECURE"],
     keys: [
-      "server.info.view", "server.members.list", "logs.view", "moderation.timeout", "members.role", "members.nick",
-      "server.voice.manage", "server.stats.view", "moderation.ban", "moderation.unban", "moderation.clear",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
+      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
       "moderation.warn", "logs.manage", "server.channels.manage", "channels.manage", "channels.lock", "server.voice.moveall",
     ],
   },
 ];
 
+// "Hors hiérarchie" : chacun garde son propre NOM affiché (au lieu d'un bloc
+// "Exclusives" générique) — voir utils/permissions/store.js::setRoleExclusive
+// et utils/permsCommands.js::buildTierCard.
 const EXCLUSIVE = [
   {
     name: "♂",
+    label: "Syndicat",
     keys: [
       "members.role", "moderation.warn", "logs.manage", "moderation.ban", "moderation.unban",
       "server.members.list", "moderation.timeout", "server.voice.manage", "members.nick", "logs.view",
@@ -78,12 +115,13 @@ const EXCLUSIVE = [
   },
   {
     name: "🏅",
+    label: "Gérant gestion",
     keys: [
       "members.role", "moderation.ban", "moderation.unban", "moderation.clear", "server.members.list",
       "server.voice.manage", "members.nick", "server.info.view", "server.stats.view",
     ],
   },
-  { name: "(GAP/GS)", keys: ["members.role"] },
+  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"] },
 ];
 
 const TOTAL_ROLES = TIERS.reduce((n, t) => n + t.names.length, 0) + EXCLUSIVE.length;
@@ -121,7 +159,7 @@ async function createPresetRoles(client, message) {
         const role = await guild.roles.create({ name: entry.name, reason: `Rôle hors hiérarchie créé par ${interaction.user.tag}` }).catch(() => null);
         if (!role) continue;
         permStore.setRoleGrants(guild.id, role.id, entry.keys);
-        permStore.setRoleExclusive(guild.id, role.id, true);
+        permStore.setRoleExclusive(guild.id, role.id, true, entry.label);
         created++;
       }
 

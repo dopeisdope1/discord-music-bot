@@ -110,15 +110,17 @@ function extractConfirmToken(reply) {
     const parNom = new Map([...guild.roles.cache.values()].map((r) => [r.name, r]));
     assert.ok(parNom.has("Perm I") && parNom.has("SECURE") && parNom.has("Couronne"));
 
-    // Palier 3 ("Perm III") a une seule clé accordée.
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", parNom.get("Perm III").id), ["server.info.view"]);
-    // Palier 1 ("Perm I") n'a RIEN à accorder (snipe/absence).
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", parNom.get("Perm I").id), []);
+    // Palier 3 ("Perm III") a exactement les clés attendues pour ce palier.
+    assert.deepStrictEqual(permStore.getRoleGrants("g1", parNom.get("Perm III").id).sort(), [...TIERS[2].keys].sort());
+    // Palier 1 ("Perm I") a AU MOINS une clé (snipe/absence n'en donnent
+    // aucune, mais le palier doit quand même exister dans &perms/&helpall).
+    assert.ok(permStore.getRoleGrants("g1", parNom.get("Perm I").id).length > 0);
 
-    // Les 3 "hors hiérarchie" sont marqués EXCLUSIFS.
+    // Les 3 "hors hiérarchie" sont marqués EXCLUSIFS, avec leur propre nom.
     const gerant = [...guild.roles.cache.values()].find((r) => r.name === "🏅");
     assert.ok(gerant, "le rôle \"Gérant gestion\" (🏅) doit exister");
     assert.strictEqual(permStore.isRoleExclusive("g1", gerant.id), true);
+    assert.strictEqual(permStore.getExclusiveLabel("g1", gerant.id), "Gérant gestion");
     assert.ok(permStore.getRoleGrants("g1", gerant.id).includes("moderation.ban"));
 
     // Le rôle géré du bot ("PROTECT") reçoit les mêmes clés que le palier 13
@@ -128,6 +130,12 @@ function extractConfirmToken(reply) {
       permStore.getRoleGrants("g1", "role-bot-protect").sort(),
       [...TIERS[TIERS.length - 1].keys].sort()
     );
+  });
+
+  await cas("les 13 paliers ont des ensembles de clés TOUS DIFFÉRENTS (aucun ne se retrouve fondu avec un autre dans &perms)", () => {
+    const signatures = TIERS.map((t) => [...t.keys].sort().join("|"));
+    const doublons = signatures.filter((sig, i) => signatures.indexOf(sig) !== i);
+    assert.deepStrictEqual(doublons, [], `des paliers partagent exactement les mêmes clés : ${doublons.join(", ")}`);
   });
 
   await cas("chaque palier a TOUTES les clés du précédent, plus au moins une nouvelle (logique cumulative)", () => {
