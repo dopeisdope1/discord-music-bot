@@ -1,6 +1,7 @@
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const autoroleStore = require("./autoroleStore");
+const roleLimitStore = require("./roleLimitStore");
 
 const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
 
@@ -45,7 +46,15 @@ const autoroleHandlers = {
 async function applyAutoroles(member) {
   const roleIds = autoroleStore.getRoleIds(member.guild.id);
   if (!roleIds.length) return;
-  const valid = roleIds.filter((id) => member.guild.roles.cache.has(id));
+  // &limitrole (utils/roleLimitStore.js) : un rôle plein n'est pas distribué
+  // automatiquement à l'arrivée — pas d'erreur, juste omis en silence,
+  // comme les rôles supprimés entre-temps (filtre juste au-dessus).
+  const valid = roleIds
+    .filter((id) => member.guild.roles.cache.has(id))
+    .filter((id) => {
+      const limite = roleLimitStore.getLimit(member.guild.id, id);
+      return limite == null || member.guild.roles.cache.get(id).members.size < limite;
+    });
   if (!valid.length) return;
   await member.roles.add(valid, "Rôle(s) automatique(s) à l'arrivée").catch((err) => {
     console.error("[autorole] échec d'attribution :", err.message);

@@ -5,8 +5,10 @@ const readOnlyLists = require("./readOnlyLists");
 const { moderationHandlers } = require("./moderationCommands");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
+const accessStore = require("./accessStore");
 const { commandsForKeys } = require("./permsCommands");
 const { getPrefixes } = require("./prefixStore");
+const absenceStore = require("./absenceStore");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
 const statsStore = require("./statsStore");
@@ -341,6 +343,63 @@ const handlers = {
     }
 
     await reply(message, "info", lines.join("\n"), { title: "Informations rôle" });
+  },
+
+  /**
+   * &absence set/reset — self-service, comme `uo clear` : n'importe qui se
+   * déclare absent (raison facultative), sans permission particulière. Sert
+   * juste à prévenir le reste du staff, aucun effet sur les droits du bot.
+   */
+  async absence(client, message, args) {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "set") {
+      const raison = args.slice(1).join(" ").trim() || null;
+      absenceStore.setAbsent(message.guild.id, message.author.id, raison);
+      return reply(message, "success", raison ? `Tu es marqué absent : ${raison}` : "Tu es marqué absent.");
+    }
+    if (sub === "reset") {
+      const leve = absenceStore.clearAbsent(message.guild.id, message.author.id);
+      return reply(message, leve ? "success" : "info", leve ? "Absence levée." : "Tu n'étais pas marqué absent.");
+    }
+    return reply(message, "error", "Utilise `absence set [raison]` ou `absence reset`.");
+  },
+
+  /**
+   * &staff check [@membre] — ce qu'un membre a RÉELLEMENT comme droits sur ce
+   * serveur (rang bot, clés accordées par ses rôles + individuellement, et
+   * les commandes que ça débloque) — un "qui a le droit de quoi", pour
+   * vérifier sans avoir à recouper &perms/&helpall à la main.
+   */
+  async staffCheck(client, message, args) {
+    if (!can(message.member, "server.info.view")) return;
+    const target = message.mentions.members?.first() || message.member;
+    const guildId = message.guild.id;
+
+    if (accessStore.isOwner(target.id)) {
+      return reply(message, "info", `**${target.user.tag}** est **propriétaire du bot** — accès total, sur tous les serveurs.`);
+    }
+    if (accessStore.isSys(target.id)) {
+      return reply(message, "info", `**${target.user.tag}** a le **rang sys** — accès total sur ce serveur (sauf distribuer le rang sys lui-même).`);
+    }
+
+    const keys = new Set(permStore.getUserGrants(guildId, target.id));
+    for (const roleId of target.roles.cache.keys()) {
+      for (const k of permStore.getRoleGrants(guildId, roleId)) keys.add(k);
+    }
+    if (!keys.size) return reply(message, "info", `**${target.user.tag}** n'a aucune permission particulière accordée sur ce serveur.`);
+
+    const commands = commandsForKeys([...keys]);
+    const prefixe = getPrefixes(guildId).musicMod;
+    const lines = [`**Membre** : ${target.user.tag} (${target.id})`, "", `**Commandes débloquées (${commands.length})** :`];
+    if (!commands.length) {
+      lines.push("*aucune*");
+    } else {
+      const MAX = 20;
+      lines.push(commands.slice(0, MAX).map((c) => `\`${prefixe}${c}\``).join(", "));
+      const reste = commands.length - MAX;
+      if (reste > 0) lines.push(`+${reste} autre(s) — voir \`&panel\` > Rôles et permissions`);
+    }
+    await reply(message, "info", lines.join("\n"), { title: "Vérification staff" });
   },
 
   /** &channel [#salon|id] — fiche d'info d'un salon (distinct de `channel create/delete/...`, réservé à server.channels.manage). */

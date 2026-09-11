@@ -403,6 +403,11 @@ const modHandlers = {
   },
   addrole: moderationHandlers.addrole,
   delrole: moderationHandlers.delrole,
+  limitrole: serverAdmin.limitRole,
+  absence: utilityHandlers.absence,
+  staff: (client, message, args) => {
+    if ((args[0] || "").toLowerCase() === "check") return utilityHandlers.staffCheck(client, message, args.slice(1));
+  },
   modlogs: moderationHandlers.modlogs,
   // "clear sanctions"/"clear all sanctions" gèrent l'historique d'un membre
   // (utils/moderationExtra.js) ; tout le reste (y compris un mot-clé non
@@ -800,6 +805,8 @@ async function handleMusicTextCommand(client, message) {
 const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
+  staff: ["check"],
+  absence: ["set", "reset"],
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],
   backup: ["list", "delete", "load"],

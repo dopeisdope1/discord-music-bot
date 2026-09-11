@@ -642,6 +642,12 @@ const CATEGORIES = [
         permission: "members.role",
         description: "Retire un rôle à un membre",
       },
+      {
+        name: "limitrole @rôle <nombre|off>",
+        prefix: "mod",
+        permission: "server.roles.manage",
+        description: "Plafonne le nombre de membres pouvant avoir ce rôle (sans argument : affiche la limite actuelle)",
+      },
       { name: "role create <nom>", prefix: "mod", permission: "server.roles.manage", description: "Crée un nouveau rôle" },
       {
         name: "role delete @rôle",
@@ -1137,6 +1143,12 @@ const CATEGORIES = [
       },
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
       {
+        name: "staff check [@membre]",
+        prefix: "mod",
+        permission: "server.info.view",
+        description: "Affiche les droits réels d'un membre (rang, permissions accordées, commandes débloquées)",
+      },
+      {
         name: "vc",
         prefix: "mod",
         permission: "server.stats.view",
@@ -1251,6 +1263,13 @@ const CATEGORIES = [
       },
       { name: "reminder [nombre]", prefix: "mod", permission: null, description: "Programme un rappel" },
       { name: "reminder list", prefix: "mod", permission: null, description: "Liste tes rappels programmés" },
+      {
+        name: "absence set [raison]",
+        prefix: "mod",
+        permission: null,
+        description: "Te déclare absent (raison facultative), pour prévenir le reste du staff",
+      },
+      { name: "absence reset", prefix: "mod", permission: null, description: "Lève ton absence" },
       {
         name: "show pics",
         prefix: "mod",

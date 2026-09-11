@@ -29,6 +29,7 @@ const deroStore = require("./deroStore");
 const voiceChannels = require("./voiceChannels");
 const { checkBotPermission, report } = require("./moderation/actions");
 const { parseDuration } = require("./moderationCommands");
+const roleLimitStore = require("./roleLimitStore");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -424,6 +425,43 @@ async function roleAdmin(client, message, args) {
       },
     });
   }
+}
+
+/**
+ * &limitrole <rôle> [nombre] — plafonne le nombre de membres pouvant avoir un
+ * rôle (rôle "prestige", places limitées). Sans nombre, affiche le plafond
+ * actuel ; `off` le retire. Garde-fou côté bot uniquement (utils/
+ * roleLimitStore.js), vérifié par &addrole et &autorole — pas une règle
+ * Discord native, donc sans effet sur les membres qui l'ont déjà.
+ */
+async function limitRole(client, message, args) {
+  if (!can(message.member, "server.roles.manage")) return;
+  const role = message.mentions.roles?.first() || (args[0] && message.guild.roles.cache.get(args[0].replace(/\D/g, "")));
+  if (!role) return reply(message, "error", "Indique un rôle (mention ou ID) : `limitrole @rôle <nombre>`.");
+
+  const valeur = args.find((a) => a !== role.toString() && a !== role.id);
+  if (!valeur) {
+    const limite = roleLimitStore.getLimit(message.guild.id, role.id);
+    return reply(
+      message,
+      "info",
+      limite == null
+        ? `Aucune limite sur **${role.name}** (${role.members.size} membre(s) actuellement).`
+        : `**${role.name}** est limité à **${limite}** membre(s) — ${role.members.size}/${limite} actuellement.`
+    );
+  }
+  if (valeur.toLowerCase() === "off") {
+    roleLimitStore.clearLimit(message.guild.id, role.id);
+    return reply(message, "success", `Limite retirée sur **${role.name}**.`);
+  }
+  const nombre = parseInt(valeur, 10);
+  if (!Number.isInteger(nombre) || nombre < 1) return reply(message, "error", "Indique un nombre entier positif, ou `off` pour retirer la limite.");
+  roleLimitStore.setLimit(message.guild.id, role.id, nombre);
+  return reply(
+    message,
+    "success",
+    `**${role.name}** limité à **${nombre}** membre(s) (${role.members.size}/${nombre} actuellement — les membres déjà présents ne sont pas retirés).`
+  );
 }
 
 // --- &channel create/delete/rename/topic ---
@@ -1023,6 +1061,7 @@ module.exports = {
   allbots,
   handleServerAdminInteraction,
   roleAdmin,
+  limitRole,
   channelAdmin,
   dero,
   applyDeroToNewChannel,

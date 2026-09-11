@@ -6,6 +6,7 @@ const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { deleteMessages } = require("./deleteMessages");
 const historyStore = require("./moderationHistoryStore");
+const roleLimitStore = require("./roleLimitStore");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -120,6 +121,15 @@ async function roleMembership(client, message, args, sub) {
   const already = mentionedMember.roles.cache.has(mentionedRole.id);
   if (sub === "add" && already) return reply(message, "info", `${mentionedMember.user.tag} a déjà ce rôle.`);
   if (sub === "remove" && !already) return reply(message, "info", `${mentionedMember.user.tag} n'a pas ce rôle.`);
+
+  // &limitrole : place limitée sur ce rôle (utils/roleLimitStore.js) — un
+  // garde-fou côté bot, pas une règle Discord native.
+  if (sub === "add") {
+    const limite = roleLimitStore.getLimit(message.guild.id, mentionedRole.id);
+    if (limite != null && mentionedRole.members.size >= limite) {
+      return reply(message, "error", `Le rôle **${mentionedRole.name}** est déjà plein (${limite} membre(s) maximum, voir \`&limitrole\`).`);
+    }
+  }
 
   try {
     if (sub === "add") await mentionedMember.roles.add(mentionedRole, `Rôle ajouté par ${message.author.tag}`);
