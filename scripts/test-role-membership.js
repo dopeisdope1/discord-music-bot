@@ -149,6 +149,23 @@ async function cas(nom, fn) {
     assert.strictEqual(soi.roles._added, roleObj.id, JSON.stringify(msg._replies));
   });
 
+  await cas("ajouter un rôle AU BOT lui-même est autorisé — botAndRankRefusal vise kick/ban, pas addrole", async () => {
+    // Même bug que le précédent, mais la cible est le bot cette fois :
+    // "&addrole @bot" répondait "Je ne peux pas agir sur moi-même."
+    const { guild, roleObj } = makeGuild();
+    const botMember = guild.members.me;
+    botMember.id = "bot-1";
+    botMember.user = { tag: "bot#0000" };
+    botMember.roles.cache = new Collection();
+    botMember.roles.add = async function (r) {
+      this._added = r.id;
+    };
+    guild.members.fetch = async (id) => (id === "bot-1" ? botMember : null);
+    const msg = makeMessage(guild, { mentionedMember: botMember });
+    await moderationHandlers.addrole(null, msg, [ROLE_ID]);
+    assert.strictEqual(botMember.roles._added, roleObj.id, JSON.stringify(msg._replies));
+  });
+
   console.log("\n&role ... — mention OU ID :");
 
   await cas("role rename avec un ID brut au lieu d'une mention", async () => {

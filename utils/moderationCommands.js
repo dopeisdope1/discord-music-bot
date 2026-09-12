@@ -102,11 +102,14 @@ async function roleMembership(client, message, args, sub) {
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");
   if (botPerm) return reply(message, "error", botPerm);
 
-  // Pas de checkHierarchy quand on se cible SOI-MÊME : son blocage "Tu ne
-  // peux pas agir sur toi-même" vise kick/ban/timeout (une action qui NUIT
-  // à la cible), pas s'ajouter/se retirer un rôle à soi-même — bénin, et
-  // déjà couvert par la hiérarchie sur le RÔLE lui-même juste en dessous.
-  const refusal = mentionedMember.id === message.member.id ? null : checkHierarchy(message.guild, message.member, mentionedMember);
+  // Pas de checkHierarchy quand la cible est SOI-MÊME ou LE BOT : ces
+  // blocages ("Tu/Je ne peux pas agir sur toi/moi-même") visent kick/ban/
+  // timeout (une action qui NUIT à la cible), pas ajouter/retirer un rôle —
+  // bénin, et déjà couvert par la hiérarchie sur le RÔLE lui-même juste en
+  // dessous (donner un rôle au bot au-delà de sa propre position reste
+  // impossible de toute façon, Discord le refuserait).
+  const ciblePasSoumiseAHierarchie = mentionedMember.id === message.member.id || mentionedMember.id === message.guild.members.me.id;
+  const refusal = ciblePasSoumiseAHierarchie ? null : checkHierarchy(message.guild, message.member, mentionedMember);
   if (refusal) return reply(message, "error", refusal);
 
   // Hiérarchie sur le RÔLE lui-même, distincte de la hiérarchie sur la
