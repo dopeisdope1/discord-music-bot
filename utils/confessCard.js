@@ -6,15 +6,17 @@ const { AttachmentBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = requ
 // « 8 » barré (voir le commentaire détaillé dans dashboardImage.js).
 const { ecrire, largeur } = require("./dashboardImage");
 
-// La carte visuelle des confessions (utils/confessions.js) : demande
+// Les cartes visuelles des confessions (utils/confessions.js) : demande
 // explicite, capture à l'appui, de reproduire le langage d'une carte
-// d'application moderne (grands coins arrondis, dégradé, gros texte blanc
-// centré) — PAS un embed Discord classique avec une barre colorée sur le
-// côté. Une seule fonction de dessin, réutilisée pour la carte d'accroche
-// ("Confesse-toi") ET pour chaque confession publiée : même gabarit, seul le
-// texte change, exactement comme sur la référence fournie (la carte
-// "envoie-moi des messages anonymes !" et les cartes de confession
-// partagent un seul et même modèle visuel).
+// d'application moderne — PAS un embed Discord classique avec une barre
+// colorée sur le côté. Deux gabarits, selon la référence fournie :
+//  - dessinerCarte : UN bloc dégradé, gros texte blanc — sert à la carte
+//    d'accroche ("Confesse-toi").
+//  - dessinerCarteConfession : DEUX zones empilées (bande dégradée avec un
+//    texte fixe en haut, fond blanc avec le message en noir en bas) —
+//    sert à chaque confession publiée, exactement comme sur la seconde
+//    référence fournie ("envoie-moi des messages anonymes !" en haut,
+//    "Baisons eren les amis" en bas).
 
 const LARGEUR = 900;
 const RAYON = 48;
@@ -79,10 +81,31 @@ function ajusterTexte(ctx, texte, { largeurMax, hauteurMax, police, tailleMax, t
   return { lignes, interligne };
 }
 
+/** Dessine du texte centré (horizontalement ET verticalement) dans une zone rectangulaire — partagé par les deux gabarits de carte. */
+function dessinerTexteZone(ctx, texte, { x, y, largeurZone, hauteurZone, couleur, police, tailleMax, tailleMin, margeH = 90, margeV = 50 }) {
+  const texteAffiche = retirerEmoji(texte) || "…";
+  const { lignes, interligne } = ajusterTexte(ctx, texteAffiche, {
+    largeurMax: largeurZone - margeH * 2,
+    hauteurMax: hauteurZone - margeV * 2,
+    police,
+    tailleMax,
+    tailleMin,
+  });
+
+  ctx.fillStyle = couleur;
+  ctx.textAlign = "left"; // le centrage se calcule à la main : voir dashboardImage.js::ecrire, qui exige un dessin gauche->droite pour son détour "&"
+  ctx.textBaseline = "middle";
+  const centreX = x + largeurZone / 2;
+  const depart = y + hauteurZone / 2 - ((lignes.length - 1) * interligne) / 2;
+  lignes.forEach((ligne, i) => {
+    const lx = centreX - largeur(ctx, ligne) / 2;
+    ecrire(ctx, ligne, lx, depart + i * interligne);
+  });
+}
+
 /**
- * Dessine LA carte : rectangle aux grands coins arrondis, dégradé
- * rose -> orange, voile radial pour donner du relief, gros texte blanc
- * centré qui s'adapte à la longueur du message.
+ * Carte à UN bloc : dégradé rose -> orange sur toute la surface, gros texte
+ * blanc centré — sert à la carte d'accroche ("Confesse-toi").
  * @returns {Buffer} PNG
  */
 function dessinerCarte(texte, { hauteur = 380 } = {}) {
@@ -106,23 +129,66 @@ function dessinerCarte(texte, { hauteur = 380 } = {}) {
   ctx.fillRect(0, 0, LARGEUR, hauteur);
   ctx.restore();
 
-  const marge = 90;
-  const texteAffiche = retirerEmoji(texte) || "…";
-  const { lignes, interligne } = ajusterTexte(ctx, texteAffiche, {
-    largeurMax: LARGEUR - marge * 2,
-    hauteurMax: hauteur - 100,
-    police: "ChakraBold",
-    tailleMax: 60,
-    tailleMin: 26,
-  });
+  dessinerTexteZone(ctx, texte, { x: 0, y: 0, largeurZone: LARGEUR, hauteurZone: hauteur, couleur: "#ffffff", police: "ChakraBold", tailleMax: 60, tailleMin: 26 });
+
+  return canvas.toBuffer("image/png");
+}
+
+// "Envoie-moi ton message anonyme !" occupe toujours la bande du haut — texte
+// FIXE (ce n'est pas la confession elle-même), dans le même esprit que la
+// référence fournie.
+const ENTETE_CONFESSION = "Envoie-moi ton message anonyme !";
+const RATIO_ENTETE = 0.4;
+
+/**
+ * Carte à DEUX zones empilées, exactement comme la seconde référence
+ * fournie : une bande dégradée en haut avec un texte fixe, et une zone
+ * blanche en bas avec le message de la confession en noir.
+ * @returns {Buffer} PNG
+ */
+function dessinerCarteConfession(texte, { hauteur = 420 } = {}) {
+  const canvas = createCanvas(LARGEUR, hauteur);
+  const ctx = canvas.getContext("2d");
+  const hauteurEntete = Math.round(hauteur * RATIO_ENTETE);
+  const hauteurCorps = hauteur - hauteurEntete;
+
+  cheminArrondi(ctx, 0, 0, LARGEUR, hauteur, RAYON);
+  ctx.save();
+  ctx.clip();
+
+  const degrade = ctx.createLinearGradient(0, 0, LARGEUR, hauteurEntete);
+  degrade.addColorStop(0, "#ec4899");
+  degrade.addColorStop(1, "#f97316");
+  ctx.fillStyle = degrade;
+  ctx.fillRect(0, 0, LARGEUR, hauteurEntete);
 
   ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "left"; // le centrage se calcule à la main : voir dashboardImage.js::ecrire, qui exige un dessin gauche->droite pour son détour "&"
-  ctx.textBaseline = "middle";
-  const depart = hauteur / 2 - ((lignes.length - 1) * interligne) / 2;
-  lignes.forEach((ligne, i) => {
-    const x = LARGEUR / 2 - largeur(ctx, ligne) / 2;
-    ecrire(ctx, ligne, x, depart + i * interligne);
+  ctx.fillRect(0, hauteurEntete, LARGEUR, hauteurCorps);
+  ctx.restore();
+
+  dessinerTexteZone(ctx, ENTETE_CONFESSION, {
+    x: 0,
+    y: 0,
+    largeurZone: LARGEUR,
+    hauteurZone: hauteurEntete,
+    couleur: "#ffffff",
+    police: "ChakraBold",
+    tailleMax: 44,
+    tailleMin: 24,
+    margeH: 70,
+    margeV: 20,
+  });
+  dessinerTexteZone(ctx, texte, {
+    x: 0,
+    y: hauteurEntete,
+    largeurZone: LARGEUR,
+    hauteurZone: hauteurCorps,
+    couleur: "#161616",
+    police: "ChakraBold",
+    tailleMax: 50,
+    tailleMin: 24,
+    margeH: 70,
+    margeV: 30,
   });
 
   return canvas.toBuffer("image/png");
@@ -131,16 +197,27 @@ function dessinerCarte(texte, { hauteur = 380 } = {}) {
 let compteurImages = 0;
 
 /**
+ * @param {(texte: string, opts: object) => Buffer} dessiner laquelle des deux fonctions ci-dessus utiliser
  * @returns {{ fichier: AttachmentBuilder, galerie: MediaGalleryBuilder }} prêts
  *   à être ajoutés à un ContainerBuilder (addMediaGalleryComponents) et au
  *   payload d'envoi (`files: [fichier]`).
  */
-function buildCarteVisuelle(texte, { hauteur, texteAlternatif } = {}) {
-  const buffer = dessinerCarte(texte, { hauteur });
+function carteEnComposants(dessiner, texte, { hauteur, texteAlternatif } = {}) {
+  const buffer = dessiner(texte, { hauteur });
   const nom = `confess-${++compteurImages}.png`;
   const fichier = new AttachmentBuilder(buffer, { name: nom, description: (texteAlternatif || texte).slice(0, 1024) });
   const galerie = new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${nom}`));
   return { fichier, galerie };
 }
 
-module.exports = { dessinerCarte, buildCarteVisuelle, retirerEmoji, LARGEUR };
+const buildCarteVisuelle = (texte, opts) => carteEnComposants(dessinerCarte, texte, opts);
+const buildCarteVisuelleConfession = (texte, opts) => carteEnComposants(dessinerCarteConfession, texte, opts);
+
+module.exports = {
+  dessinerCarte,
+  dessinerCarteConfession,
+  buildCarteVisuelle,
+  buildCarteVisuelleConfession,
+  retirerEmoji,
+  LARGEUR,
+};

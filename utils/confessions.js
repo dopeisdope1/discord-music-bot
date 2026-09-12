@@ -15,7 +15,7 @@ const {
 const { getPrefixes } = require("./prefixStore");
 const confessStore = require("./confessStore");
 const { can } = require("./permissions/engine");
-const { buildCarteVisuelle } = require("./confessCard");
+const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessCard");
 
 // !!confess — confessions anonymes, reproduisant le déroulé montré en
 // capture par l'utilisateur (carte "Confesse-toi", bouton "Je souhaite
@@ -115,7 +115,7 @@ async function publierConfession(guild, salon, donnees) {
   const genreLabel = donnees.genre === "fille" ? "🙋‍♀️ Une fille" : "🙋‍♂️ Un garçon";
   const legende = donnees.anonyme ? `${genreLabel} anonyme` : `${genreLabel} — ${donnees.authorTag}`;
 
-  const { fichier, galerie } = buildCarteVisuelle(donnees.texte, { hauteur: 380 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 420 });
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**💌 Confession #${numero}**`));
   container.addMediaGalleryComponents(galerie);
