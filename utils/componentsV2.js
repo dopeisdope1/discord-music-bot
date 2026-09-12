@@ -68,7 +68,20 @@ function estV2(payload) {
  * @returns {object} payload en Components V2
  */
 function enConteneurV2(payload) {
-  if (!payload || estV2(payload)) return payload;
+  if (!payload) return payload;
+  if (estV2(payload)) {
+    // Un payload déjà en V2 ne devrait plus porter `content`/`embeds` — mais
+    // un appelant en amont (spread d'un ancien payload classique sur une carte
+    // V2, par exemple) peut en laisser traîner un malgré tout. Les VIDER
+    // plutôt que renvoyer tel quel : sinon Discord refuse tout le message
+    // (content[MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2]), observé
+    // en production via utils/fakeMessage.js.
+    if (payload.content === undefined && payload.embeds === undefined) return payload;
+    const nettoye = { ...payload };
+    delete nettoye.content;
+    delete nettoye.embeds;
+    return nettoye;
+  }
 
   const contenu = typeof payload.content === "string" ? payload.content.trim() : "";
   const embeds = payload.embeds || [];

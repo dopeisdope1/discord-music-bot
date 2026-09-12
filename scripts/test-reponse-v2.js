@@ -112,6 +112,16 @@ cas("un payload DÉJÀ en Components V2 ressort inchangé", () => {
   assert.ok(estV2(v2));
 });
 
+cas("un payload DÉJÀ en V2 mais avec un `content` qui traîne (spread d'un ancien payload) se fait nettoyer", () => {
+  // Bug réel rencontré en production (utils/fakeMessage.js) : la coupure
+  // rapide "déjà en V2 -> rien à faire" laissait passer un `content` oublié
+  // par un appelant en amont, et Discord refusait tout le message.
+  const traine = { flags: MessageFlags.IsComponentsV2, components: [], content: "" };
+  const converti = enConteneurV2(traine);
+  assert.strictEqual(converti.content, undefined, "le `content` qui traîne doit disparaître");
+  assert.notStrictEqual(converti, traine, "une copie nettoyée, pas l'original muté");
+});
+
 cas("un payload sans texte, sans embed et sans fichier ressort inchangé", () => {
   const rien = { components: [] };
   assert.strictEqual(enConteneurV2(rien), rien);
