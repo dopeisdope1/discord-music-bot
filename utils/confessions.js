@@ -100,16 +100,15 @@ function buildValidationCard(id, donnees) {
  * l'accroche (utils/confessCard.js) : le message DEVIENT le gros texte du
  * bas de la carte, exactement comme sur la référence fournie ("Baisons eren
  * les amis"). Ni cadre gris ni réaction automatique — voir l'en-tête du
- * fichier.
+ * fichier. Pas de légende sous l'image non plus (demande explicite) : le
+ * choix anonyme/pseudo ne sert donc plus qu'à la carte de validation, côté
+ * staff — la publication publique, elle, ne montre jamais l'auteur.
  */
 async function publierConfession(guild, salon, donnees) {
-  const legende = donnees.anonyme ? "Anonyme" : donnees.authorTag;
-
   const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 420 });
-  const pied = new TextDisplayBuilder().setContent(legende);
 
   const envoye = await salon
-    .send({ flags: MessageFlags.IsComponentsV2, components: [galerie, pied], files: [fichier] })
+    .send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] })
     .catch(() => null);
   if (!envoye) return null;
 

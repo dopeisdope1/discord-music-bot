@@ -278,12 +278,11 @@ function customIdDuBouton(envoi, label) {
     const parties = partiesJSON(payload);
     assert.ok(!parties.some((c) => c.type === 17), "aucun ContainerBuilder — pas de cadre gris");
     assert.ok(!parties.some((c) => c.content?.includes("Confession #")), "plus de titre numéroté");
-    const legendes = parties.filter((c) => c.type === 10).map((c) => c.content);
-    assert.ok(legendes.some((t) => t === "Anonyme"), legendes.join(" | "));
+    assert.ok(!parties.some((c) => c.type === 10), "plus de légende du tout sous l'image (demande explicite)");
     assert.strictEqual(publicChan._envois[0].msg.react, undefined, "aucune réaction ne doit être posée automatiquement");
   });
 
-  await cas("choisir de ne PAS rester anonyme affiche le pseudo dans la légende", async () => {
+  await cas("choisir de ne PAS rester anonyme n'affiche quand même RIEN publiquement (plus de légende)", async () => {
     const env = makeEnv("g-flow-7");
     const publicChan = fakeChannel("chan-flow-7");
     confessStore.setChannel("g-flow-7", publicChan.id);
@@ -293,8 +292,8 @@ function customIdDuBouton(envoi, label) {
     await handleConfessInteraction(fakeModalSubmit(env, "u-flow-7", "message assumé"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:non", userId: "u-flow-7" }));
 
-    const legendes = partiesJSON(publicChan._envois[0].payload).filter((c) => c.type === 10).map((c) => c.content);
-    assert.ok(legendes.some((t) => t.includes("u-flow-7#0001")), legendes.join(" | "));
+    const parties = partiesJSON(publicChan._envois[0].payload);
+    assert.ok(!parties.some((c) => c.type === 10), "aucune légende, même en pseudo — la publication publique reste muette sur l'auteur");
   });
 
   await cas("choisir anonyme/non SANS avoir soumis de message avant est refusé", async () => {
@@ -328,6 +327,12 @@ function customIdDuBouton(envoi, label) {
 
     const labels = validChan._envois[0].payload.components[0].components.map((b) => b.data?.label || b.label);
     assert.deepStrictEqual(labels, ["Approuver", "Refuser"]);
+
+    // Le choix anonyme/pseudo ne sert plus qu'ici : la carte de validation,
+    // réservée au staff — la publication publique, elle, ne montre jamais
+    // l'auteur (voir les cas ci-dessus).
+    const embedValidation = validChan._envois[0].payload.embeds[0].toJSON();
+    assert.ok(embedValidation.fields.some((f) => f.name === "Auteur" && f.value.includes("u-val-1")), JSON.stringify(embedValidation.fields));
   });
 
   await cas("Approuver publie ENFIN la confession et prévient l'auteur par MP", async () => {
