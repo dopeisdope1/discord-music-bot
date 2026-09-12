@@ -3,15 +3,15 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Confessions anonymes ("!!confess", voir utils/confessions.js).
-// { [guildId]: { channelId: string|null, setupAuthorId: string|null,
+// { [guildId]: { channelId: string|null,
 //                pending: {id, texte, anonyme, authorId, authorTag}[],
 //                nextId: number } }
 //
-// `setupAuthorId` : la personne qui a lancé "!!confess setup" — SEULE à
-// pouvoir gérer les confessions en attente (demande explicite, remplace la
-// permission "server.confessions.manage" pour cet usage précis ; cette
-// permission continue de régir qui peut ÉCRIRE dans le salon, voir
-// utils/confessions.js::appliquerGardeSalon).
+// Pas de "gestionnaire" stocké ici : qui a le droit de voir/gérer les
+// confessions en attente (ET d'écrire dans le salon) vient du système de
+// permissions existant du panel (clé "server.confessions.manage", voir
+// utils/permissions/catalog.js et utils/confessions.js::PERM_GERER) —
+// jamais un utilisateur ou un rôle codé en dur ici.
 //
 // Aucun MP n'est envoyé par le système (demande explicite) : authorId/
 // authorTag restent connus en interne (pour une éventuelle modération) mais
@@ -49,22 +49,18 @@ function guildEntry(guildId) {
   if (!data[guildId]) data[guildId] = {};
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
-  if (entry.setupAuthorId === undefined) entry.setupAuthorId = null;
   if (!Array.isArray(entry.pending)) entry.pending = [];
   if (!Number.isInteger(entry.nextId)) entry.nextId = 1;
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId, setupAuthorId } = guildEntry(guildId);
-  return { channelId, setupAuthorId };
+  const { channelId } = guildEntry(guildId);
+  return { channelId };
 }
 
-/** `authorId` devient LE gestionnaire de ce panneau (voir utils/confessions.js) — écrase le précédent si "!!confess setup" est relancé. */
-function setChannel(guildId, channelId, authorId) {
-  const entry = guildEntry(guildId);
-  entry.channelId = channelId;
-  entry.setupAuthorId = authorId;
+function setChannel(guildId, channelId) {
+  guildEntry(guildId).channelId = channelId;
   save();
 }
 

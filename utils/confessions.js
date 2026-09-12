@@ -25,21 +25,21 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 // "je veux plus que les messages soient en dm") -> choix de rester anonyme
 // ou non -> mise en attente -> publication MANUELLE.
 //
-// Troisième refonte (demande explicite) :
+// Quatrième refonte (demande explicite) :
 //  - "!!confess setup" reste la SEULE commande texte : elle installe le
-//    panneau public "Confesse-toi" ET fait de son AUTEUR le seul gestionnaire
-//    de ce panneau (confessStore::setupAuthorId) — pas une permission
-//    partagée, un utilisateur précis.
+//    panneau public "Confesse-toi".
 //  - Le panneau public ne montre JAMAIS le contenu des confessions en
-//    attente : personne d'autre que le gestionnaire ne doit pouvoir le voir.
-//    Il porte juste un bouton "📩 Gérer les confessions" ; cliquer dessus
-//    ouvre la liste (menu déroulant, détail, Publier/Refuser/Retour/Fermer)
-//    en réponse ÉPHÉMÈRE — visible uniquement par le gestionnaire, jamais
-//    posée dans le salon (voir buildGestionVue).
-//  - Qui peut ÉCRIRE dans le salon (pas gérer : juste discuter) reste régi
-//    par la permission "server.confessions.manage" du système EXISTANT de
-//    &panel > Permissions (utils/permissions/catalog.js) OU par le fait
-//    d'être le gestionnaire OU administrateur — voir appliquerGardeSalon.
+//    attente : personne sans la permission ne doit pouvoir le voir. Il
+//    porte juste un bouton "📩 Gérer les confessions" ; cliquer dessus ouvre
+//    la liste (menu déroulant, détail, Publier/Refuser/Retour/Fermer) en
+//    réponse ÉPHÉMÈRE — visible uniquement par qui clique, jamais posée dans
+//    le salon (voir buildGestionVue).
+//  - Qui peut VOIR/GÉRER (ouvrir "Gérer les confessions", utiliser le menu
+//    et les boutons Publier/Refuser/Retour/Fermer) ET qui peut ÉCRIRE dans
+//    le salon dépendent TOUS LES DEUX de la MÊME permission
+//    "server.confessions.manage" du système EXISTANT de &panel >
+//    Permissions (utils/permissions/catalog.js) — plusieurs personnes
+//    possibles, pas un utilisateur unique codé en dur.
 //  - AUCUNE information permettant d'identifier l'auteur (pseudo, ID,
 //    mention, avatar...) n'apparaît JAMAIS dans l'interface de gestion,
 //    même pour le gestionnaire — demande explicite. L'auteur reste connu EN
@@ -186,25 +186,21 @@ async function publierConfession(salon, donnees) {
 }
 
 /**
- * Protection du salon de confession (demande explicite) : seuls le
- * gestionnaire (auteur du "!!confess setup"), les membres ayant la
- * permission PERM_GERER (via &panel > Permissions), les administrateurs
- * Discord et le bot peuvent y écrire — tout le reste est supprimé
+ * Protection du salon de confession (demande explicite) : seuls les membres
+ * ayant la permission PERM_GERER (via &panel > Permissions) et les
+ * administrateurs Discord peuvent y écrire — tout le reste est supprimé
  * INSTANTANÉMENT. Les commandes "!!confess ..." elles-mêmes ne passent
  * jamais par ici (voir handleConfessTextCommand) : leurs propres
  * vérifications de permission suffisent, pas la peine de les supprimer en
  * plus si elles échouent.
  */
-async function appliquerGardeSalon(message, setupAuthorId) {
-  const autorise =
-    message.author.id === setupAuthorId ||
-    message.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
-    can(message.member, PERM_GERER);
+async function appliquerGardeSalon(message) {
+  const autorise = message.member?.permissions?.has(PermissionFlagsBits.Administrator) || can(message.member, PERM_GERER);
   if (autorise) return;
   await message.delete().catch(() => {});
 }
 
-/** "!!confess setup" — la SEULE commande texte : installe le panneau public "Confesse-toi" et fait de son auteur LE gestionnaire (seul à pouvoir gérer, voir l'en-tête du fichier). */
+/** "!!confess setup" — la SEULE commande texte : installe le panneau public "Confesse-toi". */
 async function handleConfessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
@@ -218,8 +214,8 @@ async function handleConfessTextCommand(client, message) {
   if (!estCommandeConfess) {
     // Pas une commande "!!confess" : simple message dans le salon — soumis
     // à la garde d'écriture si ce salon EST le salon de confession.
-    const { channelId, setupAuthorId } = confessStore.getConfig(message.guild.id);
-    if (channelId && message.channel.id === channelId) await appliquerGardeSalon(message, setupAuthorId);
+    const { channelId } = confessStore.getConfig(message.guild.id);
+    if (channelId && message.channel.id === channelId) await appliquerGardeSalon(message);
     return;
   }
 
@@ -229,7 +225,7 @@ async function handleConfessTextCommand(client, message) {
   if (!can(message.member, "channels.manage")) {
     return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
   }
-  confessStore.setChannel(message.guild.id, message.channel.id, message.author.id);
+  confessStore.setChannel(message.guild.id, message.channel.id);
   return message.channel.send(buildConfessCard()).catch(() => {});
 }
 
@@ -237,9 +233,10 @@ async function handleConfessInteraction(interaction) {
   const [, action, ...reste] = interaction.customId.split(":");
 
   if (action === "start") {
-    if (enCours.has(interaction.user.id)) {
-      return interaction.reply({ content: "Tu as déjà une confession en cours.", flags: MessageFlags.Ephemeral });
-    }
+    // Un clic ici écrase toujours l'état précédent (pas de garde "déjà en
+    // cours") : sans ça, quelqu'un qui ferme la fenêtre de message sans la
+    // valider restait bloqué pour toujours, la seule sortie étant un
+    // redémarrage du bot — bug réel rencontré en production.
     enCours.set(interaction.user.id, { guildId: interaction.guild.id, etape: "attente_modal" });
     // Le message se tape ICI, dans une fenêtre Discord — jamais en MP
     // (demande explicite). showModal() doit être la toute première réponse
@@ -302,8 +299,7 @@ async function handleConfessInteraction(interaction) {
 
   if (action === "gerer") {
     const guildId = interaction.guild.id;
-    const { setupAuthorId } = confessStore.getConfig(guildId);
-    if (interaction.user.id !== setupAuthorId) {
+    if (!can(interaction.member, PERM_GERER)) {
       return interaction.reply({ content: "❌ Tu n'as pas la permission de gérer les messages anonymes.", flags: MessageFlags.Ephemeral });
     }
     const [sousAction, id] = reste;
