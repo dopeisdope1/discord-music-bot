@@ -53,17 +53,17 @@ const enAttenteValidation = new Map();
 let prochainIdValidation = 1;
 
 /**
- * La carte d'accroche : l'image en dégradé (utils/confessCard.js) au-dessus,
- * PUIS un seul ContainerBuilder à couleur d'accent qui regroupe TOUT le
- * reste (texte, séparateur, disclaimer, boutons) — fond + bordure colorée
- * sur toute la hauteur du bloc, comme sur les captures de référence
- * fournies (plusieurs bots comparés côte à côte pour valider ce rendu).
+ * La carte d'accroche : UN SEUL ContainerBuilder qui regroupe TOUT — l'image
+ * en dégradé (utils/confessCard.js), le texte, le séparateur, le disclaimer
+ * et les boutons — fond + bordure GRISE (pas de couleur d'accent, demande
+ * explicite) sur toute la hauteur du bloc, comme sur les captures de
+ * référence fournies (plusieurs bots comparés côte à côte pour ce rendu).
  */
 function buildConfessCard() {
   const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
 
   const conteneur = new ContainerBuilder()
-    .setAccentColor(COULEUR)
+    .addMediaGalleryComponents(galerie)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         [
@@ -91,7 +91,7 @@ function buildConfessCard() {
         new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
       )
     );
-  return { flags: MessageFlags.IsComponentsV2, components: [galerie, conteneur], files: [fichier] };
+  return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
 function buildValidationCard(id, donnees) {

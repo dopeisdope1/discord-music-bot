@@ -160,7 +160,7 @@ function customIdDuBouton(envoi, label) {
     assert.ok(msg2._replies[0]?.includes?.("pas la permission"));
   });
 
-  await cas('"!!confess setup" poste la carte "Confesse-toi" avec un cadre à couleur d\'accent, avec ses 2 boutons', async () => {
+  await cas('"!!confess setup" poste la carte "Confesse-toi" dans un cadre gris par défaut, avec ses 2 boutons', async () => {
     permStore.grantToUser("g-setup-ok", "u-admin", "channels.manage");
     const env = makeEnv("g-setup-ok");
     const channel = fakeChannel("chan-public");
@@ -170,17 +170,16 @@ function customIdDuBouton(envoi, label) {
     assert.strictEqual(confessStore.getConfig("g-setup-ok").channelId, "chan-public");
     assert.strictEqual(channel._envois.length, 1);
     const payload = channel._envois[0].payload;
-    // Components V2 + une VRAIE carte visuelle (utils/confessCard.js) — plus
-    // un SEUL ContainerBuilder à couleur d'accent regroupant tout le reste
-    // (texte, séparateur, disclaimer, boutons), comme sur les captures de
-    // référence comparées (fond + bordure colorée sur toute la hauteur).
+    // Components V2 + une VRAIE carte visuelle (utils/confessCard.js) — le
+    // TOUT (image comprise) dans un SEUL ContainerBuilder, SANS couleur
+    // d'accent (gris par défaut, demande explicite — "comme au début").
     assert.strictEqual(payload.files?.length, 1, "doit joindre l'image de la carte visuelle");
     const parties = partiesJSON(payload);
-    assert.ok(parties.some((c) => c.type === 12), "l'image du dégradé reste HORS du cadre, au-dessus");
     const conteneurs = parties.filter((c) => c.type === 17);
-    assert.strictEqual(conteneurs.length, 1, "un seul ContainerBuilder regroupant tout le texte et les boutons");
-    assert.ok(conteneurs[0].accent_color !== undefined && conteneurs[0].accent_color !== null, "doit porter une couleur d'accent (la bordure)");
+    assert.strictEqual(conteneurs.length, 1, "un seul ContainerBuilder regroupant TOUT, image comprise");
+    assert.ok(conteneurs[0].accent_color === undefined || conteneurs[0].accent_color === null, "pas de couleur d'accent — gris par défaut");
     const interieur = conteneurs[0].components;
+    assert.ok(interieur.some((c) => c.type === 12), "l'image du dégradé doit être DANS le cadre, pas au-dessus");
     assert.ok(interieur.some((c) => c.type === 14), "un vrai SeparatorBuilder doit séparer les étapes du disclaimer, comme sur la capture");
     const texte = interieur.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(texte.includes("Comment participer"), texte);
