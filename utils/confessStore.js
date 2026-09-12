@@ -2,24 +2,25 @@ const fs = require("fs");
 const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
-// Confessions anonymes ("!!confess", voir utils/confessions.js).
-// { [guildId]: { channelId: string|null,
-//                pending: {id, texte, anonyme, authorId, authorTag}[],
+// Confessions anonymes ("!!confess", voir utils/confessions.js) — flux à
+// validation :
+// { [guildId]: { channelId: string|null, validationChannelId: string|null,
+//                confessions: {
+//                  id, authorId, authorTag, texte, anonyme,
+//                  status: "attente"|"acceptee"|"refusee",
+//                  createdAt, moderatedBy, moderatedAt,
+//                  moderationMessageId, publishedMessageId,
+//                }[],
 //                nextId: number } }
 //
-// Pas de "gestionnaire" stocké ici : qui a le droit de voir/gérer les
-// confessions en attente (ET d'écrire dans le salon) vient du système de
-// permissions existant du panel (clé "server.confessions.manage", voir
-// utils/permissions/catalog.js et utils/confessions.js::PERM_GERER) —
-// jamais un utilisateur ou un rôle codé en dur ici.
+// Toutes les confessions (pas seulement celles en attente) restent dans le
+// tableau, avec leur statut — "chaque confession doit pouvoir être
+// retrouvée grâce à son ID" (demande explicite), pas seulement tant qu'elle
+// est en attente.
 //
-// Aucun MP n'est envoyé par le système (demande explicite) : authorId/
-// authorTag restent connus en interne (pour une éventuelle modération) mais
-// ne servent plus à contacter qui que ce soit.
-//
-// `pending` (contrairement aux Map en mémoire du reste du fichier) est
-// persisté : une confession anonyme envoyée par un membre ne doit pas
-// disparaître si le bot redémarre avant que quelqu'un ne la traite.
+// Qui a le droit de valider vient du système de permissions existant du
+// panel (clé "server.confessions.manage", voir utils/permissions/catalog.js
+// et utils/confessions.js::PERM_GERER) — jamais un rôle codé en dur ici.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "confess.json");
 
@@ -49,14 +50,15 @@ function guildEntry(guildId) {
   if (!data[guildId]) data[guildId] = {};
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
-  if (!Array.isArray(entry.pending)) entry.pending = [];
+  if (entry.validationChannelId === undefined) entry.validationChannelId = null;
+  if (!Array.isArray(entry.confessions)) entry.confessions = [];
   if (!Number.isInteger(entry.nextId)) entry.nextId = 1;
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId } = guildEntry(guildId);
-  return { channelId };
+  const { channelId, validationChannelId } = guildEntry(guildId);
+  return { channelId, validationChannelId };
 }
 
 function setChannel(guildId, channelId) {
@@ -64,42 +66,82 @@ function setChannel(guildId, channelId) {
   save();
 }
 
+/** Salon PRIVÉ où chaque confession arrive comme son propre message, avec Accepter/Refuser. */
+function setValidationChannel(guildId, channelId) {
+  guildEntry(guildId).validationChannelId = channelId;
+  save();
+}
+
 /**
- * Enregistre une confession en attente de publication manuelle — jamais
- * publiée automatiquement (voir utils/confessions.js). `authorId`/`authorTag`
- * restent connus en interne (pour une éventuelle modération) mais ne
- * doivent JAMAIS être affichés dans l'interface de gestion, ni servir à
- * contacter qui que ce soit par MP.
- * @returns {string} l'identifiant attribué (ex. "001")
+ * Enregistre une nouvelle confession, statut "attente" — jamais publiée
+ * automatiquement (voir utils/confessions.js). `authorId`/`authorTag`
+ * restent visibles du staff (salon de validation, données internes) mais ne
+ * doivent JAMAIS apparaître dans la publication PUBLIQUE si `anonyme`.
+ * @returns {string} l'identifiant attribué (ex. "016")
  */
-function addPending(guildId, { texte, anonyme, authorId, authorTag }) {
+function addConfession(guildId, { texte, anonyme, authorId, authorTag }) {
   const entry = guildEntry(guildId);
   const id = String(entry.nextId++).padStart(3, "0");
-  entry.pending.push({ id, texte, anonyme, authorId, authorTag });
+  entry.confessions.push({
+    id,
+    authorId,
+    authorTag,
+    texte,
+    anonyme,
+    status: "attente",
+    createdAt: Date.now(),
+    moderatedBy: null,
+    moderatedAt: null,
+    moderationMessageId: null,
+    publishedMessageId: null,
+  });
   save();
   return id;
 }
 
-function getPending(guildId) {
-  return [...guildEntry(guildId).pending];
+function getConfession(guildId, id) {
+  return guildEntry(guildId).confessions.find((c) => c.id === id) || null;
 }
 
-function getPendingById(guildId, id) {
-  return guildEntry(guildId).pending.find((p) => p.id === id) || null;
+/** Le message posté dans le salon de validation — retenu pour pouvoir l'éditer après décision, y compris après un redémarrage. */
+function setModerationMessageId(guildId, id, messageId) {
+  const c = getConfession(guildId, id);
+  if (!c) return;
+  c.moderationMessageId = messageId;
+  save();
 }
 
-function removePending(guildId, id) {
-  const entry = guildEntry(guildId);
-  const avant = entry.pending.length;
-  entry.pending = entry.pending.filter((p) => p.id !== id);
-  if (entry.pending.length !== avant) save();
+function setPublishedMessageId(guildId, id, messageId) {
+  const c = getConfession(guildId, id);
+  if (!c) return;
+  c.publishedMessageId = messageId;
+  save();
+}
+
+/**
+ * Bascule ATOMIQUE "attente" -> `status` (acceptee/refusee) : ne fait rien
+ * et renvoie `null` si la confession n'existe pas ou n'est plus en attente
+ * (déjà traitée par quelqu'un d'autre) — c'est ce qui empêche qu'une même
+ * confession soit acceptée ET refusée (demande explicite).
+ * @returns {object|null} la confession mise à jour, ou null si déjà traitée/inconnue
+ */
+function moderer(guildId, id, status, moderatorId) {
+  const c = getConfession(guildId, id);
+  if (!c || c.status !== "attente") return null;
+  c.status = status;
+  c.moderatedBy = moderatorId;
+  c.moderatedAt = Date.now();
+  save();
+  return c;
 }
 
 module.exports = {
   getConfig,
   setChannel,
-  addPending,
-  getPending,
-  getPendingById,
-  removePending,
+  setValidationChannel,
+  addConfession,
+  getConfession,
+  setModerationMessageId,
+  setPublishedMessageId,
+  moderer,
 };
