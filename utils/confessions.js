@@ -8,7 +8,6 @@ const {
   TextInputBuilder,
   TextInputStyle,
   MessageFlags,
-  ContainerBuilder,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 const confessStore = require("./confessStore");
@@ -26,10 +25,10 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 // carte d'accroche et chaque confession publiée envoient leurs composants
 // Components V2 (texte, image) DIRECTEMENT au niveau du message, sans
 // regroupement visuel. Le vote 👍/👎 posé automatiquement a été retiré au
-// même moment — rien n'empêche qui veut réagir de le faire lui-même. Seule
-// exception, demandée ensuite avec une capture à l'appui : le bloc "Comment
-// participer ?" porte SA PROPRE bordure colorée (accent de couleur sur un
-// ContainerBuilder confiné à ce seul bloc, pas de cadre gris autour de tout).
+// même moment — rien n'empêche qui veut réagir de le faire lui-même. La
+// liste "Comment participer ?" porte un fin trait à gauche (citation
+// Discord native "> ", pas un ContainerBuilder — essayé puis rejeté,
+// capture à l'appui : ça dessinait une vraie boîte à fond gris, trop lourd).
 //
 // Toujours sur le préfixe "!!" déjà utilisé par utils/personalProtection.js —
 // même mécanique de lecture du préfixe, un mot différent après ("confess" au
@@ -60,37 +59,31 @@ let prochainIdValidation = 1;
 function buildConfessCard() {
   const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
 
-  const intro = new TextDisplayBuilder().setContent(
+  // Comme sur la capture de référence (bot "wannadie") : un simple FIN TRAIT
+  // à gauche de la liste, sans fond ni cadre — la citation Discord native
+  // ("> ") fait exactement ça. PAS de ContainerBuilder ici : posé sur la
+  // liste, il dessine une vraie boîte avec un fond gris, beaucoup plus
+  // lourd que le trait fin voulu (essayé puis rejeté — capture à l'appui).
+  const texte = new TextDisplayBuilder().setContent(
     [
       "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
       "",
       "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
       "",
       "**Comment participer ?**",
+      "> **1.** Clique sur le bouton ci-dessous",
+      "> **2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
+      "> **3.** Choisis si tu veux rester anonyme ou non",
+      "> **4.** Attends la validation — puis c'est publié !",
+      "",
+      "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur.",
     ].join("\n")
-  );
-  // Comme sur la capture fournie : seule la LISTE des étapes (pas le titre
-  // "Comment participer ?" au-dessus) porte la bordure colorée — un
-  // ContainerBuilder avec une couleur d'accent, confiné à ce seul bloc, pas
-  // le cadre gris de regroupement banni ailleurs (voir l'en-tête du fichier).
-  const etapes = new ContainerBuilder().setAccentColor(COULEUR).addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        "**1.** Clique sur le bouton ci-dessous",
-        "**2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
-        "**3.** Choisis si tu veux rester anonyme ou non",
-        "**4.** Attends la validation — puis c'est publié !",
-      ].join("\n")
-    )
-  );
-  const pied = new TextDisplayBuilder().setContent(
-    "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur."
   );
   const boutons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
     new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
   );
-  return { flags: MessageFlags.IsComponentsV2, components: [galerie, intro, etapes, pied, boutons], files: [fichier] };
+  return { flags: MessageFlags.IsComponentsV2, components: [galerie, texte, boutons], files: [fichier] };
 }
 
 function buildValidationCard(id, donnees) {

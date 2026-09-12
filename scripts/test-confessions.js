@@ -160,7 +160,7 @@ function customIdDuBouton(envoi, label) {
     assert.ok(msg2._replies[0]?.includes?.("pas la permission"));
   });
 
-  await cas('"!!confess setup" poste la carte "Confesse-toi" avec une bordure colorée, avec ses 2 boutons', async () => {
+  await cas('"!!confess setup" poste la carte "Confesse-toi" SANS cadre gris, avec ses 2 boutons', async () => {
     permStore.grantToUser("g-setup-ok", "u-admin", "channels.manage");
     const env = makeEnv("g-setup-ok");
     const channel = fakeChannel("chan-public");
@@ -170,19 +170,17 @@ function customIdDuBouton(envoi, label) {
     assert.strictEqual(confessStore.getConfig("g-setup-ok").channelId, "chan-public");
     assert.strictEqual(channel._envois.length, 1);
     const payload = channel._envois[0].payload;
-    // Components V2 + une VRAIE carte visuelle (utils/confessCard.js) —
-    // comme sur la capture fournie, SEULE la liste des étapes (pas le titre
-    // "Comment participer ?" au-dessus) porte la bordure colorée.
+    // Components V2 + une VRAIE carte visuelle (utils/confessCard.js) — pas
+    // un embed Discord classique, PAS de ContainerBuilder (donc pas de boîte
+    // à fond gris) : essayé puis rejeté, capture à l'appui — juste un fin
+    // trait via la citation Discord native ("> ") sur la liste des étapes.
     assert.strictEqual(payload.files?.length, 1, "doit joindre l'image de la carte visuelle");
     const parties = partiesJSON(payload);
-    const conteneurs = parties.filter((c) => c.type === 17);
-    assert.strictEqual(conteneurs.length, 1, "un seul ContainerBuilder — juste la liste des étapes");
-    assert.ok(conteneurs[0].accent_color !== undefined && conteneurs[0].accent_color !== null, "doit porter une couleur d'accent (la bordure)");
-    const texteConteneur = conteneurs.flatMap((c) => c.components).map((c) => c.content).join("\n");
-    assert.ok(!texteConteneur.includes("Comment participer"), "le titre reste HORS de la bordure, comme sur la capture");
+    assert.ok(!parties.some((c) => c.type === 17), "aucun ContainerBuilder — pas de boîte à fond gris");
     assert.ok(parties.some((c) => c.type === 12), "doit contenir la galerie média (la carte)");
-    const texte = [...parties.filter((c) => c.type === 10).map((c) => c.content), texteConteneur].join("\n");
+    const texte = parties.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(texte.includes("Comment participer"), texte);
+    assert.ok(texte.includes("> **1.**"), "la liste des étapes doit être en citation (fin trait à gauche)");
     assert.ok(texte.includes("fenêtre qui s'ouvre"), "le parcours décrit ne doit plus mentionner de MP");
     assert.ok(!texte.includes("garçon"), "plus d'étape garçon/fille dans le parcours décrit");
     const rangeeBoutons = parties.find((c) => c.type === 1);
