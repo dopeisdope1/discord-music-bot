@@ -23,32 +23,36 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 // capture par l'utilisateur : carte "Confesse-toi", bouton "Je souhaite
 // participer" -> message anonyme (modale, jamais en MP — demande explicite
 // "je veux plus que les messages soient en dm") -> choix de rester anonyme
-// ou non -> mise en attente -> publication MANUELLE par un gestionnaire.
+// ou non -> mise en attente -> publication MANUELLE.
 //
-// Refonte "en profondeur" (demande explicite, remplace l'ancien salon de
-// validation staff) :
-//  - "!!confess setup" configure seulement le panneau public (inchangé).
-//  - "!!confess role @rôle" configure le rôle dispensé du blocage d'écriture.
-//  - "!!confess" (seul) fait de son auteur LE gestionnaire de la session :
-//    lui seul peut ensuite publier/refuser les confessions en attente.
-//  - Le message d'un participant n'est JAMAIS publié automatiquement : il
-//    rejoint une file d'attente (utils/confessStore.js::pending) que seul le
-//    gestionnaire consulte via un menu déroulant, avant de choisir Publier
-//    ou Refuser.
-//  - Le salon de confession est protégé : tout message qui n'est pas du
-//    gestionnaire, d'un administrateur Discord, d'un membre du rôle "perm
-//    confess" ou du bot est supprimé instantanément (voir appliquerGardeSalon).
+// Deuxième refonte (demande explicite, remplace la session de gestionnaire
+// de la première refonte) :
+//  - "!!confess setup" reste la SEULE commande texte : elle installe le
+//    panneau public "Confesse-toi".
+//  - La gestion des confessions en attente (menu déroulant + Publier/
+//    Refuser/Retour/Fermer) est INTÉGRÉE à CE MÊME panneau — jamais un
+//    deuxième message séparé (voir buildConfessCard, param `detail`).
+//  - Qui peut gérer ne dépend PLUS d'un "gestionnaire" ni d'un rôle codé en
+//    dur : c'est la permission "server.confessions.manage" du système
+//    EXISTANT de &panel > Permissions (utils/permissions/engine.js) qui
+//    décide — configurable comme n'importe quelle autre permission du
+//    catalogue (utils/permissions/catalog.js). Quiconque n'a pas cette
+//    permission qui clique sur le menu ou un bouton de gestion reçoit un
+//    refus éphémère ; le bouton "Je souhaite participer" reste ouvert à tous.
+//  - Le panneau se RAFRAÎCHIT automatiquement (édité en place) quand une
+//    nouvelle confession arrive, pour que le menu déroulant reste à jour
+//    même sans qu'un gestionnaire n'interagisse avec lui entre-temps (voir
+//    rafraichirPanel + confessStore::panelChannelId/panelMessageId).
+//  - AUCUNE information permettant d'identifier l'auteur (pseudo, ID,
+//    mention, avatar...) n'apparaît JAMAIS dans l'interface de gestion,
+//    même à la personne qui a la permission de gérer — demande explicite.
+//    L'auteur reste connu EN INTERNE (authorId/authorTag persistés) juste
+//    assez pour le prévenir par MP une fois sa confession traitée.
 //
 // Pas de réactions automatiques (demande explicite) : le vote 👍/👎 posé
 // automatiquement a été retiré — rien n'empêche qui veut réagir de le faire
 // lui-même. La confession PUBLIÉE (publierConfession), elle, n'a toujours
 // aucun cadre — juste l'image, voir plus bas.
-//
-// La carte "Confesse-toi", en revanche, a bien un cadre : tout le texte (et
-// les boutons) est dans UN SEUL ContainerBuilder, comme sur les captures de
-// référence fournies (fond + bordure grise sur toute la hauteur du bloc,
-// image du dégradé comprise) — design volontairement inchangé par cette
-// refonte, demande explicite.
 //
 // Toujours sur le préfixe "!!" déjà utilisé par utils/personalProtection.js —
 // même mécanique de lecture du préfixe, un mot différent après ("confess" au
@@ -56,6 +60,11 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 
 const CUSTOM_ID = "confess";
 const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embed (4096) — aussi la limite max d'un champ de modale
+
+// Clé du catalogue de permissions existant (utils/permissions/catalog.js),
+// configurable depuis &panel > Permissions comme n'importe quelle autre —
+// AUCUN rôle "perm confess" codé en dur (demande explicite).
+const PERM_GERER = "server.confessions.manage";
 
 // État des flux en cours, EN MÉMOIRE (comme utils/messageOwner.js) : un
 // redémarrage du bot en plein milieu d'une confession force juste à
@@ -66,13 +75,16 @@ const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embe
 const enCours = new Map();
 
 /**
- * La carte d'accroche : UN SEUL ContainerBuilder qui regroupe TOUT — l'image
- * en dégradé (utils/confessCard.js), le texte, le séparateur, le disclaimer
- * et les boutons — fond + bordure GRISE (pas de couleur d'accent, demande
- * explicite) sur toute la hauteur du bloc, comme sur les captures de
- * référence fournies (plusieurs bots comparés côte à côte pour ce rendu).
+ * Le panneau "Confesse-toi" — UN SEUL ContainerBuilder qui regroupe TOUT :
+ * l'image en dégradé, le texte d'accroche, les boutons de participation, ET
+ * (intégrée au même panneau, jamais un second message) la zone de gestion
+ * des confessions en attente.
+ *
+ * `detail`, si fourni, est LA confession actuellement affichée pour
+ * publication/refus (voir action "gerer:choisir") ; sans lui, la zone de
+ * gestion montre le menu déroulant listant toutes les confessions en attente.
  */
-function buildConfessCard() {
+function buildConfessCard(guildId, { detail } = {}) {
   const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
 
   const conteneur = new ContainerBuilder()
@@ -103,78 +115,80 @@ function buildConfessCard() {
         new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
         new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
       )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  if (detail) {
+    // Le contenu ET "Reste anonyme ?" — JAMAIS l'auteur, sous aucune forme
+    // (pseudo, ID, mention...) : demande explicite, même pour qui a la
+    // permission de gérer.
+    conteneur.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [`**📩 Confession #${detail.id}**`, "", detail.texte, "", `**Reste anonyme :** ${detail.anonyme ? "Oui" : "Non"}`].join("\n")
+      )
     );
+    conteneur.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:publier:${detail.id}`).setLabel("Publier").setStyle(ButtonStyle.Success).setEmoji("📤"),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:refuser:${detail.id}`).setLabel("Refuser").setStyle(ButtonStyle.Danger).setEmoji("🗑️"),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:retour`).setLabel("Retour").setStyle(ButtonStyle.Secondary).setEmoji("↩️"),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:fermer`).setLabel("Fermer").setStyle(ButtonStyle.Secondary).setEmoji("❌")
+      )
+    );
+  } else {
+    conteneur.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("**📩 Messages anonymes en attente**\nSélectionne un message à publier.")
+    );
+    const pending = confessStore.getPending(guildId);
+    if (!pending.length) {
+      conteneur.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Aucune confession en attente pour le moment.*"));
+    } else {
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`${CUSTOM_ID}:gerer:choisir`)
+        .setPlaceholder("Choisir une confession...")
+        .addOptions(
+          pending.slice(0, 25).map((p) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(`📩 Confession #${p.id}`)
+              .setDescription(p.texte.slice(0, 100))
+              .setValue(p.id)
+          )
+        );
+      conteneur.addActionRowComponents(new ActionRowBuilder().addComponents(menu));
+    }
+  }
+
   return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
 /**
- * Interface du gestionnaire (celui qui a lancé "!!confess") — vue "liste" :
- * un menu déroulant listant les confessions en attente, une par option.
+ * Le panneau public affiche en permanence la liste des confessions en
+ * attente : sans ça, une confession envoyée pendant qu'aucun gestionnaire
+ * n'a le panneau ouvert resterait invisible tant que personne n'interagit
+ * avec lui. Échoue silencieusement (panneau supprimé, salon inaccessible...)
+ * — la prochaine interaction directe avec le panneau le régénère de toute
+ * façon.
  */
-function buildManagerListView(guildId) {
-  const pending = confessStore.getPending(guildId);
-  const container = new ContainerBuilder().addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("**📩 Messages anonymes en attente**\nSélectionne un message à publier.")
-  );
-
-  if (!pending.length) {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Aucune confession en attente pour le moment.*"));
-    return { flags: MessageFlags.IsComponentsV2, components: [container] };
+async function rafraichirPanel(guild) {
+  try {
+    const { panelChannelId, panelMessageId } = confessStore.getConfig(guild.id);
+    if (!panelChannelId || !panelMessageId) return;
+    const channel = guild.channels.cache.get(panelChannelId);
+    if (!channel?.isTextBased?.() || !channel.messages?.fetch) return;
+    const message = await channel.messages.fetch(panelMessageId);
+    await message.edit(buildConfessCard(guild.id));
+  } catch {
+    // Rien de grave : voir le commentaire ci-dessus.
   }
-
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(`${CUSTOM_ID}:gerer:choisir`)
-    .setPlaceholder("Choisir une confession...")
-    .addOptions(
-      pending.slice(0, 25).map((p) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(`📩 Confession #${p.id}`)
-          .setDescription(p.texte.slice(0, 100))
-          .setValue(p.id)
-      )
-    );
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(menu));
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
-
-/** Vue "détail" — le contenu complet d'UNE confession en attente, avec les actions du gestionnaire. */
-function buildManagerDetailView(item) {
-  const container = new ContainerBuilder().addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        `**📩 Confession #${item.id}**`,
-        "",
-        item.texte,
-        "",
-        `**Auteur :** ${item.authorTag}`,
-        `**Reste anonyme ?** ${item.anonyme ? "Oui" : "Non — pseudo affiché"}`,
-      ].join("\n")
-    )
-  );
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:publier:${item.id}`).setLabel("Publier").setStyle(ButtonStyle.Success).setEmoji("📤"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:refuser:${item.id}`).setLabel("Refuser").setStyle(ButtonStyle.Danger).setEmoji("🗑️"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:retour`).setLabel("Retour").setStyle(ButtonStyle.Secondary).setEmoji("↩️"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:gerer:fermer`).setLabel("Fermer").setStyle(ButtonStyle.Secondary).setEmoji("❌")
-    )
-  );
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-const PANNEAU_FERME = {
-  flags: MessageFlags.IsComponentsV2,
-  components: [new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent("Panneau fermé."))],
-};
 
 /**
  * Publie la confession dans le salon public. Même carte visuelle que
  * l'accroche (utils/confessCard.js) : le message DEVIENT le gros texte du
  * bas de la carte, exactement comme sur la référence fournie ("Baisons eren
  * les amis"). Ni cadre gris ni réaction automatique — voir l'en-tête du
- * fichier. Pas de légende sous l'image non plus (demande explicite) : le
- * choix anonyme/pseudo ne sert donc plus qu'à l'interface du gestionnaire —
- * la publication publique, elle, ne montre jamais l'auteur.
+ * fichier. Pas de légende sous l'image non plus : la publication publique
+ * ne montre jamais l'auteur.
  */
 async function publierConfession(guild, salon, donnees) {
   const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 420 });
@@ -196,80 +210,49 @@ async function publierConfession(guild, salon, donnees) {
 }
 
 /**
- * Protection du salon de confession (demande explicite) : seuls le
- * gestionnaire de la session en cours, les administrateurs Discord, les
- * membres du rôle "perm confess" et le bot peuvent y écrire — tout le reste
- * est supprimé INSTANTANÉMENT, avant même d'être lu comme commande.
- *
- * Ajout au-delà de la demande littérale : un membre disposant de la
- * permission "channels.manage" peut aussi y écrire — sinon il ne pourrait
- * pas lancer "!!confess setup"/"!!confess role"/"!!confess" depuis ce salon
- * lui-même, son propre message se ferait supprimer avant traitement.
- *
- * @returns {Promise<boolean>} true si le message a été supprimé (appelant : ne rien traiter de plus)
+ * Protection du salon de confession (demande explicite) : seuls les membres
+ * ayant la permission PERM_GERER (via &panel > Permissions), les
+ * administrateurs Discord et le bot peuvent y écrire — tout le reste est
+ * supprimé INSTANTANÉMENT. Les commandes "!!confess ..." elles-mêmes ne
+ * passent jamais par ici (voir handleConfessTextCommand) : leurs propres
+ * vérifications de permission suffisent, pas la peine de les supprimer en
+ * plus si elles échouent.
  */
 async function appliquerGardeSalon(message) {
-  const { managerId, permRoleId } = confessStore.getConfig(message.guild.id);
-  const autorise =
-    message.author.id === managerId ||
-    message.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
-    (permRoleId && message.member?.roles?.cache?.has(permRoleId)) ||
-    can(message.member, "channels.manage");
-  if (autorise) return false;
+  const autorise = message.member?.permissions?.has(PermissionFlagsBits.Administrator) || can(message.member, PERM_GERER);
+  if (autorise) return;
   await message.delete().catch(() => {});
-  return true;
 }
 
-/**
- * "!!confess setup" (installe le panneau public) / "!!confess role @rôle"
- * (rôle dispensé du blocage d'écriture) / "!!confess" seul (ouvre une
- * session de gestion, l'auteur devient LE gestionnaire).
- */
+/** "!!confess setup" — la SEULE commande texte : installe le panneau public "Confesse-toi" (gestion intégrée dedans, voir buildConfessCard). */
 async function handleConfessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
-  const { channelId } = confessStore.getConfig(message.guild.id);
-  if (channelId && message.channel.id === channelId) {
-    if (await appliquerGardeSalon(message)) return;
-  }
-
   const content = message.content.trim();
   const { protection: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
+  const aLePrefixe = Boolean(PREFIX) && content.startsWith(PREFIX);
+  const reste = aLePrefixe ? content.slice(PREFIX.length).trim() : "";
+  const [mot, sous] = aLePrefixe ? reste.split(/\s+/) : [];
+  const estCommandeConfess = aLePrefixe && (mot || "").toLowerCase() === "confess";
 
-  const reste = content.slice(PREFIX.length).trim();
-  const [mot, sous, ...args] = reste.split(/\s+/);
-  if ((mot || "").toLowerCase() !== "confess") return; // mot inconnu sur ce préfixe : silence, comme "panel"
+  if (!estCommandeConfess) {
+    // Pas une commande "!!confess" : simple message dans le salon — soumis
+    // à la garde d'écriture si ce salon EST le salon de confession.
+    const { channelId } = confessStore.getConfig(message.guild.id);
+    if (channelId && message.channel.id === channelId) await appliquerGardeSalon(message);
+    return;
+  }
 
   const sousCmd = (sous || "").toLowerCase();
+  if (sousCmd !== "setup") return; // mot inconnu après "confess" : silence, comme "panel"
 
-  if (sousCmd === "setup") {
-    if (!can(message.member, "channels.manage")) {
-      return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
-    }
-    confessStore.setChannel(message.guild.id, message.channel.id);
-    return message.channel.send(buildConfessCard()).catch(() => {});
+  if (!can(message.member, "channels.manage")) {
+    return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
   }
-
-  if (sousCmd === "role") {
-    if (!can(message.member, "channels.manage")) {
-      return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
-    }
-    const role = message.mentions.roles?.first() || (args[0] ? message.guild.roles.cache.get(args[0]) : null);
-    if (!role) {
-      return message.reply("Indique un rôle : `!!confess role @rôle`.").catch(() => {});
-    }
-    confessStore.setPermRole(message.guild.id, role.id);
-    return message.reply(`Les membres avec le rôle ${role} peuvent désormais écrire dans le salon de confession.`).catch(() => {});
-  }
-
-  if (!sousCmd) {
-    if (!can(message.member, "channels.manage")) {
-      return message.reply("Tu n'as pas la permission nécessaire pour gérer les confessions.").catch(() => {});
-    }
-    confessStore.setManager(message.guild.id, message.author.id);
-    return message.channel.send(buildManagerListView(message.guild.id)).catch(() => {});
-  }
+  confessStore.setChannel(message.guild.id, message.channel.id);
+  const envoye = await message.channel.send(buildConfessCard(message.guild.id)).catch(() => null);
+  if (envoye) confessStore.setPanelMessage(message.guild.id, message.channel.id, envoye.id);
+  return envoye;
 }
 
 async function handleConfessInteraction(interaction) {
@@ -334,41 +317,37 @@ async function handleConfessInteraction(interaction) {
     }
 
     // JAMAIS de publication automatique ici (demande explicite) : la
-    // confession rejoint la file d'attente, seul le gestionnaire décide.
+    // confession rejoint la file d'attente, gérée depuis le panneau public.
     confessStore.addPending(etat.guildId, { texte: etat.texte, anonyme, authorId: interaction.user.id, authorTag: interaction.user.tag });
-    return interaction.update({ content: "C'est envoyé ! Ta confession est en attente de publication par le gestionnaire.", components: [] });
+    await rafraichirPanel(guild);
+    return interaction.update({ content: "C'est envoyé ! Ta confession est en attente de publication.", components: [] });
   }
 
   if (action === "gerer") {
-    const { managerId } = confessStore.getConfig(interaction.guild.id);
-    if (interaction.user.id !== managerId) {
-      return interaction.reply({ content: "❌ Tu n'es pas le gestionnaire de cette session de confession.", flags: MessageFlags.Ephemeral });
+    if (!can(interaction.member, PERM_GERER)) {
+      return interaction.reply({ content: "❌ Tu n'as pas la permission de gérer les messages anonymes.", flags: MessageFlags.Ephemeral });
     }
+    const guildId = interaction.guild.id;
     const [sousAction, id] = reste;
 
-    if (sousAction === "retour") {
-      return interaction.update(buildManagerListView(interaction.guild.id));
-    }
-
-    if (sousAction === "fermer") {
-      return interaction.update(PANNEAU_FERME);
+    if (sousAction === "retour" || sousAction === "fermer") {
+      return interaction.update(buildConfessCard(guildId));
     }
 
     if (sousAction === "choisir") {
-      const item = confessStore.getPendingById(interaction.guild.id, interaction.values[0]);
-      if (!item) return interaction.update(buildManagerListView(interaction.guild.id));
-      return interaction.update(buildManagerDetailView(item));
+      const item = confessStore.getPendingById(guildId, interaction.values[0]);
+      return interaction.update(buildConfessCard(guildId, { detail: item || undefined }));
     }
 
     if (sousAction === "publier" || sousAction === "refuser") {
-      const item = confessStore.getPendingById(interaction.guild.id, id);
-      if (!item) return interaction.update(buildManagerListView(interaction.guild.id));
+      const item = confessStore.getPendingById(guildId, id);
+      if (!item) return interaction.update(buildConfessCard(guildId));
       // Retirée de la file AVANT publication : un double-clic ne doit
       // jamais pouvoir publier deux fois la même confession.
-      confessStore.removePending(interaction.guild.id, id);
+      confessStore.removePending(guildId, id);
 
       if (sousAction === "publier") {
-        const { channelId } = confessStore.getConfig(interaction.guild.id);
+        const { channelId } = confessStore.getConfig(guildId);
         const salonPublic = channelId ? interaction.guild.channels.cache.get(channelId) : null;
         if (salonPublic?.isTextBased?.()) await publierConfession(interaction.guild, salonPublic, item);
       }
@@ -376,10 +355,10 @@ async function handleConfessInteraction(interaction) {
       const auteur = await interaction.client.users.fetch(item.authorId).catch(() => null);
       if (auteur) {
         await auteur
-          .send(sousAction === "publier" ? "Ta confession a été validée et publiée !" : "Ta confession n'a pas été retenue par le gestionnaire.")
+          .send(sousAction === "publier" ? "Ta confession a été validée et publiée !" : "Ta confession n'a pas été retenue.")
           .catch(() => {});
       }
-      return interaction.update(buildManagerListView(interaction.guild.id));
+      return interaction.update(buildConfessCard(guildId));
     }
     return;
   }

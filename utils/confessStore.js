@@ -3,14 +3,19 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Confessions anonymes ("!!confess", voir utils/confessions.js).
-// { [guildId]: { channelId: string|null, managerId: string|null,
-//                permRoleId: string|null, notifOptIns: string[],
+// { [guildId]: { channelId: string|null, panelChannelId: string|null,
+//                panelMessageId: string|null, notifOptIns: string[],
 //                pending: {id, texte, anonyme, authorId, authorTag}[],
 //                nextId: number } }
 //
+// Pas de rôle ni de "gestionnaire" stockés ici : qui a le droit de gérer les
+// confessions en attente vient du système de permissions existant du panel
+// (clé "server.confessions.manage", voir utils/permissions/catalog.js et
+// utils/confessions.js::PERM_GERER) — jamais un rôle codé en dur ici.
+//
 // `pending` (contrairement aux Map en mémoire du reste du fichier) est
 // persisté : une confession anonyme envoyée par un membre ne doit pas
-// disparaître si le bot redémarre avant que le gestionnaire ne la traite.
+// disparaître si le bot redémarre avant que quelqu'un ne la traite.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "confess.json");
 
@@ -40,8 +45,8 @@ function guildEntry(guildId) {
   if (!data[guildId]) data[guildId] = {};
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
-  if (entry.managerId === undefined) entry.managerId = null;
-  if (entry.permRoleId === undefined) entry.permRoleId = null;
+  if (entry.panelChannelId === undefined) entry.panelChannelId = null;
+  if (entry.panelMessageId === undefined) entry.panelMessageId = null;
   if (!Array.isArray(entry.notifOptIns)) entry.notifOptIns = [];
   if (!Array.isArray(entry.pending)) entry.pending = [];
   if (!Number.isInteger(entry.nextId)) entry.nextId = 1;
@@ -49,8 +54,8 @@ function guildEntry(guildId) {
 }
 
 function getConfig(guildId) {
-  const { channelId, managerId, permRoleId, notifOptIns } = guildEntry(guildId);
-  return { channelId, managerId, permRoleId, notifOptIns: [...notifOptIns] };
+  const { channelId, panelChannelId, panelMessageId, notifOptIns } = guildEntry(guildId);
+  return { channelId, panelChannelId, panelMessageId, notifOptIns: [...notifOptIns] };
 }
 
 function setChannel(guildId, channelId) {
@@ -58,15 +63,11 @@ function setChannel(guildId, channelId) {
   save();
 }
 
-/** La personne qui a lancé "!!confess" — seule à pouvoir gérer les confessions en attente (voir utils/confessions.js). */
-function setManager(guildId, userId) {
-  guildEntry(guildId).managerId = userId;
-  save();
-}
-
-/** Rôle dispensé du blocage d'écriture dans le salon de confession (en plus du gestionnaire, des administrateurs et du bot). */
-function setPermRole(guildId, roleId) {
-  guildEntry(guildId).permRoleId = roleId;
+/** Le panneau "Confesse-toi" posté par "!!confess setup" — pour le rafraîchir (menu des confessions en attente) quand une nouvelle arrive. */
+function setPanelMessage(guildId, channelId, messageId) {
+  const entry = guildEntry(guildId);
+  entry.panelChannelId = channelId;
+  entry.panelMessageId = messageId;
   save();
 }
 
@@ -82,8 +83,10 @@ function toggleNotif(guildId, userId) {
 }
 
 /**
- * Enregistre une confession en attente de publication manuelle par le
- * gestionnaire — jamais publiée automatiquement (voir utils/confessions.js).
+ * Enregistre une confession en attente de publication manuelle — jamais
+ * publiée automatiquement (voir utils/confessions.js). `authorId`/`authorTag`
+ * restent connus en interne (nécessaire pour prévenir l'auteur par MP) mais
+ * ne doivent JAMAIS être affichés dans l'interface de gestion.
  * @returns {string} l'identifiant attribué (ex. "001")
  */
 function addPending(guildId, { texte, anonyme, authorId, authorTag }) {
@@ -112,8 +115,7 @@ function removePending(guildId, id) {
 module.exports = {
   getConfig,
   setChannel,
-  setManager,
-  setPermRole,
+  setPanelMessage,
   toggleNotif,
   addPending,
   getPending,

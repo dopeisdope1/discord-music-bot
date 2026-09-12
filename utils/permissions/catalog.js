@@ -91,6 +91,7 @@ const PERMISSIONS = [
   { key: "server.tools.use", category: "server", label: "Utiliser les outils annexes (&choose, &wiki, &search wiki)" },
   { key: "server.customcommands.manage", category: "server", label: "Créer/supprimer des commandes personnalisées (&addcmd, &delcmd)" },
   { key: "server.security.scan", category: "server", label: "Lancer un audit de sécurité (&security scan)" },
+  { key: "server.confessions.manage", category: "server", label: "Gérer les confessions anonymes en attente (!!confess)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));
