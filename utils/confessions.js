@@ -108,9 +108,19 @@ function buildConfessCard() {
   return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
+// Vert/rouge/orange Discord standard (mêmes teintes que les boutons Success/
+// Danger) : la bordure du conteneur donne le statut d'un coup d'œil, sans
+// avoir à lire le texte — utile quand plusieurs confessions s'empilent dans
+// le salon de validation.
+function couleurStatut(c) {
+  if (c.status === "acceptee") return 0x57f287;
+  if (c.status === "refusee") return 0xed4245;
+  return 0xfaa61a;
+}
+
 function libelleStatut(c) {
-  if (c.status === "acceptee") return `✅ Acceptée — validée par <@${c.moderatedBy}>`;
-  if (c.status === "refusee") return `❌ Refusée — par <@${c.moderatedBy}>`;
+  if (c.status === "acceptee") return "✅ Acceptée";
+  if (c.status === "refusee") return "❌ Refusée";
   return "⏳ En attente";
 }
 
@@ -123,19 +133,20 @@ function libelleStatut(c) {
  * les retirer et afficher le résultat.
  */
 function buildValidationCard(c) {
-  const conteneur = new ContainerBuilder().addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        `**📨 Confession #${c.id}**`,
-        "",
-        `> ${c.texte}`,
-        "",
-        `**Auteur :** <@${c.authorId}> (${c.authorTag})`,
-        `**Reste anonyme ?** ${c.anonyme ? "Oui" : "Non — pseudo affiché"}`,
-        `**Statut :** ${libelleStatut(c)}`,
-      ].join("\n")
-    )
-  );
+  const infos = [
+    `**Auteur :** <@${c.authorId}> (${c.authorTag})`,
+    `**Reste anonyme ?** ${c.anonyme ? "Oui" : "Non — pseudo affiché"}`,
+    `**Envoyée :** <t:${Math.floor(c.createdAt / 1000)}:R>`,
+    `**Statut :** ${libelleStatut(c)}`,
+  ];
+  if (c.moderatedBy) infos.push(`**Traitée par :** <@${c.moderatedBy}> (<t:${Math.floor(c.moderatedAt / 1000)}:R>)`);
+
+  const conteneur = new ContainerBuilder()
+    .setAccentColor(couleurStatut(c))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([`**📨 Confession #${c.id}**`, "", `> ${c.texte}`].join("\n")))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(infos.join("\n")));
+
   if (c.status === "attente") {
     conteneur.addActionRowComponents(
       new ActionRowBuilder().addComponents(

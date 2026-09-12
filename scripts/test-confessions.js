@@ -290,6 +290,8 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     assert.ok(texte.includes("Baisons eren les amis"), texte);
     assert.ok(texte.includes("u-flow-6"), "le salon de validation DOIT montrer l'auteur au staff");
     assert.ok(texte.includes("En attente"), texte);
+    assert.ok(texte.includes("Envoyée"), "doit indiquer quand la confession a été envoyée");
+    assert.strictEqual(conteneur.accent_color, 0xfaa61a, "bordure orange tant qu'en attente");
     const boutons = conteneur.components.find((c) => c.type === 1).components.map((b) => b.label);
     assert.deepStrictEqual(boutons, ["Accepter", "Refuser"]);
   });
@@ -358,7 +360,11 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     // Le message du salon de validation est édité, boutons retirés.
     const conteneurEdite = partiesJSON(i._updates[0])[0];
     assert.ok(!conteneurEdite.components.some((c) => c.type === 1), "plus de boutons après décision");
-    assert.ok(texteDu(conteneurEdite).includes("Acceptée"));
+    const texteEdite = texteDu(conteneurEdite);
+    assert.ok(texteEdite.includes("Acceptée"), texteEdite);
+    assert.ok(texteEdite.includes("Traitée par"), "doit indiquer qui a traité et quand");
+    assert.ok(texteEdite.includes("Envoyée"), "doit indiquer quand la confession a été envoyée");
+    assert.strictEqual(conteneurEdite.accent_color, 0x57f287, "bordure verte une fois acceptée");
   });
 
   await cas('avoir la permission "server.confessions.manage" via un RÔLE suffit (comme &panel > Permissions)', async () => {
@@ -398,7 +404,9 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     const confession = confessStore.getConfession("g-ref-1", "001");
     assert.strictEqual(confession.status, "refusee");
     assert.strictEqual(confession.moderatedBy, "u-mod-2");
-    assert.ok(texteDu(partiesJSON(i._updates[0])[0]).includes("Refusée"));
+    const conteneurEdite = partiesJSON(i._updates[0])[0];
+    assert.ok(texteDu(conteneurEdite).includes("Refusée"));
+    assert.strictEqual(conteneurEdite.accent_color, 0xed4245, "bordure rouge une fois refusée");
   });
 
   console.log("\nTEST 5 : double traitement — jamais accepté ET refusé :");
