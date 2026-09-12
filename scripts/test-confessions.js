@@ -148,11 +148,12 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   };
 }
 
-/** Fait cheminer un membre jusqu'à la mise en attente d'une confession — raccourci pour les tests d'Accepter/Refuser. */
-async function soumettreConfession(env, { userId, texte, anonyme }) {
+/** Fait cheminer un membre jusqu'à la mise en attente d'une confession — raccourci pour les tests d'Accepter/Refuser. Envoi direct dès la modale, plus d'étape anonyme/pseudo. */
+async function soumettreConfession(env, { userId, texte }) {
   await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId }));
-  await handleConfessInteraction(fakeModalSubmit(env, userId, texte));
-  await handleConfessInteraction(fakeInteraction(env, { customId: `confess:anon:${anonyme ? "oui" : "non"}`, userId }));
+  const soumission = fakeModalSubmit(env, userId, texte);
+  await handleConfessInteraction(soumission);
+  return soumission;
 }
 
 (async () => {
@@ -277,11 +278,10 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     env.guild.channels.cache.set(validChan.id, validChan);
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-6" }));
-    await handleConfessInteraction(fakeModalSubmit(env, "u-flow-6", "Baisons eren les amis"));
-    const iAnon = fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-flow-6" });
-    await handleConfessInteraction(iAnon);
+    const soumission = fakeModalSubmit(env, "u-flow-6", "Baisons eren les amis");
+    await handleConfessInteraction(soumission);
 
-    assert.ok(iAnon._updates[0].content.includes("attente de validation"));
+    assert.ok(soumission._replies[0].content.includes("attente de validation"));
     assert.strictEqual(publicChan._envois.length, 0, "RIEN dans le salon public");
     assert.strictEqual(validChan._envois.length, 1, "UN message dans le salon de validation");
 
@@ -312,10 +312,9 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     const env = makeEnv("g-flow-sans-val");
     confessStore.setChannel("g-flow-sans-val", "chan-x");
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-sv" }));
-    await handleConfessInteraction(fakeModalSubmit(env, "u-sv", "un message"));
-    const iAnon = fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-sv" });
-    await handleConfessInteraction(iAnon);
-    assert.ok(iAnon._updates[0].content.includes("validation"));
+    const soumission = fakeModalSubmit(env, "u-sv", "un message");
+    await handleConfessInteraction(soumission);
+    assert.ok(soumission._replies[0].content.includes("validation"));
   });
 
   console.log("\nTEST 2/3 : Accepter — permissions et publication :");

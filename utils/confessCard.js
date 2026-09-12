@@ -23,7 +23,7 @@ const { ecrire, largeur } = require("./dashboardImage");
 //    référence à l'appui) : Chakra Petch a un rendu trop technique/anguleux
 //    pour un vrai message de confession.
 
-const LARGEUR = 560;
+const LARGEUR = 460;
 const RAYON = 48;
 
 // La police embarquée (Chakra Petch) n'a AUCUN glyphe d'emoji — voir
@@ -151,7 +151,7 @@ const RATIO_ENTETE = 0.4;
  * blanche en bas avec le message de la confession en noir.
  * @returns {Buffer} PNG
  */
-function dessinerCarteConfession(texte, { hauteur = 180 } = {}) {
+function dessinerCarteConfession(texte, { hauteur = 150 } = {}) {
   const canvas = createCanvas(LARGEUR, hauteur);
   const ctx = canvas.getContext("2d");
   const hauteurEntete = Math.round(hauteur * RATIO_ENTETE);

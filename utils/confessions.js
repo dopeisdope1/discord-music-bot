@@ -86,13 +86,12 @@ function buildConfessCard() {
         [
           "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
           "",
-          "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
+          "Envoie ton **message anonyme** — ton identité n'est jamais révélée. Tout se passe via le bot.",
           "",
           "**Comment participer ?**",
           "**1.** Clique sur le bouton ci-dessous",
           "**2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
-          "**3.** Choisis si tu veux rester anonyme ou non",
-          "**4.** Attends la validation — puis c'est publié !",
+          "**3.** Attends la validation — puis c'est publié !",
         ].join("\n")
       )
     )
@@ -128,11 +127,10 @@ function libelleStatut(c) {
  * résultat.
  */
 function buildValidationCard(c) {
-  const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 180 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 150 });
 
   const infos = [
     `**📨 Confession #${c.id}**`,
-    `**Reste anonyme ?** ${c.anonyme ? "Oui" : "Non — pseudo affiché"}`,
     `**Envoyée :** <t:${Math.floor(c.createdAt / 1000)}:R>`,
     `**Statut :** ${libelleStatut(c)}`,
   ];
@@ -164,7 +162,7 @@ function buildValidationCard(c) {
  * @returns le message envoyé, ou null en cas d'échec (salon inaccessible...)
  */
 async function publierConfession(salon, donnees) {
-  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 180 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 150 });
   return salon.send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] }).catch(() => null);
 }
 
@@ -257,49 +255,34 @@ async function handleConfessInteraction(interaction) {
     if (!etat || etat.etape !== "attente_modal") {
       return interaction.reply({ content: 'Cette étape a expiré — reclique sur "Je souhaite participer".', flags: MessageFlags.Ephemeral });
     }
+    enCours.delete(interaction.user.id);
     const texte = interaction.fields.getTextInputValue("texte").trim();
     if (!texte) {
       return interaction.reply({ content: 'Message vide — reclique sur "Je souhaite participer" pour recommencer.', flags: MessageFlags.Ephemeral });
     }
-    etat.texte = texte;
-    etat.etape = "anonymat";
-    const boutons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:oui`).setLabel("Rester anonyme").setStyle(ButtonStyle.Secondary).setEmoji("🕶️"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:non`).setLabel("Afficher mon pseudo").setStyle(ButtonStyle.Secondary).setEmoji("🙈")
-    );
-    return interaction.reply({
-      content: "Veux-tu rester anonyme, ou qu'on affiche ton pseudo à côté de ta confession ?",
-      components: [boutons],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
-  if (action === "anon") {
-    const etat = enCours.get(interaction.user.id);
-    if (!etat || etat.etape !== "anonymat") {
-      return interaction.reply({ content: 'Cette étape a expiré — reclique sur "Je souhaite participer" sur le serveur.', flags: MessageFlags.Ephemeral });
-    }
-    enCours.delete(interaction.user.id);
-    const anonyme = reste[0] === "oui";
-
+    // Envoi DIRECT dès la modale validée (demande explicite : plus d'étape
+    // "rester anonyme ou afficher mon pseudo" — de toute façon, l'auteur
+    // n'apparaît plus nulle part, ni en public ni dans le salon de
+    // validation, ce choix n'avait donc plus aucun effet visible).
     const { channelId, validationChannelId } = confessStore.getConfig(etat.guildId);
     if (!channelId) {
-      return interaction.update({ content: "Le salon de confessions n'est plus configuré sur ce serveur — abandon.", components: [] });
+      return interaction.reply({ content: "Le salon de confessions n'est plus configuré sur ce serveur — abandon.", flags: MessageFlags.Ephemeral });
     }
     if (!validationChannelId) {
-      return interaction.update({ content: "Le salon de validation n'est pas configuré sur ce serveur — abandon.", components: [] });
+      return interaction.reply({ content: "Le salon de validation n'est pas configuré sur ce serveur — abandon.", flags: MessageFlags.Ephemeral });
     }
     const guild = interaction.client.guilds.cache.get(etat.guildId);
     const salonValidation = guild?.channels.cache.get(validationChannelId);
     if (!salonValidation?.isTextBased?.()) {
-      return interaction.update({ content: "Le salon de validation est introuvable — abandon.", components: [] });
+      return interaction.reply({ content: "Le salon de validation est introuvable — abandon.", flags: MessageFlags.Ephemeral });
     }
 
     // JAMAIS de publication automatique ici (demande explicite) : la
     // confession part en attente dans le salon de validation.
     const id = confessStore.addConfession(etat.guildId, {
-      texte: etat.texte,
-      anonyme,
+      texte,
+      anonyme: true,
       authorId: interaction.user.id,
       authorTag: interaction.user.tag,
     });
@@ -307,7 +290,7 @@ async function handleConfessInteraction(interaction) {
     const envoye = await salonValidation.send(buildValidationCard(confession)).catch(() => null);
     if (envoye) confessStore.setModerationMessageId(etat.guildId, id, envoye.id);
 
-    return interaction.update({ content: "C'est envoyé ! Ta confession est en attente de validation.", components: [] });
+    return interaction.reply({ content: "C'est envoyé ! Ta confession est en attente de validation.", flags: MessageFlags.Ephemeral });
   }
 
   if (action === "accepter" || action === "refuser") {
