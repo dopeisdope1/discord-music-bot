@@ -1571,7 +1571,31 @@ function buildFormCard(formKey, member) {
       )
     );
   }
-  if (form.fields.includes("role")) {
+  if (form.fields.includes("role") && formKey === "delrole_member") {
+    // Demande explicite : ne montrer QUE les rôles que le membre a déjà —
+    // RoleSelectMenuBuilder est un composant natif Discord qui liste
+    // TOUJOURS tous les rôles du serveur (impossible à filtrer), donc un
+    // menu déroulant classique le remplace ici, avec les rôles actuels du
+    // membre ciblé comme seules options. Il faut d'abord savoir QUI est
+    // visé pour savoir quels rôles proposer — rien à afficher tant que
+    // "user" n'est pas encore choisi.
+    if (active.userId) {
+      const cible = member.guild.members.cache.get(active.userId);
+      const rolesActuels = (cible ? [...cible.roles.cache.values()] : []).filter((r) => r.id !== member.guild.id);
+      if (rolesActuels.length) {
+        rows.push(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${CARD_ID}:role:${formKey}`)
+              .setPlaceholder("Choisir un rôle à retirer")
+              .addOptions(rolesActuels.slice(0, 25).map((r) => new StringSelectMenuOptionBuilder().setLabel(r.name).setValue(r.id)))
+          )
+        );
+      } else {
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*Ce membre n'a aucun rôle à retirer.*"));
+      }
+    }
+  } else if (form.fields.includes("role")) {
     const roleSelect = new RoleSelectMenuBuilder().setCustomId(`${CARD_ID}:role:${formKey}`).setPlaceholder(labelFor("role", "Choisir un rôle"));
     // Optionnel = on doit aussi pouvoir revenir en arrière et n'en choisir aucun.
     if (isOptional("role")) roleSelect.setMinValues(0).setMaxValues(1);

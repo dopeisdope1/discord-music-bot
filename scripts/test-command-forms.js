@@ -213,6 +213,37 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(interaction._targetMember.roles._removed?.some((r) => r === TEST_ROLE_ID));
   });
 
+  await cas("la carte delrole_member ne propose que les rôles déjà possédés par la cible", () => {
+    const interaction = makeInteraction();
+    const autreRoleId = "role-222222222222222";
+    interaction.guild.roles.cache.set(autreRoleId, { id: autreRoleId, name: "AutreRole", position: 1 });
+    interaction._targetMember.roles.cache.set(TEST_ROLE_ID, { id: TEST_ROLE_ID, name: "Testeur", position: 2 });
+    const member = { id: "staff-1", guild: interaction.guild };
+
+    commandForms.setFormState("staff-1", "delrole_member", { userId: TARGET_ID });
+    const json = commandForms.buildFormCard("delrole_member", member).components[0].toJSON();
+    commandForms.clearFormState("staff-1", "delrole_member");
+
+    const menuRow = json.components.find((c) => c.type === 1 && c.components[0]?.type === 3);
+    assert.ok(menuRow, "un menu déroulant classique (type 3) doit remplacer le RoleSelectMenu natif");
+    const valeurs = menuRow.components[0].options.map((o) => o.value);
+    assert.deepStrictEqual(valeurs, [TEST_ROLE_ID], "seul le rôle déjà possédé par la cible doit apparaître, pas AutreRole");
+  });
+
+  await cas("la carte delrole_member affiche un message quand la cible n'a aucun rôle", () => {
+    const interaction = makeInteraction();
+    const member = { id: "staff-1", guild: interaction.guild };
+
+    commandForms.setFormState("staff-1", "delrole_member", { userId: TARGET_ID });
+    const json = commandForms.buildFormCard("delrole_member", member).components[0].toJSON();
+    commandForms.clearFormState("staff-1", "delrole_member");
+
+    const menuRow = json.components.find((c) => c.type === 1 && c.components[0]?.type === 3);
+    assert.ok(!menuRow, "aucun menu ne doit apparaître si la cible n'a aucun rôle");
+    const texte = json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("aucun rôle"), texte);
+  });
+
   await cas("lock_channel verrouille le salon choisi", async () => {
     const interaction = makeInteraction();
     let edited = null;
