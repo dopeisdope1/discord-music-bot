@@ -24,6 +24,11 @@ GlobalFonts.registerFromPath(path.join(FONTS, "ChakraPetch-Regular.ttf"), "Chakr
 // à côté d'un texte gras se verrait autant que le « 8 » qu'elle remplace.
 GlobalFonts.registerFromPath(path.join(FONTS, "Rajdhani-Bold.ttf"), "AmpBold");
 GlobalFonts.registerFromPath(path.join(FONTS, "Rajdhani-Medium.ttf"), "AmpRegular");
+// Nunito (OFL) : écriture normale, ronde — pour les cartes qui ne doivent
+// PAS avoir le rendu technique/anguleux de Chakra Petch (voir
+// utils/confessCard.js, demande explicite avec capture de référence à
+// l'appui : "je veux que l'écriture soit normal pas en carré bizarre").
+GlobalFonts.registerFromPath(path.join(FONTS, "Nunito-ExtraBold.woff2"), "NunitoBold");
 
 // Chakra Petch dessine l'esperluette comme un « 8 » barré. Le préfixe du bot
 // ÉTANT « & », tout ce que l'image annonçait se lisait « 8kick », « 8ban »,

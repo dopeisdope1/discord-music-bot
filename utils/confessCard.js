@@ -1,9 +1,11 @@
 const { createCanvas } = require("@napi-rs/canvas");
 const { AttachmentBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = require("discord.js");
-// Déclenche l'enregistrement des polices Chakra Petch (même monde visuel que
-// &help/&panel, voir utils/dashboardImage.js) et fournit `ecrire`/`largeur` —
-// jamais ctx.fillText directement, sans quoi l'esperluette « & » ressort en
-// « 8 » barré (voir le commentaire détaillé dans dashboardImage.js).
+// Déclenche l'enregistrement des polices (Chakra Petch ET Nunito, voir
+// utils/dashboardImage.js) et fournit `ecrire`/`largeur` — jamais
+// ctx.fillText directement avec Chakra Petch, sans quoi l'esperluette « & »
+// ressort en « 8 » barré (voir le commentaire détaillé dans dashboardImage.js;
+// `ecrire`/`largeur` ne font rien de spécial pour les autres polices comme
+// Nunito, sans esperluette à corriger).
 const { ecrire, largeur } = require("./dashboardImage");
 
 // Les cartes visuelles des confessions (utils/confessions.js) : demande
@@ -11,12 +13,15 @@ const { ecrire, largeur } = require("./dashboardImage");
 // d'application moderne — PAS un embed Discord classique avec une barre
 // colorée sur le côté. Deux gabarits, selon la référence fournie :
 //  - dessinerCarte : UN bloc dégradé, gros texte blanc — sert à la carte
-//    d'accroche ("Confesse-toi").
+//    d'accroche ("Confesse-toi"). Police Chakra Petch (ChakraBold), inchangée.
 //  - dessinerCarteConfession : DEUX zones empilées (bande dégradée avec un
 //    texte fixe en haut, fond blanc avec le message en noir en bas) —
 //    sert à chaque confession publiée, exactement comme sur la seconde
 //    référence fournie ("envoie-moi des messages anonymes !" en haut,
-//    "Baisons eren les amis" en bas).
+//    "Baisons eren les amis" en bas). Police Nunito (NunitoBold) — écriture
+//    normale/ronde, demande explicite ("pas en carré bizarre", capture de
+//    référence à l'appui) : Chakra Petch a un rendu trop technique/anguleux
+//    pour un vrai message de confession.
 
 const LARGEUR = 900;
 const RAYON = 48;
@@ -172,7 +177,7 @@ function dessinerCarteConfession(texte, { hauteur = 420 } = {}) {
     largeurZone: LARGEUR,
     hauteurZone: hauteurEntete,
     couleur: "#ffffff",
-    police: "ChakraBold",
+    police: "NunitoBold",
     tailleMax: 44,
     tailleMin: 24,
     margeH: 70,
@@ -184,7 +189,7 @@ function dessinerCarteConfession(texte, { hauteur = 420 } = {}) {
     largeurZone: LARGEUR,
     hauteurZone: hauteurCorps,
     couleur: "#161616",
-    police: "ChakraBold",
+    police: "NunitoBold",
     tailleMax: 50,
     tailleMin: 24,
     margeH: 70,
