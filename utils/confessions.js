@@ -127,7 +127,7 @@ function libelleStatut(c) {
  * résultat.
  */
 function buildValidationCard(c) {
-  const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 260 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 180 });
 
   const infos = [
     `**📨 Confession #${c.id}**`,
@@ -164,7 +164,7 @@ function buildValidationCard(c) {
  * @returns le message envoyé, ou null en cas d'échec (salon inaccessible...)
  */
 async function publierConfession(salon, donnees) {
-  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 260 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 180 });
   return salon.send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] }).catch(() => null);
 }
 
