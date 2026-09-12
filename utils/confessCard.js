@@ -23,7 +23,7 @@ const { ecrire, largeur } = require("./dashboardImage");
 //    référence à l'appui) : Chakra Petch a un rendu trop technique/anguleux
 //    pour un vrai message de confession.
 
-const LARGEUR = 700;
+const LARGEUR = 560;
 const RAYON = 48;
 
 // La police embarquée (Chakra Petch) n'a AUCUN glyphe d'emoji — voir
