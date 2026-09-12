@@ -390,6 +390,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.strictEqual(i._updates.length, 0, "première réponse : reply, pas update");
     assert.strictEqual(i._replies.length, 1);
     assert.ok(Number(i._replies[0].flags) & Number(MessageFlags.Ephemeral), "doit être éphémère");
+    assert.strictEqual(i._replies[0].files?.length, 1, "reprend l'image du panneau — pour lui ressembler, même en privé");
     const menu = menuDeLaVue(partiesJSON(i._replies[0])[0]);
     assert.ok(menu.options.some((o) => o.label.includes("Confession #")));
   });

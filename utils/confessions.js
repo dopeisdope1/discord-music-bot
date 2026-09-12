@@ -117,12 +117,17 @@ function buildConfessCard() {
  * La vue de gestion — TOUJOURS envoyée en réponse ÉPHÉMÈRE (jamais posée
  * dans le salon, voir l'en-tête du fichier) : c'est ce qui garantit que
  * personne d'autre que le gestionnaire ne voit le contenu des confessions
- * en attente. `detail`, si fourni, est LA confession actuellement affichée
- * pour publication/refus ; sans lui, la vue montre le menu déroulant listant
+ * en attente. Reprend l'image du panneau public pour RESSEMBLER au même
+ * écran (demande explicite) — reste techniquement une réponse privée,
+ * seulement visible par qui a cliqué.
+ *
+ * `detail`, si fourni, est LA confession actuellement affichée pour
+ * publication/refus ; sans lui, la vue montre le menu déroulant listant
  * toutes les confessions en attente.
  */
 function buildGestionVue(guildId, { detail } = {}) {
-  const conteneur = new ContainerBuilder();
+  const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 200, texteAlternatif: "Confesse-toi — gestion des confessions" });
+  const conteneur = new ContainerBuilder().addMediaGalleryComponents(galerie);
 
   if (detail) {
     // Le contenu ET "Reste anonyme ?" — JAMAIS l'auteur, sous aucune forme
@@ -163,7 +168,7 @@ function buildGestionVue(guildId, { detail } = {}) {
     }
   }
 
-  return { flags: MessageFlags.IsComponentsV2, components: [conteneur] };
+  return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
 const VUE_FERMEE = {
