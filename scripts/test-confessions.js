@@ -1,20 +1,24 @@
 /**
- * Vérifie "!!confess" (utils/confessions.js) — deuxième refonte :
+ * Vérifie "!!confess" (utils/confessions.js) — troisième refonte :
  *
- *  - "!!confess setup" reste la SEULE commande texte, elle installe le
- *    panneau public "Confesse-toi".
- *  - La gestion des confessions en attente (menu déroulant + Publier/
- *    Refuser/Retour/Fermer) est INTÉGRÉE à CE MÊME panneau, jamais un
- *    deuxième message séparé.
- *  - Qui peut gérer dépend de la permission "server.confessions.manage" du
- *    système EXISTANT de &panel > Permissions — pas un rôle codé en dur.
- *  - Aucune information sur l'auteur (pseudo, ID...) n'apparaît JAMAIS dans
- *    l'interface de gestion, même pour qui a la permission de gérer.
- *  - Le salon de confession est protégé : tout message qui n'est pas d'un
- *    membre autorisé (permission ou administrateur Discord) ou du bot est
+ *  - "!!confess setup" reste la SEULE commande texte : elle installe le
+ *    panneau public "Confesse-toi" ET fait de son AUTEUR le seul
+ *    gestionnaire de ce panneau (un utilisateur précis, pas une permission
+ *    partagée).
+ *  - Le panneau public ne montre JAMAIS le contenu des confessions en
+ *    attente : juste un bouton "Gérer les confessions", qui ouvre la liste
+ *    en réponse ÉPHÉMÈRE (visible uniquement par le gestionnaire).
+ *  - Seul le gestionnaire peut utiliser cette interface (menu, Publier,
+ *    Refuser, Retour, Fermer) — refus éphémère pour tout autre utilisateur,
+ *    même avec la permission "server.confessions.manage".
+ *  - Cette permission continue de régir qui peut ÉCRIRE dans le salon (pas
+ *    qui peut gérer) : le salon reste protégé, tout message qui n'est pas
+ *    du gestionnaire, d'un membre autorisé ou d'un administrateur est
  *    supprimé instantanément.
- *  - Une confession soumise n'est JAMAIS publiée automatiquement : elle
- *    rejoint une file d'attente, publiée seulement depuis le panneau.
+ *  - Aucune information sur l'auteur (pseudo, ID...) n'apparaît JAMAIS dans
+ *    l'interface de gestion, même pour le gestionnaire.
+ *  - Une confession soumise n'est JAMAIS publiée automatiquement, et aucun
+ *    MP n'est envoyé par le système (ni à l'auteur, ni à personne).
  *
  * Lancement : node scripts/test-confessions.js
  */
@@ -47,32 +51,22 @@ async function cas(nom, fn) {
 
 // ---- Fixtures ----
 
-/** Un salon capable de `send` ET de retrouver un message envoyé via `messages.fetch` (pour rafraichirPanel). */
 function fakeChannel(id) {
   const envois = [];
-  const messagesStore = new Map();
-  let compteur = 0;
   return {
     id,
     isTextBased: () => true,
     send: async (payload) => {
-      const msg = {
-        id: `msg-${++compteur}`,
-        embeds: payload.embeds,
-        _edits: [],
-        edit: async (p) => msg._edits.push(p),
-      };
+      const msg = { embeds: payload.embeds };
       envois.push({ payload, msg });
-      messagesStore.set(msg.id, msg);
       return msg;
     },
-    messages: { fetch: async (id) => messagesStore.get(id) || null },
     _envois: envois,
   };
 }
 
-/** Le menu déroulant du panneau (parmi ses PLUSIEURS ActionRow — participer ET, selon l'état, menu ou gestion). */
-function menuDuPanneau(conteneur) {
+/** Le menu déroulant d'une vue de gestion (une seule ActionRow — la vue de gestion n'a jamais le bouton "Je souhaite participer"). */
+function menuDeLaVue(conteneur) {
   for (const c of conteneur.components) {
     if (c.type !== 1) continue;
     const select = c.components.find((sub) => sub.type === 3);
@@ -81,21 +75,9 @@ function menuDuPanneau(conteneur) {
   return null;
 }
 
-/** La rangée de boutons de GESTION (Publier/Refuser/Retour/Fermer) — distincte de la rangée "Je souhaite participer", toujours présente aussi. */
-function boutonsGestion(conteneur) {
-  const rangee = conteneur.components.find((c) => c.type === 1 && c.components.some((b) => ["Publier", "Retour", "Fermer"].includes(b.label)));
-  return rangee ? rangee.components.map((b) => b.label) : null;
-}
-
 /** Un Components V2 sans ContainerBuilder à dérouler : `payload.components` est un tableau PLAT de builders. */
 function partiesJSON(payload) {
   return payload.components.map((c) => c.toJSON());
-}
-
-/** Le contenu texte (type 10) du DERNIER état connu d'un panneau — soit son envoi initial, soit sa dernière édition. */
-function dernierePayload(envoi) {
-  if (envoi.msg._edits.length) return envoi.msg._edits[envoi.msg._edits.length - 1];
-  return envoi.payload;
 }
 
 /** Un environnement = un serveur, avec un registre d'utilisateurs partagé (pour que interaction.user et client.users.fetch(id) renvoient LE MÊME objet, MP compris). */
@@ -189,7 +171,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas('"!!confess" seul (sans "setup") reste silencieux — plus de session de gestionnaire', async () => {
+  await cas('"!!confess" seul (sans "setup") reste silencieux — plus de session à part', async () => {
     const env = makeEnv("g-bare");
     const msg = fakeMessage(env, { authorId: "u1", content: "!!confess", permissionKey: "channels.manage" });
     await handleConfessTextCommand(null, msg);
@@ -206,19 +188,20 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.ok(msg1._replies[0]?.includes?.("pas la permission"));
   });
 
-  await cas('"!!confess setup" poste le panneau "Confesse-toi", avec la zone de gestion intégrée dedans (pas un 2e message)', async () => {
+  await cas('"!!confess setup" poste le panneau SANS aucun contenu de confession, et fait de son auteur le gestionnaire', async () => {
     const env = makeEnv("g-setup-ok");
     const channel = fakeChannel("chan-public");
     const msg = fakeMessage(env, { authorId: "u-admin", content: "!!confess setup", channel, permissionKey: "channels.manage" });
     await handleConfessTextCommand(null, msg);
 
     assert.strictEqual(confessStore.getConfig("g-setup-ok").channelId, "chan-public");
-    assert.strictEqual(channel._envois.length, 1, "un seul message — pas de panneau séparé pour la gestion");
+    assert.strictEqual(confessStore.getConfig("g-setup-ok").setupAuthorId, "u-admin", "l'auteur du setup devient le gestionnaire");
+    assert.strictEqual(channel._envois.length, 1, "un seul message");
     const payload = channel._envois[0].payload;
     assert.strictEqual(payload.files?.length, 1, "doit joindre l'image de la carte visuelle");
     const parties = partiesJSON(payload);
     const conteneurs = parties.filter((c) => c.type === 17);
-    assert.strictEqual(conteneurs.length, 1, "un seul ContainerBuilder regroupant TOUT, gestion comprise");
+    assert.strictEqual(conteneurs.length, 1);
     assert.ok(conteneurs[0].accent_color === undefined || conteneurs[0].accent_color === null, "pas de couleur d'accent — gris par défaut");
     const interieur = conteneurs[0].components;
     assert.ok(interieur.some((c) => c.type === 12), "l'image du dégradé doit être DANS le cadre");
@@ -226,10 +209,10 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.ok(texte.includes("Comment participer"), texte);
     assert.ok(texte.includes("fenêtre qui s'ouvre"), "le parcours décrit ne doit plus mentionner de MP");
     assert.ok(!texte.includes("garçon"), "plus d'étape garçon/fille dans le parcours décrit");
-    assert.ok(texte.includes("Messages anonymes en attente"), "la zone de gestion doit être intégrée au même panneau");
-    assert.ok(texte.includes("Aucune confession en attente"), "aucune confession pour l'instant");
-    const rangeeParticiper = interieur.find((c) => c.type === 1);
-    assert.deepStrictEqual(rangeeParticiper.components.map((b) => b.label), ["Je souhaite participer"]);
+    assert.ok(!texte.includes("Messages anonymes en attente"), "AUCUN contenu de confession ne doit apparaître dans le panneau public");
+    assert.ok(!texte.includes("Confession #"), "AUCUN contenu de confession ne doit apparaître dans le panneau public");
+    const rangee = interieur.find((c) => c.type === 1);
+    assert.deepStrictEqual(rangee.components.map((b) => b.label), ["Je souhaite participer", "Gérer les confessions"]);
   });
 
   console.log("\nProtection du salon de confession :");
@@ -237,16 +220,25 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   await cas("un membre normal qui écrit dans le salon voit son message supprimé instantanément", async () => {
     const env = makeEnv("g-garde-1");
     const channel = fakeChannel("chan-garde-1");
-    confessStore.setChannel("g-garde-1", channel.id);
+    confessStore.setChannel("g-garde-1", channel.id, "u-gestionnaire");
     const msg = fakeMessage(env, { authorId: "u-normal", content: "coucou", channel });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(msg._deleted.length, 1, "le message doit être supprimé");
   });
 
+  await cas("le gestionnaire (auteur du setup) peut écrire", async () => {
+    const env = makeEnv("g-garde-mgr");
+    const channel = fakeChannel("chan-garde-mgr");
+    confessStore.setChannel("g-garde-mgr", channel.id, "u-gestionnaire");
+    const msg = fakeMessage(env, { authorId: "u-gestionnaire", content: "coucou", channel });
+    await handleConfessTextCommand(null, msg);
+    assert.strictEqual(msg._deleted.length, 0);
+  });
+
   await cas("un membre avec la permission server.confessions.manage (via &panel > Permissions) peut écrire", async () => {
     const env = makeEnv("g-garde-2");
     const channel = fakeChannel("chan-garde-2");
-    confessStore.setChannel("g-garde-2", channel.id);
+    confessStore.setChannel("g-garde-2", channel.id, "u-gestionnaire");
     const msg = fakeMessage(env, { authorId: "u-perm", content: "coucou", channel, permissionKey: PERM_GERER });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(msg._deleted.length, 0);
@@ -255,7 +247,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   await cas("un administrateur Discord peut écrire", async () => {
     const env = makeEnv("g-garde-3");
     const channel = fakeChannel("chan-garde-3");
-    confessStore.setChannel("g-garde-3", channel.id);
+    confessStore.setChannel("g-garde-3", channel.id, "u-gestionnaire");
     const msg = fakeMessage(env, { authorId: "u-admin", content: "coucou", channel, isAdmin: true });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(msg._deleted.length, 0);
@@ -265,7 +257,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     const env = makeEnv("g-garde-4");
     const channelConfession = fakeChannel("chan-garde-4");
     const autreSalon = fakeChannel("chan-autre-4");
-    confessStore.setChannel("g-garde-4", channelConfession.id);
+    confessStore.setChannel("g-garde-4", channelConfession.id, "u-gestionnaire");
     const msg = fakeMessage(env, { authorId: "u-normal", content: "coucou", channel: autreSalon });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(msg._deleted.length, 0);
@@ -282,7 +274,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   await cas("une commande !!confess mal utilisée (sans la permission) n'est PAS supprimée par la garde, juste refusée", async () => {
     const env = makeEnv("g-garde-6");
     const channel = fakeChannel("chan-garde-6");
-    confessStore.setChannel("g-garde-6", channel.id);
+    confessStore.setChannel("g-garde-6", channel.id, "u-gestionnaire");
     const msg = fakeMessage(env, { authorId: "u-sans", content: "!!confess setup", channel });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(msg._deleted.length, 0);
@@ -334,7 +326,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   await cas("étape 3 : choisir anonyme MET EN ATTENTE — jamais publié automatiquement", async () => {
     const env = makeEnv("g-flow-6");
     const publicChan = fakeChannel("chan-flow-6");
-    confessStore.setChannel("g-flow-6", publicChan.id);
+    confessStore.setChannel("g-flow-6", publicChan.id, "u-gestionnaire");
     env.guild.channels.cache.set(publicChan.id, publicChan);
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-6" }));
@@ -356,7 +348,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
   await cas("choisir de ne PAS rester anonyme reste quand même SEULEMENT en attente (pas publié)", async () => {
     const env = makeEnv("g-flow-7");
     const publicChan = fakeChannel("chan-flow-7");
-    confessStore.setChannel("g-flow-7", publicChan.id);
+    confessStore.setChannel("g-flow-7", publicChan.id, "u-gestionnaire");
     env.guild.channels.cache.set(publicChan.id, publicChan);
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-7" }));
@@ -387,30 +379,39 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.strictEqual(confessStore.getPending("g-flow-sans-salon").length, 0);
   });
 
-  await cas("le panneau public se rafraîchit tout seul quand une nouvelle confession arrive", async () => {
-    const env = makeEnv("g-refresh");
-    const publicChan = fakeChannel("chan-refresh");
-    env.guild.channels.cache.set(publicChan.id, publicChan);
-    const msgSetup = fakeMessage(env, { authorId: "u-admin", content: "!!confess setup", channel: publicChan, permissionKey: "channels.manage" });
-    await handleConfessTextCommand(null, msgSetup);
-    assert.strictEqual(publicChan._envois[0].msg._edits.length, 0);
+  console.log('\nBouton "Gérer les confessions" — réservé au gestionnaire, ouvre une vue ÉPHÉMÈRE :');
 
-    await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-refresh" }));
-    await handleConfessInteraction(fakeModalSubmit(env, "u-refresh", "je suis amoureux de quelqu'un ici"));
-    await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-refresh" }));
-
-    assert.strictEqual(publicChan._envois[0].msg._edits.length, 1, "le panneau doit avoir été édité en place");
-    const menu = menuDuPanneau(partiesJSON(dernierePayload(publicChan._envois[0]))[0]);
-    assert.ok(menu, "le menu déroulant doit être présent après rafraîchissement");
-    assert.ok(menu.options.some((o) => o.label.includes("Confession #")), JSON.stringify(menu.options));
+  await cas("un membre qui n'est PAS le gestionnaire (même avec la permission &panel) est refusé, éphémère", async () => {
+    const env = makeEnv("g-ouvrir-non");
+    confessStore.setChannel("g-ouvrir-non", "chan-x", "u-gestionnaire");
+    const i = fakeInteraction(env, { customId: "confess:gerer:ouvrir", userId: "u-intrus", permissionKey: PERM_GERER });
+    await handleConfessInteraction(i);
+    assert.strictEqual(i._replies.length, 1);
+    assert.ok(i._replies[0].content.includes("pas la permission"));
+    assert.ok(i._replies[0].flags, "doit être éphémère");
+    assert.strictEqual(i._replies[0].components, undefined, "aucun contenu de confession ne doit fuiter dans le refus");
   });
 
-  console.log("\nInterface de gestion (intégrée au panneau, permission &panel > Permissions) :");
+  await cas("le gestionnaire qui clique reçoit la liste en réponse ÉPHÉMÈRE (reply, pas update)", async () => {
+    const env = makeEnv("g-ouvrir-oui");
+    confessStore.setChannel("g-ouvrir-oui", "chan-x", "u-gestionnaire");
+    confessStore.addPending("g-ouvrir-oui", { texte: "en attente", anonyme: true, authorId: "u-y", authorTag: "u-y#0001" });
+    const i = fakeInteraction(env, { customId: "confess:gerer:ouvrir", userId: "u-gestionnaire" });
+    await handleConfessInteraction(i);
+    assert.strictEqual(i._updates.length, 0, "première réponse : reply, pas update");
+    assert.strictEqual(i._replies.length, 1);
+    assert.ok(Number(i._replies[0].flags) & Number(require("discord.js").MessageFlags.Ephemeral), "doit être éphémère");
+    const menu = menuDeLaVue(partiesJSON(i._replies[0])[0]);
+    assert.ok(menu.options.some((o) => o.label.includes("Confession #")));
+  });
 
-  await cas("sans la permission server.confessions.manage, menu ET boutons de gestion sont refusés (éphémère)", async () => {
+  console.log("\nInterface de gestion (réservée au gestionnaire, jamais d'info sur l'auteur) :");
+
+  await cas("sans être le gestionnaire, menu ET boutons de gestion sont refusés (éphémère), même avec la permission &panel", async () => {
     const env = makeEnv("g-gerer-secu");
+    confessStore.setChannel("g-gerer-secu", "chan-x", "u-gestionnaire");
     for (const customId of ["confess:gerer:choisir", "confess:gerer:publier:001", "confess:gerer:refuser:001", "confess:gerer:retour", "confess:gerer:fermer"]) {
-      const i = fakeInteraction(env, { customId, userId: "u-intrus", values: ["001"] });
+      const i = fakeInteraction(env, { customId, userId: "u-intrus", values: ["001"], permissionKey: PERM_GERER });
       await handleConfessInteraction(i);
       assert.strictEqual(i._replies.length, 1, customId);
       assert.ok(i._replies[0].content.includes("pas la permission"), customId);
@@ -419,20 +420,12 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     }
   });
 
-  await cas('avoir la permission via un RÔLE (pas juste un octroi direct) suffit, comme "&panel > Permissions"', async () => {
-    const env = makeEnv("g-gerer-role");
-    permStore.setRoleGrants("g-gerer-role", "role-staff", [PERM_GERER]);
-    const i = fakeInteraction(env, { customId: "confess:gerer:retour", userId: "u-staff" });
-    i.member.roles.cache.set("role-staff", { id: "role-staff" });
-    await handleConfessInteraction(i);
-    assert.strictEqual(i._updates.length, 1, "la permission accordée au rôle doit suffire");
-  });
-
   await cas("sélectionner une confession affiche son contenu, SANS AUCUNE information sur l'auteur", async () => {
     const env = makeEnv("g-gerer-1");
+    confessStore.setChannel("g-gerer-1", "chan-x", "u-gestionnaire");
     const id = confessStore.addPending("g-gerer-1", { texte: "Un secret bien gardé", anonyme: true, authorId: "u-auteur-secret", authorTag: "PseudoSecret#1234" });
 
-    const i = fakeInteraction(env, { customId: "confess:gerer:choisir", userId: "u-gestionnaire", values: [id], permissionKey: PERM_GERER });
+    const i = fakeInteraction(env, { customId: "confess:gerer:choisir", userId: "u-gestionnaire", values: [id] });
     await handleConfessInteraction(i);
 
     const conteneur = partiesJSON(i._updates[0])[0];
@@ -443,18 +436,19 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.ok(!texte.includes("u-auteur-secret"), "l'ID de l'auteur ne doit JAMAIS apparaître");
     assert.ok(!texte.includes("PseudoSecret"), "le pseudo de l'auteur ne doit JAMAIS apparaître, même au gestionnaire");
     assert.ok(!texte.toLowerCase().includes("auteur"), "même le mot \"Auteur\" ne doit plus apparaître");
-    assert.deepStrictEqual(boutonsGestion(conteneur), ["Publier", "Refuser", "Retour", "Fermer"]);
+    const boutons = conteneur.components.find((c) => c.type === 1).components.map((b) => b.label);
+    assert.deepStrictEqual(boutons, ["Publier", "Refuser", "Retour", "Fermer"]);
   });
 
   await cas("Publier : envoie la confession dans le salon SANS révéler l'auteur, la retire de la liste, AUCUN MP envoyé", async () => {
     const env = makeEnv("g-gerer-2");
     const publicChan = fakeChannel("chan-gerer-2");
     env.guild.channels.cache.set(publicChan.id, publicChan);
-    confessStore.setChannel("g-gerer-2", publicChan.id);
+    confessStore.setChannel("g-gerer-2", publicChan.id, "u-gestionnaire");
     const auteur = env.getUser("u-auteur-2");
     const id = confessStore.addPending("g-gerer-2", { texte: "Message anonyme à publier", anonyme: true, authorId: "u-auteur-2", authorTag: "u-auteur-2#0001" });
 
-    const i = fakeInteraction(env, { customId: `confess:gerer:publier:${id}`, userId: "u-gestionnaire", permissionKey: PERM_GERER });
+    const i = fakeInteraction(env, { customId: `confess:gerer:publier:${id}`, userId: "u-gestionnaire" });
     await handleConfessInteraction(i);
 
     assert.strictEqual(publicChan._envois.length, 1);
@@ -465,7 +459,6 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.strictEqual(confessStore.getPending("g-gerer-2").length, 0, "retirée de la file après publication");
     assert.strictEqual(auteur._dms.length, 0, "aucun MP envoyé — demande explicite");
 
-    // Retour au panneau (liste désormais vide), pas un message brut.
     const texte = partiesJSON(i._updates[0])[0].components.map((c) => c.content).join("\n");
     assert.ok(texte.includes("Aucune confession en attente"));
   });
@@ -474,11 +467,11 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     const env = makeEnv("g-gerer-3");
     const publicChan = fakeChannel("chan-gerer-3");
     env.guild.channels.cache.set(publicChan.id, publicChan);
-    confessStore.setChannel("g-gerer-3", publicChan.id);
+    confessStore.setChannel("g-gerer-3", publicChan.id, "u-gestionnaire");
     const auteur = env.getUser("u-auteur-3");
     const id = confessStore.addPending("g-gerer-3", { texte: "Message refusé", anonyme: false, authorId: "u-auteur-3", authorTag: "u-auteur-3#0001" });
 
-    const i = fakeInteraction(env, { customId: `confess:gerer:refuser:${id}`, userId: "u-gestionnaire", permissionKey: PERM_GERER });
+    const i = fakeInteraction(env, { customId: `confess:gerer:refuser:${id}`, userId: "u-gestionnaire" });
     await handleConfessInteraction(i);
 
     assert.strictEqual(publicChan._envois.length, 0, "rien ne doit être publié");
@@ -486,9 +479,10 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.strictEqual(auteur._dms.length, 0, "aucun MP envoyé — demande explicite");
   });
 
-  await cas("publier/refuser une confession déjà traitée (ou inconnue) ne plante pas, revient au panneau", async () => {
+  await cas("publier/refuser une confession déjà traitée (ou inconnue) ne plante pas, revient à la liste", async () => {
     const env = makeEnv("g-gerer-4");
-    const i = fakeInteraction(env, { customId: "confess:gerer:publier:999", userId: "u-gestionnaire", permissionKey: PERM_GERER });
+    confessStore.setChannel("g-gerer-4", "chan-x", "u-gestionnaire");
+    const i = fakeInteraction(env, { customId: "confess:gerer:publier:999", userId: "u-gestionnaire" });
     await handleConfessInteraction(i);
     const texte = partiesJSON(i._updates[0])[0].components.map((c) => c.content).join("\n");
     assert.ok(texte.includes("Aucune confession en attente"));
@@ -496,21 +490,24 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
 
   await cas("Retour revient à la liste des confessions en attente", async () => {
     const env = makeEnv("g-gerer-5");
+    confessStore.setChannel("g-gerer-5", "chan-x", "u-gestionnaire");
     confessStore.addPending("g-gerer-5", { texte: "toujours là", anonyme: true, authorId: "u-x", authorTag: "u-x#0001" });
-    const i = fakeInteraction(env, { customId: "confess:gerer:retour", userId: "u-gestionnaire", permissionKey: PERM_GERER });
+    const i = fakeInteraction(env, { customId: "confess:gerer:retour", userId: "u-gestionnaire" });
     await handleConfessInteraction(i);
     const conteneur = partiesJSON(i._updates[0])[0];
-    const menu = menuDuPanneau(conteneur);
+    const menu = menuDeLaVue(conteneur);
     assert.ok(menu, "un menu déroulant doit être présent");
     assert.ok(menu.options.some((o) => o.label.includes("Confession #")), JSON.stringify(menu.options));
   });
 
-  await cas("Fermer revient aussi au panneau (pas de deuxième état caché)", async () => {
+  await cas("Fermer affiche un panneau fermé, sans boutons ni menu", async () => {
     const env = makeEnv("g-gerer-6");
-    const i = fakeInteraction(env, { customId: "confess:gerer:fermer", userId: "u-gestionnaire", permissionKey: PERM_GERER });
+    confessStore.setChannel("g-gerer-6", "chan-x", "u-gestionnaire");
+    const i = fakeInteraction(env, { customId: "confess:gerer:fermer", userId: "u-gestionnaire" });
     await handleConfessInteraction(i);
-    const conteneur = partiesJSON(i._updates[0])[0];
-    assert.ok(conteneur.components.some((c) => c.content?.includes("Confesse-toi") || c.content?.includes("avouer")), "le panneau complet doit rester visible");
+    const parties = partiesJSON(i._updates[0]);
+    assert.ok(!parties.some((c) => c.type === 1), "aucun bouton");
+    assert.ok(parties[0].components.some((c) => c.content?.includes("fermé")));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

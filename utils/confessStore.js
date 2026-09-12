@@ -3,15 +3,15 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Confessions anonymes ("!!confess", voir utils/confessions.js).
-// { [guildId]: { channelId: string|null, panelChannelId: string|null,
-//                panelMessageId: string|null,
+// { [guildId]: { channelId: string|null, setupAuthorId: string|null,
 //                pending: {id, texte, anonyme, authorId, authorTag}[],
 //                nextId: number } }
 //
-// Pas de rôle ni de "gestionnaire" stockés ici : qui a le droit de gérer les
-// confessions en attente vient du système de permissions existant du panel
-// (clé "server.confessions.manage", voir utils/permissions/catalog.js et
-// utils/confessions.js::PERM_GERER) — jamais un rôle codé en dur ici.
+// `setupAuthorId` : la personne qui a lancé "!!confess setup" — SEULE à
+// pouvoir gérer les confessions en attente (demande explicite, remplace la
+// permission "server.confessions.manage" pour cet usage précis ; cette
+// permission continue de régir qui peut ÉCRIRE dans le salon, voir
+// utils/confessions.js::appliquerGardeSalon).
 //
 // Aucun MP n'est envoyé par le système (demande explicite) : authorId/
 // authorTag restent connus en interne (pour une éventuelle modération) mais
@@ -49,28 +49,22 @@ function guildEntry(guildId) {
   if (!data[guildId]) data[guildId] = {};
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
-  if (entry.panelChannelId === undefined) entry.panelChannelId = null;
-  if (entry.panelMessageId === undefined) entry.panelMessageId = null;
+  if (entry.setupAuthorId === undefined) entry.setupAuthorId = null;
   if (!Array.isArray(entry.pending)) entry.pending = [];
   if (!Number.isInteger(entry.nextId)) entry.nextId = 1;
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId, panelChannelId, panelMessageId } = guildEntry(guildId);
-  return { channelId, panelChannelId, panelMessageId };
+  const { channelId, setupAuthorId } = guildEntry(guildId);
+  return { channelId, setupAuthorId };
 }
 
-function setChannel(guildId, channelId) {
-  guildEntry(guildId).channelId = channelId;
-  save();
-}
-
-/** Le panneau "Confesse-toi" posté par "!!confess setup" — pour le rafraîchir (menu des confessions en attente) quand une nouvelle arrive. */
-function setPanelMessage(guildId, channelId, messageId) {
+/** `authorId` devient LE gestionnaire de ce panneau (voir utils/confessions.js) — écrase le précédent si "!!confess setup" est relancé. */
+function setChannel(guildId, channelId, authorId) {
   const entry = guildEntry(guildId);
-  entry.panelChannelId = channelId;
-  entry.panelMessageId = messageId;
+  entry.channelId = channelId;
+  entry.setupAuthorId = authorId;
   save();
 }
 
@@ -108,7 +102,6 @@ function removePending(guildId, id) {
 module.exports = {
   getConfig,
   setChannel,
-  setPanelMessage,
   addPending,
   getPending,
   getPendingById,
