@@ -46,8 +46,9 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 //  - AUCUNE information permettant d'identifier l'auteur (pseudo, ID,
 //    mention, avatar...) n'apparaît JAMAIS dans l'interface de gestion,
 //    même à la personne qui a la permission de gérer — demande explicite.
-//    L'auteur reste connu EN INTERNE (authorId/authorTag persistés) juste
-//    assez pour le prévenir par MP une fois sa confession traitée.
+//    L'auteur reste connu EN INTERNE (authorId/authorTag persistés, pour une
+//    éventuelle modération) mais n'est JAMAIS contacté par MP (demande
+//    explicite) : ni lui à la publication/au refus, ni personne d'autre.
 //
 // Pas de réactions automatiques (demande explicite) : le vote 👍/👎 posé
 // automatiquement a été retiré — rien n'empêche qui veut réagir de le faire
@@ -112,8 +113,7 @@ function buildConfessCard(guildId, { detail } = {}) {
     )
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️")
       )
     )
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -188,25 +188,12 @@ async function rafraichirPanel(guild) {
  * bas de la carte, exactement comme sur la référence fournie ("Baisons eren
  * les amis"). Ni cadre gris ni réaction automatique — voir l'en-tête du
  * fichier. Pas de légende sous l'image non plus : la publication publique
- * ne montre jamais l'auteur.
+ * ne montre jamais l'auteur. Aucun MP n'est envoyé ici (demande explicite) :
+ * ni à l'auteur, ni à qui que ce soit d'autre.
  */
-async function publierConfession(guild, salon, donnees) {
+async function publierConfession(salon, donnees) {
   const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 420 });
-
-  const envoye = await salon
-    .send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] })
-    .catch(() => null);
-  if (!envoye) return null;
-
-  const { notifOptIns } = confessStore.getConfig(guild.id);
-  for (const userId of notifOptIns) {
-    if (userId === donnees.authorId) continue;
-    guild.client.users
-      .fetch(userId)
-      .then((u) => u.send(`Nouvelle confession publiée dans <#${salon.id}> !`).catch(() => {}))
-      .catch(() => {});
-  }
-  return envoye;
+  return salon.send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] }).catch(() => null);
 }
 
 /**
@@ -349,26 +336,12 @@ async function handleConfessInteraction(interaction) {
       if (sousAction === "publier") {
         const { channelId } = confessStore.getConfig(guildId);
         const salonPublic = channelId ? interaction.guild.channels.cache.get(channelId) : null;
-        if (salonPublic?.isTextBased?.()) await publierConfession(interaction.guild, salonPublic, item);
+        if (salonPublic?.isTextBased?.()) await publierConfession(salonPublic, item);
       }
 
-      const auteur = await interaction.client.users.fetch(item.authorId).catch(() => null);
-      if (auteur) {
-        await auteur
-          .send(sousAction === "publier" ? "Ta confession a été validée et publiée !" : "Ta confession n'a pas été retenue.")
-          .catch(() => {});
-      }
       return interaction.update(buildConfessCard(guildId));
     }
     return;
-  }
-
-  if (action === "notif") {
-    const actif = confessStore.toggleNotif(interaction.guild.id, interaction.user.id);
-    return interaction.reply({
-      content: actif ? "🔔 Tu recevras un MP à chaque nouvelle confession publiée." : "🔕 Notifications désactivées.",
-      flags: MessageFlags.Ephemeral,
-    });
   }
 }
 

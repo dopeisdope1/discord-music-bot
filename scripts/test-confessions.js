@@ -71,7 +71,7 @@ function fakeChannel(id) {
   };
 }
 
-/** Le menu déroulant du panneau (parmi ses PLUSIEURS ActionRow — participer/notif ET, selon l'état, menu ou gestion). */
+/** Le menu déroulant du panneau (parmi ses PLUSIEURS ActionRow — participer ET, selon l'état, menu ou gestion). */
 function menuDuPanneau(conteneur) {
   for (const c of conteneur.components) {
     if (c.type !== 1) continue;
@@ -81,7 +81,7 @@ function menuDuPanneau(conteneur) {
   return null;
 }
 
-/** La rangée de boutons de GESTION (Publier/Refuser/Retour/Fermer) — distincte de la rangée Participer/Notifications, toujours présente aussi. */
+/** La rangée de boutons de GESTION (Publier/Refuser/Retour/Fermer) — distincte de la rangée "Je souhaite participer", toujours présente aussi. */
 function boutonsGestion(conteneur) {
   const rangee = conteneur.components.find((c) => c.type === 1 && c.components.some((b) => ["Publier", "Retour", "Fermer"].includes(b.label)));
   return rangee ? rangee.components.map((b) => b.label) : null;
@@ -229,10 +229,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.ok(texte.includes("Messages anonymes en attente"), "la zone de gestion doit être intégrée au même panneau");
     assert.ok(texte.includes("Aucune confession en attente"), "aucune confession pour l'instant");
     const rangeeParticiper = interieur.find((c) => c.type === 1);
-    assert.deepStrictEqual(
-      rangeeParticiper.components.map((b) => b.label),
-      ["Je souhaite participer", "Gérer les notifications"]
-    );
+    assert.deepStrictEqual(rangeeParticiper.components.map((b) => b.label), ["Je souhaite participer"]);
   });
 
   console.log("\nProtection du salon de confession :");
@@ -449,12 +446,12 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.deepStrictEqual(boutonsGestion(conteneur), ["Publier", "Refuser", "Retour", "Fermer"]);
   });
 
-  await cas("Publier : envoie la confession dans le salon SANS révéler l'auteur, la retire de la liste, prévient l'auteur en interne", async () => {
+  await cas("Publier : envoie la confession dans le salon SANS révéler l'auteur, la retire de la liste, AUCUN MP envoyé", async () => {
     const env = makeEnv("g-gerer-2");
     const publicChan = fakeChannel("chan-gerer-2");
     env.guild.channels.cache.set(publicChan.id, publicChan);
     confessStore.setChannel("g-gerer-2", publicChan.id);
-    const auteurAvant = env.getUser("u-auteur-2"); // enregistré AVANT : client.users.fetch doit le retrouver
+    const auteur = env.getUser("u-auteur-2");
     const id = confessStore.addPending("g-gerer-2", { texte: "Message anonyme à publier", anonyme: true, authorId: "u-auteur-2", authorTag: "u-auteur-2#0001" });
 
     const i = fakeInteraction(env, { customId: `confess:gerer:publier:${id}`, userId: "u-gestionnaire", permissionKey: PERM_GERER });
@@ -466,19 +463,19 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     assert.ok(!partiesPubliees.some((c) => c.content?.includes("u-auteur-2")), "l'auteur ne doit JAMAIS apparaître publiquement");
 
     assert.strictEqual(confessStore.getPending("g-gerer-2").length, 0, "retirée de la file après publication");
-    assert.ok(auteurAvant._dms.some((m) => m.includes("publiée")));
+    assert.strictEqual(auteur._dms.length, 0, "aucun MP envoyé — demande explicite");
 
     // Retour au panneau (liste désormais vide), pas un message brut.
     const texte = partiesJSON(i._updates[0])[0].components.map((c) => c.content).join("\n");
     assert.ok(texte.includes("Aucune confession en attente"));
   });
 
-  await cas("Refuser : ne publie rien, retire de la liste, prévient l'auteur en interne", async () => {
+  await cas("Refuser : ne publie rien, retire de la liste, AUCUN MP envoyé", async () => {
     const env = makeEnv("g-gerer-3");
     const publicChan = fakeChannel("chan-gerer-3");
     env.guild.channels.cache.set(publicChan.id, publicChan);
     confessStore.setChannel("g-gerer-3", publicChan.id);
-    const auteurAvant = env.getUser("u-auteur-3");
+    const auteur = env.getUser("u-auteur-3");
     const id = confessStore.addPending("g-gerer-3", { texte: "Message refusé", anonyme: false, authorId: "u-auteur-3", authorTag: "u-auteur-3#0001" });
 
     const i = fakeInteraction(env, { customId: `confess:gerer:refuser:${id}`, userId: "u-gestionnaire", permissionKey: PERM_GERER });
@@ -486,7 +483,7 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
 
     assert.strictEqual(publicChan._envois.length, 0, "rien ne doit être publié");
     assert.strictEqual(confessStore.getPending("g-gerer-3").length, 0);
-    assert.ok(auteurAvant._dms.some((m) => m.includes("pas été retenue")));
+    assert.strictEqual(auteur._dms.length, 0, "aucun MP envoyé — demande explicite");
   });
 
   await cas("publier/refuser une confession déjà traitée (ou inconnue) ne plante pas, revient au panneau", async () => {
@@ -514,38 +511,6 @@ function fakeMessage(env, { authorId, content, channel, isAdmin = false, permiss
     await handleConfessInteraction(i);
     const conteneur = partiesJSON(i._updates[0])[0];
     assert.ok(conteneur.components.some((c) => c.content?.includes("Confesse-toi") || c.content?.includes("avouer")), "le panneau complet doit rester visible");
-  });
-
-  console.log("\nNotifications :");
-
-  await cas('"Gérer les notifications" bascule ON puis OFF, en éphémère — ouvert à tout le monde', async () => {
-    const env = makeEnv("g-notif");
-    const i1 = fakeInteraction(env, { customId: "confess:notif", userId: "u-notif-1" });
-    await handleConfessInteraction(i1);
-    assert.ok(i1._replies[0].content.includes("🔔"));
-    assert.ok(i1._replies[0].flags);
-
-    const i2 = fakeInteraction(env, { customId: "confess:notif", userId: "u-notif-1" });
-    await handleConfessInteraction(i2);
-    assert.ok(i2._replies[0].content.includes("🔕"));
-  });
-
-  await cas("les personnes inscrites reçoivent un MP à la publication, pas l'auteur lui-même", async () => {
-    const env = makeEnv("g-notif-pub");
-    const publicChan = fakeChannel("chan-notif-pub");
-    env.guild.channels.cache.set(publicChan.id, publicChan);
-    confessStore.setChannel("g-notif-pub", publicChan.id);
-
-    await handleConfessInteraction(fakeInteraction(env, { customId: "confess:notif", userId: "u-notif-abo" }));
-    const id = confessStore.addPending("g-notif-pub", { texte: "coucou", anonyme: true, authorId: "u-notif-auteur", authorTag: "u-notif-auteur#0001" });
-    await handleConfessInteraction(
-      fakeInteraction(env, { customId: `confess:gerer:publier:${id}`, userId: "u-gestionnaire", permissionKey: PERM_GERER })
-    );
-
-    const abonne = env.getUser("u-notif-abo");
-    assert.ok(abonne._dms.some((m) => m.includes("Nouvelle confession publiée")));
-    const auteur = env.getUser("u-notif-auteur");
-    assert.ok(!auteur._dms.some((m) => m.includes("Nouvelle confession publiée")), "l'auteur ne doit pas recevoir la notif générique en plus de la sienne");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

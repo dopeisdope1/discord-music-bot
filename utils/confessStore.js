@@ -4,7 +4,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Confessions anonymes ("!!confess", voir utils/confessions.js).
 // { [guildId]: { channelId: string|null, panelChannelId: string|null,
-//                panelMessageId: string|null, notifOptIns: string[],
+//                panelMessageId: string|null,
 //                pending: {id, texte, anonyme, authorId, authorTag}[],
 //                nextId: number } }
 //
@@ -12,6 +12,10 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 // confessions en attente vient du système de permissions existant du panel
 // (clé "server.confessions.manage", voir utils/permissions/catalog.js et
 // utils/confessions.js::PERM_GERER) — jamais un rôle codé en dur ici.
+//
+// Aucun MP n'est envoyé par le système (demande explicite) : authorId/
+// authorTag restent connus en interne (pour une éventuelle modération) mais
+// ne servent plus à contacter qui que ce soit.
 //
 // `pending` (contrairement aux Map en mémoire du reste du fichier) est
 // persisté : une confession anonyme envoyée par un membre ne doit pas
@@ -47,15 +51,14 @@ function guildEntry(guildId) {
   if (entry.channelId === undefined) entry.channelId = null;
   if (entry.panelChannelId === undefined) entry.panelChannelId = null;
   if (entry.panelMessageId === undefined) entry.panelMessageId = null;
-  if (!Array.isArray(entry.notifOptIns)) entry.notifOptIns = [];
   if (!Array.isArray(entry.pending)) entry.pending = [];
   if (!Number.isInteger(entry.nextId)) entry.nextId = 1;
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId, panelChannelId, panelMessageId, notifOptIns } = guildEntry(guildId);
-  return { channelId, panelChannelId, panelMessageId, notifOptIns: [...notifOptIns] };
+  const { channelId, panelChannelId, panelMessageId } = guildEntry(guildId);
+  return { channelId, panelChannelId, panelMessageId };
 }
 
 function setChannel(guildId, channelId) {
@@ -71,22 +74,12 @@ function setPanelMessage(guildId, channelId, messageId) {
   save();
 }
 
-/** @returns {boolean} le nouvel état (activé/désactivé), après bascule. */
-function toggleNotif(guildId, userId) {
-  const entry = guildEntry(guildId);
-  const index = entry.notifOptIns.indexOf(userId);
-  const actif = index === -1;
-  if (actif) entry.notifOptIns.push(userId);
-  else entry.notifOptIns.splice(index, 1);
-  save();
-  return actif;
-}
-
 /**
  * Enregistre une confession en attente de publication manuelle — jamais
  * publiée automatiquement (voir utils/confessions.js). `authorId`/`authorTag`
- * restent connus en interne (nécessaire pour prévenir l'auteur par MP) mais
- * ne doivent JAMAIS être affichés dans l'interface de gestion.
+ * restent connus en interne (pour une éventuelle modération) mais ne
+ * doivent JAMAIS être affichés dans l'interface de gestion, ni servir à
+ * contacter qui que ce soit par MP.
  * @returns {string} l'identifiant attribué (ex. "001")
  */
 function addPending(guildId, { texte, anonyme, authorId, authorTag }) {
@@ -116,7 +109,6 @@ module.exports = {
   getConfig,
   setChannel,
   setPanelMessage,
-  toggleNotif,
   addPending,
   getPending,
   getPendingById,
