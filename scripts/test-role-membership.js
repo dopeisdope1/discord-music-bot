@@ -126,6 +126,29 @@ async function cas(nom, fn) {
     assert.ok(msg._replies[0]?.embeds?.[0]?.data?.description?.includes("mention ou ID"));
   });
 
+  await cas('s\'ajouter un rôle à SOI-MÊME est autorisé — checkHierarchy vise kick/ban/timeout, pas addrole', async () => {
+    // Bug réel signalé : "&addrole @soi-même" répondait "Tu ne peux pas agir
+    // sur toi-même", une règle pensée pour les actions qui NUISENT à la
+    // cible (kick/ban/timeout), pas pour un ajout de rôle bénin — déjà
+    // protégé par la hiérarchie sur le RÔLE lui-même (voir plus bas).
+    const { guild, roleObj } = makeGuild();
+    const soi = {
+      id: "staff-1",
+      user: { tag: "staff#0001" },
+      roles: {
+        cache: new Collection(),
+        highest: { position: 5 },
+        add: async function (r) {
+          this._added = r.id;
+        },
+      },
+    };
+    guild.members.fetch = async (id) => (id === "staff-1" ? soi : null);
+    const msg = makeMessage(guild, { mentionedMember: soi });
+    await moderationHandlers.addrole(null, msg, [ROLE_ID]);
+    assert.strictEqual(soi.roles._added, roleObj.id, JSON.stringify(msg._replies));
+  });
+
   console.log("\n&role ... — mention OU ID :");
 
   await cas("role rename avec un ID brut au lieu d'une mention", async () => {
