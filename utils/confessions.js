@@ -8,6 +8,9 @@ const {
   TextInputBuilder,
   TextInputStyle,
   MessageFlags,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ContainerBuilder,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 const confessStore = require("./confessStore");
@@ -20,15 +23,15 @@ const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessC
 // "je veux plus que les messages soient en dm") -> choix de rester anonyme
 // ou non -> attente de validation -> publication.
 //
-// Pas de cadre gris de regroupement ni de réactions automatiques : demande
-// explicite ("je veux plus... ni de bordure grise ni de reaction") — la
-// carte d'accroche et chaque confession publiée envoient leurs composants
-// Components V2 (texte, image) DIRECTEMENT au niveau du message, sans
-// regroupement visuel. Le vote 👍/👎 posé automatiquement a été retiré au
-// même moment — rien n'empêche qui veut réagir de le faire lui-même. La
-// liste "Comment participer ?" porte un fin trait à gauche (citation
-// Discord native "> ", pas un ContainerBuilder — essayé puis rejeté,
-// capture à l'appui : ça dessinait une vraie boîte à fond gris, trop lourd).
+// Pas de réactions automatiques (demande explicite) : le vote 👍/👎 posé
+// automatiquement a été retiré — rien n'empêche qui veut réagir de le faire
+// lui-même. La confession PUBLIÉE (publierConfession), elle, n'a toujours
+// aucun cadre — juste l'image, voir plus bas.
+//
+// La carte "Confesse-toi", en revanche, a bien un cadre : tout le texte (et
+// les boutons) est dans UN SEUL ContainerBuilder à couleur d'accent, comme
+// sur les captures de référence fournies (fond + bordure colorée sur toute
+// la hauteur du bloc) — l'image du dégradé reste séparée, au-dessus.
 //
 // Toujours sur le préfixe "!!" déjà utilisé par utils/personalProtection.js —
 // même mécanique de lecture du préfixe, un mot différent après ("confess" au
@@ -50,40 +53,45 @@ const enAttenteValidation = new Map();
 let prochainIdValidation = 1;
 
 /**
- * La carte d'accroche : carte d'APPLICATION — grands coins arrondis,
- * dégradé, gros texte — PAS un embed Discord classique, PAS de cadre gris
- * de regroupement (voir le commentaire en tête de fichier). Le visuel
- * (utils/confessCard.js) porte l'accroche ; "Comment participer" reste du
- * vrai texte Discord juste en dessous.
+ * La carte d'accroche : l'image en dégradé (utils/confessCard.js) au-dessus,
+ * PUIS un seul ContainerBuilder à couleur d'accent qui regroupe TOUT le
+ * reste (texte, séparateur, disclaimer, boutons) — fond + bordure colorée
+ * sur toute la hauteur du bloc, comme sur les captures de référence
+ * fournies (plusieurs bots comparés côte à côte pour valider ce rendu).
  */
 function buildConfessCard() {
   const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
 
-  // Comme sur la capture de référence (bot "wannadie") : un simple FIN TRAIT
-  // à gauche de la liste, sans fond ni cadre — la citation Discord native
-  // ("> ") fait exactement ça. PAS de ContainerBuilder ici : posé sur la
-  // liste, il dessine une vraie boîte avec un fond gris, beaucoup plus
-  // lourd que le trait fin voulu (essayé puis rejeté — capture à l'appui).
-  const texte = new TextDisplayBuilder().setContent(
-    [
-      "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
-      "",
-      "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
-      "",
-      "**Comment participer ?**",
-      "> **1.** Clique sur le bouton ci-dessous",
-      "> **2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
-      "> **3.** Choisis si tu veux rester anonyme ou non",
-      "> **4.** Attends la validation — puis c'est publié !",
-      "",
-      "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur.",
-    ].join("\n")
-  );
-  const boutons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
-  );
-  return { flags: MessageFlags.IsComponentsV2, components: [galerie, texte, boutons], files: [fichier] };
+  const conteneur = new ContainerBuilder()
+    .setAccentColor(COULEUR)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [
+          "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
+          "",
+          "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
+          "",
+          "**Comment participer ?**",
+          "**1.** Clique sur le bouton ci-dessous",
+          "**2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
+          "**3.** Choisis si tu veux rester anonyme ou non",
+          "**4.** Attends la validation — puis c'est publié !",
+        ].join("\n")
+      )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur."
+      )
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
+      )
+    );
+  return { flags: MessageFlags.IsComponentsV2, components: [galerie, conteneur], files: [fichier] };
 }
 
 function buildValidationCard(id, donnees) {
