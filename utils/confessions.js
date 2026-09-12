@@ -17,6 +17,7 @@ const confessStore = require("./confessStore");
 const { can } = require("./permissions/engine");
 const { report } = require("./moderation/actions");
 const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessCard");
+const { EMOJI } = require("./emojis");
 
 // !!confess — confessions anonymes, avec VALIDATION avant publication
 // (sixième refonte, demande explicite — "on va changer de méthode") :
@@ -128,12 +129,18 @@ function libelleStatut(c) {
  * Le message du salon de VALIDATION (privé, staff) — un message par
  * confession, avec ses propres boutons. Montre l'auteur (donnée interne de
  * modération, voir l'en-tête du fichier) : ce n'est PAS le salon public.
- * Les boutons Accepter/Refuser ne sont présents que tant que "attente" —
- * une fois tranchée, le message est édité (voir cette même fonction) pour
- * les retirer et afficher le résultat.
+ * Inclut un vrai aperçu de la carte (même image que celle publiée si
+ * acceptée, voir utils/confessCard.js) — pas juste le texte brut — pour que
+ * le staff voie exactement ce qui sera posté. Les boutons Accepter/Refuser
+ * ne sont présents que tant que "attente" — une fois tranchée, le message
+ * est édité (voir cette même fonction) pour les retirer et afficher le
+ * résultat.
  */
 function buildValidationCard(c) {
+  const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 260 });
+
   const infos = [
+    `**📨 Confession #${c.id}**`,
     `**Auteur :** <@${c.authorId}> (${c.authorTag})`,
     `**Reste anonyme ?** ${c.anonyme ? "Oui" : "Non — pseudo affiché"}`,
     `**Envoyée :** <t:${Math.floor(c.createdAt / 1000)}:R>`,
@@ -143,19 +150,19 @@ function buildValidationCard(c) {
 
   const conteneur = new ContainerBuilder()
     .setAccentColor(couleurStatut(c))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([`**📨 Confession #${c.id}**`, "", `> ${c.texte}`].join("\n")))
+    .addMediaGalleryComponents(galerie)
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(infos.join("\n")));
 
   if (c.status === "attente") {
     conteneur.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Success).setEmoji("🟢"),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Danger).setEmoji("🔴")
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Success).setEmoji(EMOJI.SUCCESS),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Danger).setEmoji(EMOJI.ERROR)
       )
     );
   }
-  return { flags: MessageFlags.IsComponentsV2, components: [conteneur] };
+  return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
 /**

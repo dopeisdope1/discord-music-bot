@@ -285,15 +285,21 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     assert.strictEqual(publicChan._envois.length, 0, "RIEN dans le salon public");
     assert.strictEqual(validChan._envois.length, 1, "UN message dans le salon de validation");
 
+    assert.strictEqual(validChan._envois[0].payload.files?.[0]?.description, "Baisons eren les amis", "le vrai aperçu (image) de la confession doit être joint");
     const conteneur = partiesJSON(validChan._envois[0].payload)[0];
+    assert.ok(conteneur.components.some((c) => c.type === 12), "une galerie média doit porter l'image d'aperçu");
     const texte = texteDu(conteneur);
-    assert.ok(texte.includes("Baisons eren les amis"), texte);
     assert.ok(texte.includes("u-flow-6"), "le salon de validation DOIT montrer l'auteur au staff");
     assert.ok(texte.includes("En attente"), texte);
     assert.ok(texte.includes("Envoyée"), "doit indiquer quand la confession a été envoyée");
     assert.strictEqual(conteneur.accent_color, 0xfaa61a, "bordure orange tant qu'en attente");
-    const boutons = conteneur.components.find((c) => c.type === 1).components.map((b) => b.label);
-    assert.deepStrictEqual(boutons, ["Accepter", "Refuser"]);
+    const rangeeBoutons = conteneur.components.find((c) => c.type === 1).components;
+    assert.deepStrictEqual(rangeeBoutons.map((b) => b.label), ["Accepter", "Refuser"]);
+    assert.deepStrictEqual(
+      rangeeBoutons.map((b) => b.emoji?.name),
+      ["yes", "no"],
+      "doit utiliser les emojis personnalisés du serveur (:yes:/:no:), pas 🟢/🔴"
+    );
   });
 
   await cas("sans salon de confessions configuré, abandon propre", async () => {
