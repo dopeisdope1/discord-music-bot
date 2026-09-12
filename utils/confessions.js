@@ -60,31 +60,37 @@ let prochainIdValidation = 1;
 function buildConfessCard() {
   const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
 
-  // TOUT le texte (intro, étapes, disclaimer) dans UN SEUL ContainerBuilder
-  // avec une couleur d'accent (demande explicite, style repris d'une
-  // capture fournie) : ça dessine une barre colorée sur le côté au lieu du
-  // cadre gris par défaut — pas le cadre gris de regroupement banni ailleurs
-  // (voir l'en-tête du fichier), une bordure DE COULEUR, assumée.
-  const texte = new ContainerBuilder().setAccentColor(COULEUR).addTextDisplayComponents(
+  const intro = new TextDisplayBuilder().setContent(
+    [
+      "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
+      "",
+      "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
+      "",
+      "**Comment participer ?**",
+    ].join("\n")
+  );
+  // Comme sur la capture fournie : seule la LISTE des étapes (pas le titre
+  // "Comment participer ?" au-dessus) porte la bordure colorée — un
+  // ContainerBuilder avec une couleur d'accent, confiné à ce seul bloc, pas
+  // le cadre gris de regroupement banni ailleurs (voir l'en-tête du fichier).
+  const etapes = new ContainerBuilder().setAccentColor(COULEUR).addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       [
-        "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
-        "",
-        "Envoie ton **message anonyme** — tu choisis si tu restes **anonyme** ou non. Tout se passe via le bot.",
-        "**Comment participer ?**",
         "**1.** Clique sur le bouton ci-dessous",
         "**2.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
         "**3.** Choisis si tu veux rester anonyme ou non",
         "**4.** Attends la validation — puis c'est publié !",
-        "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur.",
       ].join("\n")
     )
+  );
+  const pied = new TextDisplayBuilder().setContent(
+    "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur."
   );
   const boutons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
     new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
   );
-  return { flags: MessageFlags.IsComponentsV2, components: [galerie, texte, boutons], files: [fichier] };
+  return { flags: MessageFlags.IsComponentsV2, components: [galerie, intro, etapes, pied, boutons], files: [fichier] };
 }
 
 function buildValidationCard(id, donnees) {
