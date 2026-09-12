@@ -41,11 +41,12 @@ const { EMOJI } = require("./emojis");
 //    (bascule atomique "attente" -> décision, voir confessStore::moderer) :
 //    si un second clic arrive après coup, il reçoit "déjà traitée", jamais
 //    une double décision.
-//  - AUCUNE information sur l'auteur n'apparaît dans le salon PUBLIC si la
-//    confession est anonyme. Le salon de VALIDATION, lui, montre l'auteur
-//    au staff (donnée interne de modération, demande explicite) — chaque
-//    décision est aussi journalisée via utils/moderation/actions.js::report
-//    (même salon de logs "modération" que kick/ban/etc.).
+//  - AUCUNE information sur l'auteur n'apparaît, ni dans le salon PUBLIC ni
+//    dans le salon de VALIDATION (demande explicite) — l'auteur reste connu
+//    UNIQUEMENT en interne (authorId/authorTag persistés), pour la
+//    journalisation (utils/moderation/actions.js::report, même salon de
+//    logs "modération" que kick/ban/etc.) et pour prévenir l'auteur le cas
+//    échéant.
 //
 // Toujours sur le préfixe "!!" déjà utilisé par utils/personalProtection.js —
 // même mécanique de lecture du préfixe, un mot différent après ("confess" au
@@ -117,9 +118,9 @@ function libelleStatut(c) {
 
 /**
  * Le message du salon de VALIDATION (privé, staff) — un message par
- * confession, avec ses propres boutons. Montre l'auteur (donnée interne de
- * modération, voir l'en-tête du fichier) : ce n'est PAS le salon public.
- * Inclut un vrai aperçu de la carte (même image que celle publiée si
+ * confession, avec ses propres boutons. N'affiche PAS l'auteur (voir
+ * l'en-tête du fichier) : même le staff n'a pas besoin de le voir pour
+ * décider. Inclut un vrai aperçu de la carte (même image que celle publiée si
  * acceptée, voir utils/confessCard.js) — pas juste le texte brut — pour que
  * le staff voie exactement ce qui sera posté. Les boutons Accepter/Refuser
  * ne sont présents que tant que "attente" — une fois tranchée, le message
@@ -131,7 +132,6 @@ function buildValidationCard(c) {
 
   const infos = [
     `**📨 Confession #${c.id}**`,
-    `**Auteur :** <@${c.authorId}> (${c.authorTag})`,
     `**Reste anonyme ?** ${c.anonyme ? "Oui" : "Non — pseudo affiché"}`,
     `**Envoyée :** <t:${Math.floor(c.createdAt / 1000)}:R>`,
     `**Statut :** ${libelleStatut(c)}`,

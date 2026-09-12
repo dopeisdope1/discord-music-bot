@@ -289,7 +289,7 @@ async function soumettreConfession(env, { userId, texte, anonyme }) {
     const conteneur = partiesJSON(validChan._envois[0].payload)[0];
     assert.ok(conteneur.components.some((c) => c.type === 12), "une galerie média doit porter l'image d'aperçu");
     const texte = texteDu(conteneur);
-    assert.ok(texte.includes("u-flow-6"), "le salon de validation DOIT montrer l'auteur au staff");
+    assert.ok(!texte.includes("u-flow-6"), "l'auteur ne doit plus apparaître, même au staff");
     assert.ok(texte.includes("En attente"), texte);
     assert.ok(texte.includes("Envoyée"), "doit indiquer quand la confession a été envoyée");
     assert.ok(conteneur.accent_color === undefined || conteneur.accent_color === null, "pas de couleur d'accent — demande explicite");
