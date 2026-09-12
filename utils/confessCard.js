@@ -151,7 +151,7 @@ const RATIO_ENTETE = 0.4;
  * blanche en bas avec le message de la confession en noir.
  * @returns {Buffer} PNG
  */
-function dessinerCarteConfession(texte, { hauteur = 420 } = {}) {
+function dessinerCarteConfession(texte, { hauteur = 260 } = {}) {
   const canvas = createCanvas(LARGEUR, hauteur);
   const ctx = canvas.getContext("2d");
   const hauteurEntete = Math.round(hauteur * RATIO_ENTETE);

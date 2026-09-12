@@ -174,7 +174,7 @@ function buildConfessCard(guildId, { vue, detail } = {}) {
  * ni à l'auteur, ni à qui que ce soit d'autre.
  */
 async function publierConfession(salon, donnees) {
-  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 420 });
+  const { fichier, galerie } = buildCarteVisuelleConfession(donnees.texte, { hauteur: 260 });
   return salon.send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] }).catch(() => null);
 }
 
