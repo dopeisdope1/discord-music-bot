@@ -109,16 +109,6 @@ function buildConfessCard() {
   return { flags: MessageFlags.IsComponentsV2, components: [conteneur], files: [fichier] };
 }
 
-// Vert/rouge/orange Discord standard (mêmes teintes que les boutons Success/
-// Danger) : la bordure du conteneur donne le statut d'un coup d'œil, sans
-// avoir à lire le texte — utile quand plusieurs confessions s'empilent dans
-// le salon de validation.
-function couleurStatut(c) {
-  if (c.status === "acceptee") return 0x57f287;
-  if (c.status === "refusee") return 0xed4245;
-  return 0xfaa61a;
-}
-
 function libelleStatut(c) {
   if (c.status === "acceptee") return "✅ Acceptée";
   if (c.status === "refusee") return "❌ Refusée";
@@ -149,7 +139,6 @@ function buildValidationCard(c) {
   if (c.moderatedBy) infos.push(`**Traitée par :** <@${c.moderatedBy}> (<t:${Math.floor(c.moderatedAt / 1000)}:R>)`);
 
   const conteneur = new ContainerBuilder()
-    .setAccentColor(couleurStatut(c))
     .addMediaGalleryComponents(galerie)
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(infos.join("\n")));
@@ -157,8 +146,8 @@ function buildValidationCard(c) {
   if (c.status === "attente") {
     conteneur.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Success).setEmoji(EMOJI.SUCCESS),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Danger).setEmoji(EMOJI.ERROR)
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.SUCCESS),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.ERROR)
       )
     );
   }
