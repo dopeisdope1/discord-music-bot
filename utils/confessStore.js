@@ -4,7 +4,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Confessions anonymes ("!!confess", voir utils/confessions.js).
 // { [guildId]: { channelId: string|null, validationChannelId: string|null,
-//                compteur: number, notifOptIns: string[] } }
+//                notifOptIns: string[] } }
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "confess.json");
 
@@ -35,14 +35,13 @@ function guildEntry(guildId) {
   const entry = data[guildId];
   if (entry.channelId === undefined) entry.channelId = null;
   if (entry.validationChannelId === undefined) entry.validationChannelId = null;
-  if (typeof entry.compteur !== "number") entry.compteur = 0;
   if (!Array.isArray(entry.notifOptIns)) entry.notifOptIns = [];
   return entry;
 }
 
 function getConfig(guildId) {
-  const { channelId, validationChannelId, compteur, notifOptIns } = guildEntry(guildId);
-  return { channelId, validationChannelId, compteur, notifOptIns: [...notifOptIns] };
+  const { channelId, validationChannelId, notifOptIns } = guildEntry(guildId);
+  return { channelId, validationChannelId, notifOptIns: [...notifOptIns] };
 }
 
 function setChannel(guildId, channelId) {
@@ -56,14 +55,6 @@ function setValidationChannel(guildId, channelId) {
   save();
 }
 
-/** @returns {number} le numéro à donner à CETTE confession (incrémente le compteur). */
-function prochainNumero(guildId) {
-  const entry = guildEntry(guildId);
-  entry.compteur += 1;
-  save();
-  return entry.compteur;
-}
-
 /** @returns {boolean} le nouvel état (activé/désactivé), après bascule. */
 function toggleNotif(guildId, userId) {
   const entry = guildEntry(guildId);
@@ -75,4 +66,4 @@ function toggleNotif(guildId, userId) {
   return actif;
 }
 
-module.exports = { getConfig, setChannel, setValidationChannel, prochainNumero, toggleNotif };
+module.exports = { getConfig, setChannel, setValidationChannel, toggleNotif };
