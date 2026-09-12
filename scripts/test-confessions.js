@@ -163,10 +163,16 @@ function fakeDM(authorId, content) {
 
     assert.strictEqual(confessStore.getConfig("g-setup-ok").channelId, "chan-public");
     assert.strictEqual(channel._envois.length, 1);
-    const embed = channel._envois[0].payload.embeds[0].toJSON ? channel._envois[0].payload.embeds[0].toJSON() : channel._envois[0].payload.embeds[0];
-    assert.ok(embed.title.includes("Confesse-toi"), embed.title);
-    assert.ok(embed.description.includes("Comment participer"), embed.description);
-    const labels = channel._envois[0].payload.components[0].components.map((b) => b.data?.label || b.label);
+    const payload = channel._envois[0].payload;
+    // Components V2 + une VRAIE carte visuelle (utils/confessCard.js) — pas
+    // un embed Discord classique : demande explicite, capture à l'appui.
+    assert.strictEqual(payload.files?.length, 1, "doit joindre l'image de la carte visuelle");
+    const container = payload.components[0].toJSON();
+    assert.ok(container.components.some((c) => c.type === 12), "doit contenir la galerie média (la carte)");
+    const texte = container.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
+    assert.ok(texte.includes("Comment participer"), texte);
+    const rangeeBoutons = container.components.find((c) => c.type === 1);
+    const labels = rangeeBoutons.components.map((b) => b.label);
     assert.deepStrictEqual(labels, ["Je souhaite participer", "Gérer les notifications"]);
   });
 
@@ -272,9 +278,14 @@ function fakeDM(authorId, content) {
 
     assert.ok(iAnon._updates[0].content.includes("publiée"));
     assert.strictEqual(publicChan._envois.length, 1);
-    const embed = publicChan._envois[0].payload.embeds[0].toJSON ? publicChan._envois[0].payload.embeds[0].toJSON() : publicChan._envois[0].payload.embeds[0];
-    assert.strictEqual(embed.description, "Baisons eren les amis");
-    assert.ok(embed.footer.text.includes("anonyme"), embed.footer.text);
+    const payload = publicChan._envois[0].payload;
+    // Le message DEVIENT le gros texte de la carte visuelle (image) — on ne
+    // peut plus le lire dans le JSON, mais son texte alternatif (accessibilité,
+    // même convention que le reste du panel) le porte encore intact.
+    assert.strictEqual(payload.files[0].description, "Baisons eren les amis");
+    const container = payload.components[0].toJSON();
+    const legendes = container.components.filter((c) => c.type === 10).map((c) => c.content);
+    assert.ok(legendes.some((t) => t.includes("anonyme")), legendes.join(" | "));
     assert.deepStrictEqual(publicChan._envois[0].msg._reactions, ["👍", "👎"], "la communauté doit pouvoir voter");
   });
 
@@ -289,8 +300,9 @@ function fakeDM(authorId, content) {
     await handleConfessDM(null, fakeDM("u-flow-7", "message assumé"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:non", userId: "u-flow-7" }));
 
-    const embed = publicChan._envois[0].payload.embeds[0].toJSON ? publicChan._envois[0].payload.embeds[0].toJSON() : publicChan._envois[0].payload.embeds[0];
-    assert.ok(embed.footer.text.includes("u-flow-7#0001"), embed.footer.text);
+    const container = publicChan._envois[0].payload.components[0].toJSON();
+    const legendes = container.components.filter((c) => c.type === 10).map((c) => c.content);
+    assert.ok(legendes.some((t) => t.includes("u-flow-7#0001")), legendes.join(" | "));
   });
 
   await cas("choisir anonyme/non SANS avoir envoyé de message avant est refusé", async () => {
@@ -319,10 +331,10 @@ function fakeDM(authorId, content) {
       await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:oui", userId: uid }));
     }
     const titres = publicChan._envois.map((e) => {
-      const embed = e.payload.embeds[0].toJSON ? e.payload.embeds[0].toJSON() : e.payload.embeds[0];
-      return embed.title;
+      const container = e.payload.components[0].toJSON();
+      return container.components.find((c) => c.type === 10).content;
     });
-    assert.deepStrictEqual(titres, ["💌 Confession #1", "💌 Confession #2", "💌 Confession #3"]);
+    assert.deepStrictEqual(titres, ["**💌 Confession #1**", "**💌 Confession #2**", "**💌 Confession #3**"]);
   });
 
   console.log("\nAvec un salon de validation configuré :");

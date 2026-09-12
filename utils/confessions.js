@@ -1,7 +1,18 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require("discord.js");
+const {
+  EmbedBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+} = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 const confessStore = require("./confessStore");
 const { can } = require("./permissions/engine");
+const { buildCarteVisuelle } = require("./confessCard");
 
 // !!confess — confessions anonymes, REPRODUISANT EXACTEMENT le déroulé montré
 // en capture par l'utilisateur (carte "Confesse-toi", bouton "Je souhaite
@@ -31,11 +42,22 @@ const enCours = new Map();
 const enAttenteValidation = new Map();
 let prochainIdValidation = 1;
 
+/**
+ * La carte d'accroche : demande explicite ("je veux exactement comme sur le
+ * screen") de reproduire une carte d'APPLICATION — grands coins arrondis,
+ * dégradé, gros texte — PAS un embed Discord classique à barre colorée. Le
+ * visuel (utils/confessCard.js) porte l'accroche ; "Comment participer"
+ * reste du vrai texte Discord juste en dessous, dans le même esprit que la
+ * référence fournie (le visuel est l'élément principal, le reste l'entoure).
+ */
 function buildConfessCard() {
-  const embed = new EmbedBuilder()
-    .setColor(COULEUR)
-    .setTitle("Confesse-toi 💌")
-    .setDescription(
+  const { fichier, galerie } = buildCarteVisuelle("Confesse-toi", { hauteur: 320, texteAlternatif: "Confesse-toi — envoie un message anonyme" });
+
+  const container = new ContainerBuilder();
+  container.addMediaGalleryComponents(galerie);
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
       [
         "Tu as quelque chose à avouer ? C'est ici que ça se passe.",
         "",
@@ -50,12 +72,15 @@ function buildConfessCard() {
         "",
         "💞 En participant tu confirmes avoir l'âge légal requis et acceptes que ton contenu soit visible par les membres du serveur.",
       ].join("\n")
-    );
-  const boutons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
+    )
   );
-  return { embeds: [embed], components: [boutons] };
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:start`).setLabel("Je souhaite participer").setStyle(ButtonStyle.Primary).setEmoji("➡️"),
+      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:notif`).setLabel("Gérer les notifications").setStyle(ButtonStyle.Secondary).setEmoji("🔔")
+    )
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container], files: [fichier] };
 }
 
 function buildValidationCard(id, donnees) {
@@ -76,17 +101,24 @@ function buildValidationCard(id, donnees) {
   return { embeds: [embed], components: [boutons] };
 }
 
-/** Publie la confession dans le salon public, avec les réactions de vote 👍/👎 — "la communauté vote". */
+/**
+ * Publie la confession dans le salon public, avec les réactions de vote
+ * 👍/👎 — "la communauté vote". Même carte visuelle que l'accroche
+ * (utils/confessCard.js) : le message DEVIENT le gros texte de la carte,
+ * exactement comme sur la référence fournie ("Baisons eren les amis").
+ */
 async function publierConfession(guild, salon, donnees) {
   const numero = confessStore.prochainNumero(guild.id);
   const genreLabel = donnees.genre === "fille" ? "🙋‍♀️ Une fille" : "🙋‍♂️ Un garçon";
-  const embed = new EmbedBuilder()
-    .setColor(COULEUR)
-    .setTitle(`💌 Confession #${numero}`)
-    .setDescription(donnees.texte)
-    .setFooter({ text: donnees.anonyme ? `${genreLabel} anonyme` : `${genreLabel} — ${donnees.authorTag}` });
+  const legende = donnees.anonyme ? `${genreLabel} anonyme` : `${genreLabel} — ${donnees.authorTag}`;
 
-  const envoye = await salon.send({ embeds: [embed] }).catch(() => null);
+  const { fichier, galerie } = buildCarteVisuelle(donnees.texte, { hauteur: 380 });
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**💌 Confession #${numero}**`));
+  container.addMediaGalleryComponents(galerie);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(legende));
+
+  const envoye = await salon.send({ flags: MessageFlags.IsComponentsV2, components: [container], files: [fichier] }).catch(() => null);
   if (!envoye) return null;
   await envoye.react("👍").catch(() => {});
   await envoye.react("👎").catch(() => {});
