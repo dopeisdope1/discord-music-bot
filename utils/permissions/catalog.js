@@ -92,6 +92,8 @@ const PERMISSIONS = [
   { key: "server.customcommands.manage", category: "server", label: "Créer/supprimer des commandes personnalisées (&addcmd, &delcmd)" },
   { key: "server.security.scan", category: "server", label: "Lancer un audit de sécurité (&security scan)" },
   { key: "server.confessions.manage", category: "server", label: "Gérer les confessions anonymes en attente (!!confess)" },
+  { key: "server.confessions.setup", category: "server", label: "Configurer le panneau public de confessions (!!confess setup)" },
+  { key: "server.confessions.validation", category: "server", label: "Configurer le salon de validation des confessions (!!confess validation)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

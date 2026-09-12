@@ -59,6 +59,8 @@ const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embe
 // configurable depuis &panel > Permissions comme n'importe quelle autre —
 // AUCUN rôle codé en dur (demande explicite).
 const PERM_GERER = "server.confessions.manage";
+const PERM_SETUP = "server.confessions.setup";
+const PERM_VALIDATION = "server.confessions.validation";
 
 // État des flux en cours, EN MÉMOIRE (comme utils/messageOwner.js) : un
 // redémarrage du bot en plein milieu d'une confession force juste à
@@ -166,9 +168,9 @@ async function publierConfession(salon, donnees) {
   return salon.send({ flags: MessageFlags.IsComponentsV2, components: [galerie], files: [fichier] }).catch(() => null);
 }
 
-/** Un administrateur Discord, ou la permission dédiée (&panel > Permissions) — même définition partout dans ce fichier. */
-function estAutorise(member) {
-  return Boolean(member?.permissions?.has(PermissionFlagsBits.Administrator) || can(member, PERM_GERER));
+/** Un administrateur Discord, ou une permission dédiée (&panel > Permissions) — même définition partout dans ce fichier. */
+function estAutorise(member, key = PERM_GERER) {
+  return Boolean(member?.permissions?.has(PermissionFlagsBits.Administrator) || can(member, key));
 }
 
 /**
@@ -204,7 +206,7 @@ async function handleConfessTextCommand(client, message) {
   const sousCmd = (sous || "").toLowerCase();
 
   if (sousCmd === "setup") {
-    if (!can(message.member, "channels.manage")) {
+    if (!estAutorise(message.member, PERM_SETUP)) {
       return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
     }
     confessStore.setChannel(message.guild.id, message.channel.id);
@@ -212,7 +214,7 @@ async function handleConfessTextCommand(client, message) {
   }
 
   if (sousCmd === "validation") {
-    if (!can(message.member, "channels.manage")) {
+    if (!estAutorise(message.member, PERM_VALIDATION)) {
       return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
     }
     confessStore.setValidationChannel(message.guild.id, message.channel.id);

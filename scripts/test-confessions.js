@@ -187,7 +187,7 @@ async function soumettreConfession(env, { userId, texte }) {
   await cas('"!!confess setup" poste le panneau — un seul bouton, plus de gestion intégrée', async () => {
     const env = makeEnv("g-setup-ok");
     const channel = fakeChannel("chan-public");
-    const msg = fakeMessage(env, { authorId: "u-admin", content: "!!confess setup", channel, permissionKey: "channels.manage" });
+    const msg = fakeMessage(env, { authorId: "u-admin", content: "!!confess setup", channel, permissionKey: "server.confessions.setup" });
     await handleConfessTextCommand(null, msg);
 
     assert.strictEqual(confessStore.getConfig("g-setup-ok").channelId, "chan-public");
@@ -206,7 +206,7 @@ async function soumettreConfession(env, { userId, texte }) {
   await cas('"!!confess validation" enregistre le salon de validation et confirme', async () => {
     const env = makeEnv("g-valid-setup");
     const channel = fakeChannel("chan-valid");
-    const msg = fakeMessage(env, { authorId: "u-admin", content: "!!confess validation", channel, permissionKey: "channels.manage" });
+    const msg = fakeMessage(env, { authorId: "u-admin", content: "!!confess validation", channel, permissionKey: "server.confessions.validation" });
     await handleConfessTextCommand(null, msg);
     assert.strictEqual(confessStore.getConfig("g-valid-setup").validationChannelId, "chan-valid");
     assert.ok(msg._replies[0]?.includes?.("Accepter"));
