@@ -16,7 +16,7 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-role-rename-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection, PermissionsBitField } = require("discord.js");
+const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
 const { handleConfigInteraction, ID } = require("../utils/configPanel");
 const permStore = require("../utils/permissions/store");
 
@@ -157,6 +157,35 @@ function actionOptions(guild, member, state) {
     });
     assert.strictEqual(role.name, "Modérateur en chef");
     assert.ok(reponse?.embeds?.[0]?.data?.description?.includes("renommé"), JSON.stringify(reponse));
+  });
+
+  await cas("panneau en Components V2 : la réponse (embed classique) est convertie, pas refusée par Discord — bug réel rencontré en production", async () => {
+    // Reproduit exactement l'erreur observée en prod :
+    // embeds[MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2]. Le panneau
+    // réel EST en V2 ; messageFromInteraction doit donc passer par majSure
+    // (utils/componentsV2.js), pas interaction.update() brut.
+    const member = mkMember("u-manage", "role-manage");
+    let reponse = null;
+    await handleConfigInteraction({
+      customId: `${ID}:renamerole:${ROLE_ID}`,
+      member,
+      guild,
+      client: {},
+      user: member.user,
+      channel: { id: "chan-1" },
+      isModalSubmit: () => true,
+      fields: { getTextInputValue: () => "Modérateur en second" },
+      message: { flags: { bitfield: Number(MessageFlags.IsComponentsV2) } },
+      update: async (p) => {
+        reponse = p;
+      },
+    });
+    assert.strictEqual(role.name, "Modérateur en second");
+    assert.strictEqual(reponse.embeds, undefined, "un `embeds` qui survit avec le flag V2 fait refuser tout le message par Discord");
+    assert.ok(Number(reponse.flags) & Number(MessageFlags.IsComponentsV2), "le flag V2 doit être posé");
+    const lire = (n) => [n.content || "", ...(n.components || []).map(lire)].join("\n");
+    const texte = reponse.components.map((c) => lire(c.toJSON())).join("\n");
+    assert.ok(texte.includes("renommé"), texte);
   });
 
   await cas("nom vide : rien n'est renommé, message d'erreur clair", async () => {

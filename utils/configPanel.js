@@ -35,6 +35,7 @@ const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = requi
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { card: simpleCard } = require("./listCard");
+const { majSure } = require("./componentsV2");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const statsStore = require("./statsStore");
@@ -896,7 +897,12 @@ function messageFromInteraction(interaction) {
     // remplacerParLaReponse), appliqué ici aux commandes admin de rôle/salon
     // (create/rename/delete...) et à leur confirmation
     // (utils/serverAdminCommands.js::requestConfirmation).
-    reply: (payload) => interaction.update(payload),
+    // majSure (pas interaction.update direct) : roleAdmin/backup/rolePresets
+    // répondent par un embed classique, et le panneau qu'on remplace est en
+    // Components V2 — sans conversion, Discord refuse tout le message
+    // (embeds[MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2], observé
+    // en production).
+    reply: (payload) => majSure(interaction, payload),
   };
 }
 
