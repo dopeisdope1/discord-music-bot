@@ -1,13 +1,15 @@
 /**
  * Vérifie "!!confess" (utils/confessions.js) : parcours de confession
- * anonyme EN PLUSIEURS ÉTAPES, reproduisant exactement la capture fournie —
- * carte "Confesse-toi", bouton "Je souhaite participer" -> garçon/fille ->
- * message envoyé en DM au bot -> anonyme ou non -> attente de validation (si
- * configurée) -> publication avec réactions de vote 👍/👎.
+ * anonyme EN PLUSIEURS ÉTAPES, reproduisant la capture fournie — carte
+ * "Confesse-toi", bouton "Je souhaite participer" -> garçon/fille -> message
+ * anonyme tapé dans une MODALE Discord (jamais en MP, demande explicite :
+ * "je veux plus que les messages soient en dm") -> anonyme ou non -> attente
+ * de validation (si configurée) -> publication avec réactions de vote 👍/👎.
  *
- * Une première version acceptait le message directement dans la commande
- * texte ("!!confess <message>") — explicitement refusée par l'utilisateur
- * ("c'est pas ce que je veux vraiment"). Ce fichier teste le VRAI parcours.
+ * Deux versions précédentes ont été refusées : la première acceptait le
+ * message directement dans la commande texte ("!!confess <message>"), la
+ * seconde le demandait en MP. Ce fichier teste la version actuelle : tout se
+ * passe sur le serveur, via boutons et une modale.
  *
  * Lancement : node scripts/test-confessions.js
  */
@@ -20,7 +22,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "confessions-test-"
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
-const { handleConfessTextCommand, handleConfessDM, handleConfessInteraction } = require("../utils/confessions");
+const { handleConfessTextCommand, handleConfessInteraction } = require("../utils/confessions");
 const confessStore = require("../utils/confessStore");
 const permStore = require("../utils/permissions/store");
 
@@ -53,7 +55,7 @@ function fakeChannel(id) {
   };
 }
 
-/** Un environnement = un serveur, avec un registre d'utilisateurs partagé (pour que interaction.user et client.users.fetch(id) renvoient LE MÊME objet, DMs compris). */
+/** Un environnement = un serveur, avec un registre d'utilisateurs partagé (pour que interaction.user et client.users.fetch(id) renvoient LE MÊME objet, MP compris). */
 function makeEnv(guildId) {
   const users = new Map();
   function getUser(id) {
@@ -77,6 +79,7 @@ function fakeInteraction(env, { customId, userId, values, permissionKey }) {
   const user = env.getUser(userId);
   const replies = [];
   const updates = [];
+  const modals = [];
   return {
     customId,
     user,
@@ -86,10 +89,20 @@ function fakeInteraction(env, { customId, userId, values, permissionKey }) {
     values,
     reply: async (p) => replies.push(p),
     update: async (p) => updates.push(p),
+    showModal: async (m) => modals.push(m),
     message: { embeds: [{ title: "x" }] },
     _replies: replies,
     _updates: updates,
+    _modals: modals,
   };
+}
+
+/** La soumission de la modale "confess:message" (voir utils/confessions.js) — le texte se tape ici, jamais en MP. */
+function fakeModalSubmit(env, userId, texte) {
+  const i = fakeInteraction(env, { customId: "confess:message", userId });
+  i.isModalSubmit = () => true;
+  i.fields = { getTextInputValue: (champ) => (champ === "texte" ? texte : null) };
+  return i;
 }
 
 function fakeSetupMessage(env, { authorId, content, channel }) {
@@ -109,17 +122,6 @@ function fakeSetupMessage(env, { authorId, content, channel }) {
 function customIdDuBouton(envoi, label) {
   const bouton = envoi.payload.components[0].components.find((b) => (b.data?.label || b.label) === label);
   return bouton.data?.custom_id || bouton.custom_id;
-}
-
-function fakeDM(authorId, content) {
-  const replies = [];
-  return {
-    content,
-    author: { id: authorId, bot: false },
-    guild: null,
-    reply: async (p) => replies.push(p),
-    _replies: replies,
-  };
 }
 
 (async () => {
@@ -171,6 +173,7 @@ function fakeDM(authorId, content) {
     assert.ok(container.components.some((c) => c.type === 12), "doit contenir la galerie média (la carte)");
     const texte = container.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
     assert.ok(texte.includes("Comment participer"), texte);
+    assert.ok(texte.includes("fenêtre qui s'ouvre"), "le parcours décrit ne doit plus mentionner de MP");
     const rangeeBoutons = container.components.find((c) => c.type === 1);
     const labels = rangeeBoutons.components.map((b) => b.label);
     assert.deepStrictEqual(labels, ["Je souhaite participer", "Gérer les notifications"]);
@@ -204,7 +207,7 @@ function fakeDM(authorId, content) {
     assert.ok(i1b._replies[0].content.includes("déjà une confession en cours"));
   });
 
-  await cas("étape 2 : choisir un genre édite le message et envoie un MP d'attente", async () => {
+  await cas("étape 2 : choisir un genre ouvre DIRECTEMENT une modale — jamais un MP", async () => {
     const env = makeEnv("g-flow-2");
     const publicChan = fakeChannel("chan-flow-2");
     confessStore.setChannel("g-flow-2", publicChan.id);
@@ -213,8 +216,12 @@ function fakeDM(authorId, content) {
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-2" }));
     const i2 = fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-flow-2" });
     await handleConfessInteraction(i2);
-    assert.ok(i2._updates[0].content.includes("en message privé"));
-    assert.strictEqual(env.getUser("u-flow-2")._dms.length, 1);
+
+    assert.strictEqual(i2._modals.length, 1, "doit ouvrir une modale");
+    assert.strictEqual(i2._updates.length, 0, "pas d'édition de message avant la modale");
+    assert.strictEqual(env.getUser("u-flow-2")._dms.length, 0, "aucun MP ne doit être envoyé");
+    const champ = i2._modals[0].toJSON().components[0].components[0];
+    assert.strictEqual(champ.style, 2, "un champ de confession doit être multi-lignes (Paragraph)");
   });
 
   await cas("choisir un genre SANS avoir cliqué start avant est refusé (étape expirée)", async () => {
@@ -224,7 +231,7 @@ function fakeDM(authorId, content) {
     assert.ok(i._replies[0].content.includes("expiré"));
   });
 
-  await cas("étape 3 : le MP reçu propose de rester anonyme ou non", async () => {
+  await cas("étape 3 : la modale soumise propose de rester anonyme ou non", async () => {
     const env = makeEnv("g-flow-4");
     const publicChan = fakeChannel("chan-flow-4");
     confessStore.setChannel("g-flow-4", publicChan.id);
@@ -233,19 +240,21 @@ function fakeDM(authorId, content) {
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-4" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:garcon", userId: "u-flow-4" }));
 
-    const dm = fakeDM("u-flow-4", "Voici mon secret le plus honteux");
-    await handleConfessDM(null, dm);
-    assert.ok(dm._replies[0].content.includes("rester anonyme"));
-    assert.strictEqual(dm._replies[0].components[0].components.length, 2);
+    const soumission = fakeModalSubmit(env, "u-flow-4", "Voici mon secret le plus honteux");
+    await handleConfessInteraction(soumission);
+    assert.ok(soumission._replies[0].content.includes("rester anonyme"));
+    assert.strictEqual(soumission._replies[0].flags, 64, "doit rester éphémère");
+    assert.strictEqual(soumission._replies[0].components[0].components.length, 2);
   });
 
-  await cas("un MP d'une personne qui n'attend rien ne déclenche rien", async () => {
-    const dm = fakeDM("u-personne-narrive", "coucou");
-    await handleConfessDM(null, dm);
-    assert.strictEqual(dm._replies.length, 0);
+  await cas("soumettre la modale SANS avoir choisi de genre avant est refusé (étape expirée)", async () => {
+    const env = makeEnv("g-flow-3b");
+    const soumission = fakeModalSubmit(env, "u-jamais-genre", "un message");
+    await handleConfessInteraction(soumission);
+    assert.ok(soumission._replies[0].content.includes("expiré"));
   });
 
-  await cas("un MP vide ne fait pas avancer l'étape, redemande le message", async () => {
+  await cas("un message vide dans la modale ne fait pas avancer l'étape", async () => {
     const env = makeEnv("g-flow-5");
     const publicChan = fakeChannel("chan-flow-5");
     confessStore.setChannel("g-flow-5", publicChan.id);
@@ -253,14 +262,14 @@ function fakeDM(authorId, content) {
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-5" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-flow-5" }));
 
-    const dmVide = fakeDM("u-flow-5", "   ");
-    await handleConfessDM(null, dmVide);
-    assert.ok(dmVide._replies[0].includes("vide"), JSON.stringify(dmVide._replies[0]));
+    const soumissionVide = fakeModalSubmit(env, "u-flow-5", "   ");
+    await handleConfessInteraction(soumissionVide);
+    assert.ok(soumissionVide._replies[0].content.includes("vide"));
 
-    // Le vrai message suit ensuite normalement.
-    const dm = fakeDM("u-flow-5", "un vrai message cette fois");
-    await handleConfessDM(null, dm);
-    assert.ok(dm._replies[0].content.includes("rester anonyme"));
+    // La vraie soumission suit ensuite normalement (l'étape n'a pas changé).
+    const soumission = fakeModalSubmit(env, "u-flow-5", "un vrai message cette fois");
+    await handleConfessInteraction(soumission);
+    assert.ok(soumission._replies[0].content.includes("rester anonyme"));
   });
 
   await cas("étape 4/5 : choisir anonyme PUBLIE directement (sans salon de validation configuré)", async () => {
@@ -271,7 +280,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-6" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-flow-6" }));
-    await handleConfessDM(null, fakeDM("u-flow-6", "Baisons eren les amis"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-flow-6", "Baisons eren les amis"));
 
     const iAnon = fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-flow-6" });
     await handleConfessInteraction(iAnon);
@@ -289,7 +298,7 @@ function fakeDM(authorId, content) {
     assert.deepStrictEqual(publicChan._envois[0].msg._reactions, ["👍", "👎"], "la communauté doit pouvoir voter");
   });
 
-  await cas("choisir de ne PAS rester anonyme affiche le pseudo dans le pied de page", async () => {
+  await cas("choisir de ne PAS rester anonyme affiche le pseudo dans la légende", async () => {
     const env = makeEnv("g-flow-7");
     const publicChan = fakeChannel("chan-flow-7");
     confessStore.setChannel("g-flow-7", publicChan.id);
@@ -297,7 +306,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-7" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:garcon", userId: "u-flow-7" }));
-    await handleConfessDM(null, fakeDM("u-flow-7", "message assumé"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-flow-7", "message assumé"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:non", userId: "u-flow-7" }));
 
     const container = publicChan._envois[0].payload.components[0].toJSON();
@@ -305,11 +314,11 @@ function fakeDM(authorId, content) {
     assert.ok(legendes.some((t) => t.includes("u-flow-7#0001")), legendes.join(" | "));
   });
 
-  await cas("choisir anonyme/non SANS avoir envoyé de message avant est refusé", async () => {
+  await cas("choisir anonyme/non SANS avoir soumis de message avant est refusé", async () => {
     const env = makeEnv("g-flow-8");
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-flow-8" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-flow-8" }));
-    // On saute directement à "anon" sans passer par le MP.
+    // On saute directement à "anon" sans passer par la modale.
     const i = fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-flow-8" });
     await handleConfessInteraction(i);
     assert.ok(i._replies[0].content.includes("expiré"));
@@ -327,7 +336,7 @@ function fakeDM(authorId, content) {
       const uid = `u-num-${i}`;
       await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: uid }));
       await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:garcon", userId: uid }));
-      await handleConfessDM(null, fakeDM(uid, `confession ${i}`));
+      await handleConfessInteraction(fakeModalSubmit(env, uid, `confession ${i}`));
       await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:oui", userId: uid }));
     }
     const titres = publicChan._envois.map((e) => {
@@ -350,7 +359,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-val-1" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-val-1" }));
-    await handleConfessDM(null, fakeDM("u-val-1", "en attente de validation"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-val-1", "en attente de validation"));
     const iAnon = fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-val-1" });
     await handleConfessInteraction(iAnon);
 
@@ -360,7 +369,6 @@ function fakeDM(authorId, content) {
 
     const labels = validChan._envois[0].payload.components[0].components.map((b) => b.data?.label || b.label);
     assert.deepStrictEqual(labels, ["Approuver", "Refuser"]);
-    return { env, publicChan, validChan };
   });
 
   await cas("Approuver publie ENFIN la confession et prévient l'auteur par MP", async () => {
@@ -374,7 +382,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-app-1" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:garcon", userId: "u-app-1" }));
-    await handleConfessDM(null, fakeDM("u-app-1", "coucou le staff"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-app-1", "coucou le staff"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-app-1" }));
 
     const customIdApprouve = customIdDuBouton(validChan._envois[0], "Approuver");
@@ -397,7 +405,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-ref-1" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:fille", userId: "u-ref-1" }));
-    await handleConfessDM(null, fakeDM("u-ref-1", "message qui va être refusé"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-ref-1", "message qui va être refusé"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:non", userId: "u-ref-1" }));
 
     const customIdRefuse = customIdDuBouton(validChan._envois[0], "Refuser");
@@ -448,7 +456,7 @@ function fakeDM(authorId, content) {
 
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:start", userId: "u-notif-auteur" }));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:genre:garcon", userId: "u-notif-auteur" }));
-    await handleConfessDM(null, fakeDM("u-notif-auteur", "ma confession"));
+    await handleConfessInteraction(fakeModalSubmit(env, "u-notif-auteur", "ma confession"));
     await handleConfessInteraction(fakeInteraction(env, { customId: "confess:anon:oui", userId: "u-notif-auteur" }));
 
     // Laisse les .then() asynchrones de notification se résoudre.

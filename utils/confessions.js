@@ -7,6 +7,9 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
@@ -14,14 +17,14 @@ const confessStore = require("./confessStore");
 const { can } = require("./permissions/engine");
 const { buildCarteVisuelle } = require("./confessCard");
 
-// !!confess — confessions anonymes, REPRODUISANT EXACTEMENT le déroulé montré
-// en capture par l'utilisateur (carte "Confesse-toi", bouton "Je souhaite
-// participer" -> question garçon/fille -> message envoyé en DM au bot ->
-// choix de rester anonyme ou non -> attente de validation -> publication, la
-// communauté votant ensuite). Une première version acceptait le message
-// directement dans la commande texte ("!!confess <message>") — explicitement
-// refusée ("c'est pas ce que je veux vraiment") : ce fichier la remplace
-// entièrement par le vrai déroulé à étapes.
+// !!confess — confessions anonymes, reproduisant le déroulé montré en
+// capture par l'utilisateur (carte "Confesse-toi", bouton "Je souhaite
+// participer" -> question garçon/fille -> message anonyme -> choix de rester
+// anonyme ou non -> attente de validation -> publication, la communauté
+// votant ensuite). Le message se tape désormais dans une MODALE (fenêtre
+// Discord), pas en MP : demande explicite ("je veux plus que les messages
+// soient en dm") — tout reste sur le serveur, sans dépendre des MP ouverts
+// ni de l'intent DirectMessages.
 //
 // Toujours sur le préfixe "!!" déjà utilisé par utils/personalProtection.js —
 // même mécanique de lecture du préfixe, un mot différent après ("confess" au
@@ -29,12 +32,12 @@ const { buildCarteVisuelle } = require("./confessCard");
 
 const CUSTOM_ID = "confess";
 const COULEUR = 0xff5e8a; // rose/orangé, dans l'esprit de la capture fournie
-const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embed (4096)
+const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embed (4096) — aussi la limite max d'un champ de modale
 
 // État des flux en cours, EN MÉMOIRE (comme utils/messageOwner.js) : un
 // redémarrage du bot en plein milieu d'une confession force juste à
 // recommencer, ça n'a pas besoin de survivre sur disque.
-// userId -> { guildId, etape: "genre"|"attente_dm"|"anonymat", genre?, texte? }
+// userId -> { guildId, etape: "genre"|"anonymat", genre?, texte? }
 const enCours = new Map();
 
 // Confessions envoyées, en attente d'un clic Approuver/Refuser dans le salon
@@ -66,7 +69,7 @@ function buildConfessCard() {
         "**Comment participer ?**",
         "> **1.** Clique sur le bouton ci-dessous",
         "> **2.** Indique si tu es un garçon ou une fille",
-        "> **3.** Envoie ton message anonyme en DM au bot",
+        "> **3.** Écris ton message anonyme dans la fenêtre qui s'ouvre",
         "> **4.** Choisis si tu veux rester anonyme ou non",
         "> **5.** Attends la validation — puis la communauté réagit !",
         "",
@@ -171,38 +174,12 @@ async function handleConfessTextCommand(client, message) {
   }
 }
 
-/**
- * Étape 3 du parcours : le message privé envoyé au bot, une fois qu'on
- * attend justement ça pour cette personne. À appeler pour TOUT message reçu
- * en MP (index.js) — ne fait rien pour qui n'a pas cliqué "Je souhaite
- * participer" avant.
- */
-async function handleConfessDM(client, message) {
-  if (message.author.bot || message.guild) return;
-  const etat = enCours.get(message.author.id);
-  if (!etat || etat.etape !== "attente_dm") return;
-
-  const texte = message.content.trim();
-  if (!texte) return message.reply("Ton message est vide — réessaie.").catch(() => {});
-  if (texte.length > LONGUEUR_MAX) {
-    return message.reply(`Message trop long (max ${LONGUEUR_MAX} caractères) — raccourcis-le et renvoie-le.`).catch(() => {});
-  }
-
-  etat.texte = texte;
-  etat.etape = "anonymat";
-  const boutons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:oui`).setLabel("Rester anonyme").setStyle(ButtonStyle.Secondary).setEmoji("🕶️"),
-    new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:non`).setLabel("Afficher mon pseudo").setStyle(ButtonStyle.Secondary).setEmoji("🙈")
-  );
-  return message.reply({ content: "Veux-tu rester anonyme, ou qu'on affiche ton pseudo à côté de ta confession ?", components: [boutons] }).catch(() => {});
-}
-
 async function handleConfessInteraction(interaction) {
   const [, action, ...reste] = interaction.customId.split(":");
 
   if (action === "start") {
     if (enCours.has(interaction.user.id)) {
-      return interaction.reply({ content: "Tu as déjà une confession en cours — regarde tes messages privés.", flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: "Tu as déjà une confession en cours.", flags: MessageFlags.Ephemeral });
     }
     enCours.set(interaction.user.id, { guildId: interaction.guild.id, etape: "genre" });
     const boutons = new ActionRowBuilder().addComponents(
@@ -218,12 +195,43 @@ async function handleConfessInteraction(interaction) {
       return interaction.reply({ content: 'Cette étape a expiré — reclique sur "Je souhaite participer".', flags: MessageFlags.Ephemeral });
     }
     etat.genre = reste[0]; // "garcon" | "fille"
-    etat.etape = "attente_dm";
-    await interaction.update({ content: "Envoie-moi maintenant ton message anonyme, ICI en message privé.", components: [] });
-    return interaction.user.send("Je t'écoute — envoie-moi le message que tu veux confesser anonymement.").catch(() => {
-      // Le MP peut échouer si les MP sont fermés depuis ce serveur : l'étape
-      // reste ouverte, la personne peut quand même répondre directement dans
-      // le fil de MP existant avec le bot si elle en a un.
+    etat.etape = "attente_modal";
+    // Le message se tape ICI, dans une fenêtre Discord — jamais en MP
+    // (demande explicite). showModal() doit être la toute première réponse
+    // à CE clic, impossible de la faire précéder d'un interaction.update().
+    const modal = new ModalBuilder().setCustomId(`${CUSTOM_ID}:message`).setTitle("Ta confession anonyme");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("texte")
+          .setLabel("Ton message")
+          .setStyle(TextInputStyle.Paragraph)
+          .setMaxLength(LONGUEUR_MAX)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "message") {
+    const etat = enCours.get(interaction.user.id);
+    if (!etat || etat.etape !== "attente_modal") {
+      return interaction.reply({ content: 'Cette étape a expiré — reclique sur "Je souhaite participer".', flags: MessageFlags.Ephemeral });
+    }
+    const texte = interaction.fields.getTextInputValue("texte").trim();
+    if (!texte) {
+      return interaction.reply({ content: 'Message vide — reclique sur "Je souhaite participer" pour recommencer.', flags: MessageFlags.Ephemeral });
+    }
+    etat.texte = texte;
+    etat.etape = "anonymat";
+    const boutons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:oui`).setLabel("Rester anonyme").setStyle(ButtonStyle.Secondary).setEmoji("🕶️"),
+      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:anon:non`).setLabel("Afficher mon pseudo").setStyle(ButtonStyle.Secondary).setEmoji("🙈")
+    );
+    return interaction.reply({
+      content: "Veux-tu rester anonyme, ou qu'on affiche ton pseudo à côté de ta confession ?",
+      components: [boutons],
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -296,4 +304,4 @@ async function handleConfessInteraction(interaction) {
   }
 }
 
-module.exports = { handleConfessTextCommand, handleConfessDM, handleConfessInteraction, CUSTOM_ID };
+module.exports = { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID };
