@@ -53,7 +53,7 @@ function buildSetClearCard(config) {
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${CUSTOM_ID}:modifier`).setLabel("Modifier").setStyle(ButtonStyle.Primary).setEmoji("✏️"),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:reinitialiser`).setLabel("Valeurs par défaut").setStyle(ButtonStyle.Secondary).setEmoji("↺")
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:reinitialiser`).setLabel("Valeurs par défaut").setStyle(ButtonStyle.Secondary).setEmoji("🔄")
       )
     );
 
