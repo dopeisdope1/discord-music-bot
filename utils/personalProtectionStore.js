@@ -45,6 +45,49 @@ const PROTECTIONS = {
     label: "Anti Ping Fantôme",
     description: "T'envoie en MP le contenu d'un message qui t'a mentionné puis a été supprimé",
   },
+  // --- Salon vocal temporaire (utils/voiceChannels.js) ---
+  antiCafard: {
+    label: "Anti-Cafard",
+    description: "Expulse automatiquement de TON salon vocal temporaire les membres de ta liste noire",
+  },
+  fuiteVocale: {
+    label: "Fuite Vocale",
+    description: "Tu quittes automatiquement ton salon vocal temporaire si un membre de ta liste le rejoint",
+  },
+  sanctuaireVocal: {
+    label: "Sanctuaire Vocal",
+    description: "Annule un déplacement forcé hors de TON salon vocal temporaire (ne protège pas contre une déconnexion, impossible à annuler côté Discord)",
+  },
+  vocalLockAuto: {
+    label: "Vocal Lock Auto",
+    description: "Verrouille automatiquement chaque salon vocal temporaire que tu crées",
+  },
+  cleanChatVocal: {
+    label: "Clean Chat Vocal",
+    description: "Supprime tes messages dans le chat de TON salon vocal temporaire après 5 minutes",
+  },
+  antiStalker: {
+    label: "Anti-Stalker",
+    description: "T'alerte en MP si un membre de ta liste rejoint un salon vocal où tu es déjà — aucune sanction, juste une alerte",
+  },
+  // --- Modération (audit log, utils/moderation/actions.js) ---
+  quarantineAdmin: {
+    label: "Quarantaine Admin",
+    description: "Retire temporairement (1h) les rôles de quiconque agit illégitimement contre toi, le temps d'une vérification",
+  },
+  muteBot: {
+    label: "Mute Bot",
+    description: "Réapplique automatiquement le rôle de mute sur ta cible désignée si quelqu'un d'autre que toi la démute",
+  },
+  // --- Alertes (aucune sanction, juste un MP — comme Anti Ping Fantôme) ---
+  antiMentionPerso: {
+    label: "Anti-Mention Perso",
+    description: "T'alerte en MP quand un membre de ta liste te mentionne",
+  },
+  antiDeleteMessage: {
+    label: "Anti-Delete Message",
+    description: "T'alerte en MP quand un de TES messages est supprimé par quelqu'un d'autre",
+  },
 };
 
 let cache = null;

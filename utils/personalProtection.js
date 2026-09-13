@@ -7,14 +7,23 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  UserSelectMenuBuilder,
+  ChannelType,
   MessageFlags,
 } = require("discord.js");
 const { EMOJI } = require("./emojis");
 const store = require("./personalProtectionStore");
+const lists = require("./personalListsStore");
+const quarantineStore = require("./adminQuarantineStore");
 const messageOwner = require("./messageOwner");
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
+const voiceChannels = require("./voiceChannels");
+const muteStore = require("./muteStore");
+const { report } = require("./moderation/actions");
 
 // !!panel — panel de protection PERSONNELLE, sur un préfixe séparé exprès
 // pour ne jamais se mélanger avec &panel (configuration du SERVEUR, voir
@@ -41,7 +50,18 @@ function rangLabel(userId) {
   return "Membre";
 }
 
-function buildPanel(member) {
+// Les 4 protections qui reposent sur une LISTE de membres plutôt qu'un
+// simple on/off (utils/personalListsStore.js) — "Gérer une liste
+// personnelle" ci-dessous les couvre toutes, un aller-retour à la fois.
+const LISTES_GEREES = [
+  { cle: "antiCafard", label: "Anti-Cafard : liste noire" },
+  { cle: "fuiteVocale", label: "Fuite Vocale : liste" },
+  { cle: "antiMentionPerso", label: "Anti-Mention Perso : liste surveillée" },
+  { cle: "antiStalker", label: "Anti-Stalker : liste surveillée" },
+  { cle: "muteBot", label: "Mute Bot : cible désignée" },
+];
+
+function buildPanel(member, state = {}) {
   const settings = store.getSettings(member.guild.id, member.id);
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${EMOJI.LOCK} Panel perso`));
@@ -81,6 +101,41 @@ function buildPanel(member) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));
 
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`${CUSTOM_ID}:listaction`)
+        .setPlaceholder("Gérer une liste personnelle")
+        .addOptions(LISTES_GEREES.map((l) => new StringSelectMenuOptionBuilder().setLabel(l.label).setValue(l.cle).setDefault(l.cle === state.liste)))
+    )
+  );
+
+  if (state.liste === "muteBot") {
+    const cibleActuelle = lists.getTarget(member.guild.id, member.id);
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`Cible actuelle : ${cibleActuelle ? `<@${cibleActuelle}>` : "*aucune*"}`)
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder().setCustomId(`${CUSTOM_ID}:target`).setPlaceholder("Définir la cible (vide = aucune)").setMinValues(0)
+      )
+    );
+  } else if (state.liste) {
+    const listeActuelle = lists.getList(member.guild.id, member.id, state.liste);
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `Liste actuelle (${listeActuelle.length}) : ${listeActuelle.length ? listeActuelle.map((id) => `<@${id}>`).join(", ") : "*vide*"}`
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CUSTOM_ID}:listadd:${state.liste}`).setPlaceholder("Ajouter à la liste"))
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${CUSTOM_ID}:listdel:${state.liste}`).setPlaceholder("Retirer de la liste"))
+    );
+  }
+
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
@@ -109,11 +164,33 @@ async function handleProtectionTextCommand(client, message) {
  */
 async function handleProtectionInteraction(interaction) {
   const [, action, key] = interaction.customId.split(":");
+  const guildId = interaction.guild.id;
+  const userId = interaction.user.id;
 
   if (action === "toggle") {
     if (!store.PROTECTIONS[key]) return;
-    store.toggle(interaction.guild.id, interaction.user.id, key);
+    store.toggle(guildId, userId, key);
     return interaction.update(buildPanel(interaction.member));
+  }
+
+  if (action === "listaction") {
+    const liste = interaction.values[0];
+    if (!LISTES_GEREES.some((l) => l.cle === liste)) return;
+    return interaction.update(buildPanel(interaction.member, { liste }));
+  }
+
+  if (action === "listadd" || action === "listdel") {
+    if (!LISTES_GEREES.some((l) => l.cle === key) || key === "muteBot") return;
+    const cibleId = interaction.values[0];
+    const present = lists.getList(guildId, userId, key).includes(cibleId);
+    if (action === "listadd" && !present) lists.toggleInList(guildId, userId, key, cibleId);
+    else if (action === "listdel" && present) lists.toggleInList(guildId, userId, key, cibleId);
+    return interaction.update(buildPanel(interaction.member, { liste: key }));
+  }
+
+  if (action === "target") {
+    lists.setTarget(guildId, userId, interaction.values[0] || null);
+    return interaction.update(buildPanel(interaction.member, { liste: "muteBot" }));
   }
 }
 
@@ -160,6 +237,7 @@ async function handleAuditLogEntry(client, guild, entry) {
     const removed = entry.changes?.find((c) => c.key === "$remove")?.new || [];
     if (!removed.length || !store.isEnabled(guild.id, entry.targetId, "antiRoleRemove")) return;
     if (await estActionLegitime(guild, entry.executorId, entry.targetId, "members.role")) return;
+    await quarantineExecuteur(guild, entry.executorId, entry.targetId);
     const idsEncoreValides = removed.map((r) => r.id).filter((id) => guild.roles.cache.has(id));
     if (!idsEncoreValides.length) return;
     const membre = await guild.members.fetch(entry.targetId).catch(() => null);
@@ -178,6 +256,7 @@ async function handleAuditLogEntry(client, guild, entry) {
 
     if (timeout?.new && store.isEnabled(guild.id, entry.targetId, "antiTimeout")) {
       if (!(await estActionLegitime(guild, entry.executorId, entry.targetId, "moderation.timeout"))) {
+        await quarantineExecuteur(guild, entry.executorId, entry.targetId);
         const membre = await guild.members.fetch(entry.targetId).catch(() => null);
         await membre?.timeout(null, "Anti-Timeout (!!panel)").catch((err) => {
           console.error("[personalProtection] anti-timeout impossible :", err.message);
@@ -187,6 +266,7 @@ async function handleAuditLogEntry(client, guild, entry) {
 
     if (nick && store.isEnabled(guild.id, entry.targetId, "antiRename")) {
       if (!(await estActionLegitime(guild, entry.executorId, entry.targetId, "members.nick"))) {
+        await quarantineExecuteur(guild, entry.executorId, entry.targetId);
         const membre = await guild.members.fetch(entry.targetId).catch(() => null);
         await membre?.setNickname(nick.old || null, "Anti-Renommage (!!panel)").catch((err) => {
           console.error("[personalProtection] anti-renommage impossible :", err.message);
@@ -196,6 +276,7 @@ async function handleAuditLogEntry(client, guild, entry) {
 
     if ((mute?.new || deaf?.new) && store.isEnabled(guild.id, entry.targetId, "antiMuteDeafen")) {
       if (!(await estActionLegitime(guild, entry.executorId, entry.targetId, null))) {
+        await quarantineExecuteur(guild, entry.executorId, entry.targetId);
         const membre = await guild.members.fetch(entry.targetId).catch(() => null);
         if (mute?.new) await membre?.voice?.setMute(false, "Anti-Sourdine Forcée (!!panel)").catch(() => {});
         if (deaf?.new) await membre?.voice?.setDeaf(false, "Anti-Sourdine Forcée (!!panel)").catch(() => {});
@@ -207,6 +288,7 @@ async function handleAuditLogEntry(client, guild, entry) {
   if (entry.action === AuditLogEvent.MemberBanAdd) {
     if (!store.isEnabled(guild.id, entry.targetId, "antiBan")) return;
     if (await estActionLegitime(guild, entry.executorId, entry.targetId, "moderation.ban")) return;
+    await quarantineExecuteur(guild, entry.executorId, entry.targetId);
     await guild.members.unban(entry.targetId, "Anti-Bannissement (!!panel)").catch((err) => {
       console.error("[personalProtection] anti-bannissement impossible :", err.message);
     });
@@ -216,8 +298,52 @@ async function handleAuditLogEntry(client, guild, entry) {
   if (entry.action === AuditLogEvent.MemberKick) {
     if (!store.isEnabled(guild.id, entry.targetId, "antiKick")) return;
     if (await estActionLegitime(guild, entry.executorId, entry.targetId, "moderation.kick")) return;
+    await quarantineExecuteur(guild, entry.executorId, entry.targetId);
     await envoyerAlerteExpulsion(guild, entry.targetId).catch((err) => {
       console.error("[personalProtection] alerte expulsion impossible :", err.message);
+    });
+  }
+}
+
+/**
+ * Quarantaine Admin : en plus d'annuler l'action elle-même (fait par
+ * l'appelant), isole temporairement l'EXÉCUTEUR illégitime — snapshot de
+ * ses rôles (hors @everyone) puis retrait, restaurés après échéance par
+ * checkExpiredQuarantines(). Best-effort : un exécuteur introuvable ou
+ * déjà sans rôle ne fait rien planter, juste rien à quarantiner.
+ */
+async function quarantineExecuteur(guild, executorId, targetId) {
+  if (!store.isEnabled(guild.id, targetId, "quarantineAdmin")) return;
+  if (!executorId) return;
+  const executeur = await guild.members.fetch(executorId).catch(() => null);
+  if (!executeur) return;
+  const roleIds = [...executeur.roles.cache.keys()].filter((id) => id !== guild.id);
+  if (!roleIds.length) return;
+  try {
+    await executeur.roles.remove(roleIds, "Quarantaine Admin (!!panel) — action illégitime détectée");
+  } catch (err) {
+    console.error("[personalProtection] mise en quarantaine impossible :", err.message);
+    return;
+  }
+  quarantineStore.add(guild.id, executorId, roleIds);
+}
+
+/**
+ * Appelée périodiquement (voir index.js) pour rendre à un exécuteur mis en
+ * quarantaine (voir quarantineExecuteur) les rôles qui lui avaient été
+ * retirés, une fois l'échéance passée.
+ */
+async function checkExpiredQuarantines(client) {
+  for (const entry of quarantineStore.getExpired()) {
+    quarantineStore.remove(entry.guildId, entry.userId);
+    const guild = client.guilds.cache.get(entry.guildId);
+    if (!guild) continue;
+    const membre = await guild.members.fetch(entry.userId).catch(() => null);
+    if (!membre) continue;
+    const idsEncoreValides = entry.roleIds.filter((id) => guild.roles.cache.has(id));
+    if (!idsEncoreValides.length) continue;
+    await membre.roles.add(idsEncoreValides, "Fin de quarantaine (!!panel)").catch((err) => {
+      console.error(`[personalProtection] restauration de quarantaine impossible pour ${membre.id} :`, err.message);
     });
   }
 }
@@ -284,11 +410,196 @@ async function enforceGhostPingAlert(message) {
   }
 }
 
+/**
+ * Anti-Mention Perso — à appeler depuis "messageCreate" (index.js). Pour
+ * CHAQUE utilisateur mentionné dans le message, si CE mentionné a la
+ * protection active et surveille l'auteur du message (utils/
+ * personalListsStore.js), lui envoie une alerte en MP. Jamais de sanction,
+ * même principe qu'Anti-Ping-Fantôme.
+ */
+async function enforcePersonalMentionAlert(message) {
+  if (!message.guild || message.author?.bot) return;
+  const mentioned = message.mentions?.users;
+  if (!mentioned?.size) return;
+
+  for (const [, user] of mentioned) {
+    if (user.id === message.author?.id) continue;
+    if (!store.isEnabled(message.guild.id, user.id, "antiMentionPerso")) continue;
+    if (!lists.getList(message.guild.id, user.id, "antiMentionPerso").includes(message.author.id)) continue;
+    await user
+      .send(`**${message.author?.tag || "quelqu'un"}** (que tu surveilles) t'a mentionné dans **${message.guild.name}**.`)
+      .catch(() => {});
+  }
+}
+
+/**
+ * Anti-Delete Message — à appeler depuis "messageDelete" (index.js), en
+ * plus d'enforceGhostPingAlert. Best-effort : Discord ne journalise une
+ * suppression de message QUE si elle vient de quelqu'un avec "Gérer les
+ * messages" (jamais une autosuppression) — l'absence d'entrée d'audit est
+ * donc traitée comme une autosuppression probable, et reste silencieuse
+ * plutôt que de risquer une fausse alerte.
+ */
+async function enforceDeleteAlert(message) {
+  if (!message.guild || message.author?.bot) return;
+  if (!store.isEnabled(message.guild.id, message.author.id, "antiDeleteMessage")) return;
+
+  const logs = await message.guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 3 }).catch(() => null);
+  const recent = [...(logs?.entries?.values() || [])].find(
+    (e) => e.targetId === message.author.id && e.extra?.channel?.id === message.channelId && Date.now() - e.createdTimestamp < 5000
+  );
+  if (!recent || recent.executorId === message.author.id) return; // pas de trace, ou autosuppression : silence
+
+  const contenu = message.content || "*(contenu indisponible — message supprimé avant mise en cache)*";
+  await message.author
+    .send(`Un de tes messages dans **${message.guild.name}** a été supprimé par <@${recent.executorId}> :\n> ${contenu}`)
+    .catch(() => {});
+}
+
+/**
+ * Anti-Cafard / Fuite Vocale — à appeler depuis "voiceStateUpdate"
+ * (index.js), dans un écouteur DÉDIÉ (pas celui qui gère la création/
+ * suppression des salons temporaires ni celui d'enforceMoveProtection).
+ * Se déclenche quand quelqu'un REJOINT un salon vocal temporaire (voir
+ * utils/voiceChannels.js) dont le propriétaire surveille l'arrivant :
+ * Anti-Cafard expulse l'arrivant, Fuite Vocale fait partir le
+ * PROPRIÉTAIRE — priorité à Anti-Cafard si les deux listes matchent (on
+ * règle le problème plutôt que de fuir, quand le choix se présente).
+ */
+async function enforceVoiceBlocklists(oldState, newState) {
+  const arrivant = newState.member;
+  if (!arrivant || !newState.channelId || oldState.channelId === newState.channelId) return;
+  const info = voiceChannels.getChannelInfo(newState.channelId);
+  if (!info || info.ownerId === arrivant.id) return;
+
+  const guildId = newState.guild.id;
+  if (store.isEnabled(guildId, info.ownerId, "antiCafard") && lists.getList(guildId, info.ownerId, "antiCafard").includes(arrivant.id)) {
+    await arrivant.voice.disconnect("Anti-Cafard (!!panel)").catch(() => {});
+    return;
+  }
+  if (store.isEnabled(guildId, info.ownerId, "fuiteVocale") && lists.getList(guildId, info.ownerId, "fuiteVocale").includes(arrivant.id)) {
+    const proprietaire = await newState.guild.members.fetch(info.ownerId).catch(() => null);
+    await proprietaire?.voice?.disconnect("Fuite Vocale (!!panel)").catch(() => {});
+  }
+}
+
+/**
+ * Anti-Stalker — même déclencheur qu'enforceVoiceBlocklists (quelqu'un
+ * rejoint un salon vocal), appelé depuis le MÊME écouteur "voiceStateUpdate"
+ * dédié. Alerte SEULEMENT (jamais de sanction, comme Anti-Ping-Fantôme) :
+ * si l'arrivant est dans la liste de surveillance d'un membre protégé déjà
+ * présent dans CE salon, prévient ce membre en MP.
+ */
+async function enforceStalkerAlert(oldState, newState) {
+  const arrivant = newState.member;
+  if (!arrivant || !newState.channelId || oldState.channelId === newState.channelId) return;
+  const guildId = newState.guild.id;
+  const surveillants = lists.findWatchers(guildId, arrivant.id, "antiStalker");
+  if (!surveillants.length) return;
+
+  const channel = newState.guild.channels.cache.get(newState.channelId);
+  if (!channel) return;
+
+  for (const protegeId of surveillants) {
+    if (protegeId === arrivant.id) continue;
+    if (!store.isEnabled(guildId, protegeId, "antiStalker")) continue;
+    if (!channel.members?.has(protegeId)) continue;
+    const protege = await newState.guild.members.fetch(protegeId).catch(() => null);
+    await protege?.user
+      ?.send(`**${arrivant.user?.tag || "un membre que tu surveilles"}** vient de rejoindre ton salon vocal (**${channel.name}**).`)
+      .catch(() => {});
+  }
+}
+
+/**
+ * Sanctuaire Vocal — écouteur "voiceStateUpdate" dédié, séparé
+ * d'enforceMoveProtection : protège UNIQUEMENT dans le salon vocal
+ * TEMPORAIRE dont on est propriétaire, et la légitimité s'y résume à
+ * "est-ce moi qui l'ai fait" (pas estActionLegitime — même un modérateur
+ * avec de vrais droits n'a rien à faire dans le salon de quelqu'un
+ * d'autre). Limité aux DÉPLACEMENTS : Discord ne permet pas de reconnecter
+ * quelqu'un après une déconnexion forcée, donc rien à annuler dans ce cas
+ * (voir la description affichée dans !!panel).
+ */
+async function enforceSanctuaryProtection(oldState, newState) {
+  const member = newState.member;
+  if (!member || !oldState.channelId || !newState.channelId || oldState.channelId === newState.channelId) return;
+  const info = voiceChannels.getChannelInfo(oldState.channelId);
+  if (!info || info.ownerId !== member.id) return;
+  if (!store.isEnabled(newState.guild.id, member.id, "sanctuaireVocal")) return;
+
+  const logs = await newState.guild.fetchAuditLogs({ type: AuditLogEvent.MemberMove, limit: 3 }).catch(() => null);
+  const recent = [...(logs?.entries?.values() || [])].find(
+    (e) => e.extra?.channel?.id === newState.channelId && Date.now() - e.createdTimestamp < 5000
+  );
+  if (!recent || recent.executorId === member.id) return; // pas de déplacement imposé détecté, ou fait par le propriétaire lui-même
+
+  await member.voice.setChannel(oldState.channelId, "Sanctuaire Vocal (!!panel)").catch((err) => {
+    console.error("[personalProtection] sanctuaire vocal impossible :", err.message);
+  });
+}
+
+/**
+ * Clean Chat Vocal — à appeler depuis "messageCreate" (index.js). Si le
+ * message est posté dans le chat d'un salon vocal TEMPORAIRE par son
+ * propriétaire, planifie sa suppression après 5 minutes.
+ */
+async function enforceCleanVoiceChat(message) {
+  if (!message.guild || message.author?.bot) return;
+  if (message.channel?.type !== ChannelType.GuildVoice) return;
+  const info = voiceChannels.getChannelInfo(message.channel.id);
+  if (!info || info.ownerId !== message.author.id) return;
+  if (!store.isEnabled(message.guild.id, message.author.id, "cleanChatVocal")) return;
+
+  setTimeout(() => message.delete().catch(() => {}), 5 * 60_000);
+}
+
+/**
+ * Mute Bot — à appeler depuis un écouteur "guildMemberUpdate" (nouveau,
+ * voir index.js). Se déclenche quand le rôle de mute (utils/muteStore.js)
+ * disparaît d'un membre : si quelqu'un le protège avec Mute Bot (utils/
+ * personalListsStore.js::findMuteBotProtectors) et que ce n'est PAS ce
+ * protecteur qui a démuté (recoupement audit log, même principe
+ * qu'enforceMoveProtection), le rôle est réappliqué.
+ */
+async function enforceMuteBot(oldMember, newMember) {
+  const guild = newMember.guild;
+  const roleId = muteStore.getMuteRoleId(guild.id);
+  if (!roleId) return;
+  const avaitLeRole = oldMember.roles.cache.has(roleId);
+  const aEncoreLeRole = newMember.roles.cache.has(roleId);
+  if (!avaitLeRole || aEncoreLeRole) return; // le rôle n'a pas disparu
+
+  const protecteurs = lists.findMuteBotProtectors(guild.id, newMember.id).filter((id) => store.isEnabled(guild.id, id, "muteBot"));
+  if (!protecteurs.length) return;
+
+  const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 3 }).catch(() => null);
+  const recent = [...(logs?.entries?.values() || [])].find((e) => e.targetId === newMember.id && Date.now() - e.createdTimestamp < 5000);
+  const executorId = recent?.executorId || null;
+
+  // Si c'est justement UN des protecteurs qui a démuté, on respecte son choix.
+  if (executorId && protecteurs.includes(executorId)) return;
+
+  const role = guild.roles.cache.get(roleId);
+  if (!role) return;
+  await newMember.roles.add(role, "Mute Bot (!!panel)").catch((err) => {
+    console.error("[personalProtection] mute bot impossible :", err.message);
+  });
+}
+
 module.exports = {
   handleProtectionTextCommand,
   handleProtectionInteraction,
   handleAuditLogEntry,
   enforceMoveProtection,
   enforceGhostPingAlert,
+  enforcePersonalMentionAlert,
+  enforceDeleteAlert,
+  enforceVoiceBlocklists,
+  enforceStalkerAlert,
+  enforceSanctuaryProtection,
+  enforceCleanVoiceChat,
+  enforceMuteBot,
+  checkExpiredQuarantines,
   CUSTOM_ID,
 };

@@ -624,5 +624,197 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
     assert.strictEqual(cible._dm.length, 0);
   });
 
+  console.log("\nGestion des listes personnelles (menu déroulant \"listaction\" + UserSelectMenu) :");
+
+  const lists = require("../utils/personalListsStore");
+
+  await cas("choisir une liste dans le menu révèle son état, un seul aller-retour", async () => {
+    const interaction = fakeInteraction("prot:listaction", { userId: "u90", guildId: "g90", values: ["antiCafard"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(interaction._updates.length, 1);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("Liste actuelle"), texte);
+  });
+
+  await cas("ajouter quelqu'un via listadd l'ajoute vraiment à la liste", async () => {
+    const interaction = fakeInteraction("prot:listadd:antiCafard", { userId: "u91", guildId: "g91", values: ["cible-1"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.deepStrictEqual(lists.getList("g91", "u91", "antiCafard"), ["cible-1"]);
+  });
+
+  await cas("retirer via listdel enlève vraiment de la liste (bascule inverse)", async () => {
+    lists.toggleInList("g92", "u92", "fuiteVocale", "cible-2");
+    const interaction = fakeInteraction("prot:listdel:fuiteVocale", { userId: "u92", guildId: "g92", values: ["cible-2"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.deepStrictEqual(lists.getList("g92", "u92", "fuiteVocale"), []);
+  });
+
+  await cas("ajouter deux fois la même personne ne duplique pas (idempotent)", async () => {
+    const interaction1 = fakeInteraction("prot:listadd:antiMentionPerso", { userId: "u93", guildId: "g93", values: ["cible-3"] });
+    await personalProtection.handleProtectionInteraction(interaction1);
+    const interaction2 = fakeInteraction("prot:listadd:antiMentionPerso", { userId: "u93", guildId: "g93", values: ["cible-3"] });
+    await personalProtection.handleProtectionInteraction(interaction2);
+    assert.deepStrictEqual(lists.getList("g93", "u93", "antiMentionPerso"), ["cible-3"]);
+  });
+
+  await cas("\"target\" définit la cible désignée de Mute Bot", async () => {
+    const interaction = fakeInteraction("prot:target", { userId: "u94", guildId: "g94", values: ["cible-mutebot"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(lists.getTarget("g94", "u94"), "cible-mutebot");
+  });
+
+  await cas("\"target\" avec une sélection vide efface la cible", async () => {
+    lists.setTarget("g95", "u95", "ancienne-cible");
+    const interaction = fakeInteraction("prot:target", { userId: "u95", guildId: "g95", values: [] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(lists.getTarget("g95", "u95"), null);
+  });
+
+  await cas("listadd/listdel refusent \"muteBot\" (ce n'est pas une liste, une cible unique)", async () => {
+    const interaction = fakeInteraction("prot:listadd:muteBot", { userId: "u96", guildId: "g96", values: ["x"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(interaction._updates.length, 0);
+  });
+
+  console.log("\nQuarantaine Admin (isole l'exécuteur illégitime, en plus de l'annulation habituelle) :");
+
+  const quarantineStore = require("../utils/adminQuarantineStore");
+
+  await cas("un rôle retiré illégitimement met aussi l'exécuteur en quarantaine (rôles retirés)", async () => {
+    const guild = fakeGuild("g100");
+    guild.roles.cache.set("role-a", fakeRole("role-a"));
+    const cible = fakeMember(guild, "u100");
+    const executeur = fakeMember(guild, "mod-illegit-100", { rolesCache: new Collection([["role-x", fakeRole("role-x")]]) });
+    executeur.roles.remove = async function (ids) {
+      this._removed = ids;
+      for (const id of ids) this.cache.delete(id);
+    };
+    store.toggle("g100", "u100", "antiRoleRemove");
+    store.toggle("g100", "u100", "quarantineAdmin"); // c'est le PROTÉGÉ (cible) qui active Quarantaine Admin sur lui-même
+
+    const entry = auditEntry({
+      action: AuditLogEvent.MemberRoleUpdate,
+      targetId: "u100",
+      executorId: "mod-illegit-100",
+      changes: [{ key: "$remove", new: [fakeRole("role-a")] }],
+    });
+    await personalProtection.handleAuditLogEntry(null, guild, entry);
+    assert.deepStrictEqual(executeur.roles._removed, ["role-x"]);
+    assert.strictEqual(quarantineStore.getExpired().length, 0); // pas encore expiré
+  });
+
+  await cas("sans quarantineAdmin activé POUR LA CIBLE PROTÉGÉE, rien n'est retiré à l'exécuteur", async () => {
+    const guild = fakeGuild("g101");
+    guild.roles.cache.set("role-a", fakeRole("role-a"));
+    fakeMember(guild, "u101");
+    const executeur = fakeMember(guild, "mod-illegit-101", { rolesCache: new Collection([["role-x", fakeRole("role-x")]]) });
+    executeur.roles.remove = async function (ids) {
+      this._removed = ids;
+    };
+    store.toggle("g101", "u101", "antiRoleRemove");
+    // "quarantineAdmin" jamais activé pour u101 (la cible protégée)
+
+    const entry = auditEntry({
+      action: AuditLogEvent.MemberRoleUpdate,
+      targetId: "u101",
+      executorId: "mod-illegit-101",
+      changes: [{ key: "$remove", new: [fakeRole("role-a")] }],
+    });
+    await personalProtection.handleAuditLogEntry(null, guild, entry);
+    assert.strictEqual(executeur.roles._removed, undefined);
+  });
+
+  await cas("checkExpiredQuarantines restaure les rôles snapshotés après échéance", async () => {
+    const guild = fakeGuild("g102");
+    guild.roles.cache.set("role-a", fakeRole("role-a"));
+    const executeur = fakeMember(guild, "mod-102");
+    quarantineStore.add("g102", "mod-102", ["role-a"], Date.now() - 1000); // déjà expiré
+    const fakeClient = { guilds: { cache: new Collection([["g102", guild]]) } };
+
+    await personalProtection.checkExpiredQuarantines(fakeClient);
+    assert.deepStrictEqual(executeur.roles._added, ["role-a"]);
+    assert.strictEqual(quarantineStore.getExpired().some((q) => q.guildId === "g102" && q.userId === "mod-102"), false);
+  });
+
+  await cas("une quarantaine PAS ENCORE expirée n'est pas touchée", async () => {
+    const guild = fakeGuild("g103");
+    guild.roles.cache.set("role-a", fakeRole("role-a"));
+    const executeur = fakeMember(guild, "mod-103");
+    quarantineStore.add("g103", "mod-103", ["role-a"], Date.now() + 3600_000); // pas encore expiré
+    const fakeClient = { guilds: { cache: new Collection([["g103", guild]]) } };
+
+    await personalProtection.checkExpiredQuarantines(fakeClient);
+    assert.strictEqual(executeur.roles._added, undefined);
+  });
+
+  console.log("\nAnti-Mention Perso (messageCreate — alerte seule, jamais de sanction) :");
+
+  function fakeMessageMention(guild, { authorId = "auteur-m", mentionIds = [] } = {}) {
+    const mentionsCollection = new Collection(mentionIds.map((id) => [id, guild._usersMap.get(id)]));
+    return {
+      guild,
+      author: { id: authorId, bot: false, tag: `${authorId}#0000` },
+      mentions: { users: mentionsCollection },
+    };
+  }
+
+  await cas("un membre surveillé qui mentionne le protégé déclenche une alerte MP", async () => {
+    const guild = fakeGuild("g110");
+    const protege = fakeUser(guild, "u110", "u110#0000");
+    store.toggle("g110", "u110", "antiMentionPerso");
+    lists.toggleInList("g110", "u110", "antiMentionPerso", "surveille-1");
+    const message = fakeMessageMention(guild, { authorId: "surveille-1", mentionIds: ["u110"] });
+
+    await personalProtection.enforcePersonalMentionAlert(message);
+    assert.strictEqual(protege._dm.length, 1);
+  });
+
+  await cas("une mention par quelqu'un HORS de la liste ne déclenche rien", async () => {
+    const guild = fakeGuild("g111");
+    const protege = fakeUser(guild, "u111", "u111#0000");
+    store.toggle("g111", "u111", "antiMentionPerso");
+    const message = fakeMessageMention(guild, { authorId: "inconnu-1", mentionIds: ["u111"] });
+
+    await personalProtection.enforcePersonalMentionAlert(message);
+    assert.strictEqual(protege._dm.length, 0);
+  });
+
+  console.log("\nAnti-Delete Message (messageDelete — best-effort audit log, silence si autosuppression) :");
+
+  await cas("un message supprimé par QUELQU'UN D'AUTRE (audit log) déclenche une alerte", async () => {
+    const guild = fakeGuild("g120");
+    const auteur = fakeUser(guild, "u120", "u120#0000");
+    store.toggle("g120", "u120", "antiDeleteMessage");
+    guild.fetchAuditLogs = async () => ({
+      entries: new Collection([
+        [
+          "e1",
+          auditEntry({
+            action: AuditLogEvent.MessageDelete,
+            targetId: "u120",
+            executorId: "mod-suppresseur",
+            extra: { channel: { id: "chan-x" } },
+          }),
+        ],
+      ]),
+    });
+    const message = { guild, author: auteur, content: "message important", channelId: "chan-x" };
+
+    await personalProtection.enforceDeleteAlert(message);
+    assert.strictEqual(auteur._dm.length, 1);
+    assert.ok(auteur._dm[0].includes("mod-suppresseur"));
+  });
+
+  await cas("sans entrée d'audit correspondante (probable autosuppression), silence total", async () => {
+    const guild = fakeGuild("g121");
+    const auteur = fakeUser(guild, "u121", "u121#0000");
+    store.toggle("g121", "u121", "antiDeleteMessage");
+    // fakeGuild renvoie une liste d'entrées vide par défaut
+
+    const message = { guild, author: auteur, content: "message quelconque", channelId: "chan-y" };
+    await personalProtection.enforceDeleteAlert(message);
+    assert.strictEqual(auteur._dm.length, 0);
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();

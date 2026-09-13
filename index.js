@@ -22,6 +22,7 @@ const { handleMusicTextCommand } = require("./utils/musicCommands");
 // séparé de &panel (config serveur) pour ne jamais se mélanger — voir
 // utils/personalProtection.js.
 const personalProtection = require("./utils/personalProtection");
+const personalProtectionStore = require("./utils/personalProtectionStore");
 // Raccourci "&p" vers les paliers de permissions, en dehors de la machine à
 // états de &panel — voir utils/palierPanel.js.
 const palierPanel = require("./utils/palierPanel");
@@ -300,6 +301,9 @@ setInterval(() => {
   checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
   checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
   checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
+  // Quarantaine Admin (protection personnelle, "!!panel") — voir
+  // utils/personalProtection.js.
+  personalProtection.checkExpiredQuarantines(client).catch((err) => console.error("[quarantine]", err));
 }, 30_000);
 
 // Écrit sur disque les compteurs de &stats history (voir utils/statsStore.js)
@@ -837,6 +841,11 @@ client.on("messageCreate", (message) => {
   // utils/personalProtection.js). Pas de risque de collision : &panel ne
   // matche jamais sur "!!".
   personalProtection.handleProtectionTextCommand(client, message).catch((err) => console.error("[personalProtection]", err));
+  // Clean Chat Vocal / Anti-Mention Perso — protections personnelles sans
+  // commande dédiée (voir utils/personalProtection.js), déclenchées sur
+  // TOUT message comme les automods ci-dessous.
+  personalProtection.enforceCleanVoiceChat(message).catch((err) => console.error("[personalProtection]", err));
+  personalProtection.enforcePersonalMentionAlert(message).catch((err) => console.error("[personalProtection]", err));
   // "!!confess" — confessions anonymes (voir utils/confessions.js), même
   // préfixe que !!panel ci-dessus, mot différent après ("confess").
   handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
@@ -884,6 +893,9 @@ client.on("messageDelete", (message) => {
   // Anti-Ping-Fantôme (protection personnelle, "!!panel") — voir
   // utils/personalProtection.js.
   personalProtection.enforceGhostPingAlert(message).catch((err) => console.error("[personalProtection]", err));
+  // Anti-Delete Message (protection personnelle, "!!panel") — voir
+  // utils/personalProtection.js.
+  personalProtection.enforceDeleteAlert(message).catch((err) => console.error("[personalProtection]", err));
 });
 
 // ---- Salon de logs "Messages" : édition (voir &panel > Logs) ----
@@ -980,6 +992,14 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       });
     if (created) {
       voiceChannels.registerChannel(created.id, newState.guild.id, newState.member.id);
+      // Vocal Lock Auto (protection personnelle, "!!panel") — même patron que
+      // "&voc lock" (voir utils/serverAdminCommands.js), appliqué dès la
+      // création si le propriétaire l'a activé.
+      if (personalProtectionStore.isEnabled(newState.guild.id, newState.member.id, "vocalLockAuto")) {
+        await created.permissionOverwrites
+          .edit(newState.guild.roles.everyone, { Connect: false }, { reason: "Vocal Lock Auto (!!panel)" })
+          .catch(() => {});
+      }
       await setPanelAccess(newState.guild, newState.member.id, true);
       await newState.member.voice.setChannel(created).catch(() => {});
 
@@ -1158,6 +1178,29 @@ client.on("channelCreate", (channel) => {
 // enforceMoveProtection).
 client.on("voiceStateUpdate", (oldState, newState) => {
   personalProtection.enforceMoveProtection(oldState, newState).catch((err) => console.error("[personalProtection]", err));
+});
+
+// Sanctuaire Vocal (protection personnelle, "!!panel") — annule un
+// déplacement forcé hors de SON salon vocal temporaire. Écouteur dédié,
+// séparé d'enforceMoveProtection ci-dessus (sémantique différente : voir
+// utils/personalProtection.js).
+client.on("voiceStateUpdate", (oldState, newState) => {
+  personalProtection.enforceSanctuaryProtection(oldState, newState).catch((err) => console.error("[personalProtection]", err));
+});
+
+// Anti-Cafard / Fuite Vocale / Anti-Stalker (protections personnelles,
+// "!!panel") — se déclenchent quand quelqu'un REJOINT un salon vocal, voir
+// utils/personalProtection.js.
+client.on("voiceStateUpdate", (oldState, newState) => {
+  personalProtection.enforceVoiceBlocklists(oldState, newState).catch((err) => console.error("[personalProtection]", err));
+  personalProtection.enforceStalkerAlert(oldState, newState).catch((err) => console.error("[personalProtection]", err));
+});
+
+// Mute Bot (protection personnelle, "!!panel") — réapplique le rôle de mute
+// d'une cible désignée si quelqu'un d'autre que le protecteur la démute.
+// Seul écouteur "guildMemberUpdate" du bot (voir utils/personalProtection.js).
+client.on("guildMemberUpdate", (oldMember, newMember) => {
+  personalProtection.enforceMuteBot(oldMember, newMember).catch((err) => console.error("[personalProtection]", err));
 });
 
 // Message de bienvenue (voir &panel > Bienvenue, utils/welcomeStore.js) : un
