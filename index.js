@@ -38,6 +38,8 @@ const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEA
 // "!!secur" — sécurité serveur + anti-nuke (voir utils/securityPanel.js),
 // scindé de !!panel (strictement personnel, voir utils/personalProtection.js).
 const { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID: SECUR_CUSTOM_ID } = require("./utils/securityPanel");
+// "!!help" — index des commandes "!!" (voir utils/protectionHelpCommand.js).
+const { handleProtectionHelpTextCommand } = require("./utils/protectionHelpCommand");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -841,6 +843,8 @@ client.on("messageCreate", (message) => {
   handleSetClearTextCommand(client, message).catch((err) => console.error("[setClearCommand]", err));
   // "!!secur" — voir utils/securityPanel.js.
   handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
+  // "!!help" — voir utils/protectionHelpCommand.js.
+  handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
   // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.

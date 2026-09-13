@@ -813,6 +813,12 @@ const CATEGORIES = [
         description: "lock, unlock, limit <n>, rename <nom>, kick, add, remove, transfer @membre — sur TON salon vocal temporaire",
       },
       {
+        name: "h",
+        prefix: "mod",
+        permission: null,
+        description: "Rappel des commandes `voc` — ne répond que depuis TON salon vocal temporaire",
+      },
+      {
         name: "voicehub #salon-vocal|off",
         prefix: "mod",
         permission: "server.voice.manage",

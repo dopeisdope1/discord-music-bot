@@ -965,6 +965,43 @@ async function setPanelAccess(guild, userId, allowed) {
   }
 }
 
+/**
+ * "&h" — rappel compact des commandes `&voc` (mêmes sous-commandes que
+ * `vc()` juste en dessous, jamais dupliquées), demande explicite ("un help
+ * voc perso... uniquement visible dans la vocale créée temporairement" —
+ * inspiré d'une capture d'un autre bot). Ouvert à tout le monde dans le
+ * salon (pas réservé au propriétaire, contrairement à `vc()` : c'est de la
+ * lecture, comme &help) — mais ne répond QUE depuis un vrai salon vocal
+ * temporaire, jamais ailleurs.
+ */
+async function voiceHelp(client, message) {
+  const channel = message.member.voice.channel;
+  if (!channel || !voiceChannels.getChannelInfo(channel.id)) {
+    return reply(message, "error", "Cette aide n'est disponible que depuis TON salon vocal temporaire.");
+  }
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🔊 Salon vocal temporaire"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        "**Accès**",
+        "`&voc unlock` / `&voc lock` — Ouvrir ou verrouiller",
+        "`&voc add @membre` / `&voc remove @membre` — Autoriser / retirer",
+        "`&voc kick @membre` — Déconnecter du salon",
+        "",
+        "**Salon**",
+        "`&voc rename <nom>` — Renommer",
+        "`&voc limit <n>` — Limiter les places (0 = illimité)",
+        "`&voc transfer @membre` — Céder la propriété",
+      ].join("\n")
+    )
+  );
+
+  return message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
+}
+
 async function vc(client, message, args) {
   const channel = message.member.voice.channel;
   if (!channel) return reply(message, "error", "Tu dois être dans un salon vocal temporaire.");
@@ -1218,6 +1255,7 @@ module.exports = {
   applyDeroToNewChannel,
   voicehub,
   vc,
+  voiceHelp,
   buildVoiceControlCard,
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,

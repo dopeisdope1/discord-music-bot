@@ -453,6 +453,7 @@ const modHandlers = {
   backup,
   voicehub: serverAdmin.voicehub,
   voc: serverAdmin.vc,
+  h: serverAdmin.voiceHelp,
   vc: utilityHandlers.vc,
   stats: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "history") return utilityHandlers.statsHistory(client, message, args.slice(1));
