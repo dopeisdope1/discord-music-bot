@@ -1416,6 +1416,12 @@ const CATEGORIES = [
         permission: "sys",
         description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
       },
+      {
+        name: "access <@membre>",
+        prefix: "mod",
+        permission: "panel.permissions.manage",
+        description: "Accorde/retire des permissions individuelles du catalogue à CE membre précis",
+      },
       { name: "set name <nom>", prefix: "mod", permission: "sys", description: "Change le nom du bot" },
       {
         name: "set pic <lien>",

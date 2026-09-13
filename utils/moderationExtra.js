@@ -1,4 +1,12 @@
-const { PermissionFlagsBits, ChannelType } = require("discord.js");
+const {
+  PermissionFlagsBits,
+  ChannelType,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  MessageFlags,
+} = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 const { can } = require("./permissions/engine");
@@ -175,14 +183,80 @@ async function unmuteMember(client, message, args) {
   await reply(message, "success", `**${target.user.tag}** n'est plus mute.`);
 }
 
+// Actions d'historique considérées comme un "mute par rôle" — &cmute/&tempcmute
+// partagent exactement le même mécanisme que &mute/&tempmute (voir
+// muteMember ci-dessus), donc la même entrée d'historique compte pour les
+// deux noms de commande.
+const ROLE_MUTE_ACTIONS = new Set(["mute", "tempmute", "cmute", "tempcmute"]);
+
+/** Dernière entrée d'historique d'une des `actions` données pour ce membre — qui/quand, pour l'affichage de &mutelist. */
+function dernierePlus(guildId, targetId, actions) {
+  return historyStore.search(guildId, { targetId, limit: 25 }).find((e) => actions.has(e.action)) || null;
+}
+
+const ilYA = (iso) => `<t:${Math.floor(new Date(iso).getTime() / 1000)}:R>`;
+
+/**
+ * &mutelist — état RÉEL actuel (pas un historique) des sanctions "mute" :
+ * le rôle de mute (utils/muteStore.js pour l'échéance des mutes temporaires)
+ * ET les timeouts Discord natifs en cours, chacun avec qui l'a posé et
+ * depuis quand (utils/moderationHistoryStore.js, la source de vérité déjà
+ * utilisée par &case/&modlogs — jamais une deuxième source qui pourrait se
+ * contredire). Aucune fonctionnalité "deafen" n'existe dans ce bot (voir
+ * &mute/&cmute, qui partagent le même mécanisme de rôle) : pas de rubrique
+ * inventée pour ça.
+ */
 async function mutelist(client, message) {
   if (!can(message.member, "moderation.timeout")) return;
-  const role = await requireMuteRole(message);
-  if (!role) return;
-  const members = role.members;
-  if (!members.size) return reply(message, "info", "Personne n'est mute actuellement.");
-  const lines = [...members.values()].slice(0, 50).map((m) => `<@${m.id}>`);
-  return reply(message, "info", `**${members.size} membre(s) mute** :\n${lines.join(", ")}`);
+
+  const guildId = message.guild.id;
+  const roleId = muteStore.getMuteRoleId(guildId);
+  const role = roleId ? message.guild.roles.cache.get(roleId) : null;
+  const tempMutes = muteStore.getTempMutesForGuild(guildId);
+
+  const lignesMute = role
+    ? [...role.members.values()].map((m) => {
+        const entree = dernierePlus(guildId, m.id, ROLE_MUTE_ACTIONS);
+        const temp = tempMutes.find((t) => t.userId === m.id);
+        const echeance = temp ? `expire <t:${Math.floor(temp.expiresAt / 1000)}:R>` : "aucune échéance (démute manuel)";
+        const qui = entree ? `par ${entree.moderatorTag || `<@${entree.moderatorId}>`} — ${ilYA(entree.createdAt)}` : "origine inconnue";
+        return `<@${m.id}> — ${qui} — ${echeance}`;
+      })
+    : [];
+
+  // Uniquement le cache : parcourir TOUT le serveur avec un fetch coûterait
+  // cher sur un gros serveur pour une commande qui ne fait qu'informer (même
+  // compromis que utils/securityScan.js).
+  const membresTimeout = message.guild.members.cache.filter(
+    (m) => m.communicationDisabledUntil && new Date(m.communicationDisabledUntil).getTime() > Date.now()
+  );
+  const lignesTimeout = [...membresTimeout.values()].map((m) => {
+    const entree = dernierePlus(guildId, m.id, new Set(["timeout"]));
+    const qui = entree ? `par ${entree.moderatorTag || `<@${entree.moderatorId}>`} — ${ilYA(entree.createdAt)}` : "origine inconnue";
+    return `<@${m.id}> — ${qui} — expire <t:${Math.floor(new Date(m.communicationDisabledUntil).getTime() / 1000)}:R>`;
+  });
+
+  const total = lignesMute.length + lignesTimeout.length;
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Mutes actifs"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${total}** fiche(s) active(s)`));
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `**Rôle de mute** (${lignesMute.length})\n${
+        role ? (lignesMute.length ? lignesMute.join("\n") : "*Personne n'est mute actuellement.*") : "*Aucun rôle de mute configuré.*"
+      }`
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`**Timeout Discord** (${lignesTimeout.length})\n${lignesTimeout.length ? lignesTimeout.join("\n") : "*Aucun timeout en cours.*"}`)
+  );
+
+  return message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
 }
 
 async function unmuteall(client, message) {

@@ -6,6 +6,8 @@ const {
   ButtonStyle,
   UserSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   ContainerBuilder,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
@@ -21,6 +23,8 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { EMOJI } = require("./emojis");
 const { carteConfirmationFichier } = require("./actionCard");
 const { can } = require("./permissions/engine");
+const permStore = require("./permissions/store");
+const permCatalog = require("./permissions/catalog");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
 const guardConfig = require("./guard/config");
@@ -85,6 +89,88 @@ async function owners(client, message) {
   await message.reply(buildOwnersCard(0, isOwner));
 }
 
+/**
+ * Carte "&access <@membre>" — octroi de permissions INDIVIDUELLES à UN
+ * membre précis (utils/permissions/store.js::grantToUser/revokeFromUser),
+ * même catalogue que &panel > Rôles et permissions (utils/permissions/
+ * catalog.js) mais côté MEMBRE plutôt que côté rôle. Choisir une catégorie
+ * révèle ses clés ; en choisir une la bascule tout de suite (accordée <->
+ * retirée) — un seul aller-retour, pas de brouillon à confirmer.
+ */
+function buildAccessCard(guildId, memberId, memberTag, category = null) {
+  const granted = permStore.getUserGrants(guildId, memberId);
+  const groupes = permCatalog
+    .byCategory()
+    .map((g) => {
+      const accordees = g.permissions.filter((p) => granted.includes(p.key));
+      return accordees.length ? `**${g.label}** : ${accordees.map((p) => `\`${p.key}\``).join(", ")}` : null;
+    })
+    .filter(Boolean);
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Accès de ${memberTag}`));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `**${granted.length}** permission(s) individuelle(s) accordée(s)\n${groupes.length ? groupes.join("\n") : "*Aucune.*"}`
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`srv:accesscat:${memberId}`)
+        .setPlaceholder("Choisir une catégorie")
+        .addOptions(
+          permCatalog
+            .byCategory()
+            .map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
+        )
+    )
+  );
+
+  const groupeOuvert = category && permCatalog.byCategory().find((g) => g.category === category);
+  if (groupeOuvert) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`srv:accesskey:${memberId}:${category}`)
+          .setPlaceholder(`Activer/désactiver — ${groupeOuvert.label}`)
+          .addOptions(
+            groupeOuvert.permissions.slice(0, 25).map((p) =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(p.label.slice(0, 100))
+                .setValue(p.key)
+                .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
+            )
+          )
+      )
+    );
+  }
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/** &access <@membre|id> — ouvre le panneau d'octroi de permissions individuelles pour CE membre. */
+async function access(client, message, args) {
+  if (!can(message.member, "panel.permissions.manage")) return;
+
+  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
+  const idMatch = args[0]?.match(/^\d{15,25}$/);
+  const targetId = mentionMatch?.[1] || idMatch?.[0];
+  if (!targetId) return reply(message, "error", "Indique un membre (mention ou identifiant) : `access @membre`.");
+
+  const target = await message.guild.members.fetch(targetId).catch(() => null);
+  if (!target) return reply(message, "error", "Ce membre n'est pas sur le serveur.");
+
+  if (accessStore.isOwner(target.id) || accessStore.isSys(target.id)) {
+    return reply(message, "info", `${target.user.tag} est déjà propriétaire/rang sys — accès complet, rien à accorder en plus.`);
+  }
+
+  await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
+}
+
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
 async function whitelist(client, message) {
   if (!can(message.member, "protection.whitelist")) return;
@@ -116,7 +202,7 @@ async function allbots(client, message, args) {
 
 /** Traite les interactions du panneau générique liste paginée (customId "srv:page|add|del:..."). */
 async function handleServerAdminInteraction(interaction) {
-  const [, action, idKind] = interaction.customId.split(":");
+  const [, action, idKind, extra] = interaction.customId.split(":");
 
   // Pagination dédiée de "&owners" (boutons Précédent/Suivant, voir
   // buildOwnersCard) — routée à part car `idKind` porte ici un numéro de
@@ -125,6 +211,29 @@ async function handleServerAdminInteraction(interaction) {
     const permission = accessStore.isAllowed("sys", interaction.user.id) || accessStore.isOwner(interaction.user.id);
     if (!permission) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
     return interaction.update(buildOwnersCard(parseInt(idKind, 10) || 0, accessStore.isOwner(interaction.user.id)));
+  }
+
+  // Panneau "&access <@membre>" (voir buildAccessCard) — `idKind` porte ici
+  // l'identifiant du MEMBRE ciblé, pas le nom d'une liste.
+  if (action === "accesscat" || action === "accesskey") {
+    if (!can(interaction.member, "panel.permissions.manage")) {
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    }
+    const memberId = idKind;
+    const target = await interaction.guild.members.fetch(memberId).catch(() => null);
+    const tag = target?.user?.tag || `<@${memberId}>`;
+
+    if (action === "accesscat") {
+      return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, interaction.values[0]));
+    }
+
+    // action === "accesskey" : `extra` porte la catégorie ouverte, la valeur choisie est la clé à basculer.
+    const category = extra;
+    const key = interaction.values[0];
+    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
+    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
+    else permStore.grantToUser(interaction.guild.id, memberId, key);
+    return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
   }
 
   const LISTS = {
@@ -1097,6 +1206,7 @@ async function handleVoiceControlInteraction(interaction) {
 
 module.exports = {
   owners,
+  access,
   antinuke,
   whitelist,
   allbots,

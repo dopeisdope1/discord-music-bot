@@ -80,4 +80,17 @@ function getExpiredTempMutes() {
   return loadTemp().filter((m) => m.expiresAt <= now);
 }
 
-module.exports = { getMuteRoleId, setMuteRoleId, addTempMute, removeTempMute, clearTempMutes, getExpiredTempMutes };
+/** Mutes temporaires encore actifs d'un serveur — pour "&mutelist" (échéance, pas encore levés). */
+function getTempMutesForGuild(guildId) {
+  return loadTemp().filter((m) => m.guildId === guildId);
+}
+
+module.exports = {
+  getMuteRoleId,
+  setMuteRoleId,
+  addTempMute,
+  removeTempMute,
+  clearTempMutes,
+  getExpiredTempMutes,
+  getTempMutesForGuild,
+};

@@ -445,6 +445,7 @@ const modHandlers = {
     return utilityHandlers.channelInfo(client, message, args);
   },
   owners: serverAdmin.owners,
+  access: serverAdmin.access,
   whitelist: serverAdmin.whitelist,
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,
