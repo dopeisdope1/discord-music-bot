@@ -163,14 +163,29 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
     };
   }
 
-  await cas("poste bien un panel Components V2 avec les 8 protections personnelles", async () => {
+  function fakeInteraction(customId, { userId = "u1", guildId = "g1", values } = {}) {
+    const updates = [];
+    const replies = [];
+    return {
+      customId,
+      guild: { id: guildId },
+      user: { id: userId },
+      member: { id: userId, guild: { id: guildId }, roles: { cache: new Collection() } },
+      values,
+      update: async (p) => updates.push(p),
+      reply: async (p) => replies.push(p),
+      _updates: updates,
+      _replies: replies,
+    };
+  }
+
+  await cas("!!panel s'ouvre sur la page 0 (dashboard) — recense les protections personnelles sans lister leurs clés", async () => {
     const msg = fakeMessage("!!panel");
     await personalProtection.handleProtectionTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
     const texte = JSON.stringify(msg._replies[0].components);
-    for (const cle of Object.keys(store.PROTECTIONS)) {
-      assert.ok(texte.includes(cle), `protection manquante dans le panel : ${cle}`);
-    }
+    assert.ok(texte.includes("Tes protections personnelles"), texte);
+    assert.ok(texte.includes("page 1/2"), texte);
   });
 
   await cas("un mot inconnu sur ce préfixe reste silencieux", async () => {
@@ -185,23 +200,169 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("sans panel.permissions... pardon, sans protection.automod, la rubrique Sécurité serveur n'apparaît pas", async () => {
-    const msg = fakeMessage("!!panel", { authorId: "quidam-1" });
-    await personalProtection.handleProtectionTextCommand(null, msg);
-    const texte = JSON.stringify(msg._replies[0].components);
+  console.log("\n!!panel — page 2/2 (panel perso, contenu existant) :");
+
+  await cas("la page perso liste bien les 8 protections personnelles avec leur customId", async () => {
+    const interaction = fakeInteraction("prot:page:1", { guildId: "g-page1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(interaction._updates.length, 1);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    for (const cle of Object.keys(store.PROTECTIONS)) {
+      assert.ok(texte.includes(cle), `protection manquante dans le panel : ${cle}`);
+    }
+    assert.ok(texte.includes("page 2/2"), texte);
+  });
+
+  await cas("sans protection.automod, la rubrique Sécurité serveur n'apparaît pas", async () => {
+    const interaction = fakeInteraction("prot:page:1", { userId: "quidam-1", guildId: "g1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(!texte.includes("Sécurité serveur"));
   });
 
   await cas("avec protection.automod, la rubrique Sécurité serveur apparaît avec ses 4 interrupteurs", async () => {
     permStore.grantToUser("g1", "staff-1", "protection.automod");
-    const msg = fakeMessage("!!panel", { authorId: "staff-1" });
-    await personalProtection.handleProtectionTextCommand(null, msg);
-    const texte = JSON.stringify(msg._replies[0].components);
+    const interaction = fakeInteraction("prot:page:1", { userId: "staff-1", guildId: "g1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Sécurité serveur"));
     assert.ok(texte.includes("prot:srv:antiSpam"));
     assert.ok(texte.includes("prot:srv:antiLien"));
     assert.ok(texte.includes("prot:srv:antiMassMention"));
     assert.ok(texte.includes("prot:srv:motsInterdits"));
+  });
+
+  console.log("\n!!panel — page 1/2 (dashboard, anti-nuke réel) :");
+
+  await cas("sans protection.guard.manage, l'anti-nuke n'est pas pilotable depuis le dashboard", async () => {
+    const interaction = fakeInteraction("prot:page:0", { userId: "quidam-3", guildId: "g-guard1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("protection.guard.manage"), texte);
+    assert.ok(!texte.includes("guardpick"));
+  });
+
+  await cas("avec protection.guard.manage, le menu liste les 13 guards réels et le sélectionner en bascule un", async () => {
+    const guardConfig = require("../utils/guard/config");
+    const { ALL_GUARDS } = require("../utils/guard/definitions");
+    permStore.grantToUser("g-guard2", "staff-3", "protection.guard.manage");
+    guardConfig.setEnabled("g-guard2", true); // interrupteur général — sinon isGuardEnabled reste faux quoi qu'on bascule
+
+    const ouverture = fakeInteraction("prot:page:0", { userId: "staff-3", guildId: "g-guard2" });
+    await personalProtection.handleProtectionInteraction(ouverture);
+    const json = ouverture._updates[0].components[0].toJSON();
+    const menuRow = json.components.find((c) => c.type === 1 && c.components[0]?.type === 3);
+    assert.ok(menuRow, "le menu anti-nuke doit apparaître");
+    assert.strictEqual(menuRow.components[0].options.length, ALL_GUARDS.length);
+
+    const avant = guardConfig.isGuardEnabled("g-guard2", "antibot");
+    const choix = fakeInteraction("prot:guardpick", { userId: "staff-3", guildId: "g-guard2", values: ["antibot"] });
+    await personalProtection.handleProtectionInteraction(choix);
+    assert.strictEqual(guardConfig.isGuardEnabled("g-guard2", "antibot"), !avant);
+  });
+
+  await cas("« Tout activer »/« Tout désactiver » agissent sur les 13 guards réels", async () => {
+    const guardConfig = require("../utils/guard/config");
+    const { ALL_GUARDS } = require("../utils/guard/definitions");
+    permStore.grantToUser("g-guard3", "staff-4", "protection.guard.manage");
+    // Interrupteur général distinct de "guardall" (voir &panel > Anti-nuke) —
+    // sans lui, isGuardEnabled reste faux quoi que fasse guardall.
+    guardConfig.setEnabled("g-guard3", true);
+
+    const on = fakeInteraction("prot:guardall:on", { userId: "staff-4", guildId: "g-guard3" });
+    await personalProtection.handleProtectionInteraction(on);
+    assert.ok(ALL_GUARDS.every((g) => guardConfig.isGuardEnabled("g-guard3", g.key)));
+
+    const off = fakeInteraction("prot:guardall:off", { userId: "staff-4", guildId: "g-guard3" });
+    await personalProtection.handleProtectionInteraction(off);
+    assert.ok(ALL_GUARDS.every((g) => !guardConfig.isGuardEnabled("g-guard3", g.key)));
+  });
+
+  await cas("basculer un guard sans protection.guard.manage est refusé", async () => {
+    const guardConfig = require("../utils/guard/config");
+    const interaction = fakeInteraction("prot:guardpick", { userId: "quidam-4", guildId: "g-guard4", values: ["antibot"] });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(interaction._updates.length, 0);
+    assert.ok(interaction._replies.length > 0);
+    assert.strictEqual(guardConfig.isGuardEnabled("g-guard4", "antibot"), false);
+  });
+
+  console.log("\nDashboard — résumé réel (rang, mute, stats client), rien d'inventé :");
+
+  await cas("le résumé du dashboard compte les VRAIS propriétaires/rang sys via accessStore", async () => {
+    const avant = process.env.BOT_OWNER_IDS;
+    const accessStore = require("../utils/accessStore");
+    process.env.BOT_OWNER_IDS = "owner-a,owner-b";
+    accessStore.add("sys", "sys-a");
+    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash1", guildId: "g-dash1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("2") && texte.includes("propriétaire"), texte);
+    assert.ok(texte.includes("1") && texte.includes("rang sys"), texte);
+    process.env.BOT_OWNER_IDS = avant;
+  });
+
+  await cas("le résumé du dashboard compte les VRAIS membres mute (rôle configuré) — pas un chiffre inventé", async () => {
+    const muteStore = require("../utils/muteStore");
+    muteStore.setMuteRoleId("g-dash2", "role-mute");
+    const guild = {
+      id: "g-dash2",
+      roles: { cache: new Collection([["role-mute", { id: "role-mute", members: { size: 3 } }]]) },
+    };
+    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash2", guildId: "g-dash2" });
+    interaction.member.guild = guild;
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("3") && texte.includes("muet"), texte);
+  });
+
+  await cas("sans client fourni, aucune stat uptime/ping n'est affichée (jamais de plantage)", async () => {
+    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash3", guildId: "g-dash3" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    assert.strictEqual(interaction._updates.length, 1);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(!texte.includes("ping"), texte);
+  });
+
+  await cas("avec un client réel, l'uptime/ping du VRAI statusDiagnostic apparaissent", async () => {
+    const fauxClient = {
+      uptime: 3_600_000,
+      ws: { ping: 42 },
+      guilds: { cache: new Collection() },
+    };
+    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash4", guildId: "g-dash4" });
+    interaction.client = fauxClient;
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("42ms"), texte);
+  });
+
+  console.log("\nRang réel affiché page 2/2 (Owner/Sys/Membre — pas de rang inventé) :");
+
+  await cas("un membre ordinaire est affiché \"Membre\"", async () => {
+    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang1", guildId: "g-rang1" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("Membre"), texte);
+  });
+
+  await cas("le propriétaire (BOT_OWNER_IDS) est affiché \"Propriétaire\"", async () => {
+    const avant = process.env.BOT_OWNER_IDS;
+    process.env.BOT_OWNER_IDS = "u-rang2";
+    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang2", guildId: "g-rang2" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("Propriétaire"), texte);
+    process.env.BOT_OWNER_IDS = avant;
+  });
+
+  await cas("le rang sys (&zinki) est affiché \"Rang sys\"", async () => {
+    const accessStore = require("../utils/accessStore");
+    accessStore.add("sys", "u-rang3");
+    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang3", guildId: "g-rang3" });
+    await personalProtection.handleProtectionInteraction(interaction);
+    const texte = JSON.stringify(interaction._updates[0].components);
+    assert.ok(texte.includes("Rang sys"), texte);
   });
 
   console.log("\nBascule d'une protection personnelle :");
