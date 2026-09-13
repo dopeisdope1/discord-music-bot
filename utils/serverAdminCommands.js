@@ -38,23 +38,51 @@ const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed
 const { ID, card, buildListCard } = require("./listCard");
 const readOnlyLists = require("./readOnlyLists");
 
+const OWNERS_PAGE_SIZE = 10;
+
+/** Carte dédiée de "&owners" — présentation demandée explicitement (titre couronné, compteur/page en évidence, liste numérotée). */
+function buildOwnersCard(page, canEdit) {
+  const items = accessStore.list("sys");
+  const totalPages = Math.max(1, Math.ceil(items.length / OWNERS_PAGE_SIZE));
+  const clamped = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = items.slice(clamped * OWNERS_PAGE_SIZE, clamped * OWNERS_PAGE_SIZE + OWNERS_PAGE_SIZE);
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 👑 Liste Owner"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`**Utilisateur total :** \`${items.length}\`\n**Page :** \`${clamped + 1}/${totalPages}\``)
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      slice.length
+        ? slice.map((id, i) => `\`${String(clamped * OWNERS_PAGE_SIZE + i + 1).padStart(2, "0")}\`  <@${id}>  \`${id}\``).join("\n")
+        : "*Aucun owner (rang sys).*"
+    )
+  );
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`srv:ownerspage:${clamped - 1}`).setLabel("Précédent").setStyle(ButtonStyle.Secondary).setDisabled(clamped === 0),
+      new ButtonBuilder().setCustomId(`srv:ownerspage:${clamped + 1}`).setLabel("Suivant").setStyle(ButtonStyle.Secondary).setDisabled(clamped >= totalPages - 1)
+    )
+  );
+  if (canEdit) {
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId("srv:add:owners").setPlaceholder("Ajouter")));
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId("srv:del:owners").setPlaceholder("Retirer")));
+  }
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
 /** &owners — gestion du rang sys, vue dédiée et paginée (voir aussi &panel > Rang sys). */
 async function owners(client, message) {
   const isSys = accessStore.isAllowed("sys", message.author.id);
   const isOwner = accessStore.isOwner(message.author.id);
   if (!isSys && !isOwner) return;
 
-  const items = accessStore.list("sys").map((id) => `<@${id}> (${id})`);
-  await message.reply(
-    buildListCard({
-      idKind: "owners",
-      title: "Liste des owners (rang sys)",
-      description: "Le rang sys donne accès à tout le bot. Seul le propriétaire du bot peut ajouter ou retirer.",
-      items,
-      page: 0,
-      canEdit: isOwner,
-    })
-  );
+  await message.reply(buildOwnersCard(0, isOwner));
 }
 
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
@@ -89,6 +117,15 @@ async function allbots(client, message, args) {
 /** Traite les interactions du panneau générique liste paginée (customId "srv:page|add|del:..."). */
 async function handleServerAdminInteraction(interaction) {
   const [, action, idKind] = interaction.customId.split(":");
+
+  // Pagination dédiée de "&owners" (boutons Précédent/Suivant, voir
+  // buildOwnersCard) — routée à part car `idKind` porte ici un numéro de
+  // page, pas le nom d'une liste comme pour "page"/"add"/"del" ci-dessous.
+  if (action === "ownerspage") {
+    const permission = accessStore.isAllowed("sys", interaction.user.id) || accessStore.isOwner(interaction.user.id);
+    if (!permission) return interaction.reply({ content: "Accès refusé.", flags: MessageFlags.Ephemeral });
+    return interaction.update(buildOwnersCard(parseInt(idKind, 10) || 0, accessStore.isOwner(interaction.user.id)));
+  }
 
   const LISTS = {
     owners: {
@@ -154,6 +191,10 @@ async function handleServerAdminInteraction(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     }
+  }
+
+  if (idKind === "owners") {
+    return interaction.update(buildOwnersCard(page, list.canEdit()));
   }
 
   return interaction.update(
