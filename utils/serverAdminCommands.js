@@ -34,6 +34,7 @@ const voiceChannels = require("./voiceChannels");
 const { checkBotPermission, report } = require("./moderation/actions");
 const { parseDuration } = require("./moderationCommands");
 const roleLimitStore = require("./roleLimitStore");
+const { getPrefixes } = require("./prefixStore");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -152,14 +153,19 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
-/** &access <@membre|id> — ouvre le panneau d'octroi de permissions individuelles pour CE membre. */
-async function access(client, message, args) {
+/**
+ * &access <@membre|id> — ouvre le panneau d'octroi de permissions
+ * individuelles pour CE membre. `label` ne sert qu'au message d'erreur : "="
+ * owner" (préfixe séparé, voir handleOwnerAccessTextCommand) délègue ici
+ * mais doit rappeler SA propre syntaxe, pas "access @membre".
+ */
+async function access(client, message, args, label = "access") {
   if (!can(message.member, "panel.permissions.manage")) return;
 
   const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
   const idMatch = args[0]?.match(/^\d{15,25}$/);
   const targetId = mentionMatch?.[1] || idMatch?.[0];
-  if (!targetId) return reply(message, "error", "Indique un membre (mention ou identifiant) : `access @membre`.");
+  if (!targetId) return reply(message, "error", `Indique un membre (mention ou identifiant) : \`${label} @membre\`.`);
 
   const target = await message.guild.members.fetch(targetId).catch(() => null);
   if (!target) return reply(message, "error", "Ce membre n'est pas sur le serveur.");
@@ -169,6 +175,27 @@ async function access(client, message, args) {
   }
 
   await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
+}
+
+/**
+ * "=owner <@membre|id>" — même mécanisme que "&access" ci-dessus (le VRAI
+ * catalogue de permissions, utils/permissions/catalog.js), sur un préfixe
+ * séparé exprès (demande explicite). Les commandes visibles sur la capture
+ * qui a inspiré cette demande (follow, pv, wakeup, dog, bringall...)
+ * appartiennent à un AUTRE bot et n'existent pas ici : accorder l'une des
+ * permissions RÉELLES de ce catalogue reste la seule chose que ce bot
+ * puisse faire, donc c'est ce qui s'affiche — jamais un accès inventé.
+ */
+async function handleOwnerAccessTextCommand(client, message) {
+  if (message.author.bot || !message.guild) return;
+  const content = message.content.trim();
+  const { owner: PREFIX } = getPrefixes(message.guild.id);
+  if (!PREFIX || !content.startsWith(PREFIX)) return;
+
+  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
+  if ((cmd || "").toLowerCase() !== "owner") return; // mot inconnu sur ce préfixe : silence
+
+  return access(client, message, args, "owner");
 }
 
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
@@ -1244,6 +1271,7 @@ async function handleVoiceControlInteraction(interaction) {
 module.exports = {
   owners,
   access,
+  handleOwnerAccessTextCommand,
   antinuke,
   whitelist,
   allbots,

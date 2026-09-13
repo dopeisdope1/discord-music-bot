@@ -59,6 +59,7 @@ const { checkMessage: checkAntiLink } = require("./utils/automod/antiLink");
 const { checkMessage: checkAntiScam } = require("./utils/automod/antiScam");
 const { checkMessage: checkAntiMention } = require("./utils/automod/antiMention");
 const { checkMessage: checkBadWords } = require("./utils/automod/badWords");
+const levels = require("./utils/levels");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const {
   handleServerAdminInteraction,
@@ -67,6 +68,7 @@ const {
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
   setPanelAccess,
+  handleOwnerAccessTextCommand,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -855,6 +857,9 @@ client.on("messageCreate", (message) => {
   handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
+  // "=owner <@membre>" — même mécanisme que "&access", préfixe séparé exprès
+  // (voir utils/serverAdminCommands.js::handleOwnerAccessTextCommand).
+  handleOwnerAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
   // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.
@@ -868,6 +873,9 @@ client.on("messageCreate", (message) => {
   checkAntiScam(client, message).catch((err) => console.error("[antiScam]", err));
   checkAntiMention(client, message).catch((err) => console.error("[antiMention]", err));
   checkBadWords(client, message).catch((err) => console.error("[badWords]", err));
+  // Système de niveaux/XP (&rank, &leaderboard, &levels on/off) — désactivé
+  // par défaut par serveur, voir utils/levelStore.js/utils/levels.js.
+  levels.checkMessage(client, message).catch((err) => console.error("[levels]", err));
   // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut
   // (voir utils/guard/definitions.js).
   checkEveryoneMention(client, message).catch((err) => console.error("[guard:antieveryone]", err));

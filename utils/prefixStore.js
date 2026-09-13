@@ -15,8 +15,10 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 // avec le CrowBot du serveur (voir utils/musicCommands.js) ; protection =
 // préfixe du panel de protection PERSONNELLE (utils/personalProtection.js),
 // volontairement séparé pour ne jamais se mélanger avec &panel (config
-// serveur) — demande explicite.
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!" };
+// serveur) — demande explicite ; owner = préfixe de "=owner" (utils/
+// serverAdminCommands.js::handleOwnerAccessTextCommand), même mécanisme que
+// "&access" sur un préfixe distinct — demande explicite elle aussi.
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!", owner: "=" };
 
 let cache = null;
 

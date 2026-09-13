@@ -1179,6 +1179,24 @@ const CATEGORIES = [
         description: "Affiche la liste des membres boostant le serveur",
       },
       {
+        name: "rank [@membre]",
+        prefix: "mod",
+        permission: null,
+        description: "Affiche le niveau/XP et la progression d'un membre (le sien par défaut)",
+      },
+      {
+        name: "leaderboard",
+        prefix: "mod",
+        permission: null,
+        description: "Classement des niveaux du serveur, paginé",
+      },
+      {
+        name: "levels on/off",
+        prefix: "mod",
+        permission: "server.levels.manage",
+        description: "Active ou désactive le système de niveaux/XP sur ce serveur",
+      },
+      {
         name: "rolemembers <rôle>",
         prefix: "mod",
         permission: "server.members.list",

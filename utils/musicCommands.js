@@ -45,6 +45,7 @@ const { autoroleHandlers } = require("./autoroleCommands");
 const { setupVerification } = require("./verification");
 const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
+const levels = require("./levels");
 
 // Même variable d'environnement que index.js (qui vide LavalinkNodes) : la
 // musique suspendue doit aussi rendre le préfixe "?" muet, sinon &play etc.
@@ -446,6 +447,9 @@ const modHandlers = {
   },
   owners: serverAdmin.owners,
   access: serverAdmin.access,
+  rank: levels.rank,
+  leaderboard: levels.leaderboard,
+  levels: levels.levelsToggle,
   whitelist: serverAdmin.whitelist,
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,

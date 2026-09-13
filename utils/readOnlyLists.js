@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { can } = require("./permissions/engine");
+const levelStore = require("./levelStore");
 
 // Listes de membres en LECTURE SEULE, définies une seule fois pour servir
 // deux chemins qui doivent rester d'accord :
@@ -74,6 +75,17 @@ const DEFINITIONS = {
         title: `Recherche : "${query.trim()}"`,
         description: matches.length ? `${matches.length} membre(s) trouvé(s).` : "Aucun membre ne correspond à cette recherche.",
         items: matches.map(formatMember),
+      };
+    },
+  },
+
+  leaderboard: {
+    build: (guild) => {
+      const rows = levelStore.getLeaderboard(guild.id);
+      return {
+        title: "🏆 Classement des niveaux",
+        description: rows.length ? "Classement par XP total sur ce serveur (voir &rank pour sa propre progression)." : "Personne n'a encore gagné d'XP ici.",
+        items: rows.map((r) => `<@${r.userId}> — Niveau ${r.level} (${r.xp} XP)`),
       };
     },
   },
