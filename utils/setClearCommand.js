@@ -71,10 +71,14 @@ async function handleSetClearTextCommand(client, message) {
   if (!aLePrefixe || (mot || "").toLowerCase() !== "setclear") return;
 
   if (!estAutorise(message.member)) {
-    return message.reply("Tu n'as pas la permission nécessaire pour configurer ça.").catch(() => {});
+    return message
+      .reply("Tu n'as pas la permission nécessaire pour configurer ça.")
+      .catch((err) => console.error("[setClearCommand] échec de la réponse (refus) :", err));
   }
 
-  return message.channel.send(buildSetClearCard(selfClearStore.getConfig(message.guild.id))).catch(() => {});
+  return message.channel
+    .send(buildSetClearCard(selfClearStore.getConfig(message.guild.id)))
+    .catch((err) => console.error("[setClearCommand] échec de l'envoi du panneau :", err));
 }
 
 async function handleSetClearInteraction(interaction) {
