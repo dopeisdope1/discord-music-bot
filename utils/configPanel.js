@@ -44,20 +44,11 @@ const historyStore = require("./moderationHistoryStore");
 const leaveStore = require("./leaveStore");
 const autoroleStore = require("./autoroleStore");
 const verificationStore = require("./verificationStore");
-const automod = require("./automod/antiSpam");
-const antiLink = require("./automod/antiLink");
-const antiMention = require("./automod/antiMention");
-const badWords = require("./automod/badWords");
 const welcomeStore = require("./welcomeStore");
-const guardConfig = require("./guard/config");
-const guardWhitelist = require("./guard/whitelist");
-const { ALL_GUARDS } = require("./guard/definitions");
-const muteStore = require("./muteStore");
 const ticketStore = require("./ticketStore");
 const voiceChannels = require("./voiceChannels");
 const voiceHubSetup = require("./voiceHubSetup");
 const { roleAdmin } = require("./serverAdminCommands");
-const { parseDuration } = require("./moderationCommands");
 const { computeSecurityScan } = require("./securityScan");
 const { computeStatus, formatUptime } = require("./statusDiagnostic");
 const { FORMS, setFormState, buildFormCard } = require("./commandForms");
@@ -129,19 +120,10 @@ const SECTIONS = [
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "stats", label: "Statistiques", description: "Compteurs serveur et activité des 7 derniers jours", permission: "server.stats.view" },
   { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", permission: "sys" },
-  {
-    key: "securityOverview",
-    label: "Vue d'ensemble",
-    description: "État global : anti-spam, anti-nuke, mute, logs, permissions dangereuses",
-    visible: (member) => can(member, "protection.automod") || can(member, "protection.guard.manage"),
-  },
-  { key: "protection", label: "Protection", description: "Anti-spam et whitelist", permission: "protection.automod" },
-  { key: "guard", label: "Anti-nuke", description: "Détection de rafales destructrices et sanction automatique", permission: "protection.guard.manage" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
   { key: "leave", label: "Départ", description: "Message envoyé quand un membre quitte le serveur", permission: "server.welcome.manage" },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés automatiquement à l'arrivée", permission: "members.autorole.manage" },
   { key: "verification", label: "Vérification", description: "Rôle et salon du bouton \"Se vérifier\"", permission: "members.verification.manage" },
-  { key: "mute", label: "Mute", description: "Rôle utilisé par &mute/&tempmute/&cmute", permission: "protection.automod" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
   { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
   { key: "channels", label: "Salons", description: "Sélectionner plusieurs salons et les supprimer d'un coup", permission: "channels.manage" },
@@ -266,22 +248,16 @@ const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 // deviner ce qui se cachait. Demande explicite : « je veux genre des rubriques
 // comme Logs, Sécurité, Bienvenue, Voc temporaire, Permission, Giveaway ».
 //
-// Chaque entrée ne contient donc qu'UNE rubrique, sauf Sécurité qui en
-// regroupe quatre : ses écrans (vue d'ensemble, anti-spam, anti-nuke, rôle de
-// mute) forment un seul sujet, et les séparer au premier niveau noierait le
-// reste. C'est la seule qui affiche encore un sous-menu.
+// Chaque entrée ne contient qu'UNE rubrique — la famille "Sécurité"
+// (vue d'ensemble/anti-spam/anti-nuke/rôle de mute), seule à en regrouper
+// plusieurs jusqu'ici, a déménagé intégralement dans "!!secur" (voir
+// utils/securityPanel.js — demande explicite : "enlève tout les trucs de
+// sécurité du &panel et le mets dans !!secur").
 //
 // Un menu déroulant Discord accepte 25 options au maximum : la liste
-// ci-dessous en compte moins, et le test scripts/test-panel-rubriques.js
-// échoue si elle venait à dépasser.
+// ci-dessous en compte moins.
 const FAMILIES = [
   { key: "accueil", label: "Accueil", description: "Statut du bot et alertes de sécurité", sections: ["home"] },
-  {
-    key: "securite",
-    label: "Sécurité",
-    description: "Anti-spam, anti-nuke, mots interdits, rôle de mute",
-    sections: ["securityOverview", "protection", "guard", "mute"],
-  },
   { key: "logs", label: "Logs", description: "Salon de logs par catégorie", sections: ["logs"] },
   { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
   { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
@@ -573,65 +549,6 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
-  if (section === "securityOverview") {
-    const { critical, warnings, ok } = computeSecurityScan(guild);
-    const emoji = critical.length ? "🔴" : warnings.length ? "🟠" : "🟢";
-    const lines = [`${emoji} **${ok.length}** OK · **${warnings.length}** avertissement(s) · **${critical.length}** critique(s)`];
-    if (critical.length) lines.push("", "**🔴 Critique :**", ...critical.map((l) => `> ${l}`));
-    if (warnings.length) lines.push("", "**🟠 Avertissements :**", ...warnings.map((l) => `> ${l}`));
-    if (!critical.length && !warnings.length) lines.push("", "*Tout est en ordre — voir le détail dans Protection/Anti-nuke/Mute.*");
-    return lines.join("\n");
-  }
-
-  if (section === "protection") {
-    const config = automod.getConfig(guildId);
-    const whitelist = automod.getWhitelist(guildId);
-    const linkConfig = antiLink.getConfig(guildId);
-    const linkAllowed = antiLink.getAllowedChannels(guildId);
-    const mentionConfig = antiMention.getConfig(guildId);
-    const wordsConfig = badWords.getConfig(guildId);
-    const words = badWords.getWords(guildId);
-    return [
-      `> **Anti-spam/anti-flood** : ${config.enabled ? "activé" : "désactivé"}`,
-      `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
-      // Les salons exemptés d'anti-spam n'étaient nulle part : on pouvait en
-      // configurer par commande sans jamais les revoir dans le panel.
-      `> Salons exemptés : ${automod.getExemptChannels(guildId).length ? automod.getExemptChannels(guildId).map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
-      "",
-      `> **Anti-lien** : ${linkConfig.enabled ? "activé" : "désactivé"} (mode : ${linkConfig.mode === "all" ? "tous les liens" : "invitations Discord"})`,
-      `> Salons où les liens restent autorisés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
-      "",
-      `> **Anti-mass-mention** : ${mentionConfig.enabled ? "activé" : "désactivé"} (seuil : ${mentionConfig.maxMentions} mentions, timeout ${mentionConfig.timeoutSeconds}s)`,
-      "",
-      `> **Mots interdits** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`,
-      "",
-      `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
-    ].join("\n");
-  }
-
-  if (section === "guard") {
-    const config = guardConfig.getConfig(guildId);
-    const whitelist = guardWhitelist.getWhitelist(guildId);
-    // Juste la clé (pas le libellé complet) + le seuil : la description de
-    // chaque guard vit dans &help, pas ici — même règle "montre, n'explique
-    // pas" que le reste du panel.
-    const guardLines = ALL_GUARDS.map((d) => {
-      const rule = d.threshold ? `${d.threshold.count}/${d.threshold.windowMs / 1000}s` : "immédiat";
-      const on = guardConfig.isGuardEnabled(guildId, d.key);
-      return `> ${on ? "🟢" : "🔴"} \`${d.key}\` (${rule})`;
-    });
-    return [
-      `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
-      `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
-      `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
-      `> **Compte minimum** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
-      `> **Verrouillage auto si plafond atteint** : ${config.autoLockdownOnCap ? "activé" : "désactivé"}`,
-      `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
-      "",
-      ...guardLines,
-    ].join("\n");
-  }
-
   if (section === "welcome") {
     const config = welcomeStore.getConfig(guildId);
     const lines = config.messages.length
@@ -727,13 +644,6 @@ function sectionBody(section, guild, member, state) {
     ]
       .filter((l) => l !== null)
       .join("\n");
-  }
-
-  if (section === "mute") {
-    const roleId = muteStore.getMuteRoleId(guildId);
-    return [
-      `> **Rôle de mute** : ${roleId && guild.roles.cache.has(roleId) ? `<@&${roleId}>` : "*aucun — non configuré*"}`,
-    ].join("\n");
   }
 
   if (section === "tickets") {
@@ -1581,180 +1491,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         )
       );
     }
-  } else if (meta.key === "protection") {
-    const words = badWords.getWords(guild.id);
-
-    const options = [
-      { value: "spam_toggle", label: "Anti-spam : activer/désactiver" },
-      { value: "spam_threshold", label: "Anti-spam : changer le seuil (messages / secondes)" },
-      { value: "spam_timeout", label: "Anti-spam : durée du timeout" },
-      { value: "spam_exempt", label: "Anti-spam : salons exemptés" },
-      { value: "link_toggle", label: "Anti-lien : activer/désactiver" },
-      { value: "link_mode", label: "Anti-lien : changer le mode (invitations ↔ tous les liens)" },
-      { value: "link_allow", label: "Anti-lien : salons où les liens restent autorisés" },
-      { value: "mention_toggle", label: "Anti-mass-mention : activer/désactiver" },
-      { value: "mention_threshold", label: "Anti-mass-mention : changer le seuil" },
-      { value: "mention_timeout", label: "Anti-mass-mention : durée du timeout" },
-      { value: "badwords_toggle", label: "Mots interdits : activer/désactiver" },
-      { value: "badwords_add", label: "Mots interdits : ajouter un mot" },
-      ...(words.length ? [{ value: "badwords_remove", label: "Mots interdits : retirer un mot" }] : []),
-      ...(can(member, "protection.whitelist")
-        ? [
-            { value: "whitelist_add", label: "Whitelist : ajouter quelqu'un" },
-            { value: "whitelist_remove", label: "Whitelist : retirer quelqu'un" },
-          ]
-        : []),
-    ];
-
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:protectionaction`)
-          .setPlaceholder("Choisir une action")
-          .addOptions(options.map((o) => new StringSelectMenuOptionBuilder().setLabel(o.label.slice(0, 100)).setValue(o.value)))
-      )
-    );
-
-    if (state.protectionAction === "badwords_add") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:badwords:add`).setLabel("Ouvrir la fenêtre d'ajout").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    } else if (state.protectionAction === "badwords_remove" && words.length) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:badwords:del`)
-            .setPlaceholder("Retirer un mot interdit")
-            .addOptions(words.slice(0, 25).map((w) => new StringSelectMenuOptionBuilder().setLabel(w.slice(0, 100)).setValue(w)))
-        )
-      );
-    } else if (state.protectionAction === "spam_exempt") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ChannelSelectMenuBuilder()
-            .setCustomId(`${ID}:spamexempt`)
-            .setPlaceholder("Salons où l'anti-spam ne s'applique pas")
-            .addChannelTypes(ChannelType.GuildText)
-            .setMinValues(0)
-            .setMaxValues(25)
-            .setDefaultChannels(automod.getExemptChannels(guild.id).filter((id) => guild.channels.cache.has(id)).slice(0, 25))
-        )
-      );
-    } else if (state.protectionAction === "link_allow") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ChannelSelectMenuBuilder()
-            .setCustomId(`${ID}:linkallow`)
-            .setPlaceholder("Salons où les liens restent autorisés")
-            .addChannelTypes(ChannelType.GuildText)
-            .setMinValues(0)
-            .setMaxValues(25)
-            .setDefaultChannels(antiLink.getAllowedChannels(guild.id).filter((id) => guild.channels.cache.has(id)).slice(0, 25))
-        )
-      );
-    } else if (state.protectionAction === "whitelist_add") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:wladd`).setPlaceholder("Ajouter à la whitelist anti-spam"))
-      );
-    } else if (state.protectionAction === "whitelist_remove") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:wldel`).setPlaceholder("Retirer de la whitelist anti-spam"))
-      );
-    }
-    // Les autres actions (spam_toggle/link_toggle/link_mode/mention_toggle/
-    // mention_threshold/badwords_toggle) s'exécutent immédiatement à la
-    // sélection (voir le handler "protectionaction") — rien de plus à afficher.
-  } else if (meta.key === "guard") {
-    const config = guardConfig.getConfig(guild.id);
-
-    const options = [
-      { value: "guard_toggle", label: config.enabled ? "Anti-nuke : désactiver" : "Anti-nuke : activer" },
-      { value: "guard_punishment", label: "Changer la sanction (timeout → kick → ban)" },
-      { value: "guard_pick", label: "Activer/désactiver un guard précis" },
-      { value: "guard_wl_add", label: "Whitelist : ajouter quelqu'un" },
-      { value: "guard_wl_remove", label: "Whitelist : retirer quelqu'un" },
-      { value: "guard_wl_role_add", label: "Whitelist : ajouter un rôle" },
-      { value: "guard_wl_role_remove", label: "Whitelist : retirer un rôle" },
-      { value: "guard_ping", label: "Changer le rôle pingé" },
-      { value: "guard_creationlimit", label: "Changer le seuil de compte" },
-      { value: "guard_autolockdown_toggle", label: config.autoLockdownOnCap ? "Verrouillage auto : désactiver" : "Verrouillage auto : activer" },
-    ];
-
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:guardaction`)
-          .setPlaceholder("Choisir une action")
-          .addOptions(options.map((o) => new StringSelectMenuOptionBuilder().setLabel(o.label.slice(0, 100)).setValue(o.value)))
-      )
-    );
-
-    if (state.guardAction === "guard_pick") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:guardpick`)
-            .setPlaceholder("Choisir un guard")
-            .addOptions(
-              ALL_GUARDS.map((d) =>
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(d.label.slice(0, 100))
-                  .setDescription(d.key)
-                  .setValue(d.key)
-                  .setDefault(state.guardKey === d.key)
-              )
-            )
-        )
-      );
-      if (state.guardKey) {
-        const def = ALL_GUARDS.find((d) => d.key === state.guardKey);
-        if (def) {
-          const on = guardConfig.isGuardEnabled(guild.id, def.key);
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`${ID}:guardtoggle:${def.key}`)
-                .setLabel(`${def.label} : ${on ? "désactiver" : "activer"}`)
-                .setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success)
-            )
-          );
-        }
-      }
-    } else if (state.guardAction === "guard_wl_add") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:guardwladd`).setPlaceholder("Ajouter à la whitelist anti-nuke"))
-      );
-    } else if (state.guardAction === "guard_wl_remove") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:guardwldel`).setPlaceholder("Retirer de la whitelist anti-nuke"))
-      );
-    } else if (state.guardAction === "guard_wl_role_add") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:guardwlroleadd`).setPlaceholder("Ajouter un rôle à la whitelist anti-nuke"))
-      );
-    } else if (state.guardAction === "guard_wl_role_remove") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:guardwlroledel`).setPlaceholder("Retirer un rôle de la whitelist anti-nuke"))
-      );
-    } else if (state.guardAction === "guard_ping") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new RoleSelectMenuBuilder()
-            .setCustomId(`${ID}:guardping`)
-            .setPlaceholder("Rôle à pinguer (vide = aucun)")
-            .setMinValues(0)
-            .setDefaultRoles(config.pingRoleId && guild.roles.cache.has(config.pingRoleId) ? [config.pingRoleId] : [])
-        )
-      );
-    } else if (state.guardAction === "guard_creationlimit") {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:guardcreationlimit`).setLabel("Régler le seuil de création de compte").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    }
   } else if (meta.key === "channels") {
     const choisis = selectionSalons(guild.id, member.id).filter((id) => guild.channels.cache.has(id));
     container.addActionRowComponents(
@@ -1912,17 +1648,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     for (const row of accessRows("sys", "rang sys")) container.addActionRowComponents(row);
   } else if (meta.key === "banall") {
     for (const row of accessRows("banall", "ban de masse")) container.addActionRowComponents(row);
-  } else if (meta.key === "mute") {
-    const roleId = muteStore.getMuteRoleId(guild.id);
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new RoleSelectMenuBuilder()
-          .setCustomId(`${ID}:muterole`)
-          .setPlaceholder("Choisir le rôle de mute (vide = aucun)")
-          .setMinValues(0)
-          .setDefaultRoles(roleId && guild.roles.cache.has(roleId) ? [roleId] : [])
-      )
-    );
   } else if (meta.key === "tickets") {
     const config = ticketStore.getConfig(guild.id);
     container.addActionRowComponents(
@@ -2693,92 +2418,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return interaction.followUp({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
   }
 
-  if (action === "protectionaction") {
-    const choice = interaction.values[0];
-    const requiredPerm = choice.startsWith("whitelist_") ? "protection.whitelist" : "protection.automod";
-    if (!can(member, requiredPerm)) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-
-    if (choice === "spam_toggle") {
-      automod.setEnabled(guildId, !automod.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    if (choice === "link_toggle") {
-      antiLink.setEnabled(guildId, !antiLink.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    if (choice === "link_mode") {
-      antiLink.setMode(guildId, antiLink.getConfig(guildId).mode === "all" ? "invite" : "all");
-      return goto("protection");
-    }
-    if (choice === "mention_toggle") {
-      antiMention.setEnabled(guildId, !antiMention.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    if (choice === "mention_threshold") {
-      const steps = [3, 5, 8, 10, 15, 20];
-      const current = antiMention.getConfig(guildId).maxMentions;
-      antiMention.setMaxMentions(guildId, steps.find((n) => n > current) || steps[0]);
-      return goto("protection");
-    }
-    // Les seuils défilent par paliers plutôt que d'ouvrir une fenêtre de
-    // saisie : un clic suffit, et aucune valeur hors bornes ne peut être
-    // saisie. Le dernier palier ramène au premier.
-    if (choice === "spam_threshold") {
-      const paliers = [
-        { maxMessages: 3, windowSeconds: 5 },
-        { maxMessages: 5, windowSeconds: 6 },
-        { maxMessages: 6, windowSeconds: 6 },
-        { maxMessages: 8, windowSeconds: 10 },
-        { maxMessages: 10, windowSeconds: 15 },
-      ];
-      const actuel = automod.getConfig(guildId);
-      const suivant =
-        paliers.find((p) => p.maxMessages > actuel.maxMessages || (p.maxMessages === actuel.maxMessages && p.windowSeconds > actuel.windowSeconds)) ||
-        paliers[0];
-      automod.setThreshold(guildId, suivant.maxMessages, suivant.windowSeconds);
-      return goto("protection");
-    }
-    if (choice === "spam_timeout") {
-      const paliers = [30, 60, 120, 300, 600, 1800];
-      const actuel = automod.getConfig(guildId).timeoutSeconds;
-      automod.setTimeoutSeconds(guildId, paliers.find((n) => n > actuel) || paliers[0]);
-      return goto("protection");
-    }
-    if (choice === "mention_timeout") {
-      const paliers = [30, 60, 120, 300, 600, 1800];
-      const actuel = antiMention.getConfig(guildId).timeoutSeconds;
-      antiMention.setTimeoutSeconds(guildId, paliers.find((n) => n > actuel) || paliers[0]);
-      return goto("protection");
-    }
-    // Ces deux-là ouvrent un sélecteur de salons : on mémorise seulement le
-    // choix en cours, le rendu s'occupe d'afficher le bon menu.
-    if (choice === "spam_exempt" || choice === "link_allow") {
-      return goto("protection", { protectionAction: choice });
-    }
-    if (choice === "badwords_toggle") {
-      badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    // badwords_add / badwords_remove / whitelist_add / whitelist_remove : révèle le contrôle correspondant.
-    return goto("protection", { protectionAction: choice });
-  }
-
-  // Sélecteurs de salons de la rubrique Protection. Le menu renvoie la liste
-  // COMPLÈTE de ce qui doit être coché : on remplace donc l'ancienne liste au
-  // lieu d'ajouter, sinon décocher un salon n'aurait aucun effet.
-  if (action === "spamexempt" || action === "linkallow") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const choisis = interaction.values || [];
-    if (action === "spamexempt") {
-      for (const id of automod.getExemptChannels(guildId)) automod.setChannelExempt(guildId, id, false);
-      for (const id of choisis) automod.setChannelExempt(guildId, id, true);
-    } else {
-      for (const id of antiLink.getAllowedChannels(guildId)) antiLink.setChannelAllowed(guildId, id, false);
-      for (const id of choisis) antiLink.setChannelAllowed(guildId, id, true);
-    }
-    return goto("protection", { protectionAction: action === "spamexempt" ? "spam_exempt" : "link_allow" });
-  }
-
   // --- Rubrique "Salons" : suppression groupée ---
   if (action === "channelsdelpick" || action === "channelsdelclear" || action === "channelsdelgo") {
     if (!can(member, "channels.manage")) {
@@ -2836,125 +2475,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     // `goto` a déjà répondu via `reply` : on édite donc le message du panel
     // directement pour le remettre à jour.
     return interaction.message?.edit({ ...buildConfigPanel(guild, "channels", member), attachments: [] }).catch(() => {});
-  }
-
-  if (action === "wladd" || action === "wldel") {
-    if (!can(member, "protection.whitelist")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const userId = interaction.values[0];
-    if (action === "wladd") automod.addToWhitelist(guildId, "users", userId);
-    else automod.removeFromWhitelist(guildId, "users", userId);
-    return goto("protection");
-  }
-
-  if (action === "badwords" && extra === "del") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    badWords.removeWord(guildId, interaction.values[0]);
-    return goto("protection");
-  }
-
-  if (action === "badwords" && extra === "add") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) {
-      const word = interaction.fields.getTextInputValue("value").trim();
-      if (!word) return interaction.reply({ content: "Mot vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
-      const added = badWords.addWord(guildId, word);
-      await interaction.reply({
-        content: added ? `\`${word}\` ajouté à la liste.` : "Ce mot y était déjà.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return interaction.message?.edit(buildConfigPanel(guild, "protection", member)).catch(() => {});
-    }
-    const modal = new ModalBuilder().setCustomId(`${ID}:badwords:add`).setTitle("Ajouter un mot interdit");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("value").setLabel("Mot à interdire").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "guardaction") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const choice = interaction.values[0];
-    if (choice === "guard_toggle") {
-      guardConfig.setEnabled(guildId, !guardConfig.getConfig(guildId).enabled);
-      return goto("guard");
-    }
-    if (choice === "guard_punishment") {
-      const next = { timeout: "kick", kick: "ban", ban: "timeout" }[guardConfig.getConfig(guildId).punishment];
-      guardConfig.setPunishment(guildId, next);
-      return goto("guard");
-    }
-    if (choice === "guard_autolockdown_toggle") {
-      guardConfig.setAutoLockdown(guildId, !guardConfig.getConfig(guildId).autoLockdownOnCap);
-      return goto("guard");
-    }
-    // guard_pick / guard_wl_add / guard_wl_remove : révèle le contrôle correspondant.
-    return goto("guard", { guardAction: choice });
-  }
-
-  if (action === "guardpick") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("guard", { guardAction: "guard_pick", guardKey: interaction.values[0] });
-  }
-
-  if (action === "guardtoggle") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    guardConfig.toggleGuard(guildId, extra);
-    return goto("guard", { guardAction: "guard_pick", guardKey: extra });
-  }
-
-  if (action === "guardwladd" || action === "guardwldel") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const userId = interaction.values[0];
-    if (action === "guardwladd") guardWhitelist.add(guildId, "users", userId);
-    else guardWhitelist.remove(guildId, "users", userId);
-    return goto("guard");
-  }
-
-  if (action === "guardwlroleadd" || action === "guardwlroledel") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const roleId = interaction.values[0];
-    if (action === "guardwlroleadd") guardWhitelist.add(guildId, "roles", roleId);
-    else guardWhitelist.remove(guildId, "roles", roleId);
-    return goto("guard");
-  }
-
-  if (action === "guardping") {
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    guardConfig.setPingRole(guildId, interaction.values[0] || null);
-    return goto("guard");
-  }
-
-  if (action === "guardcreationlimit") {
-    if (interaction.isModalSubmit()) {
-      const raw = interaction.fields.getTextInputValue("duration").trim();
-      if (!raw || raw.toLowerCase() === "off") {
-        guardConfig.setCreationLimit(guildId, 0);
-        await interaction.reply({ content: "Seuil de création de compte désactivé.", flags: MessageFlags.Ephemeral });
-        return interaction.message?.edit(buildConfigPanel(guild, "guard", member)).catch(() => {});
-      }
-      const ms = parseDuration(raw);
-      if (!ms) {
-        return interaction.reply({ content: "Durée invalide — exemple : `7d`, ou `off` pour désactiver.", flags: MessageFlags.Ephemeral });
-      }
-      guardConfig.setCreationLimit(guildId, ms);
-      await interaction.reply({ content: `Comptes créés il y a moins de **${raw}** sanctionnés à l'arrivée.`, flags: MessageFlags.Ephemeral });
-      return interaction.message?.edit(buildConfigPanel(guild, "guard", member)).catch(() => {});
-    }
-    if (!can(member, "protection.guard.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const modal = new ModalBuilder().setCustomId(`${ID}:guardcreationlimit`).setTitle("Seuil de création de compte");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("duration")
-          .setLabel('Durée (ex: 7d, 12h) ou "off"')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(20)
-          .setRequired(false)
-      )
-    );
-    return interaction.showModal(modal);
   }
 
   if (action === "welcomechannel") {
@@ -3105,12 +2625,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       });
     }
     return goto(SECTION_OF_SCOPE[extra] || "home");
-  }
-
-  if (action === "muterole") {
-    if (!can(member, "protection.automod")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    muteStore.setMuteRoleId(guildId, interaction.values[0] || null);
-    return goto("mute");
   }
 
   if (action === "ticketstaff") {

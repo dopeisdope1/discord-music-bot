@@ -130,6 +130,7 @@ const CLES = SECTIONS.map((s) => s.key);
   console.log("\nCe que le panel DOIT continuer à offrir :");
 
   await cas("la configuration complète du serveur reste présente", () => {
+    // "Protection"/"Anti-nuke" ont déménagé dans !!secur (utils/securityPanel.js).
     const labels = SECTIONS.map((s) => s.label);
     for (const attendu of [
       "Bienvenue",
@@ -137,8 +138,6 @@ const CLES = SECTIONS.map((s) => s.key);
       "Tickets",
       "Giveaways",
       "Logs",
-      "Protection",
-      "Anti-nuke",
       "Vérification",
       "Rôles automatiques",
       "Sauvegardes",

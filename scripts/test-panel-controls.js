@@ -181,19 +181,18 @@ function actionsDe(json) {
   });
 
   await cas("toutes les rubriques de réglage ont un contrôle en plus de la navigation", () => {
-    // "home", "securityOverview", "stats" et "diagnostics" sont des vues en
-    // lecture seule : leur seul contrôle est le menu de navigation (+
-    // sous-menu s'il y a lieu), et c'est normal — rien à configurer sur un
-    // compteur ou un uptime. Toutes les autres doivent offrir de quoi agir
-    // sans avoir à taper une commande.
-    const lectureSeuleOK = ["home", "securityOverview", "stats", "diagnostics"];
+    // "home", "stats" et "diagnostics" sont des vues en lecture seule : leur
+    // seul contrôle est le menu de navigation (+ sous-menu s'il y a lieu), et
+    // c'est normal — rien à configurer sur un compteur ou un uptime. Toutes
+    // les autres doivent offrir de quoi agir sans avoir à taper une commande.
+    const lectureSeuleOK = ["home", "stats", "diagnostics"];
     for (const section of SECTIONS.filter((s) => !lectureSeuleOK.includes(s))) {
       assert.ok(render(section).rangees >= 2, `${section} n'offre aucun contrôle propre`);
     }
   });
 
   await cas("l'état courant reste affiché — sinon les contrôles agissent à l'aveugle", () => {
-    for (const section of ["prefixes", "logs", "protection", "guard", "welcome", "mute", "tickets", "voice", "sys", "banall"]) {
+    for (const section of ["prefixes", "logs", "welcome", "tickets", "voice", "sys", "banall"]) {
       assert.ok(render(section).texte.includes(">"), `${section} n'affiche plus l'état courant`);
     }
   });
@@ -518,18 +517,19 @@ function actionsDe(json) {
     assert.ok(menu.options.length <= 25, `${menu.options.length} options — Discord en refuse plus de 25`);
     // Les sujets sont nommés, pas regroupés sous des étiquettes abstraites.
     const labels = menu.options.map((o) => o.label);
-    for (const attendu of ["Logs", "Sécurité", "Bienvenue", "Vocaux temporaires", "Permissions", "Giveaways"]) {
+    for (const attendu of ["Logs", "Bienvenue", "Vocaux temporaires", "Permissions", "Giveaways"]) {
       assert.ok(labels.includes(attendu), `"${attendu}" doit être proposé directement : ${labels.join(", ")}`);
     }
     assert.ok(menu.options.some((o) => o.default), "la rubrique ouverte doit être marquée comme choisie");
   });
 
-  await cas("un second menu apparaît pour Sécurité, seul sujet qui regroupe plusieurs écrans", () => {
-    const json = buildConfigPanel(guild, "securityOverview", member).components[0].toJSON();
-    const sub = json.components.find((c) => c.type === 1 && c.components[0].custom_id?.endsWith(":subnav"));
-    assert.ok(sub, "Sécurité regroupe vue d'ensemble, protection, anti-nuke et mute");
-    const valeurs = sub.components[0].options.map((o) => o.value);
-    assert.ok(valeurs.includes("protection") && valeurs.includes("guard"), valeurs.join(", "));
+  await cas("la famille Sécurité (vue d'ensemble/protection/anti-nuke/mute) n'existe plus — déménagée dans !!secur", () => {
+    for (const cle of ["securityOverview", "protection", "guard", "mute"]) {
+      assert.ok(!SECTIONS.includes(cle), `${cle} devrait avoir déménagé dans utils/securityPanel.js`);
+    }
+    const json = buildConfigPanel(guild, "home", member).components[0].toJSON();
+    const menu = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).find((c) => c.custom_id === "cfg:nav");
+    assert.ok(!menu.options.some((o) => o.label === "Sécurité"), "\"Sécurité\" ne doit plus apparaître dans la navigation");
   });
 
   await cas("aucun second menu quand la famille n'a qu'une rubrique", () => {
