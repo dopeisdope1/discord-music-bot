@@ -7,8 +7,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
   MessageFlags,
 } = require("discord.js");
 const { EMOJI } = require("./emojis");
@@ -16,26 +14,16 @@ const store = require("./personalProtectionStore");
 const messageOwner = require("./messageOwner");
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
-const automod = require("./automod/antiSpam");
-const antiLink = require("./automod/antiLink");
-const antiMention = require("./automod/antiMention");
-const badWords = require("./automod/badWords");
 const accessStore = require("./accessStore");
-const muteStore = require("./muteStore");
-const guardConfig = require("./guard/config");
-const { ALL_GUARDS } = require("./guard/definitions");
-const { computeStatus, formatUptime } = require("./statusDiagnostic");
 
 // !!panel — panel de protection PERSONNELLE, sur un préfixe séparé exprès
 // pour ne jamais se mélanger avec &panel (configuration du SERVEUR, voir
-// utils/configPanel.js). "Ça te concerne toi seul" pour la partie du haut :
-// chaque bouton active/désactive une protection pour la personne qui clique,
-// aucun effet sur le reste du serveur — voir utils/personalProtectionStore.js
-// pour la liste. En bas, une rubrique "Sécurité serveur" reprend TELS QUELS
-// les réglages de &panel > Protection (antispam/antilien/antimention/mots
-// interdits) — même magasins, juste un second point d'accès, pour ne pas
-// avoir à rouvrir &panel pour ça (demande explicite : "tout les protections
-// qu'il y'a dans le &panel ajoute les dans !!panel").
+// utils/configPanel.js) NI avec !!secur (sécurité serveur + anti-nuke, voir
+// utils/securityPanel.js — demande explicite : "je veux une commande pour
+// panel perso et une commande avec tout les truc de securité"). "Ça te
+// concerne toi seul" : chaque bouton active/désactive une protection pour la
+// personne qui clique, aucun effet sur le reste du serveur — voir
+// utils/personalProtectionStore.js pour la liste.
 //
 // GARDE-FOU COMMUN À TOUTE PROTECTION QUI ANNULE UNE ACTION (tout sauf
 // Anti-Ping-Fantôme, qui ne fait qu'alerter) : voir estActionLegitime()
@@ -46,15 +34,6 @@ const { computeStatus, formatUptime } = require("./statusDiagnostic");
 
 const CUSTOM_ID = "prot";
 
-// Rubrique "Sécurité serveur" : mêmes 4 interrupteurs que &panel > Protection
-// (utils/configPanel.js, section "protection"), avec les mêmes magasins.
-const SERVEUR_TOGGLES = [
-  { key: "antiSpam", label: "Anti-Spam/Flood", store: automod },
-  { key: "antiLien", label: "Anti-Lien", store: antiLink },
-  { key: "antiMassMention", label: "Anti-Mass-Mention", store: antiMention },
-  { key: "motsInterdits", label: "Mots interdits", store: badWords },
-];
-
 /** Rang RÉEL (owner/sys, utils/accessStore.js) — jamais de rang inventé ("dev" n'existe pas ici). */
 function rangLabel(userId) {
   if (accessStore.isOwner(userId)) return `${EMOJI.OWNER} Propriétaire`;
@@ -62,115 +41,7 @@ function rangLabel(userId) {
   return "Membre";
 }
 
-/** Compte live des membres actuellement sanctionnés par le rôle de mute (utils/muteStore.js) — pas de compteur pré-calculé, donc lu à la volée. */
-function compterMuted(guild) {
-  const roleId = muteStore.getMuteRoleId(guild?.id);
-  if (!roleId) return 0;
-  return guild?.roles?.cache?.get(roleId)?.members?.size || 0;
-}
-
-/** `client` est absent dans une partie des tests (et parfois indisponible) : jamais bloquant, juste une ligne en moins dans le résumé. */
-function statsBot(client) {
-  if (!client?.ws || !client?.guilds) return null;
-  const info = computeStatus(client);
-  return { uptime: formatUptime(info.uptimeMs), ping: info.ping };
-}
-
-/**
- * Page 0 — "Panel de contrôle" : résumé + recensement de TOUTES les
- * protections réelles (personnelles, sécurité serveur, anti-nuke), plus le
- * pilotage de l'anti-nuke (utils/guard/*.js) — jusqu'ici visible seulement
- * dans &panel. Rien d'inventé : chaque nombre vient d'un store existant.
- */
-function buildDashboardPage(member, client) {
-  const guild = member.guild;
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🛡️ Panel de contrôle"));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
-  const stats = statsBot(client);
-  const resume = [
-    `${EMOJI.OWNER} **${accessStore.ownerIds().length}** propriétaire(s) · ${EMOJI.CROWN} **${accessStore.list("sys").length}** rang sys`,
-    `🔇 **${compterMuted(guild)}** muet(s) (rôle de mute)`,
-  ];
-  if (stats) resume.push(`⏱️ **${stats.uptime}** · 📶 **${stats.ping}ms**`);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(resume.join("\n")));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
-  const settingsPerso = store.getSettings(guild.id, member.id);
-  const onPerso = Object.values(settingsPerso).filter(Boolean).length;
-  const totalPerso = Object.keys(store.PROTECTIONS).length;
-  const lignesFonctions = [`**Tes protections personnelles** : ${onPerso}/${totalPerso} actives — détail page 2/2`];
-
-  const droitServeur = can(member, "protection.automod");
-  if (droitServeur) {
-    const onSrv = SERVEUR_TOGGLES.filter((t) => t.store.getConfig(guild.id).enabled).length;
-    lignesFonctions.push(`**Sécurité serveur** : ${onSrv}/${SERVEUR_TOGGLES.length} actives — détail page 2/2`);
-  } else {
-    lignesFonctions.push("**Sécurité serveur** : 🔒 droit `protection.automod` requis");
-  }
-
-  const droitGuard = can(member, "protection.guard.manage");
-  if (droitGuard) {
-    const configGuard = guardConfig.getConfig(guild.id);
-    const onGuard = ALL_GUARDS.filter((g) => guardConfig.isGuardEnabled(guild.id, g.key)).length;
-    lignesFonctions.push(
-      `**Anti-nuke** : ${onGuard}/${ALL_GUARDS.length} actives${
-        configGuard.enabled ? "" : " (⚠️ interrupteur général éteint — &panel > Anti-nuke)"
-      }`
-    );
-    for (let i = 0; i < ALL_GUARDS.length; i += 2) {
-      const a = ALL_GUARDS[i];
-      const b = ALL_GUARDS[i + 1];
-      const texteA = `${guardConfig.isGuardEnabled(guild.id, a.key) ? EMOJI.CHECK : EMOJI.CROSS} \`${a.key}\``;
-      const texteB = b ? ` · ${guardConfig.isGuardEnabled(guild.id, b.key) ? EMOJI.CHECK : EMOJI.CROSS} \`${b.key}\`` : "";
-      lignesFonctions.push(`${texteA}${texteB}`);
-    }
-  } else {
-    lignesFonctions.push("**Anti-nuke** : 🔒 droit `protection.guard.manage` requis");
-  }
-
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🛡️ Fonctions\n${lignesFonctions.join("\n")}`));
-
-  if (droitGuard) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${CUSTOM_ID}:guardpick`)
-          .setPlaceholder("Activer/Désactiver une protection anti-nuke")
-          .addOptions(
-            ALL_GUARDS.map((g) =>
-              new StringSelectMenuOptionBuilder()
-                .setLabel(g.label)
-                .setValue(g.key)
-                .setDescription(guardConfig.isGuardEnabled(guild.id, g.key) ? "Actuellement activée" : "Actuellement désactivée")
-            )
-          )
-      )
-    );
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:guardall:on`).setLabel("Tout activer").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:guardall:off`).setLabel("Tout désactiver").setStyle(ButtonStyle.Danger)
-      )
-    );
-  }
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:page:0`).setLabel("Actualiser").setStyle(ButtonStyle.Secondary).setEmoji("🔄"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:page:1`).setLabel("Page suivante").setStyle(ButtonStyle.Secondary).setEmoji("▶")
-    )
-  );
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("-# page 1/2 — fonctions & accès"));
-
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-/** Page 1 — "Panel perso" : contenu EXISTANT (protections perso + Sécurité serveur), juste habillé d'un résumé et d'une pagination. */
-function buildPersoPage(member) {
+function buildPanel(member) {
   const settings = store.getSettings(member.guild.id, member.id);
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${EMOJI.LOCK} Panel perso`));
@@ -210,38 +81,7 @@ function buildPersoPage(member) {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));
 
-  if (can(member, "protection.automod")) {
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("## 🛡️ Sécurité serveur\n*Les mêmes réglages que &panel > Protection.*")
-    );
-    const boutonsServeur = SERVEUR_TOGGLES.map((t) => {
-      const actif = t.store.getConfig(member.guild.id).enabled;
-      return new ButtonBuilder()
-        .setCustomId(`${CUSTOM_ID}:srv:${t.key}`)
-        .setLabel(`${t.label} — ${actif ? "ON" : "OFF"}`)
-        .setStyle(actif ? ButtonStyle.Success : ButtonStyle.Secondary);
-    });
-    for (let i = 0; i < boutonsServeur.length; i += 5) {
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(boutonsServeur.slice(i, i + 5)));
-    }
-  }
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:page:0`).setLabel("Page précédente").setStyle(ButtonStyle.Secondary).setEmoji("◀"),
-      new ButtonBuilder().setCustomId(`${CUSTOM_ID}:page:1`).setLabel("Actualiser").setStyle(ButtonStyle.Secondary).setEmoji("🔄")
-    )
-  );
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("-# page 2/2 — panel perso"));
-
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-/** Point d'entrée public : `page` 0 = dashboard (nouveau), 1 = panel perso (existant). */
-function buildPanel(member, page = 0, client) {
-  return page === 1 ? buildPersoPage(member) : buildDashboardPage(member, client);
 }
 
 /**
@@ -259,16 +99,13 @@ async function handleProtectionTextCommand(client, message) {
   const [cmd] = content.slice(PREFIX.length).trim().split(/\s+/);
   if ((cmd || "").toLowerCase() !== "panel") return; // mot inconnu sur ce préfixe : silence, comme "&"
 
-  return messageOwner.repondreEtRetenir(message, buildPanel(message.member, 0, client));
+  return messageOwner.repondreEtRetenir(message, buildPanel(message.member));
 }
 
 /**
  * Clics du panel — voir index.js pour le routage par customId. La propriété
  * du panneau (seul l'auteur peut cliquer) est déjà vérifiée en amont dans
  * index.js, comme pour "cfg:" — pas besoin de la revérifier ici.
- * "toggle:<clé>" = une protection personnelle ; "srv:<clé>" = un interrupteur
- * de la rubrique Sécurité serveur, qui EXIGE protection.automod (revérifié
- * ici : la permission a pu changer depuis l'ouverture du panel).
  */
 async function handleProtectionInteraction(interaction) {
   const [, action, key] = interaction.customId.split(":");
@@ -276,41 +113,7 @@ async function handleProtectionInteraction(interaction) {
   if (action === "toggle") {
     if (!store.PROTECTIONS[key]) return;
     store.toggle(interaction.guild.id, interaction.user.id, key);
-    return interaction.update(buildPanel(interaction.member, 1));
-  }
-
-  if (action === "srv") {
-    const cible = SERVEUR_TOGGLES.find((t) => t.key === key);
-    if (!cible) return;
-    if (!can(interaction.member, "protection.automod")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    cible.store.setEnabled(interaction.guild.id, !cible.store.getConfig(interaction.guild.id).enabled);
-    return interaction.update(buildPanel(interaction.member, 1));
-  }
-
-  if (action === "page") {
-    const page = key === "1" ? 1 : 0;
-    return interaction.update(buildPanel(interaction.member, page, interaction.client));
-  }
-
-  if (action === "guardpick") {
-    if (!can(interaction.member, "protection.guard.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    const guardKey = interaction.values[0];
-    if (!ALL_GUARDS.some((g) => g.key === guardKey)) return;
-    guardConfig.toggleGuard(interaction.guild.id, guardKey);
-    return interaction.update(buildPanel(interaction.member, 0, interaction.client));
-  }
-
-  if (action === "guardall") {
-    if (!can(interaction.member, "protection.guard.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    const activer = key === "on";
-    for (const g of ALL_GUARDS) guardConfig.setGuardEnabled(interaction.guild.id, g.key, activer);
-    return interaction.update(buildPanel(interaction.member, 0, interaction.client));
+    return interaction.update(buildPanel(interaction.member));
   }
 }
 

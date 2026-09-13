@@ -35,6 +35,9 @@ const { handleSelfClear } = require("./utils/selfClear");
 // "!!setclear" — configure les noms/le délai de ces déclencheurs sans préfixe
 // (voir utils/setClearCommand.js et utils/selfClearStore.js).
 const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEAR_CUSTOM_ID } = require("./utils/setClearCommand");
+// "!!secur" — sécurité serveur + anti-nuke (voir utils/securityPanel.js),
+// scindé de !!panel (strictement personnel, voir utils/personalProtection.js).
+const { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID: SECUR_CUSTOM_ID } = require("./utils/securityPanel");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -474,7 +477,7 @@ client.on("interactionCreate", async (interaction) => {
   // Les autres panneaux (bannissement, ban de masse, confirmations
   // d'administration) portaient déjà cette vérification, chacun avec son
   // jeton ; ces deux-là ne l'avaient pas.
-  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`, `${palierPanel.CUSTOM_ID}:`];
+  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`, `${palierPanel.CUSTOM_ID}:`, `${SECUR_CUSTOM_ID}:`];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
     if (!autorise) {
@@ -521,6 +524,12 @@ client.on("interactionCreate", async (interaction) => {
   // "!!setclear" — voir utils/setClearCommand.js.
   if (interaction.customId?.startsWith(`${SETCLEAR_CUSTOM_ID}:`)) {
     await handleSetClearInteraction(interaction).catch((err) => console.error("[setClearCommand]", err));
+    return;
+  }
+
+  // "!!secur" — voir utils/securityPanel.js.
+  if (interaction.customId?.startsWith(`${SECUR_CUSTOM_ID}:`)) {
+    await handleSecurityInteraction(interaction).catch((err) => console.error("[securityPanel]", err));
     return;
   }
 
@@ -830,6 +839,8 @@ client.on("messageCreate", (message) => {
   handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
   // "!!setclear" — voir utils/setClearCommand.js.
   handleSetClearTextCommand(client, message).catch((err) => console.error("[setClearCommand]", err));
+  // "!!secur" — voir utils/securityPanel.js.
+  handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
   // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.

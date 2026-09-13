@@ -1,20 +1,16 @@
 /**
- * Panel de protection PERSONNELLE ("!!panel", utils/personalProtection.js).
+ * Panel de protection PERSONNELLE ("!!panel", utils/personalProtection.js) —
+ * self-service, sans permission requise : Anti-Retrait-Rôle,
+ * Anti-Déplacement-Vocal, Anti-Sourdine-Forcée, Anti-Timeout,
+ * Anti-Renommage, Anti-Bannissement, Alerte-Expulsion, Anti-Ping-Fantôme.
+ * Chacune passe par estActionLegitime() avant d'annuler quoi que ce soit :
+ * sans ce filtre, n'importe qui pourrait s'auto-immuniser contre une vraie
+ * sanction juste en activant "Anti-Bannissement".
  *
- * Volontairement sur un préfixe séparé de &panel (config serveur) pour ne
- * jamais se mélanger — demande explicite. Deux familles de protections :
- *
- *  - PERSONNELLES (self-service, sans permission) : Anti-Retrait-Rôle,
- *    Anti-Déplacement-Vocal, Anti-Sourdine-Forcée, Anti-Timeout,
- *    Anti-Renommage, Anti-Bannissement, Alerte-Expulsion, Anti-Ping-Fantôme.
- *    Chacune passe par estActionLegitime() avant d'annuler quoi que ce soit :
- *    sans ce filtre, n'importe qui pourrait s'auto-immuniser contre une
- *    vraie sanction juste en activant "Anti-Bannissement".
- *  - "Sécurité serveur" : mêmes 4 interrupteurs que &panel > Protection
- *    (antispam/antilien/antimention/mots interdits), mêmes magasins —
- *    demande explicite ("tout les protections qu'il y'a dans le &panel
- *    ajoute les dans !!panel"), gatée par protection.automod comme dans
- *    &panel.
+ * La rubrique "Sécurité serveur" + l'anti-nuke ont été scindées dans
+ * "!!secur" (voir scripts/test-security-panel.js et
+ * utils/securityPanel.js) — demande explicite : "une commande pour panel
+ * perso et une commande avec tout les truc de securité".
  *
  * Lancement : node scripts/test-personal-protection.js
  */
@@ -30,7 +26,6 @@ const { Collection, PermissionsBitField, AuditLogEvent } = require("discord.js")
 const personalProtection = require("../utils/personalProtection");
 const store = require("../utils/personalProtectionStore");
 const permStore = require("../utils/permissions/store");
-const automod = require("../utils/automod/antiSpam");
 const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;
@@ -179,13 +174,14 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
     };
   }
 
-  await cas("!!panel s'ouvre sur la page 0 (dashboard) — recense les protections personnelles sans lister leurs clés", async () => {
+  await cas("poste bien un panel Components V2 avec les 8 protections personnelles", async () => {
     const msg = fakeMessage("!!panel");
     await personalProtection.handleProtectionTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
     const texte = JSON.stringify(msg._replies[0].components);
-    assert.ok(texte.includes("Tes protections personnelles"), texte);
-    assert.ok(texte.includes("page 1/2"), texte);
+    for (const cle of Object.keys(store.PROTECTIONS)) {
+      assert.ok(texte.includes(cle), `protection manquante dans le panel : ${cle}`);
+    }
   });
 
   await cas("un mot inconnu sur ce préfixe reste silencieux", async () => {
@@ -200,147 +196,19 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  console.log("\n!!panel — page 2/2 (panel perso, contenu existant) :");
-
-  await cas("la page perso liste bien les 8 protections personnelles avec leur customId", async () => {
-    const interaction = fakeInteraction("prot:page:1", { guildId: "g-page1" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(interaction._updates.length, 1);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    for (const cle of Object.keys(store.PROTECTIONS)) {
-      assert.ok(texte.includes(cle), `protection manquante dans le panel : ${cle}`);
-    }
-    assert.ok(texte.includes("page 2/2"), texte);
+  await cas("!!panel n'a plus de rubrique Sécurité serveur — scindée dans !!secur", async () => {
+    const msg = fakeMessage("!!panel", { authorId: "staff-1", guildId: "g-scission" });
+    permStore.grantToUser("g-scission", "staff-1", "protection.automod");
+    await personalProtection.handleProtectionTextCommand(null, msg);
+    const texte = JSON.stringify(msg._replies[0].components);
+    assert.ok(!texte.includes("Sécurité serveur"), texte);
+    assert.ok(!texte.includes("guardpick"), texte);
   });
 
-  await cas("sans protection.automod, la rubrique Sécurité serveur n'apparaît pas", async () => {
-    const interaction = fakeInteraction("prot:page:1", { userId: "quidam-1", guildId: "g1" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(!texte.includes("Sécurité serveur"));
-  });
-
-  await cas("avec protection.automod, la rubrique Sécurité serveur apparaît avec ses 4 interrupteurs", async () => {
-    permStore.grantToUser("g1", "staff-1", "protection.automod");
-    const interaction = fakeInteraction("prot:page:1", { userId: "staff-1", guildId: "g1" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("Sécurité serveur"));
-    assert.ok(texte.includes("prot:srv:antiSpam"));
-    assert.ok(texte.includes("prot:srv:antiLien"));
-    assert.ok(texte.includes("prot:srv:antiMassMention"));
-    assert.ok(texte.includes("prot:srv:motsInterdits"));
-  });
-
-  console.log("\n!!panel — page 1/2 (dashboard, anti-nuke réel) :");
-
-  await cas("sans protection.guard.manage, l'anti-nuke n'est pas pilotable depuis le dashboard", async () => {
-    const interaction = fakeInteraction("prot:page:0", { userId: "quidam-3", guildId: "g-guard1" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("protection.guard.manage"), texte);
-    assert.ok(!texte.includes("guardpick"));
-  });
-
-  await cas("avec protection.guard.manage, le menu liste les 13 guards réels et le sélectionner en bascule un", async () => {
-    const guardConfig = require("../utils/guard/config");
-    const { ALL_GUARDS } = require("../utils/guard/definitions");
-    permStore.grantToUser("g-guard2", "staff-3", "protection.guard.manage");
-    guardConfig.setEnabled("g-guard2", true); // interrupteur général — sinon isGuardEnabled reste faux quoi qu'on bascule
-
-    const ouverture = fakeInteraction("prot:page:0", { userId: "staff-3", guildId: "g-guard2" });
-    await personalProtection.handleProtectionInteraction(ouverture);
-    const json = ouverture._updates[0].components[0].toJSON();
-    const menuRow = json.components.find((c) => c.type === 1 && c.components[0]?.type === 3);
-    assert.ok(menuRow, "le menu anti-nuke doit apparaître");
-    assert.strictEqual(menuRow.components[0].options.length, ALL_GUARDS.length);
-
-    const avant = guardConfig.isGuardEnabled("g-guard2", "antibot");
-    const choix = fakeInteraction("prot:guardpick", { userId: "staff-3", guildId: "g-guard2", values: ["antibot"] });
-    await personalProtection.handleProtectionInteraction(choix);
-    assert.strictEqual(guardConfig.isGuardEnabled("g-guard2", "antibot"), !avant);
-  });
-
-  await cas("« Tout activer »/« Tout désactiver » agissent sur les 13 guards réels", async () => {
-    const guardConfig = require("../utils/guard/config");
-    const { ALL_GUARDS } = require("../utils/guard/definitions");
-    permStore.grantToUser("g-guard3", "staff-4", "protection.guard.manage");
-    // Interrupteur général distinct de "guardall" (voir &panel > Anti-nuke) —
-    // sans lui, isGuardEnabled reste faux quoi que fasse guardall.
-    guardConfig.setEnabled("g-guard3", true);
-
-    const on = fakeInteraction("prot:guardall:on", { userId: "staff-4", guildId: "g-guard3" });
-    await personalProtection.handleProtectionInteraction(on);
-    assert.ok(ALL_GUARDS.every((g) => guardConfig.isGuardEnabled("g-guard3", g.key)));
-
-    const off = fakeInteraction("prot:guardall:off", { userId: "staff-4", guildId: "g-guard3" });
-    await personalProtection.handleProtectionInteraction(off);
-    assert.ok(ALL_GUARDS.every((g) => !guardConfig.isGuardEnabled("g-guard3", g.key)));
-  });
-
-  await cas("basculer un guard sans protection.guard.manage est refusé", async () => {
-    const guardConfig = require("../utils/guard/config");
-    const interaction = fakeInteraction("prot:guardpick", { userId: "quidam-4", guildId: "g-guard4", values: ["antibot"] });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(interaction._updates.length, 0);
-    assert.ok(interaction._replies.length > 0);
-    assert.strictEqual(guardConfig.isGuardEnabled("g-guard4", "antibot"), false);
-  });
-
-  console.log("\nDashboard — résumé réel (rang, mute, stats client), rien d'inventé :");
-
-  await cas("le résumé du dashboard compte les VRAIS propriétaires/rang sys via accessStore", async () => {
-    const avant = process.env.BOT_OWNER_IDS;
-    const accessStore = require("../utils/accessStore");
-    process.env.BOT_OWNER_IDS = "owner-a,owner-b";
-    accessStore.add("sys", "sys-a");
-    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash1", guildId: "g-dash1" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("2") && texte.includes("propriétaire"), texte);
-    assert.ok(texte.includes("1") && texte.includes("rang sys"), texte);
-    process.env.BOT_OWNER_IDS = avant;
-  });
-
-  await cas("le résumé du dashboard compte les VRAIS membres mute (rôle configuré) — pas un chiffre inventé", async () => {
-    const muteStore = require("../utils/muteStore");
-    muteStore.setMuteRoleId("g-dash2", "role-mute");
-    const guild = {
-      id: "g-dash2",
-      roles: { cache: new Collection([["role-mute", { id: "role-mute", members: { size: 3 } }]]) },
-    };
-    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash2", guildId: "g-dash2" });
-    interaction.member.guild = guild;
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("3") && texte.includes("muet"), texte);
-  });
-
-  await cas("sans client fourni, aucune stat uptime/ping n'est affichée (jamais de plantage)", async () => {
-    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash3", guildId: "g-dash3" });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(interaction._updates.length, 1);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(!texte.includes("ping"), texte);
-  });
-
-  await cas("avec un client réel, l'uptime/ping du VRAI statusDiagnostic apparaissent", async () => {
-    const fauxClient = {
-      uptime: 3_600_000,
-      ws: { ping: 42 },
-      guilds: { cache: new Collection() },
-    };
-    const interaction = fakeInteraction("prot:page:0", { userId: "u-dash4", guildId: "g-dash4" });
-    interaction.client = fauxClient;
-    await personalProtection.handleProtectionInteraction(interaction);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("42ms"), texte);
-  });
-
-  console.log("\nRang réel affiché page 2/2 (Owner/Sys/Membre — pas de rang inventé) :");
+  console.log("\nRang réel affiché dans le résumé (Owner/Sys/Membre — pas de rang inventé) :");
 
   await cas("un membre ordinaire est affiché \"Membre\"", async () => {
-    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang1", guildId: "g-rang1" });
+    const interaction = fakeInteraction("prot:toggle:antiRoleRemove", { userId: "u-rang1", guildId: "g-rang1" });
     await personalProtection.handleProtectionInteraction(interaction);
     const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Membre"), texte);
@@ -349,7 +217,7 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
   await cas("le propriétaire (BOT_OWNER_IDS) est affiché \"Propriétaire\"", async () => {
     const avant = process.env.BOT_OWNER_IDS;
     process.env.BOT_OWNER_IDS = "u-rang2";
-    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang2", guildId: "g-rang2" });
+    const interaction = fakeInteraction("prot:toggle:antiRoleRemove", { userId: "u-rang2", guildId: "g-rang2" });
     await personalProtection.handleProtectionInteraction(interaction);
     const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Propriétaire"), texte);
@@ -359,7 +227,7 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
   await cas("le rang sys (&zinki) est affiché \"Rang sys\"", async () => {
     const accessStore = require("../utils/accessStore");
     accessStore.add("sys", "u-rang3");
-    const interaction = fakeInteraction("prot:page:1", { userId: "u-rang3", guildId: "g-rang3" });
+    const interaction = fakeInteraction("prot:toggle:antiRoleRemove", { userId: "u-rang3", guildId: "g-rang3" });
     await personalProtection.handleProtectionInteraction(interaction);
     const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Rang sys"), texte);
@@ -382,38 +250,6 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
 
   await cas("n'affecte pas un autre membre du même serveur", async () => {
     assert.strictEqual(store.isEnabled("g2", "u3", "antiRoleRemove"), false);
-  });
-
-  console.log("\nBascule de la rubrique Sécurité serveur (mêmes magasins que &panel) :");
-
-  await cas("sans protection.automod, le clic est refusé", async () => {
-    const avant = automod.getConfig("g3").enabled;
-    const interaction = {
-      customId: "prot:srv:antiSpam",
-      guild: { id: "g3" },
-      user: { id: "quidam-2" },
-      member: { id: "quidam-2", guild: { id: "g3" }, roles: { cache: new Collection() } },
-      reply: async (p) => {
-        interaction._reply = p;
-      },
-    };
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(automod.getConfig("g3").enabled, avant, "l'état ne doit pas avoir changé");
-    assert.ok(interaction._reply?.content.includes("permission"));
-  });
-
-  await cas("avec protection.automod, le clic bascule le MÊME magasin que &panel > Protection", async () => {
-    permStore.grantToUser("g3", "staff-2", "protection.automod");
-    const avant = automod.getConfig("g3").enabled;
-    const interaction = {
-      customId: "prot:srv:antiSpam",
-      guild: { id: "g3" },
-      user: { id: "staff-2" },
-      member: { id: "staff-2", guild: { id: "g3" }, roles: { cache: new Collection() } },
-      update: async () => {},
-    };
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(automod.getConfig("g3").enabled, !avant);
   });
 
   console.log("\nAnti-Retrait Rôle (via l'audit log, MemberRoleUpdate) :");
