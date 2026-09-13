@@ -276,6 +276,48 @@ async function bringall(client, message) {
   return reply(message, "success", `**${count}** membre(s) rassemblé(s) dans ${destination}.`);
 }
 
+// --- Mute/sourdine vocale native (préfixe "=", écosystème VOCAL) — même
+// permission que &voicekick/&mv (server.voice.manage) : une action de
+// modération vocale ponctuelle, sur N'IMPORTE QUEL membre actuellement en
+// vocal, sans rapport avec un quelconque salon "à soi". Distinct de
+// &mute/&unmute (rôle de mute PUNITIF, textuel, avec historique) — ici,
+// mute/sourdine Discord natifs, réversibles, sans trace de sanction.
+function voiceMuteAction(actif) {
+  return async function (client, message, args) {
+    if (!can(message.member, "server.voice.manage")) return;
+    const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MuteMembers, "MuteMembers");
+    if (botPerm) return reply(message, "error", botPerm);
+
+    const targetId = parseTarget(args);
+    const target = await fetchTargetOrReply(message, targetId);
+    if (!target) return;
+    if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
+
+    await target.voice.setMute(actif, `${actif ? "Mute" : "Démute"} vocal par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", `**${target.user.tag}** ${actif ? "muté" : "démuté"} en vocal.`);
+  };
+}
+const voicemute = voiceMuteAction(true);
+const voiceunmute = voiceMuteAction(false);
+
+function voiceDeafenAction(actif) {
+  return async function (client, message, args) {
+    if (!can(message.member, "server.voice.manage")) return;
+    const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.DeafenMembers, "DeafenMembers");
+    if (botPerm) return reply(message, "error", botPerm);
+
+    const targetId = parseTarget(args);
+    const target = await fetchTargetOrReply(message, targetId);
+    if (!target) return;
+    if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
+
+    await target.voice.setDeaf(actif, `${actif ? "Sourdine" : "Fin de sourdine"} par ${message.author.tag}`).catch(() => {});
+    return reply(message, "success", `**${target.user.tag}** ${actif ? "en sourdine" : "n'est plus en sourdine"} en vocal.`);
+  };
+}
+const voicedeaf = voiceDeafenAction(true);
+const voiceundeaf = voiceDeafenAction(false);
+
 // --- &unbanall (confirmation obligatoire, comme &banall) ---
 
 async function unbanall(client, message) {
@@ -542,6 +584,10 @@ module.exports = {
   voicekick,
   mv,
   bringall,
+  voicemute,
+  voiceunmute,
+  voicedeaf,
+  voiceundeaf,
   unbanall,
   temprole,
   untemprole,

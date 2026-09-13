@@ -4,27 +4,20 @@ const { getPrefixes } = require("./prefixStore");
 // "=help" — index des commandes sur le préfixe "=" (architecture 3
 // préfixes : & = modération, !! = sécurité, = = vocal), même patron que
 // utils/protectionHelpCommand.js ("!!help") : un tableau maintenu à la
-// main, purement informatif, aucune interaction. "=add" (octroi de
-// permissions individuelles, utils/serverAdminCommands.js) partage ce
-// préfixe mais n'a AUCUN rapport avec le vocal — listé à part pour ne pas
-// laisser croire que c'est une commande vocale de plus.
+// main, purement informatif, aucune interaction. Un simple catalogue de
+// commandes de modération VOCALE réelles (droit `server.voice.manage`,
+// utils/serverExtra.js) — sur N'IMPORTE QUEL membre en vocal, aucune notion
+// de salon "à soi" ni de propriété. "=add" (octroi de permissions
+// individuelles, utils/serverAdminCommands.js) partage ce préfixe mais n'a
+// AUCUN rapport avec le vocal — listé à part pour ne pas laisser croire que
+// c'est une commande vocale de plus.
 const COMMANDES = [
-  { nom: "=owner <@membre>", description: "Transfère la propriété de TON salon vocal temporaire à ce membre (doit y être présent)." },
-  { nom: "=lock", description: "Verrouille ton salon (personne ne peut plus le rejoindre sans y être déjà, ou sans `=wl`/`&voc add`)." },
-  { nom: "=unlock", description: "Déverrouille ton salon." },
-  { nom: "=disconnect <@membre>", description: "Expulse un membre de ton salon (doit y être présent)." },
-  { nom: "=mute <@membre>", description: "Mute vocal Discord natif dans ton salon (distinct du mute-rôle punitif de `&mute`)." },
+  { nom: "=mute <@membre>", description: "Mute vocal Discord natif (distinct du mute-rôle punitif de `&mute`) — droit `server.voice.manage`." },
   { nom: "=unmute <@membre>", description: "Lève ce mute vocal." },
-  { nom: "=deaf <@membre>", description: "Sourdine vocale native dans ton salon." },
+  { nom: "=deaf <@membre>", description: "Sourdine vocale native." },
   { nom: "=undeaf <@membre>", description: "Lève cette sourdine." },
-  { nom: "=move <@membre>", description: "Déplace un membre connecté ailleurs sur le serveur DANS ton salon (ne donne ni propriété, ni accès permanent)." },
-  {
-    nom: "=wl [@membre]",
-    description: "Liste de confiance PERMANENTE : appliquée automatiquement à chacun de tes futurs salons (contrairement à `&voc add`, qui ne dure que le salon courant). Sans argument, affiche ta liste.",
-  },
-  { nom: "=unwl <@membre>", description: "Retire de cette liste de confiance permanente." },
-  { nom: "=vc", description: "Ouvre le centre de contrôle de ton salon, sans avoir à passer par le salon-panneau partagé." },
-  { nom: "=panel", description: "Raccourci direct vers `&panel` > Vocaux (configuration du salon générateur) — droit `server.voice.manage`." },
+  { nom: "=disconnect <@membre>", description: "Expulse un membre du vocal (identique à `&voicekick`)." },
+  { nom: "=move <@membre> #salon", description: "Déplace un membre vers un salon vocal (identique à `&mv`)." },
   { nom: "=add <@membre>", description: "Sans rapport avec le vocal — octroi de permissions individuelles du catalogue (voir `!!help`/`&help` pour le reste des permissions)." },
 ];
 
@@ -34,7 +27,7 @@ function buildVoiceHelpCard() {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "Toutes agissent sur TON salon vocal temporaire actuel (sauf `=add`, sans rapport) — il faut en être le propriétaire ACTUEL."
+      "Agissent sur N'IMPORTE QUEL membre actuellement en vocal (sauf `=add`, sans rapport) — droit `server.voice.manage`."
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));

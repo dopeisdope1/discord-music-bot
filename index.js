@@ -76,8 +76,7 @@ const {
   handleSecurityOwnerTextCommand,
   handleVoiceAliasTextCommand,
 } = require("./utils/serverAdminCommands");
-const voiceOwnerWhitelist = require("./utils/voiceOwnerWhitelistStore");
-// "=help" — écosystème vocal complet sur "=" (voir utils/voiceHelpCommand.js).
+// "=help" — catalogue des commandes vocales sur "=" (voir utils/voiceHelpCommand.js).
 const { handleVoiceHelpTextCommand } = require("./utils/voiceHelpCommand");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -871,12 +870,11 @@ client.on("messageCreate", (message) => {
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
   // "=add <@membre>" — même mécanisme que "&access", préfixe séparé exprès
-  // (voir utils/serverAdminCommands.js::handleAddAccessTextCommand). "owner"
-  // est réservé au vocal sur ce même préfixe, voir les 2 lignes suivantes.
+  // (voir utils/serverAdminCommands.js::handleAddAccessTextCommand).
   handleAddAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
-  // "=owner"/"=lock"/"=unlock"/"=disconnect"/"=mute"/"=unmute"/"=deaf"/
-  // "=undeaf"/"=move"/"=wl"/"=unwl"/"=vc"/"=panel" — écosystème vocal complet
-  // sur "=" (voir utils/serverAdminCommands.js::handleVoiceAliasTextCommand).
+  // "=mute"/"=unmute"/"=deaf"/"=undeaf"/"=disconnect"/"=move" — catalogue de
+  // commandes vocales sur "=" (voir utils/serverAdminCommands.js::
+  // handleVoiceAliasTextCommand, délègue à utils/serverExtra.js).
   handleVoiceAliasTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
   // "=help" — voir utils/voiceHelpCommand.js.
   handleVoiceHelpTextCommand(client, message).catch((err) => console.error("[voiceHelpCommand]", err));
@@ -1032,14 +1030,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       if (personalProtectionStore.isEnabled(newState.guild.id, newState.member.id, "vocalLockAuto")) {
         await created.permissionOverwrites
           .edit(newState.guild.roles.everyone, { Connect: false }, { reason: "Vocal Lock Auto (!!panel)" })
-          .catch(() => {});
-      }
-      // "=wl" (liste de confiance PERMANENTE, voir utils/voiceOwnerWhitelistStore.js)
-      // — appliquée à CHAQUE nouveau salon de ce propriétaire, contrairement à
-      // "&voc add" qui ne dure que le salon courant.
-      for (const trustedId of voiceOwnerWhitelist.getList(newState.guild.id, newState.member.id)) {
-        await created.permissionOverwrites
-          .edit(trustedId, { ViewChannel: true, Connect: true }, { reason: "Liste de confiance permanente (=wl)" })
           .catch(() => {});
       }
       await setPanelAccess(newState.guild, newState.member.id, true);

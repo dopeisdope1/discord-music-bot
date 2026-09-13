@@ -1,10 +1,13 @@
 /**
- * "=lock"/"=unlock"/"=disconnect"/"=mute"/"=unmute"/"=deaf"/"=undeaf"/"=move"
- * (utils/serverAdminCommands.js) — écosystème vocal sur "=". lock/unlock/
- * disconnect délèguent tels quels à vc() (déjà testé dans scripts/test-
- * voice-control.js) ; mute/unmute/deaf/undeaf/move sont de VRAIES nouvelles
- * actions. Toutes gardent le même garde-fou que "&voc" : seul le
- * propriétaire ACTUEL du salon temporaire peut agir, sur SON salon.
+ * "=mute"/"=unmute"/"=deaf"/"=undeaf"/"=disconnect"/"=move"
+ * (utils/serverAdminCommands.js::handleVoiceAliasTextCommand +
+ * utils/serverExtra.js) — un simple catalogue de commandes de MODÉRATION
+ * VOCALE réelle, chacune agissant sur N'IMPORTE QUEL membre actuellement en
+ * vocal, gardée par le VRAI droit `server.voice.manage` — PAS un système de
+ * propriété de salon vocal temporaire (aucune notion de "ton salon" ici).
+ * "=disconnect"/"=move" délèguent aux commandes déjà existantes et testées
+ * `&voicekick`/`&mv` ; "=mute"/"=unmute"/"=deaf"/"=undeaf" sont neuves mais
+ * suivent EXACTEMENT le même patron (mêmes helpers, même permission).
  *
  * Lancement : node scripts/test-voice-commands.js
  */
@@ -16,9 +19,10 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "voice-commands-test-"));
 process.env.BOT_OWNER_IDS = "";
 
-const { ChannelType } = require("discord.js");
-const serverAdmin = require("../utils/serverAdminCommands");
-const voiceChannels = require("../utils/voiceChannels");
+const { Collection, PermissionsBitField, ChannelType } = require("discord.js");
+const { handleVoiceAliasTextCommand } = require("../utils/serverAdminCommands");
+const permStore = require("../utils/permissions/store");
+const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -32,44 +36,54 @@ async function cas(nom, fn) {
   }
 }
 
-function fakeChannel(id = "vc1") {
-  return {
-    id,
-    type: ChannelType.GuildVoice,
-    permissionOverwrites: { edit: async () => {}, delete: async () => {} },
-  };
+function fakeChannel(id) {
+  return { id, type: ChannelType.GuildVoice, members: new Collection() };
 }
 
 function fakeMember(id, channel) {
-  return {
+  const membre = {
     id,
     user: { id, tag: `${id}#0001` },
     voice: {
+      channel: channel || null,
       channelId: channel?.id || null,
-      channel,
-      disconnect: async function () {
-        this.channelId = null;
-      },
       setMute: async function (v) {
         this._mute = v;
       },
       setDeaf: async function (v) {
         this._deaf = v;
       },
-      setChannel: async function (channelId) {
-        this.channelId = channelId;
+      disconnect: async function () {
+        this.channel = null;
+        this.channelId = null;
+      },
+      setChannel: async function (c) {
+        this.channel = c;
+        this.channelId = c?.id || null;
       },
     },
   };
+  if (channel) channel.members.set(id, membre);
+  return membre;
 }
 
-function fakeMessage({ guildId = "g1", authorId = "owner-1", channel = null, mentionedMember = null } = {}) {
+function fakeMessage({ guildId = "g1", authorId = "staff-1", content, mentionsMember = null, mentionsChannel = null } = {}) {
   const replies = [];
+  const membersMap = new Map();
+  if (mentionsMember) membersMap.set(mentionsMember.id, mentionsMember);
+  const guild = {
+    id: guildId,
+    members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) }, fetch: async (uid) => membersMap.get(uid) || null },
+  };
   return {
+    content,
     author: { id: authorId, bot: false, tag: `${authorId}#0000` },
-    guild: { id: guildId, roles: { everyone: { id: guildId } } },
-    member: fakeMember(authorId, channel),
-    mentions: { members: { first: () => mentionedMember } },
+    guild,
+    member: { id: authorId, guild, roles: { cache: new Collection() }, permissions: new PermissionsBitField() },
+    mentions: {
+      users: mentionsMember ? new Collection([[mentionsMember.id, mentionsMember.user]]) : new Collection(),
+      channels: mentionsChannel ? new Collection([[mentionsChannel.id, mentionsChannel]]) : new Collection(),
+    },
     reply: async (p) => {
       replies.push(p);
       return {};
@@ -78,141 +92,139 @@ function fakeMessage({ guildId = "g1", authorId = "owner-1", channel = null, men
   };
 }
 
+const texte = (msg) => JSON.stringify(msg._replies[0] || {});
+
 (async () => {
-  console.log("\"=lock\"/\"=unlock\"/\"=disconnect\" — délégation directe à vc() :");
+  console.log("Isolation du préfixe \"=\" :");
 
-  await cas("\"=lock\" verrouille réellement le salon (même mécanisme que &voc lock)", async () => {
-    const channel = fakeChannel("vc-lock-1");
-    let overwriteApplique = null;
-    channel.permissionOverwrites.edit = async (t, p) => (overwriteApplique = p);
-    voiceChannels.registerChannel(channel.id, "g1", "owner-1");
-    const msg = fakeMessage({ guildId: "g1", authorId: "owner-1", channel });
-    await serverAdmin.voiceLock(null, msg, []);
-    assert.strictEqual(overwriteApplique?.Connect, false);
+  await cas("le préfixe \"=\" (owner) est bien distinct de \"&\"", () => {
+    const { owner, musicMod } = getPrefixes("g-quelconque");
+    assert.strictEqual(owner, "=");
+    assert.notStrictEqual(owner, musicMod);
   });
 
-  await cas("\"=unlock\" déverrouille réellement le salon", async () => {
-    const channel = fakeChannel("vc-lock-2");
-    let overwriteApplique = null;
-    channel.permissionOverwrites.edit = async (t, p) => (overwriteApplique = p);
-    voiceChannels.registerChannel(channel.id, "g2", "owner-2");
-    const msg = fakeMessage({ guildId: "g2", authorId: "owner-2", channel });
-    await serverAdmin.voiceUnlock(null, msg, []);
-    assert.strictEqual(overwriteApplique?.Connect, null);
+  await cas("mot inconnu sur ce préfixe : silence", async () => {
+    const msg = fakeMessage({ guildId: "g0", content: "=nimportequoi" });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("\"=disconnect @membre\" expulse réellement (même mécanisme que &voc kick)", async () => {
-    const channel = fakeChannel("vc-disc-1");
-    voiceChannels.registerChannel(channel.id, "g3", "owner-3");
-    const cible = fakeMember("cible-3", channel);
-    const msg = fakeMessage({ guildId: "g3", authorId: "owner-3", channel, mentionedMember: cible });
-    await serverAdmin.voiceDisconnect(null, msg, [`<@cible-3>`]);
-    assert.strictEqual(cible.voice.channelId, null);
+  await cas("\"=add\" (autre commande sur ce même préfixe) ne déclenche jamais ce dispatcher vocal", async () => {
+    permStore.grantToUser("g0b", "staff-1", "server.voice.manage");
+    const msg = fakeMessage({ guildId: "g0b", content: "=add <@cible>" });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
   });
+
+  await cas("mauvais préfixe (\"&mute\") ne déclenche jamais ce dispatcher", async () => {
+    permStore.grantToUser("g0c", "staff-1", "server.voice.manage");
+    const msg = fakeMessage({ guildId: "g0c", content: "&mute <@cible>" });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  await cas("message de bot ignoré", async () => {
+    const msg = fakeMessage({ guildId: "g0d", content: "=mute <@cible>" });
+    msg.author.bot = true;
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  // parseTarget() (utils/serverExtra.js) n'accepte qu'une VRAIE mention ou un
+  // identifiant Discord (regex \d{15,25}) — des snowflakes réalistes, pas
+  // des libellés lisibles comme "cible-1".
+  const CIBLE_1 = "400000000000000001";
+  const CIBLE_2 = "400000000000000002";
+  const CIBLE_3 = "400000000000000003";
+  const CIBLE_4 = "400000000000000004";
+  const CIBLE_5 = "400000000000000005";
+  const CIBLE_6 = "400000000000000006";
+  const CIBLE_7 = "400000000000000007";
+  const CIBLE_8 = "400000000000000008";
 
   console.log("\n\"=mute\"/\"=unmute\" — mute vocal Discord natif (PAS le mute-rôle punitif de \"&mute\") :");
 
-  await cas("\"=mute @membre\" mute réellement (voice.setMute(true))", async () => {
-    const channel = fakeChannel("vc-mute-1");
-    voiceChannels.registerChannel(channel.id, "g4", "owner-4");
-    const cible = fakeMember("cible-4", channel);
-    const msg = fakeMessage({ guildId: "g4", authorId: "owner-4", channel, mentionedMember: cible });
-    await serverAdmin.voiceMute(null, msg, [`<@cible-4>`]);
+  await cas("\"=mute @membre\" mute réellement N'IMPORTE QUI en vocal (pas besoin d'un salon \"à soi\")", async () => {
+    permStore.grantToUser("g1", "staff-1", "server.voice.manage");
+    const channel = fakeChannel("chan-1");
+    const cible = fakeMember(CIBLE_1, channel);
+    const msg = fakeMessage({ guildId: "g1", authorId: "staff-1", content: `=mute <@${CIBLE_1}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
     assert.strictEqual(cible.voice._mute, true);
   });
 
   await cas("\"=unmute @membre\" démute réellement", async () => {
-    const channel = fakeChannel("vc-mute-2");
-    voiceChannels.registerChannel(channel.id, "g5", "owner-5");
-    const cible = fakeMember("cible-5", channel);
-    const msg = fakeMessage({ guildId: "g5", authorId: "owner-5", channel, mentionedMember: cible });
-    await serverAdmin.voiceUnmute(null, msg, [`<@cible-5>`]);
+    permStore.grantToUser("g2", "staff-1", "server.voice.manage");
+    const channel = fakeChannel("chan-2");
+    const cible = fakeMember(CIBLE_2, channel);
+    const msg = fakeMessage({ guildId: "g2", authorId: "staff-1", content: `=unmute <@${CIBLE_2}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
     assert.strictEqual(cible.voice._mute, false);
   });
 
-  await cas("\"=mute\" refuse une cible qui n'est pas dans le salon", async () => {
-    const channel = fakeChannel("vc-mute-3");
-    voiceChannels.registerChannel(channel.id, "g6", "owner-6");
-    const cibleAilleurs = fakeMember("cible-6", fakeChannel("autre-salon"));
-    const msg = fakeMessage({ guildId: "g6", authorId: "owner-6", channel, mentionedMember: cibleAilleurs });
-    await serverAdmin.voiceMute(null, msg, [`<@cible-6>`]);
-    assert.strictEqual(cibleAilleurs.voice._mute, undefined);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("n'est pas dans ton salon"));
+  await cas("sans server.voice.manage, \"=mute\" reste silencieux", async () => {
+    const channel = fakeChannel("chan-3");
+    const cible = fakeMember(CIBLE_3, channel);
+    const msg = fakeMessage({ guildId: "g3", authorId: "sans-perm", content: `=mute <@${CIBLE_3}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(cible.voice._mute, undefined);
+  });
+
+  await cas("cible pas en vocal : message informatif, pas de plantage", async () => {
+    permStore.grantToUser("g4", "staff-1", "server.voice.manage");
+    const cible = fakeMember(CIBLE_4, null);
+    const msg = fakeMessage({ guildId: "g4", authorId: "staff-1", content: `=mute <@${CIBLE_4}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.ok(texte(msg).includes("n'est pas en vocal"), texte(msg));
   });
 
   console.log("\n\"=deaf\"/\"=undeaf\" — sourdine vocale native :");
 
-  await cas("\"=deaf @membre\" applique réellement la sourdine (voice.setDeaf(true))", async () => {
-    const channel = fakeChannel("vc-deaf-1");
-    voiceChannels.registerChannel(channel.id, "g7", "owner-7");
-    const cible = fakeMember("cible-7", channel);
-    const msg = fakeMessage({ guildId: "g7", authorId: "owner-7", channel, mentionedMember: cible });
-    await serverAdmin.voiceDeafen(null, msg, [`<@cible-7>`]);
+  await cas("\"=deaf @membre\" applique réellement la sourdine", async () => {
+    permStore.grantToUser("g5", "staff-1", "server.voice.manage");
+    const channel = fakeChannel("chan-5");
+    const cible = fakeMember(CIBLE_5, channel);
+    const msg = fakeMessage({ guildId: "g5", authorId: "staff-1", content: `=deaf <@${CIBLE_5}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
     assert.strictEqual(cible.voice._deaf, true);
   });
 
   await cas("\"=undeaf @membre\" lève réellement la sourdine", async () => {
-    const channel = fakeChannel("vc-deaf-2");
-    voiceChannels.registerChannel(channel.id, "g8", "owner-8");
-    const cible = fakeMember("cible-8", channel);
-    const msg = fakeMessage({ guildId: "g8", authorId: "owner-8", channel, mentionedMember: cible });
-    await serverAdmin.voiceUndeafen(null, msg, [`<@cible-8>`]);
+    permStore.grantToUser("g6", "staff-1", "server.voice.manage");
+    const channel = fakeChannel("chan-6");
+    const cible = fakeMember(CIBLE_6, channel);
+    const msg = fakeMessage({ guildId: "g6", authorId: "staff-1", content: `=undeaf <@${CIBLE_6}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
     assert.strictEqual(cible.voice._deaf, false);
   });
 
-  console.log("\n\"=move @membre\" — déplace (distinct de \"transfer\"=propriété et \"add\"=accès seul) :");
+  console.log("\n\"=disconnect\" — délègue à \"&voicekick\" (déjà écrit/testé) :");
 
-  await cas("déplace réellement un membre connecté ailleurs sur le serveur", async () => {
-    const channel = fakeChannel("vc-move-1");
-    voiceChannels.registerChannel(channel.id, "g9", "owner-9");
-    const cibleAilleurs = fakeMember("cible-9", fakeChannel("autre-salon-9"));
-    const msg = fakeMessage({ guildId: "g9", authorId: "owner-9", channel, mentionedMember: cibleAilleurs });
-    await serverAdmin.voiceMove(null, msg, [`<@cible-9>`]);
-    assert.strictEqual(cibleAilleurs.voice.channelId, channel.id);
+  await cas("\"=disconnect @membre\" expulse réellement du vocal", async () => {
+    permStore.grantToUser("g7", "staff-1", "server.voice.manage");
+    const channel = fakeChannel("chan-7");
+    const cible = fakeMember(CIBLE_7, channel);
+    const msg = fakeMessage({ guildId: "g7", authorId: "staff-1", content: `=disconnect <@${CIBLE_7}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(cible.voice.channel, null);
   });
 
-  await cas("refuse un membre non connecté à AUCUN salon vocal", async () => {
-    const channel = fakeChannel("vc-move-2");
-    voiceChannels.registerChannel(channel.id, "g10", "owner-10");
-    const cibleDeconnectee = fakeMember("cible-10", null);
-    const msg = fakeMessage({ guildId: "g10", authorId: "owner-10", channel, mentionedMember: cibleDeconnectee });
-    await serverAdmin.voiceMove(null, msg, [`<@cible-10>`]);
-    assert.strictEqual(cibleDeconnectee.voice.channelId, null);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("aucun salon vocal"));
-  });
+  console.log("\n\"=move\" — délègue à \"&mv\" (déjà écrit/testé) :");
 
-  await cas("déjà dans le salon : message informatif, pas d'erreur", async () => {
-    const channel = fakeChannel("vc-move-3");
-    voiceChannels.registerChannel(channel.id, "g11", "owner-11");
-    const dejaLa = fakeMember("cible-11", channel);
-    const msg = fakeMessage({ guildId: "g11", authorId: "owner-11", channel, mentionedMember: dejaLa });
-    await serverAdmin.voiceMove(null, msg, [`<@cible-11>`]);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("déjà"));
-  });
-
-  console.log("\nGarde-fou commun (seul le propriétaire ACTUEL, sur SON salon) :");
-
-  await cas("\"=mute\" refusé pour un invité qui n'est pas le propriétaire", async () => {
-    const channel = fakeChannel("vc-garde-1");
-    voiceChannels.registerChannel(channel.id, "g12", "vrai-owner-12");
-    const cible = fakeMember("cible-12", channel);
-    const msg = fakeMessage({ guildId: "g12", authorId: "invite-12", channel, mentionedMember: cible });
-    await serverAdmin.voiceMute(null, msg, [`<@cible-12>`]);
-    assert.strictEqual(cible.voice._mute, undefined);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("Seul le propriétaire"));
-  });
-
-  await cas("\"=move\" hors de tout salon vocal : message d'erreur clair", async () => {
-    const msg = fakeMessage({ guildId: "g13", authorId: "owner-13", channel: null });
-    await serverAdmin.voiceMove(null, msg, [`<@cible-13>`]);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("salon vocal temporaire"));
-  });
-
-  await cas("\"=lock\" sur un salon NON temporaire est refusé", async () => {
-    const channel = fakeChannel("vc-nontemp-1"); // jamais enregistré
-    const msg = fakeMessage({ guildId: "g14", authorId: "owner-14", channel });
-    await serverAdmin.voiceLock(null, msg, []);
-    assert.ok(JSON.stringify(msg._replies[0]).includes("pas un salon temporaire"));
+  await cas("\"=move @membre #salon\" déplace réellement vers le salon indiqué", async () => {
+    permStore.grantToUser("g8", "staff-1", "server.voice.manage");
+    const depart = fakeChannel("chan-depart-8");
+    const arrivee = fakeChannel("chan-arrivee-8");
+    const cible = fakeMember(CIBLE_8, depart);
+    const msg = fakeMessage({
+      guildId: "g8",
+      authorId: "staff-1",
+      content: `=move <@${CIBLE_8}> #arrivee`,
+      mentionsMember: cible,
+      mentionsChannel: arrivee,
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(cible.voice.channel, arrivee);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

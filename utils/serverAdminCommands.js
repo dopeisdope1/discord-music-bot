@@ -31,7 +31,6 @@ const guardConfig = require("./guard/config");
 const guardWhitelist = require("./guard/whitelist");
 const deroStore = require("./deroStore");
 const voiceChannels = require("./voiceChannels");
-const voiceOwnerWhitelist = require("./voiceOwnerWhitelistStore");
 const { checkBotPermission, report } = require("./moderation/actions");
 const { parseDuration } = require("./moderationCommands");
 const roleLimitStore = require("./roleLimitStore");
@@ -1292,222 +1291,27 @@ async function vc(client, message, args) {
 
 // --- Écosystème VOCAL sur "=" (architecture 3 préfixes : & = modération,
 // !! = sécurité, = = vocal) — voir index.js pour le dispatch du préfixe.
-// "=lock"/"=unlock"/"=disconnect" délèguent tels quels à vc() (aucune
-// nouvelle logique) ; "=mute"/"=unmute"/"=deaf"/"=undeaf"/"=move" sont de
-// VRAIES nouvelles actions (aucun équivalent "&voc" existant) ; "=owner"
-// reprend le transfert de "&voc transfer" avec la présentation "Owner" ;
-// "=wl"/"=unwl" comblent un vrai manque : "&voc add" ne dure que le temps
-// du salon COURANT, cette liste est appliquée à CHAQUE salon futur du même
-// propriétaire (voir index.js, hook de création de salon temporaire).
-// Toutes gardent le même garde-fou que "&voc" : seul le propriétaire ACTUEL
-// (canManageVoiceChannel, sans bypass owner/sys) peut agir, sur SON salon.
-
-const voiceLock = (client, message, args) => vc(client, message, ["lock", ...args]);
-const voiceUnlock = (client, message, args) => vc(client, message, ["unlock", ...args]);
-const voiceDisconnect = (client, message, args) => vc(client, message, ["kick", ...args]);
-
-/**
- * Vérifie que l'auteur est dans un salon vocal temporaire dont il est
- * ACTUELLEMENT propriétaire — même triple garde que le début de vc().
- * @returns {import('discord.js').VoiceBasedChannel|null} le salon, ou null (une erreur a déjà été répondue).
- */
-async function ownedTempChannelOrReply(message) {
-  const channel = message.member.voice.channel;
-  if (!channel) {
-    await reply(message, "error", "Tu dois être dans un salon vocal temporaire.");
-    return null;
-  }
-  const info = voiceChannels.getChannelInfo(channel.id);
-  if (!info) {
-    await reply(message, "error", "Ce salon vocal n'est pas un salon temporaire géré par le bot.");
-    return null;
-  }
-  if (!canManageVoiceChannel(message.member, channel)) {
-    await reply(message, "error", "Seul le propriétaire de ce salon peut le gérer.");
-    return null;
-  }
-  return channel;
-}
-
-/** "=mute"/"=unmute" — mute vocal Discord natif (PAS le mute-rôle punitif de "&mute", aucun rapport). */
-function voiceSetMute(actif) {
-  return async function (client, message, args) {
-    const channel = await ownedTempChannelOrReply(message);
-    if (!channel) return;
-    const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", `Indique un membre : \`${actif ? "mute" : "unmute"} @membre\`.`);
-    if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre n'est pas dans ton salon.");
-    await target.voice.setMute(actif, `${actif ? "Mute" : "Démute"} vocal par ${message.author.tag}`).catch(() => {});
-    return reply(message, "success", `**${target.user.tag}** ${actif ? "muté" : "démuté"} dans ce salon.`);
-  };
-}
-const voiceMute = voiceSetMute(true);
-const voiceUnmute = voiceSetMute(false);
-
-/** "=deaf"/"=undeaf" — sourdine vocale Discord native. */
-function voiceSetDeaf(actif) {
-  return async function (client, message, args) {
-    const channel = await ownedTempChannelOrReply(message);
-    if (!channel) return;
-    const target = message.mentions.members?.first();
-    if (!target) return reply(message, "error", `Indique un membre : \`${actif ? "deaf" : "undeaf"} @membre\`.`);
-    if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre n'est pas dans ton salon.");
-    await target.voice.setDeaf(actif, `${actif ? "Sourdine" : "Fin de sourdine"} par ${message.author.tag}`).catch(() => {});
-    return reply(message, "success", `**${target.user.tag}** ${actif ? "en sourdine" : "n'est plus en sourdine"} dans ce salon.`);
-  };
-}
-const voiceDeafen = voiceSetDeaf(true);
-const voiceUndeafen = voiceSetDeaf(false);
-
-/**
- * "=move <@membre>" — déplace un membre connecté QUELQUE PART sur le
- * serveur DANS ton salon (distinct de "transfer" qui donne la PROPRIÉTÉ, et
- * de "add" qui donne juste la permission sans forcer le déplacement).
- */
-async function voiceMove(client, message, args) {
-  const channel = await ownedTempChannelOrReply(message);
-  if (!channel) return;
-  const target = message.mentions.members?.first();
-  if (!target) return reply(message, "error", "Indique un membre : `move @membre`.");
-  if (!target.voice.channelId) return reply(message, "error", "Ce membre n'est connecté à aucun salon vocal.");
-  if (target.voice.channelId === channel.id) return reply(message, "info", `**${target.user.tag}** est déjà dans ce salon.`);
-  await target.voice.setChannel(channel.id, `Déplacé par ${message.author.tag}`).catch(() => {});
-  return reply(message, "success", `**${target.user.tag}** déplacé dans ton salon.`);
-}
-
-/**
- * Carte "Owner" du transfert vocal — même présentation que buildOwnerAccessCard
- * (titre, en-tête, liste numérotée) mais sur une base différente : devenir
- * propriétaire d'un salon vocal n'est pas un octroi de permissions du
- * catalogue (aucune clé n'existe pour ça), c'est un contrôle TOUT-OU-RIEN —
- * la liste ci-dessous énumère donc les VRAIES actions que ce statut débloque
- * (toutes, sans exception, jamais une liste inventée ou partielle).
- */
-function buildVoiceOwnerCard(channel, newOwnerTag, transferePar) {
-  const controles = [
-    "Verrouiller/déverrouiller le salon (`=lock`/`=unlock`)",
-    "Renommer le salon (`&voc rename`)",
-    "Changer la limite de places (`&voc limit`)",
-    "Expulser un membre (`=disconnect`)",
-    "Ajouter/retirer un accès (`&voc add`/`&voc remove`)",
-    "Muter/démuter un membre (`=mute`/`=unmute`)",
-    "Mettre/lever la sourdine d'un membre (`=deaf`/`=undeaf`)",
-    "Déplacer un membre dans le salon (`=move`)",
-    "Gérer la liste de confiance permanente (`=wl`/`=unwl`)",
-    "Céder la propriété à quelqu'un d'autre (`=owner`)",
-  ];
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [`**Salon** — <#${channel.id}>`, `**Statut** — ${EMOJI.CHECK} Propriétaire`, `**Transféré par** — ${transferePar}`].join("\n")
-    )
-  );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [`**Contrôles disponibles — ${controles.length}**`, "", ...controles.map((c, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${c}`)].join(
-        "\n"
-      )
-    )
-  );
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-/** "=owner <@membre>" — transfert de propriété, même mécanique que "&voc transfer", présentation "Owner". */
-async function voiceOwnerTransfer(client, message, args) {
-  const channel = await ownedTempChannelOrReply(message);
-  if (!channel) return;
-  const target = message.mentions.members?.first();
-  if (!target) return reply(message, "error", "Indique un membre : `owner @membre`.");
-  if (target.voice.channelId !== channel.id) return reply(message, "error", "Ce membre doit être dans ton salon pour en devenir propriétaire.");
-
-  const previousOwnerId = voiceChannels.getChannelInfo(channel.id)?.ownerId;
-  voiceChannels.registerChannel(channel.id, message.guild.id, target.id);
-  if (previousOwnerId) await setPanelAccess(message.guild, previousOwnerId, false);
-  await setPanelAccess(message.guild, target.id, true);
-
-  return message.reply(buildVoiceOwnerCard(channel, target.user.tag, message.author.tag));
-}
-
-/** "=wl [@membre]" — liste, ou ajoute à, la liste de confiance PERMANENTE du propriétaire. */
-async function voiceWhitelistAdd(client, message, args) {
-  const channel = await ownedTempChannelOrReply(message);
-  if (!channel) return;
-  const target = message.mentions.members?.first();
-  const rawId = args.find((a) => /^\d{15,25}$/.test(a));
-  if (!target && !rawId) {
-    const liste = voiceOwnerWhitelist.getList(message.guild.id, message.author.id);
-    return reply(message, "info", liste.length ? liste.map((id) => `<@${id}>`).join(", ") : "*Liste vide.*");
-  }
-  const id = target?.id || rawId;
-  const ajoute = voiceOwnerWhitelist.add(message.guild.id, message.author.id, id);
-  return reply(
-    message,
-    ajoute ? "success" : "info",
-    ajoute
-      ? `<@${id}> ajouté à ta liste de confiance — appliqué automatiquement à chacun de tes futurs salons vocaux.`
-      : `<@${id}> y était déjà.`
-  );
-}
-
-/** "=unwl <@membre>" — retire de la liste de confiance permanente. */
-async function voiceWhitelistRemove(client, message, args) {
-  const channel = await ownedTempChannelOrReply(message);
-  if (!channel) return;
-  const target = message.mentions.members?.first();
-  const rawId = args.find((a) => /^\d{15,25}$/.test(a));
-  if (!target && !rawId) return reply(message, "error", "Indique un membre : `unwl @membre`.");
-  const id = target?.id || rawId;
-  const retire = voiceOwnerWhitelist.remove(message.guild.id, message.author.id, id);
-  return reply(message, retire ? "success" : "info", retire ? `<@${id}> retiré de ta liste de confiance.` : `<@${id}> n'y était pas.`);
-}
-
-/** "=vc" — raccourci texte vers le même centre de contrôle que le salon-panneau partagé. */
-async function voiceQuickPanel(client, message) {
-  const channel = await ownedTempChannelOrReply(message);
-  if (!channel) return;
-  await message.reply(buildVoiceControlCard());
-}
-
-/**
- * "=panel" — raccourci direct vers la section "Vocaux" déjà existante de
- * &panel (aucune UI dupliquée). Require PARESSEUX exprès (à l'intérieur de
- * la fonction, pas en haut du fichier) : utils/configPanel.js requiert déjà
- * CE fichier (roleAdmin) — un require en haut de fichier créerait un cycle
- * où `buildConfigPanel` vaudrait `undefined` à l'exécution (configPanel.js
- * n'aurait pas fini de se charger au moment du require) ; lu ici, au moment
- * de l'APPEL plutôt que du chargement du module, il résout correctement.
- */
-async function voicePanelShortcut(client, message) {
-  if (!can(message.member, "server.voice.manage")) return;
-  const { buildConfigPanel } = require("./configPanel");
-  await message.reply(buildConfigPanel(message.guild, "voice", message.member));
-}
-
-const VOICE_ALIASES = {
-  lock: voiceLock,
-  unlock: voiceUnlock,
-  disconnect: voiceDisconnect,
-  mute: voiceMute,
-  unmute: voiceUnmute,
-  deaf: voiceDeafen,
-  undeaf: voiceUndeafen,
-  move: voiceMove,
-  owner: voiceOwnerTransfer,
-  wl: voiceWhitelistAdd,
-  unwl: voiceWhitelistRemove,
-  vc: voiceQuickPanel,
-  panel: voicePanelShortcut,
-};
+// Un simple catalogue de commandes vocales RÉELLES, chacune une action de
+// modération vocale ponctuelle sur N'IMPORTE QUEL membre en vocal — PAS un
+// nouveau système de propriété/salons temporaires (revert explicite d'une
+// première version qui était partie dans cette direction, à tort). "=kick"/
+// "=move" délèguent aux commandes déjà existantes et testées
+// (utils/serverExtra.js::voicekick/mv, même permission server.voice.manage) ;
+// "=mute"/"=unmute"/"=deaf"/"=undeaf" (utils/serverExtra.js) sont neufs mais
+// suivent exactement le même patron — même permission, mêmes helpers
+// (parseTarget/fetchTargetOrReply), aucune notion de salon "à soi".
 
 /**
  * Un seul dispatcher pour tous les mots vocaux sur "=" ci-dessus — même
  * patron que utils/securityAliases.js::handleSecurityAliasTextCommand.
  * "=add" (octroi de permissions, sans rapport avec le vocal) reste géré par
- * handleAddAccessTextCommand, un handler indépendant : "add" n'apparaît pas
- * dans VOICE_ALIASES, donc ce dispatcher l'ignore naturellement.
+ * handleAddAccessTextCommand, un handler indépendant. Require PARESSEUX
+ * exprès (à l'intérieur de la fonction) : utils/serverExtra.js requiert déjà
+ * CE fichier (requestConfirmation) — un require en haut de fichier créerait
+ * un cycle où les fonctions vocales vaudraient `undefined` à l'exécution
+ * (serverExtra.js n'aurait pas fini de se charger au moment du require) ;
+ * lu ici, au moment de l'APPEL plutôt que du chargement du module, il
+ * résout correctement.
  */
 async function handleVoiceAliasTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
@@ -1516,6 +1320,15 @@ async function handleVoiceAliasTextCommand(client, message) {
   if (!PREFIX || !content.startsWith(PREFIX)) return;
 
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
+  const serverExtra = require("./serverExtra");
+  const VOICE_ALIASES = {
+    mute: serverExtra.voicemute,
+    unmute: serverExtra.voiceunmute,
+    deaf: serverExtra.voicedeaf,
+    undeaf: serverExtra.voiceundeaf,
+    disconnect: serverExtra.voicekick,
+    move: serverExtra.mv,
+  };
   const handler = VOICE_ALIASES[(cmd || "").toLowerCase()];
   if (!handler) return; // mot inconnu sur ce préfixe (ou "add") : silence
 
@@ -1707,19 +1520,6 @@ module.exports = {
   voicehub,
   vc,
   voiceHelp,
-  voiceLock,
-  voiceUnlock,
-  voiceDisconnect,
-  voiceMute,
-  voiceUnmute,
-  voiceDeafen,
-  voiceUndeafen,
-  voiceMove,
-  voiceOwnerTransfer,
-  voiceWhitelistAdd,
-  voiceWhitelistRemove,
-  voiceQuickPanel,
-  voicePanelShortcut,
   handleVoiceAliasTextCommand,
   buildVoiceControlCard,
   buildVoiceWelcomeCard,

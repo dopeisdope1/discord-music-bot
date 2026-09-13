@@ -71,22 +71,17 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
-    for (const attendu of [
-      "=owner",
-      "=lock",
-      "=unlock",
-      "=disconnect",
-      "=mute",
-      "=unmute",
-      "=deaf",
-      "=undeaf",
-      "=move",
-      "=wl",
-      "=unwl",
-      "=vc",
-      "=panel",
-    ]) {
+    for (const attendu of ["=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=move", "server.voice.manage"]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
+    }
+  });
+
+  await cas("ne mentionne PLUS de système de salon/propriété (revert explicite, pas la demande)", async () => {
+    const msg = fakeMessage("=help");
+    await handleVoiceHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const mot of ["=owner", "=lock", "=unlock", "=wl", "=unwl", "=vc", "=panel", "propriét"]) {
+      assert.ok(!texte.includes(mot), `"${mot}" ne devrait plus apparaître : ${texte}`);
     }
   });
 
