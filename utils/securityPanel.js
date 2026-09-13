@@ -32,6 +32,7 @@ const automod = require("./automod/antiSpam");
 const antiLink = require("./automod/antiLink");
 const antiMention = require("./automod/antiMention");
 const badWords = require("./automod/badWords");
+const antiScam = require("./automod/antiScam");
 
 // "!!secur" — TOUT ce qui concerne la sécurité DU SERVEUR (par opposition à
 // "!!panel", strictement personnel — voir utils/personalProtection.js).
@@ -121,6 +122,8 @@ function corpsProtection(guildId) {
     "",
     `> **Mots interdits** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`,
     "",
+    `> **Anti-scam** : ${antiScam.getConfig(guildId).enabled ? "activé" : "désactivé"} (faux-nitro, faux Steam)`,
+    "",
     `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
   ].join("\n");
 }
@@ -142,6 +145,7 @@ function controlesProtection(guild, member, state) {
     { value: "badwords_toggle", label: "Mots interdits : activer/désactiver" },
     { value: "badwords_add", label: "Mots interdits : ajouter un mot" },
     ...(words.length ? [{ value: "badwords_remove", label: "Mots interdits : retirer un mot" }] : []),
+    { value: "scam_toggle", label: "Anti-scam : activer/désactiver" },
     ...(can(member, "protection.whitelist")
       ? [
           { value: "whitelist_add", label: "Whitelist : ajouter quelqu'un" },
@@ -479,6 +483,10 @@ async function handleSecurityInteraction(interaction) {
     }
     if (choice === "badwords_toggle") {
       badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled);
+      return goto("protection");
+    }
+    if (choice === "scam_toggle") {
+      antiScam.setEnabled(guildId, !antiScam.getConfig(guildId).enabled);
       return goto("protection");
     }
     // badwords_add / badwords_remove / whitelist_add / whitelist_remove : révèle le contrôle correspondant.

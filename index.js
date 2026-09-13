@@ -55,6 +55,7 @@ const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
 const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
 const { checkMessage: checkAntiLink } = require("./utils/automod/antiLink");
+const { checkMessage: checkAntiScam } = require("./utils/automod/antiScam");
 const { checkMessage: checkAntiMention } = require("./utils/automod/antiMention");
 const { checkMessage: checkBadWords } = require("./utils/automod/badWords");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
@@ -855,6 +856,7 @@ client.on("messageCreate", (message) => {
   // Anti-lien, anti-mass-mention, mots interdits — même famille d'automod
   // léger, désactivés par défaut par serveur (voir &panel > Protection).
   checkAntiLink(client, message).catch((err) => console.error("[antiLink]", err));
+  checkAntiScam(client, message).catch((err) => console.error("[antiScam]", err));
   checkAntiMention(client, message).catch((err) => console.error("[antiMention]", err));
   checkBadWords(client, message).catch((err) => console.error("[badWords]", err));
   // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut

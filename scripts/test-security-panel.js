@@ -27,6 +27,7 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const securityPanel = require("../utils/securityPanel");
 const permStore = require("../utils/permissions/store");
 const automod = require("../utils/automod/antiSpam");
+const antiScam = require("../utils/automod/antiScam");
 const antiLink = require("../utils/automod/antiLink");
 const antiMention = require("../utils/automod/antiMention");
 const badWords = require("../utils/automod/badWords");
@@ -194,6 +195,7 @@ function labelsAction(payload, customIdSuffix) {
       "Anti-lien : salons où les liens restent autorisés",
       "Anti-mass-mention : durée du timeout",
       "Mots interdits : ajouter un mot",
+      "Anti-scam : activer/désactiver",
     ]) {
       assert.ok(labels.includes(attendu), `"${attendu}" manque : ${labels.join(" | ")}`);
     }
@@ -233,6 +235,10 @@ function labelsAction(payload, customIdSuffix) {
     const avantWords = badWords.getConfig(gid).enabled;
     await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["badwords_toggle"] }));
     assert.strictEqual(badWords.getConfig(gid).enabled, !avantWords);
+
+    const avantScam = antiScam.getConfig(gid).enabled;
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["scam_toggle"] }));
+    assert.strictEqual(antiScam.getConfig(gid).enabled, !avantScam);
   });
 
   await cas("les seuils/durées défilent par paliers valides", async () => {
