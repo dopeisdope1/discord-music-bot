@@ -154,12 +154,88 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
 }
 
 /**
- * &access <@membre|id> — ouvre le panneau d'octroi de permissions
- * individuelles pour CE membre. `label` ne sert qu'au message d'erreur : "="
- * owner" (préfixe séparé, voir handleOwnerAccessTextCommand) délègue ici
- * mais doit rappeler SA propre syntaxe, pas "access @membre".
+ * Carte de "=owner" — présentation demandée explicitement (titre "Owner",
+ * "Utilisateur"/"Statut"/"Consulté par" en évidence, liste numérotée des
+ * accès, comme la capture d'un autre bot). Même mécanisme de fond que
+ * buildAccessCard (mêmes permStore/permCatalog, catégorie -> clé) : "Statut"
+ * reflète l'état RÉEL d'accès individuel de ce membre — jamais le mot
+ * "Owner" tel quel, qui désignerait à tort le VRAI rang propriétaire du bot
+ * (utils/accessStore.js), refusé plus haut dans handleOwnerAccessTextCommand.
  */
-async function access(client, message, args, label = "access") {
+function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, category = null) {
+  const granted = permStore.getUserGrants(guildId, memberId);
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        `**Utilisateur** — <@${memberId}>`,
+        `**Statut** — ${granted.length ? EMOJI.CHECK : EMOJI.CROSS} ${granted.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
+        `**Consulté par** — ${consultePar}`,
+      ].join("\n")
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        `**Accès attribués — ${granted.length}**`,
+        "",
+        granted.length
+          ? granted.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${permCatalog.label(key)}`).join("\n")
+          : "*Aucun accès individuel pour l'instant.*",
+      ].join("\n")
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`srv:ownercat:${memberId}`)
+        .setPlaceholder("Choisir une catégorie")
+        .addOptions(
+          permCatalog
+            .byCategory()
+            .map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
+        )
+    )
+  );
+
+  const groupeOuvert = category && permCatalog.byCategory().find((g) => g.category === category);
+  if (groupeOuvert) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`srv:ownerkey:${memberId}:${category}`)
+          .setPlaceholder(`Ajouter ou retirer un accès — ${groupeOuvert.label}`)
+          .addOptions(
+            groupeOuvert.permissions.slice(0, 25).map((p) =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(p.label.slice(0, 100))
+                .setValue(p.key)
+                .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
+            )
+          )
+      )
+    );
+  }
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/**
+ * &access <@membre|id> — ouvre le panneau d'octroi de permissions
+ * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
+ * "=owner" (préfixe séparé, voir handleOwnerAccessTextCommand) délègue ici
+ * mais doit rappeler SA propre syntaxe ; `ownerStyle` fait poster la carte
+ * "Owner" (buildOwnerAccessCard) au lieu de la carte générique — même
+ * mécanisme de fond, présentation différente.
+ */
+async function access(client, message, args, label = "access", ownerStyle = false) {
   if (!can(message.member, "panel.permissions.manage")) return;
 
   const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
@@ -174,6 +250,9 @@ async function access(client, message, args, label = "access") {
     return reply(message, "info", `${target.user.tag} est déjà propriétaire/rang sys — accès complet, rien à accorder en plus.`);
   }
 
+  if (ownerStyle) {
+    return message.reply(buildOwnerAccessCard(message.guild.id, target.id, target.user.tag, message.author.tag));
+  }
   await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
 }
 
@@ -195,7 +274,7 @@ async function handleOwnerAccessTextCommand(client, message) {
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
   if ((cmd || "").toLowerCase() !== "owner") return; // mot inconnu sur ce préfixe : silence
 
-  return access(client, message, args, "owner");
+  return access(client, message, args, "owner", true);
 }
 
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
@@ -261,6 +340,30 @@ async function handleServerAdminInteraction(interaction) {
     if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
     else permStore.grantToUser(interaction.guild.id, memberId, key);
     return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
+  }
+
+  // Panneau "=owner <@membre>" (voir buildOwnerAccessCard) — même mécanisme
+  // que "accesscat"/"accesskey" ci-dessus, présentation "Owner" séparée.
+  // "Consulté par" reflète TOUJOURS qui clique maintenant, pas qui a tapé
+  // "=owner" au départ — aucun état à porter dans le customId pour ça.
+  if (action === "ownercat" || action === "ownerkey") {
+    if (!can(interaction.member, "panel.permissions.manage")) {
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    }
+    const memberId = idKind;
+    const target = await interaction.guild.members.fetch(memberId).catch(() => null);
+    const tag = target?.user?.tag || `<@${memberId}>`;
+
+    if (action === "ownercat") {
+      return interaction.update(buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, interaction.values[0]));
+    }
+
+    const category = extra;
+    const key = interaction.values[0];
+    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
+    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
+    else permStore.grantToUser(interaction.guild.id, memberId, key);
+    return interaction.update(buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category));
   }
 
   const LISTS = {
