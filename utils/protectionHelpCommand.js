@@ -2,33 +2,63 @@ const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacing
 const { getPrefixes } = require("./prefixStore");
 
 // "!!help" — index des commandes sur le préfixe "!!" (utils/
-// personalProtection.js, utils/securityPanel.js, utils/confessions.js,
-// utils/setClearCommand.js), qui n'apparaissent volontairement PAS dans
-// "&help" (utils/helpPanel.js, préfixe "&", commandes de gestion — demande
-// explicite : "&help pour la gestion, !!help pour la sécurité"). Purement
-// informatif, aucune interaction : une simple carte texte à jour à la main
-// si une commande "!!" s'ajoute.
+// personalProtection.js, utils/securityPanel.js, utils/securityAliases.js,
+// utils/serverAdminCommands.js::handleSecurityOwnerTextCommand, utils/
+// confessions.js, utils/setClearCommand.js), qui n'apparaissent
+// volontairement PAS dans "&help" (utils/helpPanel.js, préfixe "&" —
+// architecture 3 préfixes : & = modération, !! = sécurité, = = vocal).
+// Purement informatif, aucune interaction : une simple carte texte à jour
+// à la main si une commande "!!" s'ajoute. Groupé en 2 : "Sécurité serveur"
+// (le vrai écosystème sécurité demandé) et "Protection personnelle"
+// (!!panel — self-service par membre, distincte de la sécurité serveur,
+// mais reste sur ce même préfixe : rien à casser en la déplaçant).
 const COMMANDES = [
-  { nom: "!!panel", description: "Tes protections personnelles (anti-ban/kick/timeout forcés...) — aucune permission requise." },
   {
+    groupe: "Sécurité serveur",
     nom: "!!secur",
-    description: "Sécurité serveur + anti-nuke — droit `protection.automod` et/ou `protection.guard.manage`.",
+    description: "Panneau de sécurité serveur + anti-nuke — droit `protection.automod` et/ou `protection.guard.manage`.",
+  },
+  { groupe: "Sécurité serveur", nom: "!!security", description: "Alias de `!!secur` — ouvre exactement le même panneau." },
+  { groupe: "Sécurité serveur", nom: "!!owner <@membre>", description: "Accorde/retire des permissions de sécurité individuelles (catégorie Protection) — droit `panel.permissions.manage`." },
+  { groupe: "Sécurité serveur", nom: "!!wl [@membre]", description: "Whitelist ANTI-NUKE (distincte de `!!whitelist`) — droit `protection.guard.manage`." },
+  { groupe: "Sécurité serveur", nom: "!!unwl <@membre>", description: "Retire de la whitelist anti-nuke — droit `protection.guard.manage`." },
+  { groupe: "Sécurité serveur", nom: "!!whitelist", description: "Whitelist ANTI-SPAM (distincte de `!!wl`) — droit `protection.whitelist`." },
+  { groupe: "Sécurité serveur", nom: "!!unwhitelist <@membre>", description: "Retire de la whitelist anti-spam — droit `protection.whitelist`." },
+  { groupe: "Sécurité serveur", nom: "!!antinuke", description: "Configure l'anti-nuke (identique à `!!antiraid`) — droit `protection.guard.manage`." },
+  { groupe: "Sécurité serveur", nom: "!!antiraid", description: "Synonyme de `!!antinuke` — même moteur, aucun système parallèle." },
+  { groupe: "Sécurité serveur", nom: "!!antilink [on/off]", description: "Anti-lien — droit `protection.automod`." },
+  { groupe: "Sécurité serveur", nom: "!!antispam [on/off]", description: "Anti-spam/anti-flood — droit `protection.automod`." },
+  { groupe: "Sécurité serveur", nom: "!!lockdown", description: "Verrouille tous les salons texte du serveur — droit `channels.lockdown`." },
+  {
+    groupe: "Protection personnelle",
+    nom: "!!panel",
+    description: "Tes protections personnelles (anti-ban/kick/timeout forcés...) — aucune permission requise.",
   },
   {
+    groupe: "Autres",
     nom: "!!confess",
     description:
       "Confessions anonymes. `setup` réservé à `server.confessions.setup`, `validation` à `server.confessions.validation`, Accepter/Refuser à `server.confessions.manage`.",
   },
-  { nom: "!!setclear", description: "Configure le nettoyage automatique (`<nom> clear`) — droit `server.selfclear.manage`." },
+  { groupe: "Autres", nom: "!!setclear", description: "Configure le nettoyage automatique (`<nom> clear`) — droit `server.selfclear.manage`." },
 ];
 
 function buildProtectionHelpCard() {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🛡️ Commandes \"!!\""));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(COMMANDES.map((c) => `**${c.nom}** — ${c.description}`).join("\n\n"))
-  );
+
+  const groupes = [...new Set(COMMANDES.map((c) => c.groupe))];
+  for (const groupe of groupes) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [
+          `**${groupe}**`,
+          ...COMMANDES.filter((c) => c.groupe === groupe).map((c) => `**${c.nom}** — ${c.description}`),
+        ].join("\n")
+      )
+    );
+  }
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 

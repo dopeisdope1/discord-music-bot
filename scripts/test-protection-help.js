@@ -62,7 +62,7 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     assert.strictEqual(msg._channelSends.length, 1);
   });
 
-  await cas("mentionne les 4 vraies commandes \"!!\" avec leur permission réelle", async () => {
+  await cas("mentionne les commandes \"!!\" historiques avec leur permission réelle", async () => {
     const msg = fakeMessage("!!help");
     await handleProtectionHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
@@ -80,6 +80,40 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     ]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
     }
+  });
+
+  console.log("\n!!help — écosystème sécurité (chantier 2/3) :");
+
+  await cas("mentionne les nouveaux alias sécurité, groupés sous \"Sécurité serveur\"", async () => {
+    const msg = fakeMessage("!!help");
+    await handleProtectionHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const attendu of [
+      "Sécurité serveur",
+      "!!security",
+      "!!owner",
+      "!!wl",
+      "!!unwl",
+      "!!whitelist",
+      "!!unwhitelist",
+      "!!antinuke",
+      "!!antiraid",
+      "!!antilink",
+      "!!antispam",
+      "!!lockdown",
+      "panel.permissions.manage",
+      "protection.whitelist",
+      "channels.lockdown",
+    ]) {
+      assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
+    }
+  });
+
+  await cas("\"!!panel\" reste groupé sous \"Protection personnelle\", pas confondu avec la sécurité serveur", async () => {
+    const msg = fakeMessage("!!help");
+    await handleProtectionHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    assert.ok(texte.includes("Protection personnelle"), texte);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

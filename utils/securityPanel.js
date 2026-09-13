@@ -632,4 +632,4 @@ async function handleSecurityInteraction(interaction) {
   }
 }
 
-module.exports = { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID };
+module.exports = { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID, buildSecurityPanel, estAutorise };

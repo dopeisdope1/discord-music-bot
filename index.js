@@ -39,6 +39,10 @@ const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEA
 // "!!secur" — sécurité serveur + anti-nuke (voir utils/securityPanel.js),
 // scindé de !!panel (strictement personnel, voir utils/personalProtection.js).
 const { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID: SECUR_CUSTOM_ID } = require("./utils/securityPanel");
+// Écosystème sécurité complet sur "!!" (wl/unwl/whitelist/unwhitelist/
+// antinuke/antiraid/antilink/antispam/security/lockdown) — voir
+// utils/securityAliases.js, alias additifs vers les fonctions "&" existantes.
+const { handleSecurityAliasTextCommand } = require("./utils/securityAliases");
 // "!!help" — index des commandes "!!" (voir utils/protectionHelpCommand.js).
 const { handleProtectionHelpTextCommand } = require("./utils/protectionHelpCommand");
 const {
@@ -856,6 +860,10 @@ client.on("messageCreate", (message) => {
   handleSetClearTextCommand(client, message).catch((err) => console.error("[setClearCommand]", err));
   // "!!secur" — voir utils/securityPanel.js.
   handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
+  // "!!wl"/"!!unwl"/"!!whitelist"/"!!unwhitelist"/"!!antinuke"/"!!antiraid"/
+  // "!!antilink"/"!!antispam"/"!!security"/"!!lockdown" — voir
+  // utils/securityAliases.js.
+  handleSecurityAliasTextCommand(client, message).catch((err) => console.error("[securityAliases]", err));
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
   // "=add <@membre>" — même mécanisme que "&access", préfixe séparé exprès
