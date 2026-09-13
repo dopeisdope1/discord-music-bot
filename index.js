@@ -68,7 +68,8 @@ const {
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
   setPanelAccess,
-  handleOwnerAccessTextCommand,
+  handleAddAccessTextCommand,
+  handleOwnerVoiceTextCommand,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -857,9 +858,12 @@ client.on("messageCreate", (message) => {
   handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
-  // "=owner <@membre>" — même mécanisme que "&access", préfixe séparé exprès
-  // (voir utils/serverAdminCommands.js::handleOwnerAccessTextCommand).
-  handleOwnerAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
+  // "=add <@membre>" — même mécanisme que "&access", préfixe séparé exprès
+  // (voir utils/serverAdminCommands.js::handleAddAccessTextCommand).
+  handleAddAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
+  // "=owner <@membre>" — transfère la propriété de TON salon vocal temporaire
+  // (voir utils/serverAdminCommands.js::handleOwnerVoiceTextCommand).
+  handleOwnerVoiceTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
   // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.

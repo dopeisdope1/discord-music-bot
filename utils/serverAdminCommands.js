@@ -160,7 +160,7 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
  * buildAccessCard (mêmes permStore/permCatalog, catégorie -> clé) : "Statut"
  * reflète l'état RÉEL d'accès individuel de ce membre — jamais le mot
  * "Owner" tel quel, qui désignerait à tort le VRAI rang propriétaire du bot
- * (utils/accessStore.js), refusé plus haut dans handleOwnerAccessTextCommand.
+ * (utils/accessStore.js), refusé plus haut dans handleAddAccessTextCommand.
  */
 function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, category = null) {
   const granted = permStore.getUserGrants(guildId, memberId);
@@ -230,7 +230,7 @@ function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, categor
 /**
  * &access <@membre|id> — ouvre le panneau d'octroi de permissions
  * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
- * "=owner" (préfixe séparé, voir handleOwnerAccessTextCommand) délègue ici
+ * "=add" (préfixe séparé, voir handleAddAccessTextCommand) délègue ici
  * mais doit rappeler SA propre syntaxe ; `ownerStyle` fait poster la carte
  * "Owner" (buildOwnerAccessCard) au lieu de la carte générique — même
  * mécanisme de fond, présentation différente.
@@ -257,15 +257,38 @@ async function access(client, message, args, label = "access", ownerStyle = fals
 }
 
 /**
- * "=owner <@membre|id>" — même mécanisme que "&access" ci-dessus (le VRAI
- * catalogue de permissions, utils/permissions/catalog.js), sur un préfixe
- * séparé exprès (demande explicite). Les commandes visibles sur la capture
- * qui a inspiré cette demande (follow, pv, wakeup, dog, bringall...)
- * appartiennent à un AUTRE bot et n'existent pas ici : accorder l'une des
- * permissions RÉELLES de ce catalogue reste la seule chose que ce bot
- * puisse faire, donc c'est ce qui s'affiche — jamais un accès inventé.
+ * "=add <@membre|id>" (anciennement "=owner", renommé — "=owner" désigne
+ * maintenant le transfert de propriété d'un salon vocal, voir
+ * handleOwnerVoiceTextCommand ci-dessous) — même mécanisme que "&access"
+ * ci-dessus (le VRAI catalogue de permissions, utils/permissions/
+ * catalog.js), sur un préfixe séparé exprès (demande explicite). Les
+ * commandes visibles sur la capture qui a inspiré cette demande (follow,
+ * pv, wakeup, dog, bringall...) appartiennent à un AUTRE bot et n'existent
+ * pas ici : accorder l'une des permissions RÉELLES de ce catalogue reste la
+ * seule chose que ce bot puisse faire, donc c'est ce qui s'affiche — jamais
+ * un accès inventé.
  */
-async function handleOwnerAccessTextCommand(client, message) {
+async function handleAddAccessTextCommand(client, message) {
+  if (message.author.bot || !message.guild) return;
+  const content = message.content.trim();
+  const { owner: PREFIX } = getPrefixes(message.guild.id);
+  if (!PREFIX || !content.startsWith(PREFIX)) return;
+
+  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
+  if ((cmd || "").toLowerCase() !== "add") return; // mot inconnu sur ce préfixe : silence
+
+  return access(client, message, args, "add", true);
+}
+
+/**
+ * "=owner <@membre>" — transfère la propriété de TON salon vocal temporaire
+ * à ce membre (demande explicite : "mettre owner voc"). Même préfixe séparé
+ * que "=add" ci-dessus, mot différent. Délègue entièrement à `vc()` /
+ * "&voc transfer @membre" (déjà écrit, déjà testé) : owner de salon vocal
+ * et octroi de permissions individuelles (=add) sont deux notions totalement
+ * différentes qui ne doivent surtout pas être confondues.
+ */
+async function handleOwnerVoiceTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
   const content = message.content.trim();
   const { owner: PREFIX } = getPrefixes(message.guild.id);
@@ -274,7 +297,7 @@ async function handleOwnerAccessTextCommand(client, message) {
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
   if ((cmd || "").toLowerCase() !== "owner") return; // mot inconnu sur ce préfixe : silence
 
-  return access(client, message, args, "owner", true);
+  return vc(client, message, ["transfer", ...args]);
 }
 
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
@@ -1374,7 +1397,8 @@ async function handleVoiceControlInteraction(interaction) {
 module.exports = {
   owners,
   access,
-  handleOwnerAccessTextCommand,
+  handleAddAccessTextCommand,
+  handleOwnerVoiceTextCommand,
   antinuke,
   whitelist,
   allbots,
