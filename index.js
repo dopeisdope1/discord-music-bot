@@ -68,7 +68,8 @@ const {
   buildVoiceWelcomeCard,
   handleVoiceControlInteraction,
   setPanelAccess,
-  handleAccessGrantTextCommand,
+  handleAddAccessTextCommand,
+  handleSecurityOwnerTextCommand,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -857,9 +858,16 @@ client.on("messageCreate", (message) => {
   handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
-  // "=add <@membre>" et "=owner <@membre>" — même mécanisme que "&access",
-  // préfixe séparé exprès (voir utils/serverAdminCommands.js::handleAccessGrantTextCommand).
-  handleAccessGrantTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
+  // "=add <@membre>" — même mécanisme que "&access", préfixe séparé exprès
+  // (voir utils/serverAdminCommands.js::handleAddAccessTextCommand). "owner"
+  // est réservé au vocal sur ce même préfixe (chantier vocal séparé).
+  handleAddAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
+  // "!!owner" — carte "Owner" filtrée à la sécurité (voir
+  // utils/serverAdminCommands.js::handleSecurityOwnerTextCommand). "&owner"
+  // n'a pas besoin d'appel ici : c'est une vraie commande "&" enregistrée
+  // dans modHandlers (utils/musicCommands.js), déjà dispatchée par
+  // handleMusicTextCommand ci-dessus.
+  handleSecurityOwnerTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
   // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.

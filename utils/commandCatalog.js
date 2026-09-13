@@ -53,6 +53,12 @@ const CATEGORIES = [
       },
       { name: "kick @membre [raison]", prefix: "mod", permission: "moderation.kick", description: "Expulse un membre" },
       {
+        name: "owner <@membre>",
+        prefix: "mod",
+        permission: "panel.permissions.manage",
+        description: "Accorde/retire des permissions de modération individuelles à CE membre (catégories Modération/Salons/Membres/Logs uniquement)",
+      },
+      {
         name: "ban <@membre|id> [raison]",
         prefix: "mod",
         permission: "moderation.ban",

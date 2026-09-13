@@ -154,16 +154,42 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
 }
 
 /**
- * Carte de "=owner" — présentation demandée explicitement (titre "Owner",
- * "Utilisateur"/"Statut"/"Consulté par" en évidence, liste numérotée des
- * accès, comme la capture d'un autre bot). Même mécanisme de fond que
+ * Carte de "=add"/"&owner"/"!!owner" — présentation demandée explicitement
+ * (titre "Owner", "Utilisateur"/"Statut"/"Consulté par" en évidence, liste
+ * numérotée des accès, coche/croix verte-rouge par clé dans le menu ouvert,
+ * comme la capture d'un autre bot). `derniereCle` fait porter la coche
+ * bleue native de Discord (option sélectionnée par défaut) sur la clé qui
+ * vient d'être basculée — l'équivalent exact du "pvclear" mis en évidence
+ * sur la capture, sans rien dessiner nous-mêmes. `categoriesAutorisees`
+ * (tableau de clés de catégorie, ex. ["moderation","channels"]) restreint le
+ * résumé ET le sélecteur de catégories à CES catégories du VRAI catalogue —
+ * c'est ce qui distingue "=add" (tout le catalogue), "&owner" (modération :
+ * moderation/channels/members/logs) et "!!owner" (sécurité : protection)
+ * sans dupliquer la moindre logique de rendu. Même mécanisme de fond que
  * buildAccessCard (mêmes permStore/permCatalog, catégorie -> clé) : "Statut"
  * reflète l'état RÉEL d'accès individuel de ce membre — jamais le mot
  * "Owner" tel quel, qui désignerait à tort le VRAI rang propriétaire du bot
- * (utils/accessStore.js), refusé plus haut dans handleAccessGrantTextCommand.
+ * (utils/accessStore.js), refusé plus haut avant l'appel. Les 9 libellés de
+ * la capture qui a inspiré cette carte (wakeup, dog, pvlist...) n'existent
+ * pas sur ce bot : le VRAI catalogue de permissions sert de base, jamais un
+ * accès inventé — demande explicite.
  */
-function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, category = null) {
+function buildOwnerAccessCard(
+  guildId,
+  memberId,
+  memberTag,
+  consultePar,
+  category = null,
+  derniereCle = null,
+  categoriesAutorisees = null,
+  variante = "owner"
+) {
   const granted = permStore.getUserGrants(guildId, memberId);
+  const groupes = categoriesAutorisees
+    ? permCatalog.byCategory().filter((g) => categoriesAutorisees.includes(g.category))
+    : permCatalog.byCategory();
+  const clesAutorisees = groupes.flatMap((g) => g.permissions.map((p) => p.key));
+  const grantedFiltre = categoriesAutorisees ? granted.filter((key) => clesAutorisees.includes(key)) : granted;
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
@@ -172,7 +198,7 @@ function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, categor
     new TextDisplayBuilder().setContent(
       [
         `**Utilisateur** — <@${memberId}>`,
-        `**Statut** — ${granted.length ? EMOJI.CHECK : EMOJI.CROSS} ${granted.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
+        `**Statut** — ${grantedFiltre.length ? EMOJI.CHECK : EMOJI.CROSS} ${grantedFiltre.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
         `**Consulté par** — ${consultePar}`,
       ].join("\n")
     )
@@ -182,10 +208,10 @@ function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, categor
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       [
-        `**Accès attribués — ${granted.length}**`,
+        `**Accès attribués — ${grantedFiltre.length}**`,
         "",
-        granted.length
-          ? granted.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${permCatalog.label(key)}`).join("\n")
+        grantedFiltre.length
+          ? grantedFiltre.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${permCatalog.label(key)}`).join("\n")
           : "*Aucun accès individuel pour l'instant.*",
       ].join("\n")
     )
@@ -195,29 +221,29 @@ function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, categor
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`srv:ownercat:${memberId}`)
+        .setCustomId(`srv:${variante}cat:${memberId}`)
         .setPlaceholder("Choisir une catégorie")
         .addOptions(
-          permCatalog
-            .byCategory()
-            .map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
+          groupes.map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
         )
     )
   );
 
-  const groupeOuvert = category && permCatalog.byCategory().find((g) => g.category === category);
+  const groupeOuvert = category && groupes.find((g) => g.category === category);
   if (groupeOuvert) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId(`srv:ownerkey:${memberId}:${category}`)
+          .setCustomId(`srv:${variante}key:${memberId}:${category}`)
           .setPlaceholder(`Ajouter ou retirer un accès — ${groupeOuvert.label}`)
           .addOptions(
             groupeOuvert.permissions.slice(0, 25).map((p) =>
               new StringSelectMenuOptionBuilder()
                 .setLabel(p.label.slice(0, 100))
                 .setValue(p.key)
+                .setEmoji(granted.includes(p.key) ? EMOJI.CHECK : EMOJI.CROSS)
                 .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
+                .setDefault(p.key === derniereCle)
             )
           )
       )
@@ -230,12 +256,16 @@ function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, categor
 /**
  * &access <@membre|id> — ouvre le panneau d'octroi de permissions
  * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
- * "=add"/"=owner" (préfixe séparé, voir handleAccessGrantTextCommand) délèguent ici
- * mais doit rappeler SA propre syntaxe ; `ownerStyle` fait poster la carte
- * "Owner" (buildOwnerAccessCard) au lieu de la carte générique — même
- * mécanisme de fond, présentation différente.
+ * "=add"/"&owner"/"!!owner" (préfixes séparés, voir les handlers
+ * dédiés ci-dessous) délèguent ici mais doivent rappeler LEUR propre
+ * syntaxe ; `ownerStyle` fait poster la carte "Owner" (buildOwnerAccessCard)
+ * au lieu de la carte générique — même mécanisme de fond, présentation
+ * différente ; `categoriesAutorisees`, transmis tel quel à
+ * buildOwnerAccessCard, restreint quelles catégories du catalogue "&owner"/
+ * "!!owner" peuvent voir et modifier (jamais utilisé par "&access"/"=add",
+ * qui gardent le catalogue complet).
  */
-async function access(client, message, args, label = "access", ownerStyle = false) {
+async function access(client, message, args, label = "access", ownerStyle = false, categoriesAutorisees = null, variante = "owner") {
   if (!can(message.member, "panel.permissions.manage")) return;
 
   const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
@@ -251,34 +281,67 @@ async function access(client, message, args, label = "access", ownerStyle = fals
   }
 
   if (ownerStyle) {
-    return message.reply(buildOwnerAccessCard(message.guild.id, target.id, target.user.tag, message.author.tag));
+    return message.reply(
+      buildOwnerAccessCard(message.guild.id, target.id, target.user.tag, message.author.tag, null, null, categoriesAutorisees, variante)
+    );
   }
   await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
 }
 
 /**
- * "=add <@membre|id>" ET "=owner <@membre|id>" — mêmes deux mots, même
- * mécanisme, même carte (buildOwnerAccessCard) : le VRAI catalogue de
- * permissions (utils/permissions/catalog.js), sur un préfixe séparé exprès
- * (demande explicite). Les commandes visibles sur la capture qui a inspiré
- * cette demande (follow, pv, wakeup, dog, bringall, mv+find+join...)
- * appartiennent à un AUTRE bot et n'existent pas ici : accorder l'une des
- * permissions RÉELLES de ce catalogue reste la seule chose que ce bot
- * puisse faire, donc c'est ce qui s'affiche — jamais un accès inventé, et
- * jamais confondu avec le transfert de propriété d'un salon vocal temporaire
- * (notion sans rapport, voir "&voc transfer @membre" pour CE besoin-là).
+ * "=add <@membre|id>" — ouvre la carte "Owner" (buildOwnerAccessCard) sur le
+ * VRAI catalogue de permissions COMPLET. Anciennement partagée avec le mot
+ * "owner" sur ce même préfixe ; "owner" est maintenant réservé au VOCAL sur
+ * "=" (voir handleVoiceOwnerTextCommand dans le futur chantier vocal) —
+ * "&owner"/"!!owner" ci-dessous couvrent désormais l'équivalent "Owner" pour
+ * la modération et la sécurité, chacun filtré à SES catégories réelles.
  */
-async function handleAccessGrantTextCommand(client, message) {
+async function handleAddAccessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
   const content = message.content.trim();
   const { owner: PREFIX } = getPrefixes(message.guild.id);
   if (!PREFIX || !content.startsWith(PREFIX)) return;
 
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  const mot = (cmd || "").toLowerCase();
-  if (mot !== "add" && mot !== "owner") return; // mot inconnu sur ce préfixe : silence
+  if ((cmd || "").toLowerCase() !== "add") return; // mot inconnu sur ce préfixe : silence
 
-  return access(client, message, args, mot, true);
+  return access(client, message, args, "add", true);
+}
+
+const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
+const CATEGORIES_OWNER_SECURITE = ["protection"];
+
+/**
+ * "&owner <@membre|id>" — carte "Owner" filtrée aux catégories de
+ * MODÉRATION du VRAI catalogue (moderation/channels/members/logs) : jamais
+ * les permissions sécurité/serveur/panel qui n'ont rien à faire ici.
+ * Contrairement à "!!owner"/"=add" (préfixes SANS table de dispatch riche),
+ * "&owner" est une vraie commande du préfixe "musicMod" : elle s'enregistre
+ * directement dans `modHandlers` (utils/musicCommands.js), pas dans un
+ * handler à part — sans ça, elle resterait invisible d'`isImplemented`/
+ * `&help` (utils/implementedCommands.js ne connaît que les mots de
+ * `modHandlers`) et perdrait le passage par la file d'attente/rate-limit
+ * commune aux autres commandes "&".
+ */
+async function ownerModeration(client, message, args) {
+  return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
+}
+
+/**
+ * "!!owner <@membre|id>" — carte "Owner" filtrée à la catégorie SÉCURITÉ du
+ * VRAI catalogue (protection.*) : jamais les permissions de modération/
+ * salons/serveur qui n'ont rien à faire ici.
+ */
+async function handleSecurityOwnerTextCommand(client, message) {
+  if (message.author.bot || !message.guild) return;
+  const content = message.content.trim();
+  const { protection: PREFIX } = getPrefixes(message.guild.id);
+  if (!PREFIX || !content.startsWith(PREFIX)) return;
+
+  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
+  if ((cmd || "").toLowerCase() !== "owner") return; // mot inconnu sur ce préfixe : silence
+
+  return access(client, message, args, "owner", true, CATEGORIES_OWNER_SECURITE, "secowner");
 }
 
 /** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
@@ -346,20 +409,36 @@ async function handleServerAdminInteraction(interaction) {
     return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
   }
 
-  // Panneau "=owner <@membre>" (voir buildOwnerAccessCard) — même mécanisme
-  // que "accesscat"/"accesskey" ci-dessus, présentation "Owner" séparée.
-  // "Consulté par" reflète TOUJOURS qui clique maintenant, pas qui a tapé
-  // "=owner" au départ — aucun état à porter dans le customId pour ça.
-  if (action === "ownercat" || action === "ownerkey") {
+  // Panneau "Owner" (voir buildOwnerAccessCard) — 3 variantes du MÊME
+  // mécanisme sur 3 paires de customId distinctes, chacune avec son propre
+  // filtre de catégories réelles : "ownercat"/"ownerkey" = "=add" (catalogue
+  // complet), "modownercat"/"modownerkey" = "&owner" (modération),
+  // "secownercat"/"secownerkey" = "!!owner" (sécurité). Les 3 doivent garder
+  // LEUR filtre au clic suivant, d'où la variante encodée dans le customId
+  // lui-même plutôt que dans un état à part. "Consulté par" reflète TOUJOURS
+  // qui clique maintenant, pas qui a tapé la commande au départ — aucun état
+  // à porter dans le customId pour ça.
+  const VARIANTES_OWNER = {
+    ownercat: { variante: "owner", categories: null },
+    ownerkey: { variante: "owner", categories: null },
+    modownercat: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
+    modownerkey: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
+    secownercat: { variante: "secowner", categories: CATEGORIES_OWNER_SECURITE },
+    secownerkey: { variante: "secowner", categories: CATEGORIES_OWNER_SECURITE },
+  };
+  if (VARIANTES_OWNER[action]) {
     if (!can(interaction.member, "panel.permissions.manage")) {
       return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     }
+    const { variante, categories } = VARIANTES_OWNER[action];
     const memberId = idKind;
     const target = await interaction.guild.members.fetch(memberId).catch(() => null);
     const tag = target?.user?.tag || `<@${memberId}>`;
 
-    if (action === "ownercat") {
-      return interaction.update(buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, interaction.values[0]));
+    if (action.endsWith("cat")) {
+      return interaction.update(
+        buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, interaction.values[0], null, categories, variante)
+      );
     }
 
     const category = extra;
@@ -367,7 +446,9 @@ async function handleServerAdminInteraction(interaction) {
     const granted = permStore.getUserGrants(interaction.guild.id, memberId);
     if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
     else permStore.grantToUser(interaction.guild.id, memberId, key);
-    return interaction.update(buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category));
+    return interaction.update(
+      buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category, key, categories, variante)
+    );
   }
 
   const LISTS = {
@@ -1378,7 +1459,9 @@ async function handleVoiceControlInteraction(interaction) {
 module.exports = {
   owners,
   access,
-  handleAccessGrantTextCommand,
+  handleAddAccessTextCommand,
+  ownerModeration,
+  handleSecurityOwnerTextCommand,
   antinuke,
   whitelist,
   allbots,

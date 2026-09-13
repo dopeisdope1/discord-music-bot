@@ -447,6 +447,7 @@ const modHandlers = {
   },
   owners: serverAdmin.owners,
   access: serverAdmin.access,
+  owner: serverAdmin.ownerModeration,
   rank: levels.rank,
   leaderboard: levels.leaderboard,
   levels: levels.levelsToggle,

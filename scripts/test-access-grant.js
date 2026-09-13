@@ -1,18 +1,15 @@
 /**
- * "=add <@membre>" ET "=owner <@membre>" (utils/serverAdminCommands.js::
- * handleAccessGrantTextCommand + buildOwnerAccessCard) — deux mots, un seul
- * mécanisme, une seule carte. Demandée sur une capture d'un AUTRE bot
- * (commandes "follow"/"pv"/"wakeup"/"dog"... qui n'existent PAS ici), avec
- * sa présentation précise (titre "Owner", "Utilisateur"/"Statut"/"Consulté
- * par", liste numérotée des accès). "=owner" a un temps pointé vers un
- * transfert de propriété de salon vocal temporaire — écarté (demande
- * explicite : "pas pour les voc tempo, fait comme sur le screen"), "&voc
- * transfer @membre" reste l'unique façon de faire ÇA. Même mécanisme de
- * fond que "&access" (le VRAI catalogue de permissions, utils/permissions/
- * catalog.js), sur un préfixe séparé ("=" au lieu de "&"). "Statut" ne dit
- * jamais littéralement "Owner" : ce mot désignerait à tort le VRAI rang
- * propriétaire du bot (utils/accessStore.js), refusé plus haut dans la
- * commande.
+ * "=add <@membre>" (utils/serverAdminCommands.js::handleAddAccessTextCommand
+ * + buildOwnerAccessCard) — ouvre la carte "Owner" sur le VRAI catalogue de
+ * permissions COMPLET, demandée sur une capture d'un AUTRE bot (commandes
+ * "follow"/"pv"/"wakeup"/"dog"... qui n'existent PAS ici, remplacées par le
+ * vrai catalogue). Le mot "owner" sur ce même préfixe "=" a été LIBÉRÉ pour
+ * le vocal (architecture 3-préfixes : &=modération, !!=sécurité, ==vocal) —
+ * il ne répond donc plus du tout ici, voir scripts/test-owner-moderation.js
+ * et scripts/test-owner-security.js pour les cartes "Owner" filtrées de
+ * "&owner"/"!!owner". "Statut" ne dit jamais littéralement "Owner" : ce mot
+ * désignerait à tort le VRAI rang propriétaire du bot (utils/accessStore.js),
+ * refusé plus haut dans la commande.
  *
  * Lancement : node scripts/test-access-grant.js
  */
@@ -99,14 +96,14 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
 
   await cas("sans panel.permissions.manage, silence", async () => {
     const msg = fakeMessage({ guildId: "g1", authorId: "u1", content: `=add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 0);
   });
 
   await cas("titre \"Owner\", mention du membre, \"Consulté par\" l'auteur de la commande", async () => {
     permStore.grantToUser("g2", "staff-2", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g2", authorId: "staff-2", content: `=add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
     const texte = JSON.stringify(msg._replies[0].components);
     assert.ok(texte.includes("## Owner"), texte);
@@ -117,7 +114,7 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
   await cas("jamais le mot \"Owner\" comme statut littéral du membre (rang réel distinct, non revendiqué à tort)", async () => {
     permStore.grantToUser("g2b", "staff-2b", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g2b", authorId: "staff-2b", content: `=add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     const texte = JSON.stringify(msg._replies[0].components);
     assert.ok(!texte.includes("Statut** — ") || !texte.match(/Statut\*\* — [^\\]*Owner\\n/), texte);
     assert.ok(texte.includes("Aucun accès individuel"), texte);
@@ -126,23 +123,33 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
   await cas("sans accès accordé : \"Accès attribués — 0\" et liste vide honnête", async () => {
     permStore.grantToUser("g2c", "staff-2c", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g2c", authorId: "staff-2c", content: `=add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     const texte = JSON.stringify(msg._replies[0].components);
     assert.ok(texte.includes("Accès attribués — 0"), texte);
     assert.ok(texte.includes("Aucun accès individuel pour l'instant"), texte);
   });
 
+  await cas("expose TOUT le catalogue (toutes les catégories réelles, pas de filtre)", async () => {
+    permStore.grantToUser("g2d", "staff-2d", "panel.permissions.manage");
+    const msg = fakeMessage({ guildId: "g2d", authorId: "staff-2d", content: `=add <@${TARGET}>` });
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
+    const texte = JSON.stringify(msg._replies[0].components);
+    for (const label of ["Modération", "Salons", "Membres", "Logs", "Panel", "Protection", "Serveur"]) {
+      assert.ok(texte.includes(label), `catégorie manquante : ${label}\n${texte}`);
+    }
+  });
+
   await cas("un ID brut fonctionne aussi bien qu'une mention", async () => {
     permStore.grantToUser("g3", "staff-3", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g3", authorId: "staff-3", content: `=add ${TARGET}` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
   });
 
   await cas("sans argument, le message d'erreur rappelle SA PROPRE syntaxe (\"add @membre\", pas \"access @membre\")", async () => {
     permStore.grantToUser("g4", "staff-4", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g4", authorId: "staff-4", content: "=add" });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
     const texte = JSON.stringify(msg._replies[0]);
     assert.ok(texte.includes("add @membre"), texte);
@@ -152,7 +159,7 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
   await cas("membre introuvable sur le serveur : message clair, pas de plantage", async () => {
     permStore.grantToUser("g5", "staff-5", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g5", authorId: "staff-5", content: `=add <@${TARGET}>`, hasTarget: false });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 1);
   });
 
@@ -165,46 +172,10 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
     permStore.grantToUser("g5b", "staff-5b", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g5b", authorId: "staff-5b", content: `=add <@${CIBLE_SYS}>` });
     msg.guild.members.fetch = async (uid) => (uid === CIBLE_SYS ? { id: CIBLE_SYS, user: { id: CIBLE_SYS, tag: "sys#0001" } } : null);
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     const texte = JSON.stringify(msg._replies[0]);
     assert.ok(texte.includes("propriétaire/rang sys"), texte);
     assert.ok(!texte.includes("## Owner"), texte);
-  });
-
-  console.log("\n\"=owner\" — EXACTEMENT la même présentation que \"=add\" (jamais un transfert de salon vocal) :");
-
-  await cas("\"=owner\" ouvre la même carte \"Owner\" que \"=add\", pas de silence ni de comportement vocal", async () => {
-    permStore.grantToUser("g15", "staff-15", "panel.permissions.manage");
-    const msg = fakeMessage({ guildId: "g15", authorId: "staff-15", content: `=owner <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
-    assert.strictEqual(msg._replies.length, 1);
-    const texte = JSON.stringify(msg._replies[0].components);
-    assert.ok(texte.includes("## Owner"), texte);
-    assert.ok(texte.includes(`<@${TARGET}>`), texte);
-  });
-
-  await cas("\"=owner\" sans argument rappelle SA PROPRE syntaxe (\"owner @membre\")", async () => {
-    permStore.grantToUser("g16", "staff-16", "panel.permissions.manage");
-    const msg = fakeMessage({ guildId: "g16", authorId: "staff-16", content: "=owner" });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
-    const texte = JSON.stringify(msg._replies[0]);
-    assert.ok(texte.includes("owner @membre"), texte);
-  });
-
-  await cas("\"=owner\" et \"=add\" partagent le même octroi réel (accorder via l'un se voit depuis l'autre)", async () => {
-    permStore.grantToUser("g17", "staff-17", "panel.permissions.manage");
-    const interaction = fakeInteraction(`srv:ownercat:${TARGET}`, { userId: "staff-17", guildId: "g17", values: ["moderation"] });
-    await serverAdmin.handleServerAdminInteraction(interaction);
-    const clef = fakeInteraction(`srv:ownerkey:${TARGET}:moderation`, { userId: "staff-17", guildId: "g17", values: ["moderation.kick"] });
-    await serverAdmin.handleServerAdminInteraction(clef);
-
-    const msgAdd = fakeMessage({ guildId: "g17", authorId: "staff-17", content: `=add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msgAdd);
-    const msgOwner = fakeMessage({ guildId: "g17", authorId: "staff-17", content: `=owner <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msgOwner);
-
-    assert.ok(JSON.stringify(msgAdd._replies[0].components).includes("Accès attribués — 1"));
-    assert.ok(JSON.stringify(msgOwner._replies[0].components).includes("Accès attribués — 1"));
   });
 
   console.log("\nInteractions dédiées (\"srv:ownercat\"/\"srv:ownerkey\") :");
@@ -230,6 +201,37 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
     const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Accès attribués — 1"), texte);
     assert.ok(texte.includes("`01`"), texte);
+  });
+
+  await cas("chaque clé du menu ouvert porte une coche verte (accordée) ou une croix rouge (non accordée)", async () => {
+    permStore.grantToUser("g7b", "staff-7b", "panel.permissions.manage");
+    permStore.grantToUser("g7b", TARGET, "moderation.kick");
+    const interaction = fakeInteraction(`srv:ownercat:${TARGET}`, { userId: "staff-7b", guildId: "g7b", values: ["moderation"] });
+    await serverAdmin.handleServerAdminInteraction(interaction);
+    const serialise = JSON.parse(JSON.stringify(interaction._updates[0]));
+    const options = serialise.components[0].components.at(-1).components[0].options;
+    const kick = options.find((o) => o.value === "moderation.kick");
+    const autre = options.find((o) => o.value !== "moderation.kick");
+    assert.ok(kick, JSON.stringify(options));
+    assert.strictEqual(kick.emoji?.name, "CheckMark");
+    assert.strictEqual(autre.emoji?.name, "crossemoji");
+  });
+
+  await cas("la clé qui vient d'être basculée porte la coche \"sélectionnée\" native de Discord (comme \"pvclear\" sur la capture)", async () => {
+    permStore.grantToUser("g7c", "staff-7c", "panel.permissions.manage");
+    const interaction = fakeInteraction(`srv:ownerkey:${TARGET}:moderation`, {
+      userId: "staff-7c",
+      guildId: "g7c",
+      values: ["moderation.ban"],
+    });
+    await serverAdmin.handleServerAdminInteraction(interaction);
+    const serialise = JSON.parse(JSON.stringify(interaction._updates[0]));
+    const options = serialise.components[0].components.at(-1).components[0].options;
+    const ban = options.find((o) => o.value === "moderation.ban");
+    const autre = options.find((o) => o.value !== "moderation.ban");
+    assert.ok(ban, JSON.stringify(options));
+    assert.strictEqual(ban.default, true);
+    assert.ok(!autre.default);
   });
 
   await cas("choisir une clé DÉJÀ accordée la retire (bascule), \"Consulté par\" reflète qui clique MAINTENANT", async () => {
@@ -270,33 +272,37 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
     assert.strictEqual(interaction._replies.length, 1);
   });
 
-  console.log("\nIsolation des préfixes :");
+  console.log("\nIsolation des préfixes / mots :");
 
   await cas("un mot inconnu sur ce préfixe reste silencieux", async () => {
     const msg = fakeMessage({ guildId: "g11", authorId: "staff-11", content: "=nimportequoi" });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("\"&add\"/\"&owner\" (mauvais préfixe) ne déclenchent jamais cette commande", async () => {
+  await cas("\"=owner\" ne répond plus ici — ce mot est libéré pour le vocal", async () => {
+    permStore.grantToUser("g12b", "staff-12b", "panel.permissions.manage");
+    const msg = fakeMessage({ guildId: "g12b", authorId: "staff-12b", content: `=owner <@${TARGET}>` });
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  await cas("\"&add\" (mauvais préfixe) ne déclenche jamais cette commande", async () => {
     permStore.grantToUser("g12", "staff-12", "panel.permissions.manage");
     const msg1 = fakeMessage({ guildId: "g12", authorId: "staff-12", content: `&add <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg1);
+    await serverAdmin.handleAddAccessTextCommand(null, msg1);
     assert.strictEqual(msg1._replies.length, 0);
-    const msg2 = fakeMessage({ guildId: "g12", authorId: "staff-12", content: `&owner <@${TARGET}>` });
-    await serverAdmin.handleAccessGrantTextCommand(null, msg2);
-    assert.strictEqual(msg2._replies.length, 0);
   });
 
   await cas("un message de bot est ignoré", async () => {
     permStore.grantToUser("g13", "staff-13", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g13", authorId: "staff-13", content: `=add <@${TARGET}>` });
     msg.author.bot = true;
-    await serverAdmin.handleAccessGrantTextCommand(null, msg);
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("\"&access\" garde sa propre présentation, jamais celle d'\"=add\"/\"=owner\"", async () => {
+  await cas("\"&access\" garde sa propre présentation, jamais celle d'\"=add\"", async () => {
     permStore.grantToUser("g14", "staff-14", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g14", authorId: "staff-14", content: `&access <@${TARGET}>` });
     await serverAdmin.access(null, msg, [`<@${TARGET}>`]);
