@@ -32,6 +32,9 @@ const { buildStatusEmbed } = require("./utils/statusEmbed");
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
 // les messages de son propre auteur, sans permission requise.
 const { handleSelfClear } = require("./utils/selfClear");
+// "!!setclear" — configure les noms/le délai de ces déclencheurs sans préfixe
+// (voir utils/setClearCommand.js et utils/selfClearStore.js).
+const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEAR_CUSTOM_ID } = require("./utils/setClearCommand");
 const {
   startNowPlayingTracking,
   stopNowPlayingTracking,
@@ -515,6 +518,12 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // "!!setclear" — voir utils/setClearCommand.js.
+  if (interaction.customId?.startsWith(`${SETCLEAR_CUSTOM_ID}:`)) {
+    await handleSetClearInteraction(interaction).catch((err) => console.error("[setClearCommand]", err));
+    return;
+  }
+
   // Constructeur d'embed (&embed, voir utils/serverExtra.js) : bouton ouvre
   // la modale, la modale postée déclenche l'envoi.
   if (interaction.customId === "srvextra:embedopen") {
@@ -819,8 +828,11 @@ client.on("messageCreate", (message) => {
   // "!!confess" — confessions anonymes (voir utils/confessions.js), même
   // préfixe que !!panel ci-dessus, mot différent après ("confess").
   handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
-  // Déclencheurs "uo clear"/"anas clear"/"yanis clear" — pas de préfixe,
-  // ouvert à tout le monde (rate-limité), voir utils/selfClear.js.
+  // "!!setclear" — voir utils/setClearCommand.js.
+  handleSetClearTextCommand(client, message).catch((err) => console.error("[setClearCommand]", err));
+  // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
+  // préfixe, ouvert à tout le monde (cooldown par serveur), voir
+  // utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
   // Anti-spam léger, désactivé par défaut par serveur (voir &panel > Protection
   // et utils/automod/antiSpam.js) — ne fait rien tant que personne ne l'active.

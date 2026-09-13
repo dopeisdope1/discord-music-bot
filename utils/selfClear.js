@@ -1,22 +1,31 @@
-const { createRateLimiter } = require("./rateLimiter");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { deleteMessages } = require("./deleteMessages");
 const accessStore = require("./accessStore");
+const selfClearStore = require("./selfClearStore");
 
 // Déclencheur texte exact (insensible à la casse, pas de préfixe requis,
 // accessible à tout le monde) : supprime les messages de son propre auteur
 // dans le salon. Format de confirmation minimal (embed classique, pas de
 // carte Components V2).
 //
-// Les variantes "anas clear" et "yanis clear" ont été retirées sur demande :
-// elles n'étaient que des synonymes du même effet.
-const TRIGGERS = new Set(["uo clear"]);
+// Les noms qui déclenchent ("<nom> clear") et le délai entre deux usages sont
+// configurables PAR SERVEUR via "!!setclear" (voir utils/selfClearStore.js) —
+// remplace l'ancien "uo clear" fixé en dur et son quota fixe de 2/25min.
 
-// Le quota est PAR MEMBRE (le limiteur est indexé sur l'auteur, pas sur le
-// mot tapé).
-const MAX_USES = 2;
-const WINDOW_MS = 25 * 60_000;
-const limiter = createRateLimiter(MAX_USES, WINDOW_MS);
+// Dernier usage PAR SERVEUR + PAR MEMBRE (pas par nom tapé) : un cooldown
+// simple remplace l'ancien compteur à fenêtre glissante, plus lisible pour un
+// réglage "temps entre chaque clear" affiché à l'admin.
+const lastUse = new Map();
+
+function checkCooldown(key, cooldownMs) {
+  const now = Date.now();
+  const last = lastUse.get(key);
+  if (last && now - last < cooldownMs) {
+    return { allowed: false, retryAfterMs: cooldownMs - (now - last) };
+  }
+  lastUse.set(key, now);
+  return { allowed: true };
+}
 
 /**
  * Messages à effacer : UNIQUEMENT ceux de la personne qui tape.
@@ -52,27 +61,22 @@ async function handleSelfClear(client, message) {
   if (message.author.bot || !message.guild) return false;
 
   const content = message.content.trim().toLowerCase();
-  if (!TRIGGERS.has(content)) return false;
+  const { names, cooldownMs } = selfClearStore.getConfig(message.guild.id);
+  const matched = names.some((nom) => content === `${nom.toLowerCase()} clear`);
+  if (!matched) return false;
 
   const channel = message.channel;
 
   // Le propriétaire du bot et les membres qu'il a exemptés (voir
   // ?clearbypass) ne consomment pas de quota : on ne passe même pas par le
-  // limiteur, sinon leurs usages compteraient dans la fenêtre des autres.
+  // cooldown, sinon leurs usages le déclencheraient pour les autres.
   const { allowed, retryAfterMs } = accessStore.isAllowed("clear", message.author.id)
     ? { allowed: true }
-    : limiter.check(message.author.id);
+    : checkCooldown(`${message.guild.id}:${message.author.id}`, cooldownMs);
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     const warning = await channel
-      .send({
-        embeds: [
-          buildStatusEmbed(
-            "error",
-            `Tu as atteint la limite (${MAX_USES} utilisation(s) / ${WINDOW_MS / 60_000} min). Réessaie dans ${minutes} min.`
-          ),
-        ],
-      })
+      .send({ embeds: [buildStatusEmbed("error", `Réessaie dans ${minutes} min.`)] })
       .catch(() => null);
     setTimeout(() => warning?.delete().catch(() => {}), 15_000);
     return true;
@@ -95,4 +99,4 @@ async function handleSelfClear(client, message) {
   return true;
 }
 
-module.exports = { handleSelfClear, collectOwnConversation, TRIGGERS };
+module.exports = { handleSelfClear, collectOwnConversation };

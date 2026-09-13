@@ -94,6 +94,7 @@ const PERMISSIONS = [
   { key: "server.confessions.manage", category: "server", label: "Gérer les confessions anonymes en attente (!!confess)" },
   { key: "server.confessions.setup", category: "server", label: "Configurer le panneau public de confessions (!!confess setup)" },
   { key: "server.confessions.validation", category: "server", label: "Configurer le salon de validation des confessions (!!confess validation)" },
+  { key: "server.selfclear.manage", category: "server", label: "Configurer les noms et le délai du nettoyage automatique (!!setclear)" },
 ];
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));
