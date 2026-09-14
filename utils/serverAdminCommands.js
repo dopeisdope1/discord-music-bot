@@ -1331,6 +1331,11 @@ async function handleVoiceAliasTextCommand(client, message) {
     undeaf: serverExtra.voiceundeaf,
     disconnect: serverExtra.voicekick,
     move: serverExtra.mv,
+    mv: serverExtra.mv,
+    find: serverExtra.voicefind,
+    bringall: serverExtra.bringall,
+    wakeup: serverExtra.voicewakeup,
+    join: serverExtra.voicejoin,
   };
   const handler = VOICE_ALIASES[(cmd || "").toLowerCase()];
   if (!handler) return; // mot inconnu sur ce préfixe (ou "add") : silence

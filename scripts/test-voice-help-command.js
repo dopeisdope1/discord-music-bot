@@ -71,7 +71,7 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
-    for (const attendu of ["=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=move"]) {
+    for (const attendu of ["=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=mv", "=join", "=find", "=bringall", "=wakeup"]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
     }
   });

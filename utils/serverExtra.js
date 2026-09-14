@@ -318,6 +318,65 @@ function voiceDeafenAction(actif) {
 const voicedeaf = voiceDeafenAction(true);
 const voiceundeaf = voiceDeafenAction(false);
 
+// --- Commandes vocales supplémentaires (préfixe "=", écosystème VOCAL) —
+// find/wakeup/join, même patron/permission que voicekick/mv/mute
+// (server.voice.manage), sur N'IMPORTE QUEL membre en vocal.
+
+/** "=find <@membre>" — indique dans quel salon vocal se trouve un membre (lecture seule). */
+async function voicefind(client, message, args) {
+  if (!can(message.member, "server.voice.manage")) return;
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est dans aucun salon vocal.`);
+  return reply(message, "success", `**${target.user.tag}** est dans ${target.voice.channel}.`);
+}
+
+/**
+ * "=wakeup <@membre>" — "réveille" un membre en le faisant rebondir vers un
+ * autre salon vocal puis revenir au sien (son client se reconnecte). Il faut
+ * qu'au moins un autre salon vocal gérable existe ; sinon rien à faire.
+ */
+async function voicewakeup(client, message, args) {
+  if (!can(message.member, "server.voice.manage")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+  const current = target.voice.channel;
+  if (!current) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
+
+  const autre = message.guild.channels.cache.find((c) => c.type === ChannelType.GuildVoice && c.id !== current.id && c.manageable);
+  if (!autre) return reply(message, "error", "Il faut au moins un autre salon vocal pour réveiller ce membre.");
+
+  await target.voice.setChannel(autre, `Réveil par ${message.author.tag}`).catch(() => {});
+  await target.voice.setChannel(current, `Réveil par ${message.author.tag}`).catch(() => {});
+  return reply(message, "success", `**${target.user.tag}** réveillé.`);
+}
+
+/**
+ * "=join <@membre>" — te déplace, TOI, dans le salon vocal de ce membre
+ * (l'inverse de "=mv" qui déplace L'AUTRE). Tu dois déjà être connecté en
+ * vocal pour pouvoir être déplacé.
+ */
+async function voicejoin(client, message, args) {
+  if (!can(message.member, "server.voice.manage")) return;
+  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
+  if (botPerm) return reply(message, "error", botPerm);
+
+  const targetId = parseTarget(args);
+  const target = await fetchTargetOrReply(message, targetId);
+  if (!target) return;
+  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
+  if (!message.member.voice.channel) return reply(message, "error", "Tu dois déjà être connecté en vocal pour rejoindre quelqu'un.");
+  if (message.member.voice.channelId === target.voice.channelId) return reply(message, "info", "Tu es déjà dans le même salon.");
+
+  await message.member.voice.setChannel(target.voice.channel, `Rejoint ${target.user.tag}`).catch(() => {});
+  return reply(message, "success", `Tu as rejoint **${target.user.tag}** dans ${target.voice.channel}.`);
+}
+
 // --- &unbanall (confirmation obligatoire, comme &banall) ---
 
 async function unbanall(client, message) {
@@ -588,6 +647,9 @@ module.exports = {
   voiceunmute,
   voicedeaf,
   voiceundeaf,
+  voicefind,
+  voicewakeup,
+  voicejoin,
   unbanall,
   temprole,
   untemprole,

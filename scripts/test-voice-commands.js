@@ -37,7 +37,7 @@ async function cas(nom, fn) {
 }
 
 function fakeChannel(id) {
-  return { id, type: ChannelType.GuildVoice, members: new Collection() };
+  return { id, type: ChannelType.GuildVoice, members: new Collection(), manageable: true, toString: () => `<#${id}>` };
 }
 
 function fakeMember(id, channel) {
@@ -67,19 +67,39 @@ function fakeMember(id, channel) {
   return membre;
 }
 
-function fakeMessage({ guildId = "g1", authorId = "staff-1", content, mentionsMember = null, mentionsChannel = null } = {}) {
+function fakeVoice(channel) {
+  return {
+    channel: channel || null,
+    channelId: channel?.id || null,
+    setChannel: async function (c) {
+      this.channel = c;
+      this.channelId = c?.id || null;
+    },
+  };
+}
+
+function fakeMessage({
+  guildId = "g1",
+  authorId = "staff-1",
+  content,
+  mentionsMember = null,
+  mentionsChannel = null,
+  guildChannels = [],
+  authorChannel = null,
+} = {}) {
   const replies = [];
   const membersMap = new Map();
   if (mentionsMember) membersMap.set(mentionsMember.id, mentionsMember);
   const guild = {
     id: guildId,
+    channels: { cache: new Collection(guildChannels.map((c) => [c.id, c])) },
     members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) }, fetch: async (uid) => membersMap.get(uid) || null },
   };
   return {
     content,
     author: { id: authorId, bot: false, tag: `${authorId}#0000` },
     guild,
-    member: { id: authorId, guild, roles: { cache: new Collection() }, permissions: new PermissionsBitField() },
+    member: { id: authorId, guild, roles: { cache: new Collection() }, permissions: new PermissionsBitField(), voice: fakeVoice(authorChannel) },
     mentions: {
       users: mentionsMember ? new Collection([[mentionsMember.id, mentionsMember.user]]) : new Collection(),
       channels: mentionsChannel ? new Collection([[mentionsChannel.id, mentionsChannel]]) : new Collection(),
@@ -225,6 +245,134 @@ const texte = (msg) => JSON.stringify(msg._replies[0] || {});
     });
     await handleVoiceAliasTextCommand(null, msg);
     assert.strictEqual(cible.voice.channel, arrivee);
+  });
+
+  await cas("\"=mv\" est un alias de \"=move\" (déplace aussi vers le salon indiqué)", async () => {
+    permStore.grantToUser("g8b", "staff-1", "server.voice.manage");
+    const depart = fakeChannel("chan-depart-8b");
+    const arrivee = fakeChannel("chan-arrivee-8b");
+    const cible = fakeMember("400000000000000082", depart);
+    const msg = fakeMessage({
+      guildId: "g8b",
+      authorId: "staff-1",
+      content: `=mv <@400000000000000082> #arrivee`,
+      mentionsMember: cible,
+      mentionsChannel: arrivee,
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(cible.voice.channel, arrivee);
+  });
+
+  console.log("\n\"=find\"/\"=wakeup\"/\"=join\"/\"=bringall\" — nouvelles commandes vocales :");
+
+  const CIBLE_F = "400000000000000091";
+  const CIBLE_W = "400000000000000092";
+  const CIBLE_J = "400000000000000093";
+
+  await cas("\"=find @membre\" indique le salon vocal du membre", async () => {
+    permStore.grantToUser("gf", "staff-1", "server.voice.manage");
+    const salon = fakeChannel("chan-find");
+    const cible = fakeMember(CIBLE_F, salon);
+    const msg = fakeMessage({ guildId: "gf", authorId: "staff-1", content: `=find <@${CIBLE_F}>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.ok(texte(msg).includes("chan-find"), texte(msg));
+  });
+
+  await cas("\"=find\" sur un membre hors vocal le dit clairement", async () => {
+    permStore.grantToUser("gf2", "staff-1", "server.voice.manage");
+    const cible = fakeMember("400000000000000094", null);
+    const msg = fakeMessage({ guildId: "gf2", authorId: "staff-1", content: `=find <@400000000000000094>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.ok(texte(msg).includes("aucun salon vocal"), texte(msg));
+  });
+
+  await cas("\"=wakeup @membre\" fait rebondir le membre puis le ramène dans son salon d'origine", async () => {
+    permStore.grantToUser("gw", "staff-1", "server.voice.manage");
+    const salon = fakeChannel("chan-wakeup");
+    const autre = fakeChannel("chan-autre-wakeup");
+    const cible = fakeMember(CIBLE_W, salon);
+    const msg = fakeMessage({
+      guildId: "gw",
+      authorId: "staff-1",
+      content: `=wakeup <@${CIBLE_W}>`,
+      mentionsMember: cible,
+      guildChannels: [salon, autre],
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(cible.voice.channelId, salon.id); // revenu dans son salon
+    assert.ok(texte(msg).includes("réveillé"), texte(msg));
+  });
+
+  await cas("\"=wakeup\" échoue proprement s'il n'y a aucun autre salon vocal", async () => {
+    permStore.grantToUser("gw2", "staff-1", "server.voice.manage");
+    const salon = fakeChannel("chan-wakeup-seul");
+    const cible = fakeMember("400000000000000095", salon);
+    const msg = fakeMessage({
+      guildId: "gw2",
+      authorId: "staff-1",
+      content: `=wakeup <@400000000000000095>`,
+      mentionsMember: cible,
+      guildChannels: [salon],
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.ok(texte(msg).includes("au moins un autre salon"), texte(msg));
+  });
+
+  await cas("\"=join @membre\" déplace L'AUTEUR vers le salon du membre", async () => {
+    permStore.grantToUser("gj", "staff-1", "server.voice.manage");
+    const salonCible = fakeChannel("chan-cible-join");
+    const salonAuteur = fakeChannel("chan-auteur-join");
+    const cible = fakeMember(CIBLE_J, salonCible);
+    const msg = fakeMessage({
+      guildId: "gj",
+      authorId: "staff-1",
+      content: `=join <@${CIBLE_J}>`,
+      mentionsMember: cible,
+      authorChannel: salonAuteur,
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg.member.voice.channelId, salonCible.id); // l'auteur a bougé
+  });
+
+  await cas("\"=join\" refuse si l'auteur n'est pas déjà en vocal", async () => {
+    permStore.grantToUser("gj2", "staff-1", "server.voice.manage");
+    const salonCible = fakeChannel("chan-cible-join2");
+    const cible = fakeMember("400000000000000096", salonCible);
+    const msg = fakeMessage({
+      guildId: "gj2",
+      authorId: "staff-1",
+      content: `=join <@400000000000000096>`,
+      mentionsMember: cible,
+      authorChannel: null,
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.ok(texte(msg).includes("déjà être connecté"), texte(msg));
+  });
+
+  await cas("\"=bringall\" rassemble tout le monde dans le salon de l'auteur", async () => {
+    permStore.grantToUser("gb", "staff-1", "server.voice.moveall");
+    const salonAuteur = fakeChannel("chan-auteur-bringall");
+    const autre = fakeChannel("chan-autre-bringall");
+    const membre1 = fakeMember("400000000000000097", autre);
+    const membre2 = fakeMember("400000000000000098", autre);
+    const msg = fakeMessage({
+      guildId: "gb",
+      authorId: "staff-1",
+      content: "=bringall",
+      authorChannel: salonAuteur,
+      guildChannels: [salonAuteur, autre],
+    });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(membre1.voice.channelId, salonAuteur.id);
+    assert.strictEqual(membre2.voice.channelId, salonAuteur.id);
+  });
+
+  await cas("sans permission, \"=find\" reste silencieux", async () => {
+    const salon = fakeChannel("chan-find-noperm");
+    const cible = fakeMember("400000000000000099", salon);
+    const msg = fakeMessage({ guildId: "gnp", authorId: "sans-perm", content: `=find <@400000000000000099>`, mentionsMember: cible });
+    await handleVoiceAliasTextCommand(null, msg);
+    assert.strictEqual(msg._replies.length, 0);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
