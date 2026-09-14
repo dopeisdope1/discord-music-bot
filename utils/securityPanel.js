@@ -218,7 +218,11 @@ function corpsGuard(guildId) {
   const guardLines = ALL_GUARDS.map((d) => {
     const rule = d.threshold ? `${d.threshold.count}/${d.threshold.windowMs / 1000}s` : "immédiat";
     const on = guardConfig.isGuardEnabled(guildId, d.key);
-    return `> ${on ? "🟢" : "🔴"} \`${d.key}\` (${rule})`;
+    // Sanction EFFECTIVE de ce guard (propre ou globale) — affichée seulement
+    // quand elle diffère de la globale, pour ne pas alourdir les 13 lignes.
+    const sanction = guardConfig.getGuardPunishment(guildId, d.key);
+    const suffixe = sanction !== config.punishment ? ` — **${sanction}**` : "";
+    return `> ${on ? "🟢" : "🔴"} \`${d.key}\` (${rule})${suffixe}`;
   });
   return [
     `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
@@ -238,7 +242,8 @@ function controlesGuard(guild, state) {
 
   const options = [
     { value: "guard_toggle", label: config.enabled ? "Anti-nuke : désactiver" : "Anti-nuke : activer" },
-    { value: "guard_punishment", label: "Changer la sanction (timeout → kick → ban)" },
+    { value: "guard_punishment", label: "Changer la sanction globale (derank → timeout → kick → ban)" },
+    { value: "guard_sanction", label: "Sanction par module (par protection)" },
     { value: "guard_pick", label: "Activer/désactiver un guard précis" },
     { value: "guard_wl_add", label: "Whitelist : ajouter quelqu'un" },
     { value: "guard_wl_remove", label: "Whitelist : retirer quelqu'un" },
@@ -281,6 +286,47 @@ function controlesGuard(guild, state) {
               .setCustomId(`${CUSTOM_ID}:guardtoggle:${def.key}`)
               .setLabel(`${def.label} : ${on ? "désactiver" : "activer"}`)
               .setStyle(on ? ButtonStyle.Danger : ButtonStyle.Success)
+          )
+        );
+      }
+    }
+  } else if (state.guardAction === "guard_sanction") {
+    // Sanction PAR MODULE (comme la capture) : choisir un guard, puis sa
+    // sanction propre. "Sanction globale" remet le guard sur la sanction par
+    // défaut du serveur.
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${CUSTOM_ID}:guardsanctionpick`)
+          .setPlaceholder("Choisir une protection")
+          .addOptions(
+            ALL_GUARDS.map((d) =>
+              new StringSelectMenuOptionBuilder()
+                .setLabel(d.label.slice(0, 100))
+                .setDescription(`Sanction : ${guardConfig.getGuardPunishment(guild.id, d.key)}`)
+                .setValue(d.key)
+                .setDefault(state.guardKey === d.key)
+            )
+          )
+      )
+    );
+    if (state.guardKey) {
+      const def = ALL_GUARDS.find((d) => d.key === state.guardKey);
+      if (def) {
+        const actuelle = guardConfig.getGuardPunishment(guild.id, def.key);
+        const boutons = ["derank", "timeout", "kick", "ban"].map((p) =>
+          new ButtonBuilder()
+            .setCustomId(`${CUSTOM_ID}:guardsanctionset:${def.key}:${p}`)
+            .setLabel(p)
+            .setStyle(p === actuelle ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        );
+        rows.push(new ActionRowBuilder().addComponents(...boutons));
+        rows.push(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${CUSTOM_ID}:guardsanctionset:${def.key}:global`)
+              .setLabel("Sanction globale")
+              .setStyle(ButtonStyle.Secondary)
           )
         );
       }
@@ -548,7 +594,7 @@ async function handleSecurityInteraction(interaction) {
       return goto("guard");
     }
     if (choice === "guard_punishment") {
-      const next = { timeout: "kick", kick: "ban", ban: "timeout" }[guardConfig.getConfig(guildId).punishment];
+      const next = { derank: "timeout", timeout: "kick", kick: "ban", ban: "derank" }[guardConfig.getConfig(guildId).punishment];
       guardConfig.setPunishment(guildId, next);
       return goto("guard");
     }
@@ -568,6 +614,19 @@ async function handleSecurityInteraction(interaction) {
     if (!can(interaction.member, "protection.guard.manage")) return refuse();
     guardConfig.toggleGuard(guildId, extra);
     return goto("guard", { guardAction: "guard_pick", guardKey: extra });
+  }
+
+  if (action === "guardsanctionpick") {
+    if (!can(interaction.member, "protection.guard.manage")) return refuse();
+    return goto("guard", { guardAction: "guard_sanction", guardKey: interaction.values[0] });
+  }
+
+  if (action === "guardsanctionset") {
+    if (!can(interaction.member, "protection.guard.manage")) return refuse();
+    // customId : "<CUSTOM_ID>:guardsanctionset:<guardKey>:<derank|timeout|kick|ban|global>"
+    const [, , guardKey, choix] = interaction.customId.split(":");
+    guardConfig.setGuardPunishment(guildId, guardKey, choix === "global" ? null : choix);
+    return goto("guard", { guardAction: "guard_sanction", guardKey });
   }
 
   if (action === "guardwladd" || action === "guardwldel") {

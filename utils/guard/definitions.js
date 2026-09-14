@@ -119,7 +119,14 @@ async function checkEveryoneMention(client, message) {
   const capped = punishmentCapReached(message.guild.id);
   const punished = capped
     ? false
-    : await applyPunishment(client, message.guild, message.member, config, "Anti-nuke : mention @everyone/@here non autorisée");
+    : await applyPunishment(
+        client,
+        message.guild,
+        message.member,
+        config,
+        "Anti-nuke : mention @everyone/@here non autorisée",
+        guardConfig.getGuardPunishment(message.guild.id, "antieveryone")
+      );
   if (punished) recordPunishment(message.guild.id);
 
   await postModerationEntry(client, message.guild.id, "moderation", {
@@ -178,7 +185,14 @@ async function checkNewAccount(client, member) {
     console.warn(`[guard:creationlimit] plafond de sanctions atteint sur "${member.guild.name}", membre non sanctionné (log conservé).`);
     return;
   }
-  const punished = await applyPunishment(client, member.guild, member, config, "Anti-nuke : compte trop récent pour rejoindre");
+  const punished = await applyPunishment(
+    client,
+    member.guild,
+    member,
+    config,
+    "Anti-nuke : compte trop récent pour rejoindre",
+    guardConfig.getGuardPunishment(member.guild.id, "creationlimit")
+  );
   if (punished) recordPunishment(member.guild.id);
 
   await postModerationEntry(client, member.guild.id, "moderation", {

@@ -8,13 +8,20 @@ const { ecrireJson, lireJson } = require("../jsonFile");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "guard.json");
 
-const PUNISHMENTS = ["timeout", "kick", "ban"];
+// "derank" = retire tous les rôles de l'intrus (la sanction la plus douce,
+// réversible) ; timeout/kick/ban ensuite. La sanction globale `punishment`
+// s'applique par défaut, MAIS chaque guard peut avoir la sienne via
+// `punishmentPerGuard` (voir getGuardPunishment) — comme les "sanctions par
+// module" de la capture.
+const PUNISHMENTS = ["derank", "timeout", "kick", "ban"];
 const DEFAULT_CONFIG = {
   enabled: false,
-  // Timeout par défaut : la sanction la moins destructrice — configurable
-  // vers "kick"/"ban" si besoin d'une réponse plus dure.
+  // Timeout par défaut : configurable vers derank/kick/ban.
   punishment: "timeout",
   punishmentDurationMs: 10 * 60 * 1000,
+  // Sanction PROPRE à un guard précis (clé -> "derank"|"timeout"|"kick"|"ban").
+  // Absent = ce guard utilise la sanction globale `punishment`.
+  punishmentPerGuard: {},
   // Guards individuellement désactivés (clés de utils/guard/definitions.js,
   // + "antieveryone"/"antijoin" qui ne sont pas dans DEFINITIONS) — le
   // panel permet de couper un guard précis sans tout désactiver.
@@ -65,6 +72,7 @@ function guildEntry(guildId) {
   if (typeof entry.pingRoleId !== "string") entry.pingRoleId = null;
   if (typeof entry.creationLimitMs !== "number") entry.creationLimitMs = 0;
   if (typeof entry.autoLockdownOnCap !== "boolean") entry.autoLockdownOnCap = false;
+  if (!entry.punishmentPerGuard || typeof entry.punishmentPerGuard !== "object") entry.punishmentPerGuard = {};
   return entry;
 }
 
@@ -133,6 +141,32 @@ function setAutoLockdown(guildId, enabled) {
   save();
 }
 
+/**
+ * Sanction EFFECTIVE d'un guard : sa sanction propre (punishmentPerGuard) si
+ * définie, sinon la sanction globale du serveur. C'est ce que le moteur
+ * applique (voir utils/guard/engine.js).
+ * @returns {"derank"|"timeout"|"kick"|"ban"}
+ */
+function getGuardPunishment(guildId, key) {
+  const entry = guildEntry(guildId);
+  const propre = entry.punishmentPerGuard[key];
+  return PUNISHMENTS.includes(propre) ? propre : entry.punishment;
+}
+
+/**
+ * Règle la sanction propre d'un guard. Passer null/undefined (ou la même
+ * valeur que la sanction globale) le remet sur "sanction globale".
+ * @returns {boolean} true si accepté
+ */
+function setGuardPunishment(guildId, key, punishment) {
+  if (punishment != null && !PUNISHMENTS.includes(punishment)) return false;
+  const entry = guildEntry(guildId);
+  if (punishment == null) delete entry.punishmentPerGuard[key];
+  else entry.punishmentPerGuard[key] = punishment;
+  save();
+  return true;
+}
+
 module.exports = {
   getConfig,
   setEnabled,
@@ -143,5 +177,7 @@ module.exports = {
   setPingRole,
   setCreationLimit,
   setAutoLockdown,
+  getGuardPunishment,
+  setGuardPunishment,
   PUNISHMENTS,
 };

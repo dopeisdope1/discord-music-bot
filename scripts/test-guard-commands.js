@@ -148,9 +148,15 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     assert.strictEqual(guardConfig.getConfig("g1").punishment, "ban");
   });
 
+  await cas("&punition all derank règle la sanction (derank est une sanction valide)", async () => {
+    await guardHandlers.punition(null, makeMessage({ content: "punition" }), ["all", "derank"]);
+    assert.strictEqual(guardConfig.getConfig("g1").punishment, "derank");
+  });
+
   await cas("&punition refuse une sanction inconnue au lieu d'en inventer une", async () => {
+    await guardHandlers.punition(null, makeMessage({ content: "punition" }), ["all", "ban"]); // remet une valeur connue
     const msg = makeMessage({ content: "punition" });
-    await guardHandlers.punition(null, msg, ["all", "derank"]);
+    await guardHandlers.punition(null, msg, ["all", "explosion"]);
     assert.strictEqual(guardConfig.getConfig("g1").punishment, "ban", "la sanction ne doit pas changer");
     assert.ok(texte(msg).includes("Sanction actuelle"), texte(msg));
   });

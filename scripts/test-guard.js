@@ -28,16 +28,16 @@ const BOT_ID = "bot-1";
 guardConfig.setEnabled(GUILD_ID, true);
 
 function fakeMember({ id, position = 5, banned = [] }) {
-  const bans = new Set(banned);
-  return {
+  const membre = {
     id,
     tag: `${id}#0000`,
     user: { tag: `${id}#0000` },
-    roles: { cache: new Collection(), highest: { position } },
     kick: async function () { this.kicked = true; },
     ban: async function () { this.banned = true; },
     timeout: async function () { this.timedOut = true; },
   };
+  membre.roles = { cache: new Collection(), highest: { position }, set: async () => { membre.deranked = true; } };
+  return membre;
 }
 
 function fakeGuild({ id = GUILD_ID, ownerId = "server-owner", members = [] } = {}) {
@@ -225,6 +225,41 @@ async function main() {
     const client = { user: { id: BOT_ID } };
     await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.BotAdd, executorId: attacker.id, targetId: "newbot" }));
     assert.ok(attacker.timedOut, "antibot doit rester actif même si antichannel est désactivé sur ce serveur");
+  });
+
+  console.log("\nSanction par module (chaque guard sa propre sanction) :");
+
+  await cas("un guard avec sanction propre \"ban\" bannit (au lieu du timeout global)", async () => {
+    const attacker = fakeMember({ id: "attacker-sanction-1" });
+    const guild = fakeGuild({ id: "guild-sanction-1", members: [attacker] });
+    guardConfig.setGuardPunishment("guild-sanction-1", "antibot", "ban");
+    const client = { user: { id: BOT_ID } };
+    await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.BotAdd, executorId: attacker.id, targetId: "newbot" }));
+    assert.ok(attacker.banned, "antibot avec sanction propre 'ban' aurait dû bannir");
+    assert.ok(!attacker.timedOut, "la sanction globale (timeout) ne doit PAS s'appliquer");
+  });
+
+  await cas("un guard avec sanction propre \"derank\" retire les rôles (setRoles([]))", async () => {
+    const attacker = fakeMember({ id: "attacker-sanction-2" });
+    const guild = fakeGuild({ id: "guild-sanction-2", members: [attacker] });
+    guardConfig.setGuardPunishment("guild-sanction-2", "antibot", "derank");
+    const client = { user: { id: BOT_ID } };
+    await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.BotAdd, executorId: attacker.id, targetId: "newbot" }));
+    assert.ok(attacker.deranked, "antibot avec sanction propre 'derank' aurait dû retirer les rôles");
+    assert.ok(!attacker.banned && !attacker.timedOut, "aucune autre sanction ne doit s'appliquer");
+  });
+
+  await cas("un guard SANS sanction propre garde la sanction globale (timeout)", async () => {
+    const attacker = fakeMember({ id: "attacker-sanction-3" });
+    const guild = fakeGuild({ id: "guild-sanction-3", members: [attacker] });
+    guardConfig.setGuardPunishment("guild-sanction-3", "antibot", "ban"); // sur un AUTRE guard
+    const client = { user: { id: BOT_ID } };
+    // antikick (rafale) n'a pas de sanction propre -> globale (timeout par défaut)
+    for (let i = 0; i < 3; i++) {
+      await checkAuditEntry(client, guild, auditEntry({ action: AuditLogEvent.MemberKick, executorId: attacker.id, targetId: `v${i}` }));
+    }
+    assert.ok(attacker.timedOut, "antikick sans sanction propre doit utiliser la sanction globale (timeout)");
+    assert.ok(!attacker.banned, "la sanction propre d'antibot ne doit pas déteindre sur antikick");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

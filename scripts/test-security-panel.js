@@ -318,7 +318,8 @@ function labelsAction(payload, customIdSuffix) {
     await securityPanel.handleSecurityInteraction(interaction);
     const labels = labelsAction(interaction._updates[0], "secur:guardaction");
     for (const attendu of [
-      "Changer la sanction (timeout → kick → ban)",
+      "Changer la sanction globale (derank → timeout → kick → ban)",
+      "Sanction par module (par protection)",
       "Activer/désactiver un guard précis",
       "Whitelist : ajouter quelqu'un",
       "Whitelist : ajouter un rôle",
@@ -327,6 +328,43 @@ function labelsAction(payload, customIdSuffix) {
     ]) {
       assert.ok(labels.includes(attendu), `"${attendu}" manque : ${labels.join(" | ")}`);
     }
+  });
+
+  await cas("sanction par module : choisir un guard puis lui régler une sanction propre (derank/ban), et remise en globale", async () => {
+    permStore.grantToUser("g-gsanction", "staff-sanction", "protection.guard.manage");
+    const gid = "g-gsanction";
+    // Ouvre la vue "sanction par module".
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardaction", { userId: "staff-sanction", guildId: gid, values: ["guard_sanction"] })
+    );
+    // Choisit le guard "antibot".
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardsanctionpick", { userId: "staff-sanction", guildId: gid, values: ["antibot"] })
+    );
+    // Règle antibot sur "ban" (sa sanction propre, indépendante de la globale).
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardsanctionset:antibot:ban", { userId: "staff-sanction", guildId: gid })
+    );
+    assert.strictEqual(guardConfig.getGuardPunishment(gid, "antibot"), "ban");
+    // Un autre guard garde la sanction globale.
+    assert.strictEqual(guardConfig.getGuardPunishment(gid, "antikick"), guardConfig.getConfig(gid).punishment);
+    // "derank" est un choix valide.
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardsanctionset:antibot:derank", { userId: "staff-sanction", guildId: gid })
+    );
+    assert.strictEqual(guardConfig.getGuardPunishment(gid, "antibot"), "derank");
+    // "Sanction globale" remet antibot sur la globale.
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardsanctionset:antibot:global", { userId: "staff-sanction", guildId: gid })
+    );
+    assert.strictEqual(guardConfig.getGuardPunishment(gid, "antibot"), guardConfig.getConfig(gid).punishment);
+  });
+
+  await cas("sans protection.guard.manage, régler une sanction par module est refusé", async () => {
+    const gid = "g-gsanction-refuse";
+    const i = fakeInteraction("secur:guardsanctionset:antibot:ban", { userId: "sans-perm", guildId: gid });
+    await securityPanel.handleSecurityInteraction(i);
+    assert.notStrictEqual(guardConfig.getGuardPunishment(gid, "antibot"), "ban");
   });
 
   await cas("guard_toggle/guard_punishment/guard_autolockdown_toggle s'exécutent immédiatement", async () => {

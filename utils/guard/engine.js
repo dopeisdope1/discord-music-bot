@@ -114,16 +114,25 @@ function isFullyExempt(member) {
   return guardWhitelist.isWhitelisted(member);
 }
 
-async function applyPunishment(client, guild, executorMember, config, reason) {
+/**
+ * @param {"derank"|"timeout"|"kick"|"ban"} punishment sanction EFFECTIVE (déjà
+ *   résolue par guard/config.js::getGuardPunishment — propre au guard ou globale).
+ */
+async function applyPunishment(client, guild, executorMember, config, reason, punishment) {
   if (!executorMember || executorMember.id === client.user.id) return false;
   // Protections déjà éprouvées ailleurs (owner du serveur/du bot, rang
   // sys, hiérarchie du bot) — réutilisées telles quelles, pas de seconde
   // implémentation des mêmes règles.
   if (botAndRankRefusal(guild, executorMember)) return false;
 
+  const sanction = punishment || config.punishment;
   try {
-    if (config.punishment === "ban") await executorMember.ban({ reason });
-    else if (config.punishment === "kick") await executorMember.kick(reason);
+    if (sanction === "ban") await executorMember.ban({ reason });
+    else if (sanction === "kick") await executorMember.kick(reason);
+    else if (sanction === "derank")
+      // Retire tous les rôles gérables de l'intrus (la sanction la plus douce,
+      // réversible). setRoles([]) ne peut retirer que les rôles sous le bot.
+      await executorMember.roles.set([], reason);
     else await executorMember.timeout(config.punishmentDurationMs, reason);
     return true;
   } catch (err) {
@@ -169,7 +178,8 @@ async function handleAuditEntry(client, guild, entry, guardDef) {
     console.warn(`[guard] plafond de sanctions atteint sur "${guild.name}", "${guardDef.key}" ignoré cette fois (log conservé).`);
     await autoLockdownIfNeeded(client, guild, config).catch((err) => console.error("[guard] échec du verrouillage automatique :", err.message));
   }
-  const punished = capped ? false : await applyPunishment(client, guild, executorMember, config, `Anti-nuke : ${guardDef.label}`);
+  const sanction = guardConfig.getGuardPunishment(guild.id, guardDef.key);
+  const punished = capped ? false : await applyPunishment(client, guild, executorMember, config, `Anti-nuke : ${guardDef.label}`, sanction);
   if (punished) recordPunishment(guild.id);
 
   await postModerationEntry(client, guild.id, "moderation", {
@@ -179,7 +189,7 @@ async function handleAuditEntry(client, guild, entry, guardDef) {
         label: "Exécuteur",
         value: executorMember ? `<@${executorMember.id}> (${executorMember.id})` : `\`${entry.executorId || "inconnu"}\``,
       },
-      { label: "Sanction", value: punished ? config.punishment : "aucune (protégé, ou plafond de sanctions atteint)" },
+      { label: "Sanction", value: punished ? sanction : "aucune (protégé, ou plafond de sanctions atteint)" },
     ],
     moderatorTag: "Anti-nuke (automatique)",
     pingRoleId: config.pingRoleId,
