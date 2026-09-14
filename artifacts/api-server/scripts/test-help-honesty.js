@@ -35,6 +35,8 @@ const { Collection, MessageFlags } = require("discord.js");
 const { isImplemented } = require("../utils/implementedCommands");
 const { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf } = require("../utils/helpPanel");
 const { CATEGORIES } = require("../utils/commandCatalog");
+const { getPrefixes } = require("../utils/prefixStore");
+const commandRouting = require("../utils/commandRouting");
 
 // Les trois valeurs de navigation de &help depuis la refonte : la personne
 // choisit un PALIER de droits, et les thèmes deviennent les colonnes à
@@ -253,8 +255,11 @@ function menuNavigation(json) {
     }
   });
 
-  await cas("le préfixe est indiqué clairement, une seule fois, à l'accueil", () => {
-    assert.ok(/Préfixe : &/.test(spec().sousTitre), spec().sousTitre);
+  await cas("les préfixes de chaque famille sont indiqués clairement à l'accueil", () => {
+    const subtitle = spec().sousTitre;
+    for (const expected of ["Musique : ?", "Gestion : &", "Modération : -", "Sécurité : !!", "Vocal : ="]) {
+      assert.strictEqual((subtitle.match(new RegExp(expected.replace(/[?]/g, "\\$&"), "g")) || []).length, 1, `${expected} absent ou dupliqué : ${subtitle}`);
+    }
   });
 
   await cas("le tableau de bord est bien une IMAGE affichée DANS un Container Components V2, pas un embed", () => {
@@ -314,7 +319,7 @@ function menuNavigation(json) {
     }
     assert.ok(tout.includes("uo clear"), `"uo clear" doit s'afficher SANS préfixe : ${tout.filter((n) => n.includes("uo clear")).join(", ")}`);
     assert.ok(!tout.includes("&uo clear"), "aucun préfixe ne doit être collé à un déclencheur qui n'en a pas");
-    assert.ok(tout.includes("&kick @membre [raison]"), "les commandes du préfixe mod gardent bien le leur");
+    assert.ok(tout.includes(`${getPrefixes("g1").moderation}kick @membre [raison]`), "les commandes de modération portent le préfixe de leur famille");
   });
 
   await cas("un palier ne contient QUE ses commandes — il se déduit du droit exigé, jamais saisi à la main", () => {
@@ -365,7 +370,10 @@ function menuNavigation(json) {
   await cas("un membre sans aucun droit ne voit QUE les catégories ayant une commande publique", () => {
     // Les cartes affichent le nom en capitales ("MODÉRATION") : on compare
     // donc sur une version normalisée, pas sur la casse du catalogue.
-    const body = fullText(plain).toUpperCase();
+    // Le sous-titre de l'accueil mentionne désormais toutes les familles et
+    // leurs préfixes ; il ne doit pas être confondu avec les cartes réellement
+    // visibles. Les noms de cartes sont les identités de catégories exposées.
+    const body = spec(plain).cartes.flatMap((carte) => (carte.items || []).map((item) => item.nom)).join(" ").toUpperCase();
     for (const key of CATEGORIES_PARTIELLEMENT_PUBLIQUES) {
       const label = CATEGORIES.find((c) => c.key === key).label;
       assert.ok(body.includes(label.toUpperCase()), `"${label}" a une commande publique, elle doit apparaître`);
@@ -400,8 +408,9 @@ function menuNavigation(json) {
 
   await cas("des commandes du même thème atterrissent bien dans la MÊME catégorie (antilink et badwords -> Sécurité)", () => {
     const body = commandsText(owner, "securite");
-    assert.ok(body.includes("&antilink"), body);
-    assert.ok(body.includes("&badwords"), body);
+    const prefix = getPrefixes("g1").protection;
+    assert.ok(body.includes(`${prefix}antilink`), body);
+    assert.ok(body.includes(`${prefix}badwords`), body);
   });
 
   await cas("des commandes de thèmes différents n'atterrissent PAS dans la même catégorie (role create -> Serveur & Rôles, pas Sécurité)", () => {
@@ -601,7 +610,15 @@ function menuNavigation(json) {
       }
     }
     const attenduesSecurite = CATEGORIES.find((c) => c.key === "securite").commands.filter((cmd) => isImplemented(cmd)).map((cmd) => identityOf(cmd));
-    const manquantes = [...new Set(attenduesSecurite)].filter((id) => !toutesLesPages.some((v) => v.startsWith(`&${id}`)));
+    const prefixes = getPrefixes("g1");
+    const prefixeDe = (id) => {
+      const bucket = commandRouting.bucketDe(id);
+      if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
+      if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
+      if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
+      return prefixes.musicMod;
+    };
+    const manquantes = [...new Set(attenduesSecurite)].filter((id) => !toutesLesPages.some((v) => v.startsWith(`${prefixeDe(id)}${id}`)));
     assert.deepStrictEqual(manquantes, [], `commandes de Sécurité jamais affichées : ${manquantes.join(", ")}`);
   });
 

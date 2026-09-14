@@ -5,6 +5,7 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
+const commandRouting = require("./commandRouting");
 const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
@@ -698,13 +699,30 @@ async function handleMusicTextCommand(client, message) {
 
   const content = message.content.trim();
   const { main: MAIN_PREFIX, musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
+  const { moderation: MODERATION_PREFIX } = getPrefixes(message.guild.id);
+
+  // Le préfixe "-" est réservé à la modération. Il partage les mêmes
+  // handlers que "&", mais jamais le même espace de commande : un mot de
+  // gestion tapé sur "-" reste silencieux.
+  if (MODERATION_PREFIX && content.startsWith(MODERATION_PREFIX)) {
+    const [moderationCmd, ...moderationArgs] = content.slice(MODERATION_PREFIX.length).trim().split(/\s+/);
+    const cmdLower = (moderationCmd || "").toLowerCase();
+    if (commandRouting.bucketDe(cmdLower) !== commandRouting.BUCKET_MODERATION) return;
+    const handler = modHandlers[cmdLower];
+    if (handler) return handler(client, message, moderationArgs);
+    return;
+  }
 
   // Préfixe "&" : partagé avec le CrowBot du serveur. On ne traite que les
-  // commandes explicitement déclarées dans modHandlers et on sort en silence
-  // pour tout le reste, qui appartient à l'autre bot.
+  // commandes explicitement déclarées dans modHandlers et dont le bucket est
+  // la gestion. Les commandes de modération/sécurité ont leurs préfixes
+  // dédiés et ne doivent plus répondre ici.
   if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
     const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
     const cmdLower = (modCmd || "").toLowerCase();
+    if (commandRouting.bucketDe(cmdLower) !== commandRouting.BUCKET_GESTION) {
+      return;
+    }
 
     // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
     // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),
@@ -801,7 +819,8 @@ async function handleMusicTextCommand(client, message) {
   const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
   const cmd = (cmdRaw || "").toLowerCase();
   if (cmd === "help") {
-    return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX));
+    const prefixes = getPrefixes(message.guild.id);
+    return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX, prefixes.musicMod, prefixes));
   }
   if (handlers[cmd]) {
     return handlers[cmd](client, message, args);
@@ -874,4 +893,4 @@ const MOD_SUBCOMMANDS = {
 // même façon une commande câblée et une commande seulement documentée (voir
 // utils/implementedCommands.js). Dérivée de la table réelle, jamais recopiée
 // à la main — les deux ne peuvent donc pas diverger.
-module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS };
+module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS, modHandlers };

@@ -303,11 +303,11 @@ nouveau morceau, avec des boutons interactifs : ⏸️/▶️ ⏭️ ⏹️ 🔁
 ## 6bis. Commandes textuelles (sans slash)
 
 En plus des commandes slash musique, le bot répond aux préfixes texte
-(configurables par serveur via `&panel` > Préfixes) :
+(configurables par serveur via `&panel` > Préfixes, ou `&prefix`) :
 
 - **`?`** (préfixe musique par défaut) : `?play`, `?join`, `?skip`, `?stop`,
   `?pause`, `?resume`, `?queue`, `?volume 80`, `?loop queue`, `?help`.
-- **`&`** (préfixe des commandes, par défaut — **partagé avec le CrowBot du
+- **`&`** (préfixe de gestion, par défaut — **partagé avec le CrowBot du
   serveur** : le bot reste muet sur tout ce qu'il ne connaît pas, pour ne
   jamais répondre à sa place) :
   - **Publiques**, sans permission : `&pic`/`&avatar [@membre]`,
@@ -318,22 +318,20 @@ En plus des commandes slash musique, le bot répond aux préfixes texte
     `&rolemembers <rôle>`, `&user [@membre]`, `&member [@membre]`,
     `&vocinfo`, `&emoji <émoji>`, `&calc <calcul>`, `&wiki <mot-clé>`,
     `&search wiki <mot-clé>`.
-  - **Modération**, chacune sa propre clé de permission (voir section 6ter
-    ci-dessous) : `&clear`/`&purge`, `&kick`, `&ban`, `&unban`, `&softban`,
-    `&timeout`, `&untimeout`, `&banall`, `&modlogs`.
-  - **Salons** : `&lock`/`&unlock [#salon]`, `&slowmode <durée|off>
-    [#salon]`, `&hide`/`&unhide`/`&renew`, `&lockdown`/`&panic`,
-    `&unlockdown`.
-  - **Membres** : `&nick @membre <pseudo>`, `&resetnick @membre`,
-    `&addrole @membre @rôle`, `&delrole @membre @rôle`.
-  - **Admin** : `&panel` (rubriques visibles selon tes droits — voir
-    section 6ter), `&sources` (diagnostic audio, rang sys uniquement),
-    `&owners`, `&whitelist`, `&allbots`, `&antinuke` (voir section 6sexies).
-  - **Serveur** : `&role create|delete|rename|color|admin`, `&channel
-    create|delete|rename|topic`, `&dero`, `&voicehub` (voir section
-    6quinquies/6septies).
-  - **Communauté** : `&ticket setup`, `&poll`, `&giveaway start|reroll`
-    (voir section 6octies).
+  - **Modération** : ces commandes utilisent désormais le préfixe **`-`**
+    (par défaut), par exemple `-clear`, `-kick`, `-ban`, `-mute`, `-warn`,
+    `-lockdown` — mêmes permissions, mais plus de réponse sur `&`.
+  - **Gestion du serveur** : `&role create|delete|rename|color|admin`,
+    `&channel create|delete|rename|topic`, `&dero`, `&voicehub`.
+  - Les commandes de sécurité utilisent **`!!`** (par défaut), par exemple
+    `!!secur`, `!!antinuke`, `!!antispam`, `!!antilink`, `!!whitelist`, ainsi
+    que la protection personnelle `!!panel`.
+  - **Admin gestion** : `&panel`, `&sources` (diagnostic audio, rang sys
+    uniquement), `&owners`, `!!allbots`.
+  - **Communauté** : `&ticket setup`, `&poll`, `&giveaway start|reroll`.
+  - **Vocal/owner** : les commandes vocales et l'octroi d'accès utilisent
+    **`=`** (par défaut), par exemple `=help`, `=mute`, `=move`, `=add`,
+    `=owner`.
   - **Public** (dans ton propre salon vocal temporaire) : `&vc lock|unlock|
     limit|rename|kick` (voir section 6septies).
   - Sans préfixe, ouvert à tout le monde (rate-limité) : `uo clear` / `anas
@@ -402,7 +400,7 @@ vraiment :
 
 Le test échoue aussi si un alias est annoncé sans avoir de handler — c'est
 ce qui a révélé que `lockall`/`unlockall`, documentés comme alias de
-`&lockdown`/`&unlockdown`, n'avaient jamais été câblés.
+`-lockdown`/`-unlockdown`, n'avaient jamais été câblés.
 
 Ces commandes texte nécessitent que l'intent **MESSAGE CONTENT** soit bien
 activé sur le portail développeur (voir section 3).
@@ -470,7 +468,7 @@ clé : ce que tu vois, tu peux réellement l'utiliser.
 **Statut prioritaire inchangé** : le propriétaire du bot (`BOT_OWNER_IDS`) et
 le rang sys (accordé via `&panel` > Rang sys, comme avant cette refonte) ont
 toujours accès à tout, sans configuration — c'est le système historique de
-`utils/accessStore.js`, volontairement conservé tel quel. `&banall` reste un
+`utils/accessStore.js`, volontairement conservé tel quel. `-banall` reste un
 cas à part : jamais accordable par rôle ni hérité du rang sys, uniquement un
 par un via `&panel` > Ban de masse.
 
@@ -559,7 +557,7 @@ Les rubriques qui n'avaient pas d'équivalent tapable en ont un :
 
 | Commande | Rubrique | Clé |
 |---|---|---|
-| `&prefix <préfixe>` | Préfixes | `sys` |
+| `&prefix [famille] <préfixe>` | Préfixes | `sys` |
 | `&set perm <clé> <@rôle\|@membre>` | Permissions | `panel.permissions.manage` |
 | `&del perm <clé> <@rôle\|@membre>` | Permissions | idem |
 | `&clear perms <@rôle\|@membre>` | Permissions | idem |
@@ -572,6 +570,11 @@ Les rubriques qui n'avaient pas d'équivalent tapable en ont un :
 une clé inconnue renvoie la liste des clés valides plutôt qu'un refus sec. Un
 préfixe de plus de 3 caractères, ou contenant une espace, est refusé : il
 rendrait toutes les commandes intapables.
+
+Sans famille, `&prefix <préfixe>` conserve la syntaxe historique et règle la
+gestion (`&`). Les familles explicites sont `music|gestion`, `moderation`,
+`security|protection` et `vocal|owner` ; `&prefix` sans argument affiche les
+cinq préfixes courants.
 
 ### `&panel` — rubriques
 
@@ -601,8 +604,8 @@ si tu y as droit. Quelques-unes méritent un mot :
   seul, sert mieux qu'une image à régénérer à chaque clic.
 - **Recherche de membre** — cherche un membre, puis agis sur sa **fiche**
   (dessinée en carte : avatar, arrivée, rôles, casier). Chaque bouton
-  d'action rouvre la carte de formulaire que `&kick`/`&ban`/`&timeout`/
-  `&warn` ouvrent déjà, pré-remplie avec ce membre — jamais une seconde
+  d'action rouvre la carte de formulaire que `-kick`/`-ban`/`-timeout`/
+  `-warn` ouvrent déjà, pré-remplie avec ce membre — jamais une seconde
   implémentation de la sanction.
 - **Logs** — un salon par catégorie (**Modération**, **Membres**, **Rôles**,
   **Salons**, **Vocal**, **Serveur**, **Bots**, **Messages**) plutôt qu'un
@@ -613,9 +616,9 @@ si tu y as droit. Quelques-unes méritent un mot :
   salon, rien d'autre à faire.
 - **Historique** — 5 dernières actions en aperçu, plus un bouton
   "Rechercher" (fenêtre modale : cible / modérateur / type / ID) ; ou en
-  texte via `&modlogs [@membre|id]`.
-- **Protection** — active/désactive l'anti-spam et gère sa whitelist (voir
-  section 6quater).
+  texte via `-modlogs [@membre|id]`.
+- **Protection** — active/désactive l'anti-spam et gère sa whitelist via
+  `!!secur` (voir section 6quater).
 - **Accès panel** — qui a un accès individuel (rang sys, ban de masse,
   octrois précis), statut membre/parti, et un bouton pour nettoyer les
   accès obsolètes (voir plus bas).
@@ -657,7 +660,7 @@ membres/salons), **Auteur** et **Raison** ajoutés automatiquement à la fin
 quand ils sont connus, et un horodatage en petit texte tout en bas.
 
 Deux sources, sans doublon :
-- les commandes de **ce bot** (`&kick`, `&ban`, `&timeout`...) journalisent
+- les commandes de **ce bot** (`-kick`, `-ban`, `-timeout`...) journalisent
   directement, avec le VRAI modérateur (`utils/moderation/actions.js`) ;
 - tout le reste — **CrowBot**, ou n'importe quel modérateur humain via le
   client Discord natif — est capté par le **journal d'audit natif de
@@ -671,7 +674,7 @@ personne qui a tapé la commande — c'est pour ça que les deux sources
 existent séparément (le relais d'audit ignore explicitement ses propres
 actions, déjà couvertes par la première voie avec la bonne attribution).
 
-`&modlogs [@membre|id]` et `&panel` > Historique interrogent le même
+`-modlogs [@membre|id]` et `&panel` > Historique interrogent le même
 historique centralisé (`utils/moderationHistoryStore.js`), consultable par
 cible, par modérateur, par type ou par ID — recherche indépendante du
 journal d'audit Discord (qui, lui, ne garde que ~45 jours et n'offre pas de
@@ -687,12 +690,11 @@ webhooks, bots non autorisés, afflux de joins) et l'essentiel de l'automod
 pour ne pas devenir une copie :
 
 - **Anti-spam/anti-flood** (`utils/automod/antiSpam.js`) — désactivé par
-  défaut, par serveur ; met en timeout un membre qui envoie trop de
-  messages trop vite (seuils réglables uniquement dans le code pour
-  l'instant, la bascule marche/arrêt et la whitelist sont dans `&panel` >
-  Protection).
-- **`&lockdown` / `&panic`** — verrouille l'écriture (`SendMessages`) sur
-  tous les salons textuels que le bot peut gérer ; `&unlockdown` inverse.
+   défaut, par serveur ; met en timeout un membre qui envoie trop de
+   messages trop vite (la bascule marche/arrêt et la whitelist sont dans
+   `!!secur`).
+- **`-lockdown` / `-panic`** — verrouille l'écriture (`SendMessages`) sur
+  tous les salons textuels que le bot peut gérer ; `-unlockdown` inverse.
   Simplification assumée : pas de liste de salons à configurer séparément,
   c'est un vrai bouton de panique qui verrouille tout d'un coup.
 
@@ -701,18 +703,18 @@ CrowBot du serveur, et le dupliquer n'apporterait rien.
 
 ### Anti-spam en commandes texte
 
-`&antispam on|off` active la surveillance ; `&antispam <nombre>/<durée>`
-règle le seuil (`&antispam 5/10` = 5 messages en 10 secondes). Les valeurs
+`!!antispam on|off` active la surveillance ; `!!antispam <nombre>/<durée>`
+règle le seuil (`!!antispam 5/10` = 5 messages en 10 secondes). Les valeurs
 sont bornées — de 2 à 50 messages, sur 1 à 60 secondes : en dessous, le
 moindre double envoi sanctionnerait ; au-delà, ce n'est plus du flood mais
 une conversation. Un seuil hors bornes est refusé avec le message qui le dit,
 plutôt qu'accepté et silencieusement inopérant.
 
-`&spam allow [#salon]` exempte un salon de l'anti-spam (salon de flood
+`!!spam allow [#salon]` exempte un salon de l'anti-spam (salon de flood
 assumé), `deny`/`reset` le remettent sous surveillance. Même forme que
-`&link` pour l'anti-lien.
+`!!link` pour l'anti-lien.
 
-Sans argument, `&antispam` affiche l'état, le seuil et les salons exemptés.
+Sans argument, `!!antispam` affiche l'état, le seuil et les salons exemptés.
 Régler un seuil alors que l'anti-spam est désactivé le signale : sinon on
 croirait avoir posé une protection qui ne tourne pas.
 
@@ -730,7 +732,7 @@ chacune avec sa propre clé de permission (catégorie **Serveur** dans
   (irréversible).
 - **`&role admin @rôle`** — donne ou retire la permission Discord
   **Administrateur** au rôle. Clé à part, `server.roles.admin_grant`,
-  **jamais octroyable par rôle** (comme `&banall`) — seuls le rang sys et
+  **jamais octroyable par rôle** (comme `-banall`) — seuls le rang sys et
   le propriétaire du bot y ont accès, jamais un octroi délégué. C'est la
   commande la plus sensible du bot : Administrateur passe outre toutes
   les restrictions de salon, donner ce rôle à la mauvaise personne donne
@@ -742,9 +744,9 @@ chacune avec sa propre clé de permission (catégorie **Serveur** dans
 - **`&owners`** — liste paginée du rang sys (équivalent dédié à `&panel` >
   Rang sys) ; ajout/retrait réservés au propriétaire du bot, comme partout
   ailleurs dans le bot.
-- **`&whitelist`** — liste paginée des membres exemptés de l'anti-spam
+- **`!!whitelist`** — liste paginée des membres exemptés de l'anti-spam
   (clé `protection.whitelist`, équivalent dédié à `&panel` > Protection).
-- **`&allbots`** — liste paginée de tous les comptes bot présents sur le
+- **`!!allbots`** — liste paginée de tous les comptes bot présents sur le
   serveur (rang sys, lecture seule).
 - **`&dero role @rôle`** / **`&dero off`** — un rôle qui reçoit
   automatiquement Voir le salon/Envoyer des messages/Se connecter sur
@@ -771,7 +773,7 @@ tu veux la positionner ailleurs (ex : "Bienvenue {user}, lis le
 règlement !"). Désactivé tant qu'aucun salon ou aucun message n'est
 configuré.
 
-## 6sexies. Anti-nuke (`&antinuke`, `&panel` > Anti-nuke)
+## 6sexies. Anti-nuke (`!!antinuke`, `!!secur`)
 
 **Désactivé par défaut.** Détecte des rafales d'actions destructrices
 (création/suppression de salons ou de rôles, bannissements, expulsions,
@@ -783,12 +785,12 @@ rôle). L'exécuteur est identifié via le journal d'audit Discord — comme
 entrée d'audit alimente les deux, sans lien entre eux).
 
 - **Sanction** configurable : `timeout` (10 min, par défaut — la moins
-  destructrice), `kick` ou `ban`. `&antinuke punishment <valeur>` ou
-  bouton dans le panel.
+  destructrice), `kick` ou `ban`. `!!antinuke punishment <valeur>` ou
+  bouton dans `!!secur`.
 - **Owner, rang sys et whitelist sont exemptés en entier** — pas
   seulement de la sanction : leurs actions ne comptent même pas dans les
   seuils, rien n'est jamais annulé chez eux. Whitelist par utilisateur
-  dans `&panel` > Anti-nuke, par rôle via `&antinuke wlrole @rôle`.
+   dans `!!secur`, par rôle via `!!antinuke wlrole @rôle`.
 - **Restauration automatique** seulement pour les bannissements/
   débannissements (débannir/rebannir immédiatement, action simple et sans
   risque). **Pas de recréation de salon/rôle supprimé à l'identique** en
@@ -803,26 +805,26 @@ entrée d'audit alimente les deux, sans lien entre eux).
 
 #### Anti-nuke en commandes texte
 
-Tout ce que fait `&panel` > Anti-nuke se fait aussi en tapant, avec la clé
+Tout ce que fait `!!secur` se fait aussi en tapant, avec la clé
 `protection.guard.manage` :
 
-- **Interrupteur général** : `&secur on|off` (alias de `&antinuke on|off`).
+- **Interrupteur général** : `!!secur on|off` (alias de `!!antinuke on|off`).
   Sans argument, il résume l'état — sanction, guards actifs, taille de la
   whitelist.
-- **Un guard, une commande** : `&antibot`, `&antiwebhook`, `&antiroleadmin`,
-  `&antichannel`, `&antichanneldelete`, `&antirole`, `&antiroledelete`,
-  `&antikick`, `&antiban`, `&antiunban`, `&antieveryone`, `&antijoin` —
+- **Un guard, une commande** : `!!antibot`, `!!antiwebhook`, `!!antiroleadmin`,
+  `!!antichannel`, `!!antichanneldelete`, `!!antirole`, `!!antiroledelete`,
+  `!!antikick`, `!!antiban`, `!!antiunban`, `!!antieveryone`, `!!antijoin` —
   chacune en `on|off` (`max` accepté comme synonyme de `on` : ces guards sont
   binaires, il n'y a pas de palier intermédiaire). Sans argument, la commande
   affiche l'état du guard et son seuil de déclenchement.
-- **Sanction** : `&punition all <timeout|kick|ban>`. Elle est **globale** —
+- **Sanction** : `!!punition all <timeout|kick|ban>`. Elle est **globale** —
   ce bot ne règle pas la sanction guard par guard, et le dit plutôt que
   d'ignorer un premier argument qui laisserait croire le contraire.
-- **Whitelist** : `&wl [@membre|@rôle|ID]` pour ajouter ou afficher la liste,
-  `&unwl` pour retirer. Distincte de `&whitelist`, qui est celle de
+- **Whitelist** : `!!wl [@membre|@rôle|ID]` pour ajouter ou afficher la liste,
+  `!!unwl` pour retirer. Distincte de `!!whitelist`, qui est celle de
   l'anti-spam.
 
-`on` est un réglage explicite, pas une bascule : taper `&antibot on` deux
+`on` est un réglage explicite, pas une bascule : taper `!!antibot on` deux
 fois laisse le guard actif. Et activer un guard alors que l'interrupteur
 général est coupé le signale — sinon on croirait avoir posé une protection
 qui ne se déclenchera jamais.
@@ -830,7 +832,7 @@ qui ne se déclenchera jamais.
 ### CrowBot tourne aussi son propre anti-nuke sur ce serveur
 
 **Ajoute le compte du CrowBot à la whitelist de cet anti-nuke** (`&panel`
-> Anti-nuke, ou `&antinuke` puis ajouter son ID). Sans ça, une action
+> Anti-nuke, ou `!!antinuke` puis ajouter son ID). Sans ça, une action
 légitime du CrowBot (débannir quelqu'un dans le cadre de son propre
 anti-nuke, par exemple) peut être vue comme suspecte ici et annulée par
 erreur — les deux bots agissant chacun de leur côté sur le même serveur,
@@ -922,8 +924,8 @@ la place du CrowBot, et aucun de ces noms ne lui appartient.
 `&alladmins` (humains administrateurs), `&botadmins` (bots administrateurs —
 la surface d'attaque la plus large du serveur), `&boosters` (du boost le plus
 ancien au plus récent) et `&rolemembers <rôle>` (mention, ID **ou** nom du
-rôle) partagent la carte paginée déjà utilisée par `&owners`/`&whitelist`/
-`&allbots` (`utils/listCard.js`), 10 entrées par page.
+rôle) partagent la carte paginée déjà utilisée par `&owners`/`!!whitelist`/
+`!!allbots` (`utils/listCard.js`), 10 entrées par page.
 
 Le contenu de ces listes est défini une seule fois, dans
 `utils/readOnlyLists.js`, et sert **deux** chemins qui ne peuvent donc plus
@@ -931,7 +933,7 @@ diverger : la commande texte qui poste la première page, et le sélecteur de
 page de la carte. Rien n'est gardé en mémoire entre les deux — le rôle visé
 voyage dans le `customId` (`srv:page:rolemembers/<id>`) et tout est recalculé
 au clic, si bien que la carte reste utilisable même après un redémarrage du
-bot. Au passage, `&allbots` gagne une pagination qui **fonctionne** : son
+bot. Au passage, `!!allbots` gagne une pagination qui **fonctionne** : son
 sélecteur de page était affiché mais sans effet.
 
 ### Fiches d'information
@@ -1018,18 +1020,18 @@ Le message de confirmation inclut aussi un bouton **"Écouter avec lui"** : n'im
 qui peut cliquer dessus pour que le bot rejoigne SON salon vocal et se mette à suivre
 la même personne (en lisant sa présence Spotify au moment du clic, pas une valeur figée).
 
-## 7ter. `&ban` / `&unban` / `&banall` — bannissement
+## 7ter. `-ban` / `-unban` / `-banall` — bannissement
 
-- `&ban [@membre] [raison]` — clé `moderation.ban`. Sans cible : panneau
+- `-ban [@membre] [raison]` — clé `moderation.ban`. Sans cible : panneau
   **Zinki Assassini** avec un menu de sélection des membres. Avec une cible
   (mention ou ID) : saut direct à la confirmation. Vérifie la hiérarchie
   (rôle du modérateur, rôle du bot, protections propriétaire/rang sys) avant
   d'afficher le panneau ET juste avant l'action — la situation peut changer
   entre les deux.
-- `&unban [id]` — clé `moderation.unban`. Sans identifiant : menu déroulant
+- `-unban [id]` — clé `moderation.unban`. Sans identifiant : menu déroulant
   des membres actuellement bannis. Aucune confirmation : l'action se défait
   d'elle-même en rebannissant.
-- `&banall [raison]` — clé spéciale `moderation.banall`, **jamais**
+- `-banall [raison]` — clé spéciale `moderation.banall`, **jamais**
   accordable par rôle ni héritée du rang sys (voir section 6ter) : seul le
   propriétaire du serveur ou un octroi individuel via `&panel` > Ban de
   masse y donne accès. Bannit tout le serveur d'un coup (API de masse
@@ -1056,7 +1058,7 @@ anti-raid, système de warns (explicitement exclu, celui-là reste un choix).
 Le CrowBot continue de les couvrir.
 
 Aucune commande sur un préfixe caché ou un mécanisme parallèle au système de
-permissions décrit en section 6ter : tout, y compris `&banall` et l'anti-nuke,
+permissions décrit en section 6ter : tout, y compris `-banall` et l'anti-nuke,
 passe par le même moteur central.
 
 Parmi les commandes de la catégorie **Utilitaire** du catalogue, quatre

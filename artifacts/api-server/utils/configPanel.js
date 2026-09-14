@@ -22,7 +22,7 @@ const {
   TextInputStyle,
   MessageFlags,
 } = require("discord.js");
-const { getPrefixes, setPrefix } = require("./prefixStore");
+const { getPrefixes, setPrefix, prefixConflicts, prefixConflictMessage } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
 const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
 const sectionDashboard = require("./sectionDashboard");
@@ -95,7 +95,7 @@ const ID = "cfg";
 // OU écriture suffisent). Rien = toujours visible (page d'accueil).
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
-  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", permission: "sys" },
+  { key: "prefixes", label: "Préfixes", description: "Musique, gestion, modération, sécurité et vocal", permission: "sys" },
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage", permission: "sys" },
   {
     key: "permissions",
@@ -276,7 +276,7 @@ const FAMILIES = [
   { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", sections: ["diagnostics"] },
   { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", sections: ["backups"] },
   { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", sections: ["botProfile"] },
-  { key: "prefixes", label: "Préfixes", description: "Préfixe musique et préfixe des commandes", sections: ["prefixes"] },
+  { key: "prefixes", label: "Préfixes", description: "Musique, gestion, modération, sécurité et vocal", sections: ["prefixes"] },
   { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", sections: ["access"] },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
@@ -362,7 +362,10 @@ function sectionBody(section, guild, member, state) {
   if (section === "prefixes") {
     return [
       `> **Préfixe musique** : \`${prefixes.main}\``,
-      `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
+      `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
+      `> **Préfixe modération** : \`${prefixes.moderation}\``,
+      `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
+      `> **Préfixe vocal/owner** : \`${prefixes.owner}\``,
     ].join("\n");
   }
 
@@ -779,7 +782,10 @@ function sectionBody(section, guild, member, state) {
 
   return [
     `> **Préfixe musique** : \`${prefixes.main}\``,
-    `> **Préfixe des commandes** : \`${prefixes.musicMod}\``,
+    `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
+    `> **Préfixe modération** : \`${prefixes.moderation}\``,
+    `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
+    `> **Préfixe vocal/owner** : \`${prefixes.owner}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
@@ -975,7 +981,7 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
   return sectionDashboard.enSpec(corps ?? sectionBody(meta.key, guild, member, state), {
     titre: meta.label,
     couleur: FAMILY_COLORS[familyOf(meta.key).key] || TEINTE_NEUTRE,
-    sousTitre: `${member.displayName || member.user?.username || meta.label} · Préfixe : ${getPrefixes(guild.id).musicMod}`,
+    sousTitre: `${member.displayName || member.user?.username || meta.label} · Gestion : ${getPrefixes(guild.id).musicMod} · Modération : ${getPrefixes(guild.id).moderation}`,
     guild,
     // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle
     // des lignes (deux colonnes seulement si rien n'y serait tronqué).
@@ -1047,7 +1053,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // Pièces jointes accumulées par l'écran courant.
   const fichiers = [];
 
-  const enteteLignes = ["## 「 PANEL DE CONFIGURATION 」", `> <@${member.id}> · Préfixe : \`${getPrefixes(guild.id).musicMod}\``];
+  const enteteLignes = [
+    "## 「 PANEL DE CONFIGURATION 」",
+    `> <@${member.id}> · Gestion : \`${getPrefixes(guild.id).musicMod}\` · Modération : \`${getPrefixes(guild.id).moderation}\``,
+  ];
   // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
   // "### Accueil" juste au-dessus n'apporterait rien. Le statut et les
   // alertes ne sont plus écrits ici non plus : en texte, les mentions
@@ -1108,7 +1117,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${ID}:prefix:main`).setLabel("Préfixe musique").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe commandes").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:prefix:protection`).setLabel("Préfixe sécurité").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${ID}:prefix:owner`).setLabel("Préfixe vocal").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
@@ -1882,8 +1894,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 }
 
 const PREFIX_FIELDS = {
-  main: { label: "Préfixe musique", max: 5 },
-  musicMod: { label: "Préfixe des commandes", max: 5 },
+  main: { label: "Préfixe musique", max: 3 },
+  musicMod: { label: "Préfixe gestion", max: 3 },
+  moderation: { label: "Préfixe modération", max: 3 },
+  protection: { label: "Préfixe sécurité/protection", max: 3 },
+  owner: { label: "Préfixe vocal/owner", max: 3 },
 };
 
 /**
@@ -2726,10 +2741,22 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   }
 
   if (action === "prefix") {
+    const field = PREFIX_FIELDS[extra];
+    if (!field) return interaction.reply({ content: "Type de préfixe inconnu.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const value = interaction.fields.getTextInputValue("value").trim();
       if (!value) {
         return interaction.reply({ content: "Préfixe vide, rien n'a été changé.", flags: MessageFlags.Ephemeral });
+      }
+      if (value.length > 3 || /\s/.test(value)) {
+        return interaction.reply({ content: "Un préfixe fait 3 caractères au maximum, sans espace.", flags: MessageFlags.Ephemeral });
+      }
+      const conflicts = prefixConflicts({ ...getPrefixes(guildId), [extra]: value });
+      if (conflicts.length) {
+        return interaction.reply({
+          content: `Préfixe refusé : ${prefixConflictMessage(conflicts)}. Choisis un préfixe qui ne commence pas par un autre.`,
+          flags: MessageFlags.Ephemeral,
+        });
       }
       setPrefix(guildId, extra, value);
       await interaction.reply({
@@ -2739,7 +2766,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       return interaction.message?.edit(buildConfigPanel(guild, "prefixes", member)).catch(() => {});
     }
 
-    const field = PREFIX_FIELDS[extra];
     const modal = new ModalBuilder().setCustomId(interaction.customId).setTitle(field.label);
     modal.addComponents(
       new ActionRowBuilder().addComponents(

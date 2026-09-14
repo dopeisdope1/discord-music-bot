@@ -1,8 +1,9 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 
-// "=help" — index catégorisé des commandes du préfixe "=" (architecture 3
-// préfixes : & = gestion, !! = sécurité, = = vocal), présentation calquée
+// "=help" — index catégorisé des commandes du préfixe "=" (architecture 4
+// préfixes : & = gestion, - = modération, !! = sécurité, = = vocal/owner),
+// présentation calquée
 // sur la capture de l'autre bot (catégories + nombre de commandes), mais
 // remplie UNIQUEMENT avec les vraies commandes de CE bot. Purement
 // informatif, aucune interaction : un tableau maintenu à la main. Les noms
@@ -37,10 +38,11 @@ const CATEGORIES = [
   },
 ];
 
-function buildVoiceHelpCard() {
+function buildVoiceHelpCard(prefix = "=") {
   const total = CATEGORIES.reduce((n, c) => n + c.commandes.length, 0);
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 Commandes \"=\"\n${total} commandes vocales`));
+  const afficher = (texte) => texte.replaceAll("=", prefix);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 Commandes "${prefix}"\n${total} commandes vocales`));
 
   for (const cat of CATEGORIES) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -48,7 +50,7 @@ function buildVoiceHelpCard() {
       new TextDisplayBuilder().setContent(
         [
           `### ${cat.emoji} ${cat.nom} — ${cat.commandes.length} commande${cat.commandes.length > 1 ? "s" : ""}`,
-          ...cat.commandes.map((c) => `**${c.nom}**\n${c.description}`),
+          ...cat.commandes.map((c) => `**${afficher(c.nom)}**\n${afficher(c.description)}`),
         ].join("\n")
       )
     );
@@ -67,7 +69,7 @@ async function handleVoiceHelpTextCommand(client, message) {
   const [cmd] = content.slice(PREFIX.length).trim().split(/\s+/);
   if ((cmd || "").toLowerCase() !== "help") return; // mot inconnu sur ce préfixe : silence
 
-  return message.channel.send(buildVoiceHelpCard()).catch(() => {});
+  return message.channel.send(buildVoiceHelpCard(PREFIX)).catch(() => {});
 }
 
 module.exports = { handleVoiceHelpTextCommand, buildVoiceHelpCard, CATEGORIES };

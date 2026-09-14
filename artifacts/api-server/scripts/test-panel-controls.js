@@ -28,6 +28,7 @@ const historyStore = require("../utils/moderationHistoryStore");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("../utils/permissions/store");
 const permCatalog = require("../utils/permissions/catalog");
+const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -195,6 +196,30 @@ function actionsDe(json) {
     for (const section of ["prefixes", "logs", "welcome", "tickets", "voice", "sys", "banall"]) {
       assert.ok(render(section).texte.includes(">"), `${section} n'affiche plus l'état courant`);
     }
+  });
+
+  await cas("le panel refuse les préfixes qui se chevauchent", async () => {
+    const submit = async (family, value) => {
+      const replies = [];
+      await handleConfigInteraction({
+        customId: `${ID}:prefix:${family}`,
+        member,
+        guild,
+        isModalSubmit: () => true,
+        fields: { getTextInputValue: () => value },
+        reply: async (payload) => replies.push(payload),
+        message: { edit: async () => {} },
+      });
+      return replies[0]?.content || "";
+    };
+
+    const overlap = await submit("main", "!");
+    assert.strictEqual(getPrefixes("g1").main, "?", "le panel ne doit pas enregistrer ! face à !!");
+    assert.ok(overlap.includes("chevauchent"), overlap);
+
+    const duplicate = await submit("musicMod", "=");
+    assert.strictEqual(getPrefixes("g1").musicMod, "&", "le panel ne doit pas enregistrer un doublon exact");
+    assert.ok(duplicate.includes("chevauchent"), duplicate);
   });
 
   await cas("le catalogue des permissions n'est plus recopié à côté de son menu", () => {

@@ -155,7 +155,7 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
 }
 
 /**
- * Carte de "=add"/"&owner"/"!!owner" — présentation demandée explicitement
+ * Carte de "=add"/"=owner"/"!!owner" — présentation demandée explicitement
  * (titre "Owner", "Utilisateur"/"Statut"/"Consulté par" en évidence, liste
  * numérotée des accès, coche/croix verte-rouge par clé dans le menu ouvert,
  * comme la capture d'un autre bot). `derniereCle` fait porter la coche
@@ -164,8 +164,9 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
  * sur la capture, sans rien dessiner nous-mêmes. `categoriesAutorisees`
  * (tableau de clés de catégorie, ex. ["moderation","channels"]) restreint le
  * résumé ET le sélecteur de catégories à CES catégories du VRAI catalogue —
- * c'est ce qui distingue "=add" (tout le catalogue), "&owner" (modération :
- * moderation/channels/members/logs) et "!!owner" (sécurité : protection)
+ * c'est ce qui distingue "=add"/"=owner" (tout le catalogue vocal),
+ * "&owner" (legacy modération : moderation/channels/members/logs) et
+ * "!!owner" (sécurité : protection)
  * sans dupliquer la moindre logique de rendu. Même mécanisme de fond que
  * buildAccessCard (mêmes permStore/permCatalog, catégorie -> clé) : "Statut"
  * reflète l'état RÉEL d'accès individuel de ce membre — jamais le mot
@@ -388,16 +389,12 @@ const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"
 const CATEGORIES_OWNER_SECURITE = ["protection"];
 
 /**
- * "&owner <@membre|id>" — carte "Owner" filtrée aux catégories de
- * MODÉRATION du VRAI catalogue (moderation/channels/members/logs) : jamais
+ * Legacy helper "&owner <@membre|id>" — carte "Owner" filtrée aux catégories
+ * de MODÉRATION du VRAI catalogue (moderation/channels/members/logs) : jamais
  * les permissions sécurité/serveur/panel qui n'ont rien à faire ici.
- * Contrairement à "!!owner"/"=add" (préfixes SANS table de dispatch riche),
- * "&owner" est une vraie commande du préfixe "musicMod" : elle s'enregistre
- * directement dans `modHandlers` (utils/musicCommands.js), pas dans un
- * handler à part — sans ça, elle resterait invisible d'`isImplemented`/
- * `&help` (utils/implementedCommands.js ne connaît que les mots de
- * `modHandlers`) et perdrait le passage par la file d'attente/rate-limit
- * commune aux autres commandes "&".
+ * La commande publique `&owner` est désormais réservée par le routeur à la
+ * famille vocal/owner (`=owner`) ; ce helper reste exporté pour les anciennes
+ * interactions internes et la compatibilité du catalogue de permissions.
  */
 async function ownerModeration(client, message, args) {
   return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
@@ -488,7 +485,7 @@ async function handleServerAdminInteraction(interaction) {
   // Panneau "Owner" (voir buildOwnerAccessCard) — 3 variantes du MÊME
   // mécanisme sur 3 paires de customId distinctes, chacune avec son propre
   // filtre de catégories réelles : "ownercat"/"ownerkey" = "=add" (catalogue
-  // complet), "modownercat"/"modownerkey" = "&owner" (modération),
+  // complet), "modownercat"/"modownerkey" = legacy "&owner" (modération),
   // "secownercat"/"secownerkey" = "!!owner" (sécurité). Les 3 doivent garder
   // LEUR filtre au clic suivant, d'où la variante encodée dans le customId
   // lui-même plutôt que dans un état à part. "Consulté par" reflète TOUJOURS
@@ -1380,7 +1377,7 @@ async function vc(client, message, args) {
   return reply(message, "error", "Utilise `voc lock|unlock|limit <n>|rename <nom>|kick @membre|add @membre|remove @membre|transfer @membre`.");
 }
 
-// --- Écosystème VOCAL sur "=" (architecture 3 préfixes : & = modération,
+// --- Écosystème VOCAL sur "=" (architecture 4 préfixes : & = gestion,
 // !! = sécurité, = = vocal) — voir index.js pour le dispatch du préfixe.
 // Un simple catalogue de commandes vocales RÉELLES, chacune une action de
 // modération vocale ponctuelle sur N'IMPORTE QUEL membre en vocal — PAS un

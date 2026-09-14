@@ -1,5 +1,5 @@
 /**
- * "!!" devient l'écosystème SÉCURITÉ complet (architecture 3 préfixes,
+ * "!!" devient l'écosystème SÉCURITÉ complet (architecture 4 préfixes,
  * utils/securityAliases.js) : wl/unwl/whitelist/unwhitelist/antinuke/
  * antiraid/antilink/antispam/security/lockdown. Chaque mot délègue
  * directement à la fonction "&" déjà écrite et testée (guardHandlers,
@@ -239,19 +239,10 @@ const texte = (msg) => JSON.stringify(msg._replies[0] || {});
     assert.ok(envoyes[0].components, JSON.stringify(envoyes[0]));
   });
 
-  console.log("\n\"!!lockdown\" — même verrouillage de salon que \"&lockdown\" :");
+  console.log("\n\"!!lockdown\" — aucun alias sécurité (lockdown est modération) :");
 
-  await cas("\"!!lockdown\" verrouille réellement le salon courant (SendMessages: false pour @everyone)", async () => {
-    permStore.grantToUser("g13", "staff-1", "channels.lockdown");
+  await cas("\"!!lockdown\" reste silencieux", async () => {
     const channel = fakeChannel("chan-lockdown");
-    const msg = fakeMessage({ guildId: "g13", content: "!!lockdown", channel });
-    await handleSecurityAliasTextCommand(null, msg);
-    const overwrite = channel.permissionOverwrites.cache.get("g13");
-    assert.strictEqual(overwrite?.SendMessages, false);
-  });
-
-  await cas("sans channels.lockdown, \"!!lockdown\" ne touche à rien", async () => {
-    const channel = fakeChannel("chan-lockdown-2");
     const msg = fakeMessage({ guildId: "g14", authorId: "sans-perm", content: "!!lockdown", channel });
     await handleSecurityAliasTextCommand(null, msg);
     assert.strictEqual(channel.permissionOverwrites.cache.size, 0);

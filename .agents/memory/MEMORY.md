@@ -1,0 +1,1 @@
+- [DigitalOcean continuous deployment](digitalocean-continuous-deployment.md) — production polls GitHub main every minute and restarts the bot only when the commit changes.

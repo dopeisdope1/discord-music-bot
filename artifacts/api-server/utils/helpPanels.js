@@ -45,9 +45,13 @@ function buildHelpPanel({ title, intro, sections, footer }) {
 /**
  * Panel d'aide des commandes musique (préfixe principal).
  * @param {string} prefix
- * @param {string} [modPrefix] — préfixe des commandes de modération de ce bot (voir utils/modMessageRouter.js)
+ * @param {string} [modPrefix] — préfixe de gestion de ce bot
+ * @param {{ moderation?: string, protection?: string, owner?: string }} [otherPrefixes]
  */
-function buildMusicHelpPanel(prefix = "!", modPrefix) {
+function buildMusicHelpPanel(prefix = "!", modPrefix, otherPrefixes = {}) {
+  const moderation = otherPrefixes.moderation || "-";
+  const protection = otherPrefixes.protection || "!!";
+  const owner = otherPrefixes.owner || "=";
   return buildHelpPanel({
     title: "Aide — Commandes musique",
     intro: `Préfixe : \`${prefix}\``,
@@ -76,7 +80,8 @@ function buildMusicHelpPanel(prefix = "!", modPrefix) {
     footer:
       "Tu dois être dans un salon vocal pour lancer une lecture. Seule la personne qui a amené le bot en vocal peut utiliser pause/resume/skip/stop/leave/volume/loop — les autres doivent lui demander la permission (un message avec Accepter/Refuser lui est envoyé automatiquement)." +
       (modPrefix
-        ? `\nCe bot gère aussi des commandes de modération (clear/ban/renew/lock...) sur un préfixe séparé — tape \`${modPrefix}help\` pour les voir.`
+        ? `\nGestion : \`${modPrefix}\` (aide : \`${modPrefix}help\`). Modération : \`${moderation}\` (clear/ban/kick/mute...).` +
+          `\nSécurité : \`${protection}\` (aide : \`${protection}help\`). Vocal/owner : \`${owner}\` (aide : \`${owner}help\`).`
         : ""),
   });
 }

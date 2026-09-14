@@ -3,18 +3,17 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { guardHandlers } = require("./guardCommands");
 const { automodHandlers } = require("./automodCommands");
-const { moderationHandlers } = require("./moderationCommands");
 const automod = require("./automod/antiSpam");
 const serverAdmin = require("./serverAdminCommands");
 const securityPanel = require("./securityPanel");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
-// "!!" devient l'écosystème SÉCURITÉ complet (architecture 3 préfixes,
-// & = modération / !! = sécurité / = = vocal) : chaque mot ci-dessous
+// "!!" devient l'écosystème SÉCURITÉ complet (architecture 4 préfixes,
+// & = gestion / - = modération / !! = sécurité / = = vocal) : chaque mot ci-dessous
 // délègue à une fonction déjà écrite et testée sur "&" — aucune nouvelle
 // logique de sécurité, juste un second point d'entrée. "&wl"/"&unwl"/
-// "&whitelist"/"&antinuke"/"&antilink"/"&antispam"/"&lockdown" restent
+// "&whitelist"/"&antinuke"/"&antilink"/"&antispam" restent
 // strictement inchangés sur "&", cette table n'y touche jamais.
 
 /** "!!whitelist" → whitelist ANTI-SPAM (utils/automod/antiSpam.js), même carte que "&whitelist". */
@@ -62,7 +61,6 @@ const ALIASES = {
   antilink: automodHandlers.antilink,
   antispam: automodHandlers.antispam,
   security: securityAlias,
-  lockdown: moderationHandlers.lockdown,
 };
 
 /**
@@ -79,10 +77,22 @@ async function handleSecurityAliasTextCommand(client, message) {
 
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
   const mot = (cmd || "").toLowerCase();
-  const handler = ALIASES[mot];
-  if (!handler) return; // mot inconnu sur ce préfixe : silence
 
-  return handler(client, message, args);
+  // Cas spéciaux explicites d'abord (synonymes, alias, whitelist anti-spam vs
+  // anti-nuke) — voir ALIASES.
+  const alias = ALIASES[mot];
+  if (alias) return alias(client, message, args);
+
+  // Sinon, TOUT mot de la catégorie sécurité (utils/commandRouting.js) est
+  // servi ici, en déléguant au handler réel (modHandlers). C'est ce qui fait
+  // marcher "!!antibot"/"!!badwords"/"!!antichannel"/… après le déplacement
+  // dur qui les a retirés de "&". Require paresseux : évite un cycle de
+  // chargement avec utils/musicCommands.js.
+  const commandRouting = require("./commandRouting");
+  if (commandRouting.bucketDe(mot) !== commandRouting.BUCKET_SECURITE) return; // pas un mot sécurité : silence
+  const { modHandlers } = require("./musicCommands");
+  const handler = modHandlers[mot];
+  if (handler) return handler(client, message, args);
 }
 
 module.exports = { handleSecurityAliasTextCommand, ALIASES };

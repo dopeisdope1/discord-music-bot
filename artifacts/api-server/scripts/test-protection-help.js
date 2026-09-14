@@ -80,6 +80,7 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     ]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
     }
+    assert.ok(!texte.includes("!!lockdown"), "lockdown est modération-only et ne doit plus être listé sous !!");
   });
 
   console.log("\n!!help — écosystème sécurité (chantier 2/3) :");
@@ -100,10 +101,8 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
       "!!antiraid",
       "!!antilink",
       "!!antispam",
-      "!!lockdown",
       "panel.permissions.manage",
       "protection.whitelist",
-      "channels.lockdown",
     ]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
     }

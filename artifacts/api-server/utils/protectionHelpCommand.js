@@ -6,7 +6,8 @@ const { getPrefixes } = require("./prefixStore");
 // utils/serverAdminCommands.js::handleSecurityOwnerTextCommand, utils/
 // confessions.js, utils/setClearCommand.js), qui n'apparaissent
 // volontairement PAS dans "&help" (utils/helpPanel.js, préfixe "&" —
-// architecture 3 préfixes : & = modération, !! = sécurité, = = vocal).
+// architecture 4 préfixes : & = gestion, - = modération, !! = sécurité,
+// = = vocal/owner).
 // Purement informatif, aucune interaction : une simple carte texte à jour
 // à la main si une commande "!!" s'ajoute. Groupé en 2 : "Sécurité serveur"
 // (le vrai écosystème sécurité demandé) et "Protection personnelle"
@@ -28,7 +29,6 @@ const COMMANDES = [
   { groupe: "Sécurité serveur", nom: "!!antiraid", description: "Synonyme de `!!antinuke` — même moteur, aucun système parallèle." },
   { groupe: "Sécurité serveur", nom: "!!antilink [on/off]", description: "Anti-lien — droit `protection.automod`." },
   { groupe: "Sécurité serveur", nom: "!!antispam [on/off]", description: "Anti-spam/anti-flood — droit `protection.automod`." },
-  { groupe: "Sécurité serveur", nom: "!!lockdown", description: "Verrouille tous les salons texte du serveur — droit `channels.lockdown`." },
   {
     groupe: "Protection personnelle",
     nom: "!!panel",
@@ -43,9 +43,10 @@ const COMMANDES = [
   { groupe: "Autres", nom: "!!setclear", description: "Configure le nettoyage automatique (`<nom> clear`) — droit `server.selfclear.manage`." },
 ];
 
-function buildProtectionHelpCard() {
+function buildProtectionHelpCard(prefix = "!!") {
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🛡️ Commandes \"!!\""));
+  const afficher = (texte) => texte.replaceAll("!!", prefix);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🛡️ Commandes "${prefix}"`));
 
   const groupes = [...new Set(COMMANDES.map((c) => c.groupe))];
   for (const groupe of groupes) {
@@ -54,7 +55,7 @@ function buildProtectionHelpCard() {
       new TextDisplayBuilder().setContent(
         [
           `**${groupe}**`,
-          ...COMMANDES.filter((c) => c.groupe === groupe).map((c) => `**${c.nom}** — ${c.description}`),
+          ...COMMANDES.filter((c) => c.groupe === groupe).map((c) => `**${afficher(c.nom)}** — ${afficher(c.description)}`),
         ].join("\n")
       )
     );
@@ -70,9 +71,9 @@ async function handleProtectionHelpTextCommand(client, message) {
   if (!PREFIX || !content.startsWith(PREFIX)) return;
 
   const [cmd] = content.slice(PREFIX.length).trim().split(/\s+/);
-  if ((cmd || "").toLowerCase() !== "help") return; // mot inconnu sur ce préfixe : silence, comme "&"
+  if ((cmd || "").toLowerCase() !== "help") return; // mot inconnu sur ce préfixe : silence
 
-  return message.channel.send(buildProtectionHelpCard()).catch(() => {});
+  return message.channel.send(buildProtectionHelpCard(PREFIX)).catch(() => {});
 }
 
 module.exports = { handleProtectionHelpTextCommand, buildProtectionHelpCard };

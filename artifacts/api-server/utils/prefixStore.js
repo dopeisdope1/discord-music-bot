@@ -10,16 +10,23 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-// Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
-// main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
-// avec le CrowBot du serveur (voir utils/musicCommands.js) ; protection =
-// préfixe du panel de protection PERSONNELLE (utils/personalProtection.js),
-// volontairement séparé pour ne jamais se mélanger avec &panel (config
-// serveur) — demande explicite ; owner = préfixe "=" (utils/
-// serverAdminCommands.js), qui héberge deux commandes distinctes : "=add"
-// (même mécanisme que "&access") et "=owner" (transfert de propriété d'un
-// salon vocal, même mécanisme que "&voc transfer") — demande explicite.
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!", owner: "=" };
+// Architecture 4 préfixes de commandes (+ musique) :
+//   main = "?"  → musique
+//   musicMod = "&" → GESTION (rôles/salons/tickets/giveaways/logs/config…),
+//     partagé avec le CrowBot du serveur (voir utils/musicCommands.js)
+//   moderation = "-" → MODÉRATION (ban/kick/mute/warn/clear/lockdown…)
+//   protection = "!!" → SÉCURITÉ (antinuke/antiraid/automod/whitelist…) +
+//     protection PERSONNELLE (utils/personalProtection.js, "!!panel")
+//   owner = "=" → VOCAL (mute/deaf/move/… + carte d'accès "=owner")
+// Le routage mot→préfixe se fait par catégorie (voir utils/commandRouting.js).
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
+const PREFIX_LABELS = {
+  main: "musique",
+  musicMod: "gestion",
+  moderation: "modération",
+  protection: "sécurité/protection",
+  owner: "vocal/owner",
+};
 
 let cache = null;
 
@@ -44,7 +51,7 @@ function save() {
 
 /**
  * @param {string} guildId
- * @returns {{ main: string, musicMod: string }} main = préfixe musique (!), musicMod = préfixe modération (?)
+ * @returns {{ main: string, musicMod: string, moderation: string, protection: string, owner: string }}
  */
 function getPrefixes(guildId) {
   const data = load();
@@ -53,7 +60,7 @@ function getPrefixes(guildId) {
 
 /**
  * @param {string} guildId
- * @param {"main"|"musicMod"|"protection"} type
+ * @param {"main"|"musicMod"|"moderation"|"protection"|"owner"} type
  * @param {string} value
  */
 function setPrefix(guildId, type, value) {
@@ -63,4 +70,39 @@ function setPrefix(guildId, type, value) {
   save();
 }
 
-module.exports = { getPrefixes, setPrefix, DEFAULT_PREFIXES };
+/**
+ * Prefixes are matched with startsWith by the text dispatchers. Therefore an
+ * exact duplicate is not the only collision: "!" shadows "!!", and vice
+ * versa, whichever dispatcher runs first. Return all conflicting families so
+ * callers can give a useful error instead of silently making commands
+ * unreachable.
+ */
+function prefixConflicts(prefixes) {
+  const entries = Object.entries(prefixes).filter(([, value]) => typeof value === "string" && value.length);
+  const conflicts = [];
+  for (let i = 0; i < entries.length; i++) {
+    const [leftKey, leftValue] = entries[i];
+    for (let j = i + 1; j < entries.length; j++) {
+      const [rightKey, rightValue] = entries[j];
+      if (leftValue.startsWith(rightValue) || rightValue.startsWith(leftValue)) {
+        conflicts.push({
+          leftKey,
+          rightKey,
+          leftValue,
+          rightValue,
+          leftLabel: PREFIX_LABELS[leftKey] || leftKey,
+          rightLabel: PREFIX_LABELS[rightKey] || rightKey,
+        });
+      }
+    }
+  }
+  return conflicts;
+}
+
+function prefixConflictMessage(conflicts) {
+  return conflicts
+    .map((conflict) => `\`${conflict.leftValue}\` (${conflict.leftLabel}) et \`${conflict.rightValue}\` (${conflict.rightLabel}) se chevauchent`)
+    .join(" ; ");
+}
+
+module.exports = { getPrefixes, setPrefix, DEFAULT_PREFIXES, PREFIX_LABELS, prefixConflicts, prefixConflictMessage };

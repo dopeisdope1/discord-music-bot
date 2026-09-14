@@ -15,6 +15,7 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
+const commandRouting = require("./commandRouting");
 const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
 
 // Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
@@ -107,13 +108,23 @@ function paginerColonnes(colonnes) {
 
 /**
  * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
- * `prefix: "mod"` = préfixe des commandes (`&`), `"main"` = préfixe musique,
- * et `null` = déclencheur SANS préfixe (ex. `uo clear`). Afficher `&` devant
- * ce dernier annoncerait une commande qui n'existe pas.
+ * `prefix: "mod"` = préfixe de gestion (`&`, ou sa valeur configurée),
+ * `"main"` = préfixe musique, et `null` = déclencheur SANS préfixe
+ * (ex. `uo clear`). Afficher un préfixe devant ce dernier annoncerait une
+ * commande qui n'existe pas.
  */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  return cmd.prefix === "main" ? prefixes.main : prefixes.musicMod;
+  if (cmd.prefix === "main") return prefixes.main;
+  const bucket = commandRouting.bucketDe(cmd.name);
+  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
+  if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
+  if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
+  return prefixes.musicMod;
+}
+
+function descriptionPour(cmd, prefixes) {
+  return resumer(cmd.description).replace(/&(?=[a-z])/gi, prefixePour(cmd, prefixes));
 }
 
 /**
@@ -383,7 +394,9 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
 
     spec = {
       titre: PALIER_PAR_CLE[activeTier].label,
-      sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
+      sousTitre:
+        `${identiteAffichee(member, authorId)} · Gestion : ${prefixes.musicMod} · Modération : ${prefixes.moderation} · ` +
+        `Sécurité : ${prefixes.protection} · Vocal : ${prefixes.owner} · [ ] facultatif, < > obligatoire`,
       cartes: pages[clampedPage].map((c) => ({
         cle: c.cle,
         titre: c.titre,
@@ -394,7 +407,9 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
           // la version longue se faisait couper en plein milieu d'une phrase.
           // Les alias restent visibles : sans eux, `&avatar` semblerait ne
           // pas exister.
-          description: e.aliases.length ? `${resumer(e.cmd.description)} · alias : ${e.aliases.join(", ")}` : resumer(e.cmd.description),
+          description: e.aliases.length
+            ? `${descriptionPour(e.cmd, prefixes)} · alias : ${e.aliases.join(", ")}`
+            : descriptionPour(e.cmd, prefixes),
         })),
       })),
       pied: totalPages > 1 ? `Page ${clampedPage + 1} / ${totalPages}` : undefined,
@@ -409,7 +424,9 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
     // commande : c'est ce qui permet de choisir sans avoir à tout lire.
     spec = {
       titre: "Centre de commandes",
-      sousTitre: `${identiteAffichee(member, authorId)} · Préfixe : ${prefixes.musicMod}`,
+      sousTitre:
+        `${identiteAffichee(member, authorId)} · Musique : ${prefixes.main} · Gestion : ${prefixes.musicMod} · ` +
+        `Modération : ${prefixes.moderation} · Sécurité : ${prefixes.protection} · Vocal : ${prefixes.owner}`,
       cartes: availableTiers.map((cle) => {
         const palier = PALIER_PAR_CLE[cle];
         const entrees = parPalier[cle];

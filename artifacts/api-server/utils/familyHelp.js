@@ -10,6 +10,7 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
+const commandRouting = require("./commandRouting");
 const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
 const { identityOf } = require("./helpPanel");
 
@@ -43,7 +44,12 @@ function commandesAccessibles(member) {
 /** Le vrai préfixe d'une commande — toutes ne vivent pas sur le même. */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  return cmd.prefix === "main" ? prefixes.main : prefixes.musicMod;
+  if (cmd.prefix === "main") return prefixes.main;
+  const bucket = commandRouting.bucketDe(cmd.name);
+  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
+  if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
+  if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
+  return prefixes.musicMod;
 }
 
 /**
@@ -92,7 +98,7 @@ function famillesDe(mot, member) {
 
 const enItem = (cmd, prefixes) => ({
   nom: `${prefixePour(cmd, prefixes)}${cmd.name}`,
-  description: resumer(cmd.description),
+  description: resumer(cmd.description).replace(/&(?=[a-z])/gi, prefixePour(cmd, prefixes)),
 });
 
 /**
@@ -140,13 +146,15 @@ function buildFamilyCard(mot, member, guildId, { sansImage = false } = {}) {
 
   const spec = {
     titre: `${prefixe}${mot}`,
-    sousTitre: `Préfixe : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
+    sousTitre:
+      `Gestion : ${prefixes.musicMod} · Modération : ${prefixes.moderation} · Sécurité : ${prefixes.protection} · ` +
+      `Vocal : ${prefixes.owner} · [ ] facultatif, < > obligatoire`,
     cartes,
     // Une seule colonne : ces cartes ont peu de lignes mais des syntaxes
     // longues, que deux demi-colonnes tronqueraient en plein milieu.
     colonnes: 1,
     hauteursLibres: true,
-    pied: `${prefixes.musicMod}help pour tout voir`,
+    pied: `${prefixes.musicMod}help pour la gestion · ${prefixes.protection}help sécurité · ${prefixes.owner}help vocal`,
   };
 
   const png = sansImage ? null : rendreEnCache(spec);
