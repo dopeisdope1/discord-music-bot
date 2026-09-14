@@ -11,6 +11,7 @@ const {
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
+const { peutVocal } = require("./voiceAccess");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
 const { requestConfirmation } = require("./serverAdminCommands");
@@ -222,7 +223,7 @@ async function voicemove(client, message) {
 }
 
 async function voicekick(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!peutVocal(message.member, "voice.disconnect")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -237,7 +238,7 @@ async function voicekick(client, message, args) {
 
 /** &mv <@membre|id> <#salon> — déplace UN membre précis vers un salon vocal (voir &voicemove pour tout un salon d'un coup). */
 async function mv(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!peutVocal(message.member, "voice.mv")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -256,7 +257,7 @@ async function mv(client, message, args) {
 }
 
 async function bringall(client, message) {
-  if (!can(message.member, "server.voice.moveall")) return;
+  if (!peutVocal(message.member, "voice.bringall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -284,7 +285,7 @@ async function bringall(client, message) {
 // mute/sourdine Discord natifs, réversibles, sans trace de sanction.
 function voiceMuteAction(actif) {
   return async function (client, message, args) {
-    if (!can(message.member, "server.voice.manage")) return;
+    if (!peutVocal(message.member, actif ? "voice.mute" : "voice.unmute")) return;
     const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MuteMembers, "MuteMembers");
     if (botPerm) return reply(message, "error", botPerm);
 
@@ -302,7 +303,7 @@ const voiceunmute = voiceMuteAction(false);
 
 function voiceDeafenAction(actif) {
   return async function (client, message, args) {
-    if (!can(message.member, "server.voice.manage")) return;
+    if (!peutVocal(message.member, actif ? "voice.deaf" : "voice.undeaf")) return;
     const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.DeafenMembers, "DeafenMembers");
     if (botPerm) return reply(message, "error", botPerm);
 
@@ -324,7 +325,7 @@ const voiceundeaf = voiceDeafenAction(false);
 
 /** "=find <@membre>" — indique dans quel salon vocal se trouve un membre (lecture seule). */
 async function voicefind(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!peutVocal(message.member, "voice.find")) return;
   const targetId = parseTarget(args);
   const target = await fetchTargetOrReply(message, targetId);
   if (!target) return;
@@ -338,7 +339,7 @@ async function voicefind(client, message, args) {
  * qu'au moins un autre salon vocal gérable existe ; sinon rien à faire.
  */
 async function voicewakeup(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!peutVocal(message.member, "voice.wakeup")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -362,7 +363,7 @@ async function voicewakeup(client, message, args) {
  * vocal pour pouvoir être déplacé.
  */
 async function voicejoin(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
+  if (!peutVocal(message.member, "voice.join")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 

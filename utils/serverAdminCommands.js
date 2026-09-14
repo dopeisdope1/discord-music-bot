@@ -25,6 +25,7 @@ const { carteConfirmationFichier } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
+const voiceAccess = require("./voiceAccess");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
 const guardConfig = require("./guard/config");
@@ -254,6 +255,66 @@ function buildOwnerAccessCard(
 }
 
 /**
+ * Carte "Owner" VOCALE de "=owner"/"=add" (préfixe vocal "=") — liste PLATE
+ * des vraies commandes vocales à cocher (✓ accordée / ✗ refusée), comme la
+ * capture "Ajouter ou retirer un accès" : PAS de sélecteur de catégorie
+ * (Modération/Salons/…), directement les accès vocaux. Chaque coche donne
+ * VRAIMENT le droit d'utiliser la commande (permStore "voice.<cmd>", vérifié
+ * par voiceAccess.peutVocal). `derniereCle` porte la coche bleue native de
+ * Discord sur l'accès qui vient d'être basculé.
+ */
+function buildVoiceOwnerCard(guildId, memberId, consultePar, derniereCle = null) {
+  const granted = permStore.getUserGrants(guildId, memberId).filter((k) => voiceAccess.VOICE_ACCESS_KEYS.includes(k));
+
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        `**Utilisateur** — <@${memberId}>`,
+        `**Statut** — ${granted.length ? EMOJI.CHECK : EMOJI.CROSS} ${granted.length ? "Accès vocaux actifs" : "Aucun accès vocal"}`,
+        `**Attribué par** — ${consultePar}`,
+      ].join("\n")
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      [
+        `**Accès attribués — ${granted.length}**`,
+        "",
+        granted.length
+          ? granted.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${voiceAccess.LABEL_PAR_CLE[key]}`).join("\n")
+          : "*Aucun accès vocal pour l'instant.*",
+      ].join("\n")
+    )
+  );
+
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`srv:voiceowner:${memberId}`)
+        .setPlaceholder("Ajouter ou retirer un accès")
+        .addOptions(
+          voiceAccess.VOICE_ACCESS.map((a) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(a.label)
+              .setValue(a.key)
+              .setEmoji(granted.includes(a.key) ? EMOJI.CHECK : EMOJI.CROSS)
+              .setDescription(a.description.slice(0, 100))
+              .setDefault(a.key === derniereCle)
+          )
+        )
+    )
+  );
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+/**
  * &access <@membre|id> — ouvre le panneau d'octroi de permissions
  * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
  * "=add"/"&owner"/"!!owner" (préfixes séparés, voir les handlers
@@ -289,14 +350,12 @@ async function access(client, message, args, label = "access", ownerStyle = fals
 }
 
 /**
- * "=add <@membre|id>" ET "=owner <@membre|id>" — mêmes deux mots, même
- * mécanisme, même carte "Owner" (buildOwnerAccessCard) sur le VRAI
- * catalogue de permissions COMPLET. "owner" avait un temps été réservé au
- * vocal pendant la restructuration à 3 préfixes, mais ça a été écarté (le
- * vocal se limite finalement à un catalogue de commandes de modération
- * vocale réelle, sans le mot "owner" dedans — voir handleVoiceAliasTextCommand)
- * : "=owner" est donc restauré ici, sans collision possible avec "&owner"/
- * "!!owner" (préfixes différents, filtrés à leurs propres catégories).
+ * "=add <@membre|id>" ET "=owner <@membre|id>" — préfixe VOCAL "=" : ouvrent
+ * la carte "Owner" VOCALE (buildVoiceOwnerCard), liste plate des commandes
+ * vocales à cocher, PAS le catalogue de permissions générique. Cocher une
+ * commande donne vraiment le droit de l'utiliser (voiceAccess). Gardé sous
+ * le droit `panel.permissions.manage` (qui peut OUVRIR la carte). Le
+ * catalogue générique reste dispo via "&access"/"&owner"/"!!owner".
  */
 async function handleAddAccessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
@@ -308,7 +367,21 @@ async function handleAddAccessTextCommand(client, message) {
   const mot = (cmd || "").toLowerCase();
   if (mot !== "add" && mot !== "owner") return; // mot inconnu sur ce préfixe : silence
 
-  return access(client, message, args, mot, true);
+  if (!can(message.member, "panel.permissions.manage")) return;
+
+  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
+  const idMatch = args[0]?.match(/^\d{15,25}$/);
+  const targetId = mentionMatch?.[1] || idMatch?.[0];
+  if (!targetId) return reply(message, "error", `Indique un membre (mention ou identifiant) : \`${mot} @membre\`.`);
+
+  const target = await message.guild.members.fetch(targetId).catch(() => null);
+  if (!target) return reply(message, "error", "Ce membre n'est pas sur le serveur.");
+
+  if (accessStore.isOwner(target.id) || accessStore.isSys(target.id)) {
+    return reply(message, "info", `${target.user.tag} est déjà propriétaire/rang sys — accès complet, rien à accorder en plus.`);
+  }
+
+  return message.reply(buildVoiceOwnerCard(message.guild.id, target.id, message.author.tag));
 }
 
 const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
@@ -452,6 +525,21 @@ async function handleServerAdminInteraction(interaction) {
     return interaction.update(
       buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category, key, categories, variante)
     );
+  }
+
+  // Carte "Owner" VOCALE ("=owner"/"=add") — liste plate d'accès vocaux
+  // (voir buildVoiceOwnerCard). Un seul sélecteur, pas d'étape catégorie.
+  if (action === "voiceowner") {
+    if (!can(interaction.member, "panel.permissions.manage")) {
+      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    }
+    const memberId = idKind;
+    const key = interaction.values[0];
+    if (!voiceAccess.VOICE_ACCESS_KEYS.includes(key)) return interaction.deferUpdate().catch(() => {});
+    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
+    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
+    else permStore.grantToUser(interaction.guild.id, memberId, key);
+    return interaction.update(buildVoiceOwnerCard(interaction.guild.id, memberId, interaction.user.tag, key));
   }
 
   const LISTS = {
