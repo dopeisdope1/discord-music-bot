@@ -1,42 +1,55 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 
-// "=help" — index des commandes sur le préfixe "=" (architecture 3
-// préfixes : & = modération, !! = sécurité, = = vocal), même patron que
-// utils/protectionHelpCommand.js ("!!help") : un tableau maintenu à la
-// main, purement informatif, aucune interaction. Un simple catalogue de
-// commandes de modération VOCALE réelles (droit `server.voice.manage`,
-// utils/serverExtra.js) — sur N'IMPORTE QUEL membre en vocal, aucune notion
-// de salon "à soi" ni de propriété. "=add"/"=owner" (octroi de permissions
-// individuelles, utils/serverAdminCommands.js) partagent ce préfixe mais
-// n'ont AUCUN rapport avec le vocal — listés à part pour ne pas laisser
-// croire que ce sont des commandes vocales de plus.
-const COMMANDES = [
-  { nom: "=mute <@membre>", description: "Mute vocal Discord natif (distinct du mute-rôle punitif de `&mute`) — droit `server.voice.manage`." },
-  { nom: "=unmute <@membre>", description: "Lève ce mute vocal." },
-  { nom: "=deaf <@membre>", description: "Sourdine vocale native." },
-  { nom: "=undeaf <@membre>", description: "Lève cette sourdine." },
-  { nom: "=disconnect <@membre>", description: "Expulse un membre du vocal (identique à `&voicekick`)." },
-  { nom: "=move <@membre> #salon", description: "Déplace un membre vers un salon vocal (identique à `&mv`)." },
+// "=help" — index catégorisé des commandes du préfixe "=" (architecture 3
+// préfixes : & = gestion, !! = sécurité, = = vocal), présentation calquée
+// sur la capture de l'autre bot (catégories + nombre de commandes), mais
+// remplie UNIQUEMENT avec les vraies commandes de CE bot. Purement
+// informatif, aucune interaction : un tableau maintenu à la main. Les noms
+// de commandes de l'autre bot (reset/settings/sys/wakeup/dog/follow/pv/
+// pvlist/pvclear...) n'existent pas ici et ne sont donc PAS inventés ;
+// "Private" (salons vocaux privés/temporaires) a été volontairement
+// désactivé — voir TEMP_VOICE_DISABLED dans index.js.
+const CATEGORIES = [
   {
-    nom: "=add / =owner <@membre>",
-    description: "Sans rapport avec le vocal — octroi de permissions individuelles du catalogue (voir `!!help`/`&help` pour le reste des permissions).",
+    nom: "Administration",
+    emoji: "🛡️",
+    commandes: [
+      { nom: "=add <@membre>", description: "Ouvre la carte d'octroi de permissions individuelles (catalogue complet)." },
+      { nom: "=owner <@membre>", description: "Identique à `=add` — même carte \"Owner\" d'octroi de permissions." },
+    ],
+  },
+  {
+    nom: "Voice",
+    emoji: "🎙️",
+    commandes: [
+      { nom: "=mute <@membre>", description: "Mute vocal Discord natif (distinct du mute-rôle punitif de `&mute`)." },
+      { nom: "=unmute <@membre>", description: "Lève ce mute vocal." },
+      { nom: "=deaf <@membre>", description: "Sourdine vocale native." },
+      { nom: "=undeaf <@membre>", description: "Lève cette sourdine." },
+      { nom: "=disconnect <@membre>", description: "Expulse un membre du vocal (identique à `&voicekick`)." },
+      { nom: "=move <@membre> #salon", description: "Déplace un membre vers un salon vocal (identique à `&mv`)." },
+    ],
   },
 ];
 
 function buildVoiceHelpCard() {
+  const total = CATEGORIES.reduce((n, c) => n + c.commandes.length, 0);
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## 🔊 Commandes \"=\""));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      "Agissent sur N'IMPORTE QUEL membre actuellement en vocal (sauf `=add`/`=owner`, sans rapport) — droit `server.voice.manage`."
-    )
-  );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(COMMANDES.map((c) => `**${c.nom}** — ${c.description}`).join("\n\n"))
-  );
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🔊 Commandes \"=\"\n${total} commandes vocales`));
+
+  for (const cat of CATEGORIES) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [
+          `### ${cat.emoji} ${cat.nom} — ${cat.commandes.length} commande${cat.commandes.length > 1 ? "s" : ""}`,
+          ...cat.commandes.map((c) => `**${c.nom}**\n${c.description}`),
+        ].join("\n")
+      )
+    );
+  }
+
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
@@ -53,4 +66,4 @@ async function handleVoiceHelpTextCommand(client, message) {
   return message.channel.send(buildVoiceHelpCard()).catch(() => {});
 }
 
-module.exports = { handleVoiceHelpTextCommand, buildVoiceHelpCard };
+module.exports = { handleVoiceHelpTextCommand, buildVoiceHelpCard, CATEGORIES };

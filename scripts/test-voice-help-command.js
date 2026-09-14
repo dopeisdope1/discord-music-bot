@@ -71,9 +71,18 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
-    for (const attendu of ["=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=move", "server.voice.manage"]) {
+    for (const attendu of ["=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=move"]) {
       assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
     }
+  });
+
+  await cas("présentation catégorisée (comme la capture) : catégories Administration + Voice avec compteur", async () => {
+    const msg = fakeMessage("=help");
+    await handleVoiceHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    assert.ok(texte.includes("Administration"), texte);
+    assert.ok(texte.includes("Voice"), texte);
+    assert.ok(texte.includes("commande"), texte); // "X commandes"
   });
 
   await cas("ne mentionne PLUS de système de salon/propriété inventé (revert explicite, pas la demande)", async () => {
@@ -85,13 +94,12 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     }
   });
 
-  await cas("mentionne \"=add\"/\"=owner\" à part, en précisant que c'est sans rapport avec le vocal", async () => {
+  await cas("inclut \"=add\"/\"=owner\" dans la catégorie Administration (vraies commandes du préfixe =)", async () => {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
     assert.ok(texte.includes("=add"), texte);
     assert.ok(texte.includes("=owner"), texte);
-    assert.ok(texte.includes("Sans rapport avec le vocal"), texte);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
