@@ -997,10 +997,16 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 // ---- Salons vocaux temporaires (&voicehub, &voc, voir utils/voiceChannels.js)
 // — listener séparé du nettoyage du player musique ci-dessus, aucun rapport
 // entre les deux. ----
+// Salons vocaux temporaires DÉSACTIVÉS (demande explicite : "je veux plus
+// utiliser ça pour l'instant"). Passer à false pour tout réactiver — rien
+// d'autre n'a été supprimé, le store/les commandes/le panneau restent en
+// place mais inertes tant que plus aucun salon n'est créé.
+const TEMP_VOICE_DISABLED = true;
+
 client.on("voiceStateUpdate", async (oldState, newState) => {
   // Rejoint le salon générateur -> crée un salon personnel et y déplace le membre.
   const hubId = voiceChannels.getHub(newState.guild.id);
-  if (hubId && newState.channelId === hubId && oldState.channelId !== hubId) {
+  if (!TEMP_VOICE_DISABLED && hubId && newState.channelId === hubId && oldState.channelId !== hubId) {
     const hub = newState.channel;
     // La catégorie de destination des salons créés est configurable (voir
     // &panel > Communauté > Vocaux, "Créer la configuration") : par défaut,
