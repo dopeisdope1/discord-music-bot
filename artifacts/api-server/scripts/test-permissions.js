@@ -20,7 +20,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const accessStore = require("../utils/accessStore");
 const permStore = require("../utils/permissions/store");
-const { can } = require("../utils/permissions/engine");
+const { can, hasConfiguredAccess } = require("../utils/permissions/engine");
 const { revokeIfGone, sweepGuild, pruneDeletedRoles } = require("../utils/permissions/cleanup");
 
 const GUILD_ID = "guild-1";
@@ -61,6 +61,16 @@ cas("aucune permission par défaut", () => {
 cas("le propriétaire du bot a toujours accès", () => {
   const guild = fakeGuild();
   assert.strictEqual(can(fakeMember({ id: "owner-1", guild }), "moderation.ban"), true);
+});
+
+cas("hasConfiguredAccess distingue zéro accès, octroi individuel, rôle configuré et owner", () => {
+  const guild = fakeGuild();
+  assert.strictEqual(hasConfiguredAccess(fakeMember({ id: "fresh-help-user", guild })), false);
+  permStore.grantToUser(GUILD_ID, "individual-help-user", "moderation.kick");
+  assert.strictEqual(hasConfiguredAccess(fakeMember({ id: "individual-help-user", guild })), true);
+  permStore.setRoleGrants(GUILD_ID, "role-help-user", ["moderation.kick"]);
+  assert.strictEqual(hasConfiguredAccess(fakeMember({ id: "role-help-user", guild, roleIds: ["role-help-user"] })), true);
+  assert.strictEqual(hasConfiguredAccess(fakeMember({ id: "owner-1", guild })), true);
 });
 
 cas("le rang sys a accès à tout, sauf banall", () => {

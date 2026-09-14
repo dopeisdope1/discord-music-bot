@@ -84,17 +84,6 @@ const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collecti
 // ajoutée à « Bot & Accès », alors que le comportement testé, lui, était
 // correct. Un test qui doit être corrigé à chaque ajout légitime finit par
 // être corrigé sans être lu.
-//
-// `&panel` porte plusieurs clés alternatives dans le catalogue ; il ne rend
-// donc pas sa catégorie publique pour autant.
-const aUneCommandePublique = (categorie) =>
-  categorie.commands.some((cmd) => cmd.permission === null && isImplemented(cmd) && identityOf(cmd) !== "panel");
-// Catégories avec au moins une commande publique : un membre sans aucun droit
-// doit voir CELLES-LÀ.
-const CATEGORIES_PARTIELLEMENT_PUBLIQUES = CATEGORIES.filter(aUneCommandePublique).map((c) => c.key);
-// Catégories entièrement gardées par une permission : il ne doit en voir aucune.
-const CATEGORIES_GARDEES = CATEGORIES.filter((c) => !aUneCommandePublique(c)).map((c) => c.key);
-
 /**
  * Le tableau de bord de &help est rendu en IMAGE (utils/dashboardImage.js) :
  * son contenu n'est donc plus du texte Discord inspectable. On vérifie ce
@@ -367,21 +356,17 @@ function menuNavigation(json) {
     assert.ok(!fullText().includes("Documentées"), fullText());
   });
 
-  await cas("un membre sans aucun droit ne voit QUE les catégories ayant une commande publique", () => {
-    // Les cartes affichent le nom en capitales ("MODÉRATION") : on compare
-    // donc sur une version normalisée, pas sur la casse du catalogue.
-    // Le sous-titre de l'accueil mentionne désormais toutes les familles et
-    // leurs préfixes ; il ne doit pas être confondu avec les cartes réellement
-    // visibles. Les noms de cartes sont les identités de catégories exposées.
-    const body = spec(plain).cartes.flatMap((carte) => (carte.items || []).map((item) => item.nom)).join(" ").toUpperCase();
-    for (const key of CATEGORIES_PARTIELLEMENT_PUBLIQUES) {
-      const label = CATEGORIES.find((c) => c.key === key).label;
-      assert.ok(body.includes(label.toUpperCase()), `"${label}" a une commande publique, elle doit apparaître`);
+  await cas("un membre sans aucun droit ne voit que &help, jamais l'inventaire public", () => {
+    const total = [];
+    const help = CATEGORIES.flatMap((category) => category.commands).find((cmd) => cmd.name === "help");
+    const pageCount = buildHelpSpec("g1", plain, "public", plain.id, 0).totalPages;
+    for (let page = 0; page < pageCount; page++) {
+      for (const card of spec(plain, "public", page).cartes) {
+        total.push(...card.items.map((item) => item.nom));
+      }
     }
-    for (const key of CATEGORIES_GARDEES) {
-      const label = CATEGORIES.find((c) => c.key === key).label;
-      assert.ok(!body.includes(label.toUpperCase()), `"${label}" n'a AUCUNE commande publique, elle ne doit pas apparaître`);
-    }
+    assert.deepStrictEqual(total, ["&help"], `commandes visibles : ${total.join(", ")}`);
+    assert.ok(help, "le catalogue doit contenir la commande d'aide elle-même");
   });
 
   await cas("un membre sans server.members.list/server.info.view ne voit ni les listes de membres ni les fiches d'info", () => {

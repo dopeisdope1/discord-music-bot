@@ -82,10 +82,11 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1", member } = {}) 
     permissions: { has: () => false },
   };
 
-  await cas("un membre sans permissions ne voit pas les commandes vocales", async () => {
+  await cas("un membre sans accès configuré ne voit que =help", async () => {
     const msg = fakeMessage("=help", { member: noAccess });
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
+    assert.ok(texte.includes("=help"), texte);
     for (const interdit of ["=add", "=owner", "=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=mv", "=join", "=find", "=bringall", "=wakeup"]) {
       assert.ok(!texte.includes(interdit), `"${interdit}" ne devrait pas apparaître : ${texte}`);
     }

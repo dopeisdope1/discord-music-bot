@@ -32,6 +32,28 @@ const VOICE_GLOBAL_PERMISSION = {
 };
 
 /**
+ * Vrai quand le membre a été explicitement configuré dans le moteur de
+ * permissions de ce serveur (octroi individuel ou octroi sur l'un de ses
+ * rôles), ou quand il bénéficie déjà du statut owner/sys.
+ *
+ * Cette distinction est volontairement plus large que `can(member, key)` :
+ * elle sert uniquement à décider si une aide doit rester en mode découverte
+ * minimal pour un membre totalement inconnu du système de permissions.
+ */
+function hasConfiguredAccess(member) {
+  if (!member || !member.guild) return false;
+  if (accessStore.isOwner(member.id) || accessStore.isSys(member.id)) return true;
+
+  const guildId = member.guild.id;
+  if (getUserGrants(guildId, member.id).length) return true;
+
+  for (const roleId of member.roles?.cache?.keys?.() || []) {
+    if (getRoleGrants(guildId, roleId).length) return true;
+  }
+  return false;
+}
+
+/**
  * SEUL point de vérification des droits sur une clé de permission. Utilisé
  * partout : commandes texte, &help, panel, boutons — pas de logique dupliquée
  * ailleurs (voir le plan, section "moteur central").
@@ -85,4 +107,4 @@ function can(member, key) {
   return false;
 }
 
-module.exports = { can };
+module.exports = { can, hasConfiguredAccess };

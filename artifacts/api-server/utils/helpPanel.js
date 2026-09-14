@@ -12,7 +12,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
-const { can } = require("./permissions/engine");
+const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
@@ -243,10 +243,16 @@ function chunkBlocks(blocks, maxLen = 3600) {
  */
 function groupByTier(member) {
   const canUse = (permission) => can(member, permission);
+  const modeDecouverte = !hasConfiguredAccess(member);
   const groups = Object.fromEntries(TIER_ORDER.map((key) => [key, []]));
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
+      // Un membre encore inconnu du moteur ne reçoit pas l'inventaire des
+      // commandes publiques : il ne voit que l'aide qu'il vient de demander.
+      // Dès qu'un octroi existe (même s'il ne débloque aucune commande de ce
+      // catalogue), on revient au filtrage normal par can().
+      if (modeDecouverte && identityOf(cmd) !== "help") continue;
       if (!canUse(cmd.permission)) continue;
       groups[category.key].push(cmd);
     }

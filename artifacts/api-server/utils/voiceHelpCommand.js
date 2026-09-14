@@ -1,6 +1,6 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
-const { can } = require("./permissions/engine");
+const { can, hasConfiguredAccess } = require("./permissions/engine");
 
 // "=help" — index catégorisé des commandes du préfixe "=" (architecture 4
 // préfixes : & = gestion, - = modération, !! = sécurité, = = vocal/owner),
@@ -18,6 +18,7 @@ const CATEGORIES = [
     nom: "Administration",
     emoji: "🛡️",
     commandes: [
+      { nom: "=help", permission: null, description: "Affiche cette aide." },
       { nom: "=add <@membre>", permission: "panel.permissions.manage", description: "Ouvre la carte d'octroi de permissions individuelles (catalogue complet)." },
       { nom: "=owner <@membre>", permission: "panel.permissions.manage", description: "Identique à `=add` — même carte \"Owner\" d'octroi de permissions." },
     ],
@@ -45,9 +46,12 @@ function autorisee(member, permission) {
 }
 
 function buildVoiceHelpCard(prefix = "=", member) {
+  const modeDecouverte = member && !hasConfiguredAccess(member);
   const categories = CATEGORIES.map((category) => ({
     ...category,
-    commandes: category.commandes.filter((commande) => autorisee(member, commande.permission)),
+    commandes: category.commandes.filter(
+      (commande) => (!modeDecouverte || commande.nom.replace(/^=/, "") === "help") && autorisee(member, commande.permission)
+    ),
   })).filter((category) => category.commandes.length);
   const total = categories.reduce((n, c) => n + c.commandes.length, 0);
   const container = new ContainerBuilder();

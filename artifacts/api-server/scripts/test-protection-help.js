@@ -77,14 +77,14 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1", member } = {}) 
     permissions: { has: () => false },
   };
 
-  await cas("un membre sans permissions ne voit pas les commandes sécurité protégées", async () => {
+  await cas("un membre sans accès configuré ne voit que !!help", async () => {
     const msg = fakeMessage("!!help", { member: noAccess });
     await handleProtectionHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
-    for (const interdit of ["!!secur", "!!security", "!!owner", "!!wl", "!!antinuke", "!!antilink", "!!antispam", "!!setclear"]) {
+    assert.ok(texte.includes("!!help"), texte);
+    for (const interdit of ["!!panel", "!!secur", "!!security", "!!owner", "!!wl", "!!antinuke", "!!antilink", "!!antispam", "!!setclear"]) {
       assert.ok(!texte.includes(interdit), `"${interdit}" ne devrait pas apparaître : ${texte}`);
     }
-    assert.ok(texte.includes("!!panel"), texte);
   });
 
   await cas("BOT_OWNER_IDS voit toutes les commandes sécurité", async () => {

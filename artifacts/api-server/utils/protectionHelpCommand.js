@@ -1,6 +1,6 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
-const { can } = require("./permissions/engine");
+const { can, hasConfiguredAccess } = require("./permissions/engine");
 
 // "!!help" — index des commandes sur le préfixe "!!" (utils/
 // personalProtection.js, utils/securityPanel.js, utils/securityAliases.js,
@@ -15,6 +15,12 @@ const { can } = require("./permissions/engine");
 // (!!panel — self-service par membre, distincte de la sécurité serveur,
 // mais reste sur ce même préfixe : rien à casser en la déplaçant).
 const COMMANDES = [
+  {
+    groupe: "Aide",
+    nom: "!!help",
+    permission: null,
+    description: "Affiche cette aide.",
+  },
   {
     groupe: "Sécurité serveur",
     nom: "!!secur",
@@ -58,7 +64,10 @@ function buildProtectionHelpCard(prefix = "!!", member) {
   const afficher = (texte) => texte.replaceAll("!!", prefix);
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## 🛡️ Commandes "${prefix}"`));
 
-  const accessibles = COMMANDES.filter((commande) => autorisee(member, commande.permission));
+  const modeDecouverte = member && !hasConfiguredAccess(member);
+  const accessibles = COMMANDES.filter(
+    (commande) => (!modeDecouverte || commande.nom.replace(/^!!/, "") === "help") && autorisee(member, commande.permission)
+  );
   const groupes = [...new Set(accessibles.map((c) => c.groupe))];
   for (const groupe of groupes) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
