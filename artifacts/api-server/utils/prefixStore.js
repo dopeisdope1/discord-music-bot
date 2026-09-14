@@ -13,7 +13,7 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 //   moderation = "-" → MODÉRATION (ban/kick/mute/warn/clear/lockdown…)
 //   protection = "!!" → SÉCURITÉ (antinuke/antiraid/automod/whitelist…) +
 //     protection PERSONNELLE (utils/personalProtection.js, "!!panel")
-//   owner = "=" → VOCAL (mute/deaf/move/… + carte d'accès "=owner")
+//   owner = "=" → VOCAL (mute/deaf/move/… + "=owner" global / "=add" granulaire)
 // Le routage mot→préfixe se fait par catégorie (voir utils/commandRouting.js).
 const DEFAULT_PREFIXES = { musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
 const PREFIX_LABELS = {

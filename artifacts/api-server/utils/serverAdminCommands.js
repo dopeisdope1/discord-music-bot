@@ -154,7 +154,7 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
 }
 
 /**
- * Carte de "=add"/"=owner"/"!!owner" — présentation demandée explicitement
+ * Carte de "=add"/"!!owner" — présentation demandée explicitement
  * (titre "Owner", "Utilisateur"/"Statut"/"Consulté par" en évidence, liste
  * numérotée des accès, coche/croix verte-rouge par clé dans le menu ouvert,
  * comme la capture d'un autre bot). `derniereCle` fait porter la coche
@@ -163,7 +163,7 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
  * sur la capture, sans rien dessiner nous-mêmes. `categoriesAutorisees`
  * (tableau de clés de catégorie, ex. ["moderation","channels"]) restreint le
  * résumé ET le sélecteur de catégories à CES catégories du VRAI catalogue —
- * c'est ce qui distingue "=add"/"=owner" (tout le catalogue vocal),
+ * c'est ce qui distingue "=add" (tout le catalogue vocal),
  * "&owner" (legacy modération : moderation/channels/members/logs) et
  * "!!owner" (sécurité : protection)
  * sans dupliquer la moindre logique de rendu. Même mécanisme de fond que
@@ -255,9 +255,9 @@ function buildOwnerAccessCard(
 }
 
 /**
- * Carte "Owner" VOCALE de "=owner"/"=add" (préfixe vocal "=") — liste PLATE
- * des vraies commandes vocales à cocher (✓ accordée / ✗ refusée), comme la
- * capture "Ajouter ou retirer un accès" : PAS de sélecteur de catégorie
+ * Carte "Owner" VOCALE de "=add" (préfixe vocal "=") — liste PLATE des vraies
+ * commandes vocales à cocher (✓ accordée / ✗ refusée), comme la capture
+ * "Ajouter ou retirer un accès" : PAS de sélecteur de catégorie
  * (Modération/Salons/…), directement les accès vocaux. Chaque coche donne
  * VRAIMENT le droit d'utiliser la commande (permStore "voice.<cmd>", vérifié
  * par voiceAccess.peutVocal). `derniereCle` porte la coche bleue native de
@@ -350,12 +350,16 @@ async function access(client, message, args, label = "access", ownerStyle = fals
 }
 
 /**
- * "=add <@membre|id>" ET "=owner <@membre|id>" — préfixe VOCAL "=" : ouvrent
- * la carte "Owner" VOCALE (buildVoiceOwnerCard), liste plate des commandes
- * vocales à cocher, PAS le catalogue de permissions générique. Cocher une
- * commande donne vraiment le droit de l'utiliser (voiceAccess). Gardé sous
- * le droit `panel.permissions.manage` (qui peut OUVRIR la carte). Le
- * catalogue générique reste dispo via "&access"/"&owner"/"!!owner".
+ * "=add <@membre|id>" ouvre la carte "Owner" VOCALE
+ * (buildVoiceOwnerCard), liste plate des commandes vocales à cocher. Cocher
+ * une commande donne vraiment le droit de l'utiliser (voiceAccess). Gardé
+ * sous le droit `panel.permissions.manage` (qui peut OUVRIR la carte).
+ *
+ * "=owner <@membre|id>" est l'action rapide du même préfixe : elle bascule
+ * l'accès à TOUTES les clés de voiceAccess.VOICE_ACCESS_KEYS en une fois.
+ * Cette bascule ne touche qu'aux permissions individuelles du préfixe "=" ;
+ * elle ne distribue ni ne modifie le rang propriétaire du bot ou le rang sys.
+ * Le catalogue générique reste dispo via "&access"/"&owner"/"!!owner".
  */
 async function handleAddAccessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
@@ -381,6 +385,31 @@ async function handleAddAccessTextCommand(client, message) {
     return reply(message, "info", `${target.user.tag} est déjà propriétaire/rang sys — accès complet, rien à accorder en plus.`);
   }
 
+  if (mot === "owner") {
+    const granted = permStore.getUserGrants(message.guild.id, target.id);
+    const hasEveryVoiceKey = voiceAccess.VOICE_ACCESS_KEYS.every((key) => granted.includes(key));
+
+    if (hasEveryVoiceKey) {
+      for (const key of voiceAccess.VOICE_ACCESS_KEYS) {
+        permStore.revokeFromUser(message.guild.id, target.id, key);
+      }
+      return reply(
+        message,
+        "success",
+        `${target.user.tag} — l'accès complet au préfixe "=" a été retiré (toutes les commandes vocales).`
+      );
+    }
+
+    for (const key of voiceAccess.VOICE_ACCESS_KEYS) {
+      if (!granted.includes(key)) permStore.grantToUser(message.guild.id, target.id, key);
+    }
+    return reply(
+      message,
+      "success",
+      `${target.user.tag} a maintenant accès à l'intégralité du préfixe "=" (toutes les commandes vocales).`
+    );
+  }
+
   return message.reply(buildVoiceOwnerCard(message.guild.id, target.id, message.author.tag));
 }
 
@@ -391,9 +420,10 @@ const CATEGORIES_OWNER_SECURITE = ["protection"];
  * Legacy helper "&owner <@membre|id>" — carte "Owner" filtrée aux catégories
  * de MODÉRATION du VRAI catalogue (moderation/channels/members/logs) : jamais
  * les permissions sécurité/serveur/panel qui n'ont rien à faire ici.
- * La commande publique `&owner` est désormais réservée par le routeur à la
- * famille vocal/owner (`=owner`) ; ce helper reste exporté pour les anciennes
- * interactions internes et la compatibilité du catalogue de permissions.
+ * La commande publique `&owner` reste réservée par le routeur à la famille
+ * gestion ; ce helper reste exporté pour les anciennes interactions internes
+ * et la compatibilité du catalogue de permissions. L'action rapide `=owner`
+ * est gérée séparément par handleAddAccessTextCommand.
  */
 async function ownerModeration(client, message, args) {
   return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
@@ -523,7 +553,7 @@ async function handleServerAdminInteraction(interaction) {
     );
   }
 
-  // Carte "Owner" VOCALE ("=owner"/"=add") — liste plate d'accès vocaux
+  // Carte "Owner" VOCALE de "=add" — liste plate d'accès vocaux
   // (voir buildVoiceOwnerCard). Un seul sélecteur, pas d'étape catégorie.
   if (action === "voiceowner") {
     if (!can(interaction.member, "panel.permissions.manage")) {
@@ -1230,7 +1260,7 @@ async function antinuke(client, message, args) {
 /**
  * Un seul dispatcher pour tous les mots vocaux sur "=" ci-dessus — même
  * patron que utils/securityAliases.js::handleSecurityAliasTextCommand.
- * "=add" (octroi de permissions, sans rapport avec le vocal) reste géré par
+ * "=owner" (bascule complète) et "=add" (carte granulaire) restent gérés par
  * handleAddAccessTextCommand, un handler indépendant. Require PARESSEUX
  * exprès (à l'intérieur de la fonction) : utils/serverExtra.js requiert déjà
  * CE fichier (requestConfirmation) — un require en haut de fichier créerait

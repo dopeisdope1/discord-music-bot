@@ -19,8 +19,8 @@ const CATEGORIES = [
     emoji: "🛡️",
     commandes: [
       { nom: "=help", permission: null, description: "Affiche cette aide." },
-      { nom: "=add <@membre>", permission: "panel.permissions.manage", description: "Ouvre la carte d'octroi de permissions individuelles (catalogue complet)." },
-      { nom: "=owner <@membre>", permission: "panel.permissions.manage", description: "Identique à `=add` — même carte \"Owner\" d'octroi de permissions." },
+      { nom: "=add <@membre>", permission: "panel.permissions.manage", description: "Ouvre la carte \"Owner\" pour accorder ou retirer chaque accès vocal individuellement." },
+      { nom: "=owner <@membre>", permission: "panel.permissions.manage", description: "Bascule tous les accès du préfixe \"=\" : accorde les commandes vocales manquantes ou retire l'accès vocal complet." },
     ],
   },
   {

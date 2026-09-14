@@ -1,12 +1,14 @@
 const permStore = require("./permissions/store");
 const { can } = require("./permissions/engine");
 
-// Accès vocaux togglables via "=owner"/"=add" (préfixe vocal "="). Chaque
+// Accès vocaux accordés via "=owner"/"=add" (préfixe vocal "="). Chaque
 // entrée = le DROIT d'utiliser UNE commande vocale précise, stocké comme une
 // permission individuelle "voice.<cmd>" via permStore (par guild + user),
-// exactement comme les autres octrois individuels du bot. C'est ce qui
-// s'affiche dans la carte "Owner" en liste plate à cocher (✓/✗), au lieu du
-// catalogue générique de permissions (Modération/Salons/Membres…).
+// exactement comme les autres octrois individuels du bot. "=owner" bascule
+// toutes les clés en une fois ; "=add" ouvre la carte "Owner" en liste plate
+// à cocher (✓/✗), au lieu du catalogue générique de permissions
+// (Modération/Salons/Membres…). Ces accès ne modifient jamais BOT_OWNER_IDS
+// ni le rang sys.
 //
 // Seules les VRAIES commandes vocales de ce bot figurent ici : les libellés
 // de l'autre bot (dog/pv/pvlist/pvclear/follow) n'existent pas ici et ne
@@ -34,7 +36,8 @@ const PERM_PAR_CLE = Object.fromEntries(VOICE_ACCESS.map((a) => [a.key, a.perm])
 /**
  * Un membre peut utiliser une commande vocale s'il a le droit GLOBAL (staff)
  * PROPRE à cette commande (server.voice.manage, ou server.voice.moveall pour
- * bringall), OU l'accès INDIVIDUEL `voice.<cmd>` accordé via "=owner".
+ * bringall), OU l'accès INDIVIDUEL `voice.<cmd>` accordé via "=owner" (ou la
+ * carte granulaire "=add").
  * `accessKey` est une clé de VOICE_ACCESS (ex. "voice.wakeup").
  */
 function peutVocal(member, accessKey) {

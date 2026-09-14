@@ -324,8 +324,9 @@ client.on("messageCreate", (message) => {
   handleSecurityAliasTextCommand(client, message).catch((err) => console.error("[securityAliases]", err));
   // "!!help" — voir utils/protectionHelpCommand.js.
   handleProtectionHelpTextCommand(client, message).catch((err) => console.error("[protectionHelpCommand]", err));
-  // "=add <@membre>" — même mécanisme que "&access", préfixe séparé exprès
-  // (voir utils/serverAdminCommands.js::handleAddAccessTextCommand).
+  // "=owner <@membre>" bascule tout l'accès vocal ; "=add <@membre>" ouvre
+  // la carte granulaire — préfixe séparé exprès (voir
+  // utils/serverAdminCommands.js::handleAddAccessTextCommand).
   handleAddAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
   // "=mute"/"=unmute"/"=deaf"/"=undeaf"/"=disconnect"/"=move" — catalogue de
   // commandes vocales sur "=" (voir utils/serverAdminCommands.js::
