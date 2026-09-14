@@ -11,15 +11,16 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
 // Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
-// main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
-// avec le CrowBot du serveur (voir utils/musicCommands.js) ; protection =
-// préfixe du panel de protection PERSONNELLE (utils/personalProtection.js),
-// volontairement séparé pour ne jamais se mélanger avec &panel (config
-// serveur) — demande explicite ; owner = préfixe "=" (utils/
-// serverAdminCommands.js), qui héberge deux commandes distinctes : "=add"
-// (même mécanisme que "&access") et "=owner" (transfert de propriété d'un
-// salon vocal, même mécanisme que "&voc transfer") — demande explicite.
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!", owner: "=" };
+// Architecture 4 préfixes de commandes (+ musique) :
+//   main = "?"  → musique
+//   musicMod = "&" → GESTION (rôles/salons/tickets/giveaways/logs/config…),
+//     partagé avec le CrowBot du serveur (voir utils/musicCommands.js)
+//   moderation = "-" → MODÉRATION (ban/kick/mute/warn/clear/lockdown…)
+//   protection = "!!" → SÉCURITÉ (antinuke/antiraid/automod/whitelist…) +
+//     protection PERSONNELLE (utils/personalProtection.js, "!!panel")
+//   owner = "=" → VOCAL (mute/deaf/move/… + carte d'accès "=owner")
+// Le routage mot→préfixe se fait par catégorie (voir utils/commandRouting.js).
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
 
 let cache = null;
 

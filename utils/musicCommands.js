@@ -5,6 +5,7 @@ const { handleSpotifyPlay } = require("./spotifyPlay");
 const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
 const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
+const commandRouting = require("./commandRouting");
 const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
 const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
@@ -699,98 +700,19 @@ async function handleMusicTextCommand(client, message) {
   const content = message.content.trim();
   const { main: MAIN_PREFIX, musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
 
-  // Préfixe "&" : partagé avec le CrowBot du serveur. On ne traite que les
-  // commandes explicitement déclarées dans modHandlers et on sort en silence
-  // pour tout le reste, qui appartient à l'autre bot.
+  // Architecture 4 préfixes : "&" = GESTION, "-" = MODÉRATION (voir
+  // utils/commandRouting.js). Même moteur de dispatch (dispatchCommande),
+  // filtré par catégorie : chaque préfixe ne répond qu'aux mots de SON
+  // bucket. "&" reste le préfixe partagé avec le CrowBot (repli commandes
+  // perso pour un mot inconnu) ; "-" reste muet sur un mot étranger. La
+  // SÉCURITÉ ("!!") et le VOCAL ("=") sont routés ailleurs (securityAliases,
+  // serverAdminCommands) — pas ici.
+  const { moderation: MODERATION_PREFIX } = getPrefixes(message.guild.id);
   if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
-    const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
-    const cmdLower = (modCmd || "").toLowerCase();
-
-    // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
-    // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),
-    // une commande qui a un formulaire dédié ouvre sa carte interactive —
-    // voir utils/commandForms.js (BARE_COMMAND_FORMS).
-    const secondWord = modArgs.length === 1 && /^[a-z]+$/i.test(modArgs[0]) ? modArgs[0].toLowerCase() : null;
-    const bareKey = modArgs.length === 0 ? cmdLower : secondWord ? `${cmdLower} ${secondWord}` : null;
-    // Une commande qui vise un membre n'ouvre PAS de carte à vide : sa cible
-    // se donne par mention ou identifiant, et sans argument elle rappelle
-    // simplement sa syntaxe (voir SANS_CARTE_SANS_ARGUMENT).
-    const bareFormKey = bareKey && !commandForms.SANS_CARTE_SANS_ARGUMENT.has(bareKey) ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
-    if (bareFormKey) {
-      const form = commandForms.FORMS[bareFormKey];
-      if (form && (form.permission == null || can(message.member, form.permission))) {
-        return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(bareFormKey, message.member));
-      }
-    }
-
-    // Tapée toute seule sans pouvoir tourner ainsi (`&giveaway`, qui n'existe
-    // qu'en `giveaway start`/`giveaway reroll`), la commande rappelle ses
-    // variantes au lieu de ne rien répondre du tout. Placé APRÈS la carte de
-    // formulaire : quand une commande en a une, c'est elle qui prime.
-    if (modArgs.length === 0) {
-      const rappel = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id);
-      if (rappel) {
-        return message.reply(rappel).catch(async (err) => {
-          console.error("[familyHelp] envoi refusé, repli en texte :", err);
-          const texte = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id, { sansImage: true });
-          return texte ? message.reply(texte).catch(() => {}) : undefined;
-        });
-      }
-    }
-
-    // Tapée avec des arguments INSUFFISANTS (ex: "&addrole @membre" sans
-    // rôle) plutôt que complètement vides, la même carte s'ouvre — mais
-    // PRÉ-REMPLIE avec ce qui a déjà été donné, au lieu d'un message
-    // d'erreur "indique un membre ET un rôle". Avec tout le nécessaire déjà
-    // fourni, l'exécution directe reste inchangée (habitudes acquises intactes).
-    // Ici, au contraire, la carte reste utile : la cible a DÉJÀ été donnée,
-    // il ne manque qu'un autre argument (le rôle, la durée...).
-    const directFormKey = !bareFormKey && modArgs.length ? commandForms.BARE_COMMAND_FORMS[cmdLower] : null;
-    if (directFormKey) {
-      const form = commandForms.FORMS[directFormKey];
-      if (form && (form.permission == null || can(message.member, form.permission))) {
-        const extracted = commandForms.extractFormValues(form, message, modArgs);
-        if (!commandForms.structuralFieldsSatisfied(form, extracted)) {
-          commandForms.setFormState(message.author.id, directFormKey, extracted);
-          return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(directFormKey, message.member));
-        }
-      }
-    }
-
-    // Quota sur les commandes qui DESSINENT une image. Chaque appel fait
-    // tourner le moteur canvas, et le VPS n'a que 458 Mo : quelqu'un qui
-    // enchaîne `&help` en boucle mobilise la machine pour rien. Le cache
-    // amortit les rendus identiques, pas ceux qui changent de page à chaque
-    // fois.
-    //
-    // Les commandes de MODÉRATION en sont volontairement exclues : bannir dix
-    // personnes d'affilée est un usage légitime, et se faire refuser au
-    // huitième serait bien pire que le coût du dessin.
-    if (COMMANDES_DESSINEES.has(cmdLower)) {
-      const { allowed, retryAfterMs } = limiteurDessin.check(message.author.id);
-      if (!allowed) {
-        const secondes = Math.ceil(retryAfterMs / 1000);
-        return message
-          .reply({
-            embeds: [buildStatusEmbed("error", `Doucement — réessaie dans ${secondes} seconde(s).`)],
-          })
-          .catch(() => {});
-      }
-    }
-
-    const handler = modHandlers[cmdLower];
-    if (handler) return handler(client, message, modArgs);
-
-    // DERNIER recours, une fois toutes les vraies commandes écartées : le mot
-    // est peut-être une commande personnalisée de ce serveur
-    // (utils/customCommands.js). L'ordre compte — placé plus haut, une
-    // commande personnalisée pourrait masquer une vraie commande du bot.
-    // Un mot inconnu, lui, reste sans réponse : le préfixe est partagé avec
-    // le CrowBot.
-    return customCommands.repondreSiPersonnalisee(message, cmdLower).then(
-      () => undefined,
-      (err) => console.error("[musicCommands] commande personnalisée :", err.message)
-    );
+    return dispatchCommande(client, message, content.slice(MOD_PREFIX.length), "gestion", { customFallback: true });
+  }
+  if (MODERATION_PREFIX && content.startsWith(MODERATION_PREFIX)) {
+    return dispatchCommande(client, message, content.slice(MODERATION_PREFIX.length), "moderation");
   }
 
   if (!content.startsWith(MAIN_PREFIX)) return;
@@ -805,6 +727,85 @@ async function handleMusicTextCommand(client, message) {
   }
   if (handlers[cmd]) {
     return handlers[cmd](client, message, args);
+  }
+}
+
+/**
+ * Moteur de dispatch partagé par "&" (gestion) et "-" (modération). Ne traite
+ * QUE les mots dont le bucket de routage (utils/commandRouting.js) correspond
+ * à `bucket` — c'est ce qui rend le déplacement DUR : "&ban" (mot modération)
+ * n'ouvre ni carte ni handler sur "&", et "-ticket" (mot gestion) est muet
+ * sur "-". `customFallback` (uniquement "&", préfixe partagé avec le CrowBot)
+ * tente une commande personnalisée pour un mot inconnu ; ailleurs, silence.
+ */
+async function dispatchCommande(client, message, rawAfterPrefix, bucket, { customFallback = false } = {}) {
+  const [modCmd, ...modArgs] = rawAfterPrefix.trim().split(/\s+/);
+  const cmdLower = (modCmd || "").toLowerCase();
+
+  // Ce préfixe ne répond qu'aux mots de SON bucket.
+  if (commandRouting.bucketDe(cmdLower) !== bucket) {
+    if (customFallback) {
+      return customCommands
+        .repondreSiPersonnalisee(message, cmdLower)
+        .then(() => undefined, (err) => console.error("[musicCommands] commande personnalisée :", err.message));
+    }
+    return; // mot d'un autre préfixe : silence
+  }
+
+  // Carte de formulaire à vide (ou "role create") — voir utils/commandForms.js.
+  const secondWord = modArgs.length === 1 && /^[a-z]+$/i.test(modArgs[0]) ? modArgs[0].toLowerCase() : null;
+  const bareKey = modArgs.length === 0 ? cmdLower : secondWord ? `${cmdLower} ${secondWord}` : null;
+  const bareFormKey = bareKey && !commandForms.SANS_CARTE_SANS_ARGUMENT.has(bareKey) ? commandForms.BARE_COMMAND_FORMS[bareKey] : null;
+  if (bareFormKey) {
+    const form = commandForms.FORMS[bareFormKey];
+    if (form && (form.permission == null || can(message.member, form.permission))) {
+      return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(bareFormKey, message.member));
+    }
+  }
+
+  // Rappel de famille (`&giveaway` seul → variantes).
+  if (modArgs.length === 0) {
+    const rappel = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id);
+    if (rappel) {
+      return message.reply(rappel).catch(async (err) => {
+        console.error("[familyHelp] envoi refusé, repli en texte :", err);
+        const texte = familyHelp.buildFamilyCard(cmdLower, message.member, message.guild.id, { sansImage: true });
+        return texte ? message.reply(texte).catch(() => {}) : undefined;
+      });
+    }
+  }
+
+  // Carte pré-remplie quand des arguments manquent (ex: "&addrole @membre").
+  const directFormKey = !bareFormKey && modArgs.length ? commandForms.BARE_COMMAND_FORMS[cmdLower] : null;
+  if (directFormKey) {
+    const form = commandForms.FORMS[directFormKey];
+    if (form && (form.permission == null || can(message.member, form.permission))) {
+      const extracted = commandForms.extractFormValues(form, message, modArgs);
+      if (!commandForms.structuralFieldsSatisfied(form, extracted)) {
+        commandForms.setFormState(message.author.id, directFormKey, extracted);
+        return messageOwner.repondreEtRetenir(message, commandForms.buildFormCard(directFormKey, message.member));
+      }
+    }
+  }
+
+  // Quota des commandes qui DESSINENT une image (VPS à 458 Mo).
+  if (COMMANDES_DESSINEES.has(cmdLower)) {
+    const { allowed, retryAfterMs } = limiteurDessin.check(message.author.id);
+    if (!allowed) {
+      const secondes = Math.ceil(retryAfterMs / 1000);
+      return message.reply({ embeds: [buildStatusEmbed("error", `Doucement — réessaie dans ${secondes} seconde(s).`)] }).catch(() => {});
+    }
+  }
+
+  const handler = modHandlers[cmdLower];
+  if (handler) return handler(client, message, modArgs);
+
+  // Bucket correspondant mais pas de handler câblé : sur "&" (partagé), le mot
+  // est peut-être une commande personnalisée du serveur.
+  if (customFallback) {
+    return customCommands
+      .repondreSiPersonnalisee(message, cmdLower)
+      .then(() => undefined, (err) => console.error("[musicCommands] commande personnalisée :", err.message));
   }
 }
 
@@ -874,4 +875,4 @@ const MOD_SUBCOMMANDS = {
 // même façon une commande câblée et une commande seulement documentée (voir
 // utils/implementedCommands.js). Dérivée de la table réelle, jamais recopiée
 // à la main — les deux ne peuvent donc pas diverger.
-module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS };
+module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS, modHandlers };

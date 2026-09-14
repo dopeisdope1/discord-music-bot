@@ -112,7 +112,8 @@ async function cas(nom, fn) {
     assert.strictEqual(mentionedMember.roles._added, ROLE_ID);
   });
 
-  await cas('"&kick @membre" (raison optionnelle absente) exécute directement, pas de carte', async () => {
+  await cas('"-kick @membre" (raison optionnelle absente) exécute directement, pas de carte', async () => {
+    // kick = MODÉRATION -> préfixe "-" depuis la migration 4 préfixes.
     const guild = makeGuild();
     const mentionedMember = {
       id: TARGET_ID,
@@ -123,7 +124,7 @@ async function cas(nom, fn) {
       },
     };
     guild.members.fetch = async (id) => (id === TARGET_ID ? mentionedMember : null);
-    const msg = makeMessage(guild, `&kick <@${TARGET_ID}>`, { mentionedMember });
+    const msg = makeMessage(guild, `-kick <@${TARGET_ID}>`, { mentionedMember });
     await handleMusicTextCommand({}, msg);
     assert.strictEqual(isCard(msg), false);
     assert.ok(mentionedMember._kicked !== undefined);

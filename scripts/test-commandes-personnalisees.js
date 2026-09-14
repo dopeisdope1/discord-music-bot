@@ -140,10 +140,14 @@ const texteDe = (payload) =>
   await cas("le routeur ne consulte les personnalisées qu'en DERNIER — seconde barrière", () => {
     // Même si un nom réservé se retrouvait un jour dans le fichier (édité à
     // la main, importé d'ailleurs), la vraie commande garderait la priorité.
+    // Depuis la migration 4 préfixes, dispatchCommande a DEUX replis perso :
+    // un pour un mot d'un AUTRE bucket (avant le handler), et le repli final
+    // APRÈS le handler pour un mot du bon bucket sans handler câblé. C'est ce
+    // dernier (lastIndexOf) qui garantit que le handler réel passe d'abord.
     const source = fs.readFileSync(path.join(__dirname, "..", "utils", "musicCommands.js"), "utf8");
     const posHandler = source.indexOf("const handler = modHandlers[cmdLower]");
-    const posPerso = source.indexOf("repondreSiPersonnalisee");
-    assert.ok(posHandler > 0 && posPerso > posHandler, "les commandes personnalisées doivent être consultées APRÈS les vraies");
+    const posPersoFinal = source.lastIndexOf("repondreSiPersonnalisee");
+    assert.ok(posHandler > 0 && posPersoFinal > posHandler, "les commandes personnalisées doivent être consultées APRÈS les vraies");
   });
 
   console.log("\nUne réponse ne peut pas servir de mégaphone :");
