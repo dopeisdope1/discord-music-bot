@@ -7,10 +7,10 @@ const { getPrefixes } = require("./prefixStore");
 // main, purement informatif, aucune interaction. Un simple catalogue de
 // commandes de modération VOCALE réelles (droit `server.voice.manage`,
 // utils/serverExtra.js) — sur N'IMPORTE QUEL membre en vocal, aucune notion
-// de salon "à soi" ni de propriété. "=add" (octroi de permissions
-// individuelles, utils/serverAdminCommands.js) partage ce préfixe mais n'a
-// AUCUN rapport avec le vocal — listé à part pour ne pas laisser croire que
-// c'est une commande vocale de plus.
+// de salon "à soi" ni de propriété. "=add"/"=owner" (octroi de permissions
+// individuelles, utils/serverAdminCommands.js) partagent ce préfixe mais
+// n'ont AUCUN rapport avec le vocal — listés à part pour ne pas laisser
+// croire que ce sont des commandes vocales de plus.
 const COMMANDES = [
   { nom: "=mute <@membre>", description: "Mute vocal Discord natif (distinct du mute-rôle punitif de `&mute`) — droit `server.voice.manage`." },
   { nom: "=unmute <@membre>", description: "Lève ce mute vocal." },
@@ -18,7 +18,10 @@ const COMMANDES = [
   { nom: "=undeaf <@membre>", description: "Lève cette sourdine." },
   { nom: "=disconnect <@membre>", description: "Expulse un membre du vocal (identique à `&voicekick`)." },
   { nom: "=move <@membre> #salon", description: "Déplace un membre vers un salon vocal (identique à `&mv`)." },
-  { nom: "=add <@membre>", description: "Sans rapport avec le vocal — octroi de permissions individuelles du catalogue (voir `!!help`/`&help` pour le reste des permissions)." },
+  {
+    nom: "=add / =owner <@membre>",
+    description: "Sans rapport avec le vocal — octroi de permissions individuelles du catalogue (voir `!!help`/`&help` pour le reste des permissions).",
+  },
 ];
 
 function buildVoiceHelpCard() {
@@ -27,7 +30,7 @@ function buildVoiceHelpCard() {
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      "Agissent sur N'IMPORTE QUEL membre actuellement en vocal (sauf `=add`, sans rapport) — droit `server.voice.manage`."
+      "Agissent sur N'IMPORTE QUEL membre actuellement en vocal (sauf `=add`/`=owner`, sans rapport) — droit `server.voice.manage`."
     )
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));

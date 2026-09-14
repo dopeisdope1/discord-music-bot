@@ -1,15 +1,18 @@
 /**
- * "=add <@membre>" (utils/serverAdminCommands.js::handleAddAccessTextCommand
- * + buildOwnerAccessCard) — ouvre la carte "Owner" sur le VRAI catalogue de
- * permissions COMPLET, demandée sur une capture d'un AUTRE bot (commandes
- * "follow"/"pv"/"wakeup"/"dog"... qui n'existent PAS ici, remplacées par le
- * vrai catalogue). Le mot "owner" sur ce même préfixe "=" a été LIBÉRÉ pour
- * le vocal (architecture 3-préfixes : &=modération, !!=sécurité, ==vocal) —
- * il ne répond donc plus du tout ici, voir scripts/test-owner-moderation.js
- * et scripts/test-owner-security.js pour les cartes "Owner" filtrées de
- * "&owner"/"!!owner". "Statut" ne dit jamais littéralement "Owner" : ce mot
- * désignerait à tort le VRAI rang propriétaire du bot (utils/accessStore.js),
- * refusé plus haut dans la commande.
+ * "=add <@membre>" ET "=owner <@membre>" (utils/serverAdminCommands.js::
+ * handleAddAccessTextCommand + buildOwnerAccessCard) — ouvrent la MÊME
+ * carte "Owner" sur le VRAI catalogue de permissions COMPLET, demandée sur
+ * une capture d'un AUTRE bot (commandes "follow"/"pv"/"wakeup"/"dog"...
+ * qui n'existent PAS ici, remplacées par le vrai catalogue). "owner" a un
+ * temps été réservé au vocal pendant la restructuration à 3 préfixes
+ * (&=modération, !!=sécurité, ==vocal), mais le vocal s'est finalement
+ * limité à un catalogue de commandes de modération vocale réelle SANS ce
+ * mot dedans (mute/unmute/deaf/undeaf/disconnect/move) — "=owner" est donc
+ * restauré ici, sans collision avec "&owner"/"!!owner" (préfixes différents,
+ * voir scripts/test-owner-moderation.js et scripts/test-owner-security.js
+ * pour LEURS cartes filtrées). "Statut" ne dit jamais littéralement "Owner" :
+ * ce mot désignerait à tort le VRAI rang propriétaire du bot
+ * (utils/accessStore.js), refusé plus haut dans la commande.
  *
  * Lancement : node scripts/test-access-grant.js
  */
@@ -280,11 +283,22 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("\"=owner\" ne répond plus ici — ce mot est libéré pour le vocal", async () => {
+  await cas("\"=owner\" est restauré — même carte \"Owner\" que \"=add\" (le vocal n'a finalement pas pris ce mot)", async () => {
     permStore.grantToUser("g12b", "staff-12b", "panel.permissions.manage");
     const msg = fakeMessage({ guildId: "g12b", authorId: "staff-12b", content: `=owner <@${TARGET}>` });
     await serverAdmin.handleAddAccessTextCommand(null, msg);
-    assert.strictEqual(msg._replies.length, 0);
+    assert.strictEqual(msg._replies.length, 1);
+    const texte = JSON.stringify(msg._replies[0].components);
+    assert.ok(texte.includes("## Owner"), texte);
+    assert.ok(texte.includes(`<@${TARGET}>`), texte);
+  });
+
+  await cas("\"=owner\" sans argument rappelle SA PROPRE syntaxe (\"owner @membre\")", async () => {
+    permStore.grantToUser("g12c", "staff-12c", "panel.permissions.manage");
+    const msg = fakeMessage({ guildId: "g12c", authorId: "staff-12c", content: "=owner" });
+    await serverAdmin.handleAddAccessTextCommand(null, msg);
+    const texte = JSON.stringify(msg._replies[0]);
+    assert.ok(texte.includes("owner @membre"), texte);
   });
 
   await cas("\"&add\" (mauvais préfixe) ne déclenche jamais cette commande", async () => {

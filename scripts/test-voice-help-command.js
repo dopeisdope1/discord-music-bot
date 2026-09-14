@@ -76,20 +76,21 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     }
   });
 
-  await cas("ne mentionne PLUS de système de salon/propriété (revert explicite, pas la demande)", async () => {
+  await cas("ne mentionne PLUS de système de salon/propriété inventé (revert explicite, pas la demande)", async () => {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
-    for (const mot of ["=owner", "=lock", "=unlock", "=wl", "=unwl", "=vc", "=panel", "propriét"]) {
+    for (const mot of ["=lock", "=unlock", "=wl", "=unwl", "=vc", "=panel", "propriét"]) {
       assert.ok(!texte.includes(mot), `"${mot}" ne devrait plus apparaître : ${texte}`);
     }
   });
 
-  await cas("mentionne \"=add\" à part, en précisant que c'est sans rapport avec le vocal", async () => {
+  await cas("mentionne \"=add\"/\"=owner\" à part, en précisant que c'est sans rapport avec le vocal", async () => {
     const msg = fakeMessage("=help");
     await handleVoiceHelpTextCommand(null, msg);
     const texte = JSON.stringify(msg._channelSends[0].components);
     assert.ok(texte.includes("=add"), texte);
+    assert.ok(texte.includes("=owner"), texte);
     assert.ok(texte.includes("Sans rapport avec le vocal"), texte);
   });
 

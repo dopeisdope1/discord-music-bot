@@ -289,12 +289,14 @@ async function access(client, message, args, label = "access", ownerStyle = fals
 }
 
 /**
- * "=add <@membre|id>" — ouvre la carte "Owner" (buildOwnerAccessCard) sur le
- * VRAI catalogue de permissions COMPLET. Anciennement partagée avec le mot
- * "owner" sur ce même préfixe ; "owner" est maintenant réservé au VOCAL sur
- * "=" (voir handleVoiceOwnerTextCommand dans le futur chantier vocal) —
- * "&owner"/"!!owner" ci-dessous couvrent désormais l'équivalent "Owner" pour
- * la modération et la sécurité, chacun filtré à SES catégories réelles.
+ * "=add <@membre|id>" ET "=owner <@membre|id>" — mêmes deux mots, même
+ * mécanisme, même carte "Owner" (buildOwnerAccessCard) sur le VRAI
+ * catalogue de permissions COMPLET. "owner" avait un temps été réservé au
+ * vocal pendant la restructuration à 3 préfixes, mais ça a été écarté (le
+ * vocal se limite finalement à un catalogue de commandes de modération
+ * vocale réelle, sans le mot "owner" dedans — voir handleVoiceAliasTextCommand)
+ * : "=owner" est donc restauré ici, sans collision possible avec "&owner"/
+ * "!!owner" (préfixes différents, filtrés à leurs propres catégories).
  */
 async function handleAddAccessTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
@@ -303,9 +305,10 @@ async function handleAddAccessTextCommand(client, message) {
   if (!PREFIX || !content.startsWith(PREFIX)) return;
 
   const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  if ((cmd || "").toLowerCase() !== "add") return; // mot inconnu sur ce préfixe : silence
+  const mot = (cmd || "").toLowerCase();
+  if (mot !== "add" && mot !== "owner") return; // mot inconnu sur ce préfixe : silence
 
-  return access(client, message, args, "add", true);
+  return access(client, message, args, mot, true);
 }
 
 const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
