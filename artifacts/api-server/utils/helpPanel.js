@@ -109,13 +109,12 @@ function paginerColonnes(colonnes) {
 /**
  * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
  * `prefix: "mod"` = préfixe de gestion (`&`, ou sa valeur configurée),
- * `"main"` = préfixe musique, et `null` = déclencheur SANS préfixe
+ * `null` = déclencheur SANS préfixe
  * (ex. `uo clear`). Afficher un préfixe devant ce dernier annoncerait une
  * commande qui n'existe pas.
  */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  if (cmd.prefix === "main") return prefixes.main;
   const bucket = commandRouting.bucketDe(cmd.name);
   if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
@@ -236,16 +235,6 @@ function chunkBlocks(blocks, maxLen = 3600) {
   return chunks;
 }
 
-// Différé, pas en tête de fichier : utils/configPanel.js require
-// utils/permsCommands.js qui require ici — un require en tête fermerait la
-// boucle et renverrait un module vide (même piège que celui documenté dans
-// utils/implementedCommands.js pour musicCommands.js).
-let hasAnyPanelAccessCache = null;
-function hasAnyPanelAccessLazy(member) {
-  if (!hasAnyPanelAccessCache) hasAnyPanelAccessCache = require("./configPanel").hasAnyPanelAccess;
-  return hasAnyPanelAccessCache(member);
-}
-
 /**
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a
  * accès, groupées par THÈME (utils/commandCatalog.js::CATEGORIES). Les
@@ -258,16 +247,6 @@ function groupByTier(member) {
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
-      // &panel n'est gardée par AUCUNE clé unique du catalogue — la vraie
-      // commande vérifie hasAnyPanelAccess (n'importe quelle permission de
-      // rubrique du panel). Sans ce cas particulier, &help l'annonçait
-      // "accessible" même à un membre sans aucun droit, pour qui la commande
-      // ne fait pourtant rien. Elle vit dans la catégorie "Bot & Accès" du
-      // catalogue, comme n'importe quelle autre commande de ce thème.
-      if (identityOf(cmd) === "panel") {
-        if (hasAnyPanelAccessLazy(member)) groups[category.key].push(cmd);
-        continue;
-      }
       if (!canUse(cmd.permission)) continue;
       groups[category.key].push(cmd);
     }
@@ -425,7 +404,7 @@ function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
     spec = {
       titre: "Centre de commandes",
       sousTitre:
-        `${identiteAffichee(member, authorId)} · Musique : ${prefixes.main} · Gestion : ${prefixes.musicMod} · ` +
+        `${identiteAffichee(member, authorId)} · Gestion : ${prefixes.musicMod} · ` +
         `Modération : ${prefixes.moderation} · Sécurité : ${prefixes.protection} · Vocal : ${prefixes.owner}`,
       cartes: availableTiers.map((cle) => {
         const palier = PALIER_PAR_CLE[cle];

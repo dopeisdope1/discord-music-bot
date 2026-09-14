@@ -70,7 +70,7 @@ git fetch --quiet origin "$BRANCHE" || { dire "git fetch a échoué (réseau ?)"
 AVANT=$(git rev-parse HEAD)
 CIBLE=$(git rev-parse "origin/$BRANCHE")
 # Rien de neuf : on sort en silence. Sans ce test, le bot redémarrerait toutes
-# les 5 minutes pour rien, coupant la musique en cours à chaque fois.
+# les 5 minutes pour rien, interrompant inutilement le service à chaque fois.
 [ "$AVANT" = "$CIBLE" ] && exit 0
 
 dire "Nouvelle version : ${AVANT:0:7} -> ${CIBLE:0:7}"

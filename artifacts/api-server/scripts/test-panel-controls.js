@@ -213,8 +213,8 @@ function actionsDe(json) {
       return replies[0]?.content || "";
     };
 
-    const overlap = await submit("main", "!");
-    assert.strictEqual(getPrefixes("g1").main, "?", "le panel ne doit pas enregistrer ! face à !!");
+    const overlap = await submit("moderation", "!");
+    assert.strictEqual(getPrefixes("g1").moderation, "-", "le panel ne doit pas enregistrer ! face à !!");
     assert.ok(overlap.includes("chevauchent"), overlap);
 
     const duplicate = await submit("musicMod", "=");

@@ -183,15 +183,9 @@ importers:
       ffmpeg-static:
         specifier: ^5.3.0
         version: 5.3.0
-      kazagumo:
-        specifier: ^3.4.2
-        version: 3.4.3
       luxon:
         specifier: ^3.7.2
         version: 3.7.2
-      shoukaku:
-        specifier: ^4.1.0
-        version: 4.3.0
 
   artifacts/bot-status:
     devDependencies:
@@ -2279,10 +2273,6 @@ packages:
     resolution: {integrity: sha512-p/nXbhSEcu3pZRdkW1OfJhpsVtW1gd4Wa1fnQc9YLiTfAjn0312eMKimbdIQzuZl9aa9xUGaRlP9T/CJE/ditQ==}
     engines: {node: '>=0.10.0'}
 
-  kazagumo@3.4.3:
-    resolution: {integrity: sha512-0Y0MJgfjHQICdnPQTNyHKnDTBBcyMCvUDw/GJ2X8svn//gkrPlod31fnf8nUuSuCmU2cFv7ymVcQXaqgJWcddw==}
-    engines: {node: '>=16.5.0'}
-
   leven@4.1.0:
     resolution: {integrity: sha512-KZ9W9nWDT7rF7Dazg8xyLHGLrmpgq2nVNFUckhqdW3szVP6YhCpp/RAnpmVExA9JvrMynjwSLVrEj3AepHR6ew==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
@@ -2669,10 +2659,6 @@ packages:
   shebang-regex@3.0.0:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
-
-  shoukaku@4.3.0:
-    resolution: {integrity: sha512-jMEqVKvquGEqysnOL7a1hmnOAEJO47kTLoS7cGJLbIya3olSlFkMq7jbrrENijnx8fujXvMgUmQqwEdQk/Rkug==}
-    engines: {node: '>=18.0.0', npm: '>=7.0.0'}
 
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
@@ -4615,13 +4601,6 @@ snapshots:
 
   jsonpointer@5.0.1: {}
 
-  kazagumo@3.4.3:
-    dependencies:
-      shoukaku: 4.3.0
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
   leven@4.1.0: {}
 
   lightningcss-linux-x64-gnu@1.32.0:
@@ -4989,13 +4968,6 @@ snapshots:
       shebang-regex: 3.0.0
 
   shebang-regex@3.0.0: {}
-
-  shoukaku@4.3.0:
-    dependencies:
-      ws: 8.21.3
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
 
   signal-exit@4.1.0: {}
 

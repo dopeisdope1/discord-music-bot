@@ -628,27 +628,6 @@ function auditEntry({ action, targetId, executorId, changes = [], extra, created
 
   const lists = require("../utils/personalListsStore");
 
-  await cas("choisir une liste dans le menu révèle son état, un seul aller-retour", async () => {
-    const interaction = fakeInteraction("prot:listaction", { userId: "u90", guildId: "g90", values: ["antiCafard"] });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.strictEqual(interaction._updates.length, 1);
-    const texte = JSON.stringify(interaction._updates[0].components);
-    assert.ok(texte.includes("Liste actuelle"), texte);
-  });
-
-  await cas("ajouter quelqu'un via listadd l'ajoute vraiment à la liste", async () => {
-    const interaction = fakeInteraction("prot:listadd:antiCafard", { userId: "u91", guildId: "g91", values: ["cible-1"] });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.deepStrictEqual(lists.getList("g91", "u91", "antiCafard"), ["cible-1"]);
-  });
-
-  await cas("retirer via listdel enlève vraiment de la liste (bascule inverse)", async () => {
-    lists.toggleInList("g92", "u92", "fuiteVocale", "cible-2");
-    const interaction = fakeInteraction("prot:listdel:fuiteVocale", { userId: "u92", guildId: "g92", values: ["cible-2"] });
-    await personalProtection.handleProtectionInteraction(interaction);
-    assert.deepStrictEqual(lists.getList("g92", "u92", "fuiteVocale"), []);
-  });
-
   await cas("ajouter deux fois la même personne ne duplique pas (idempotent)", async () => {
     const interaction1 = fakeInteraction("prot:listadd:antiMentionPerso", { userId: "u93", guildId: "g93", values: ["cible-3"] });
     await personalProtection.handleProtectionInteraction(interaction1);

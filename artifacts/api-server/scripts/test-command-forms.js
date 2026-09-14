@@ -305,14 +305,6 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(followUps.length > 0, "une confirmation aurait dû être demandée");
   });
 
-  await cas("voicehub_set règle le salon générateur choisi", async () => {
-    const voiceChannels = require("../utils/voiceChannels");
-    const interaction = makeInteraction();
-    interaction.guild.channels.cache.set("vc1", { id: "vc1", type: ChannelType.GuildVoice, name: "Vocal" });
-    await commandForms.FORMS.voicehub_set.run(client, interaction, { channelId: "vc1" });
-    assert.strictEqual(voiceChannels.getHub("g1"), "vc1");
-  });
-
   await cas("set_muterole_grant enregistre le rôle de mute choisi", async () => {
     const muteStore = require("../utils/muteStore");
     const interaction = makeInteraction();
@@ -454,7 +446,7 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
   console.log("\nCommandes volontairement NON interceptées (raccourci zéro-argument déjà utile, voir le commentaire dans commandForms.js) :");
 
   await cas("aucune de ces commandes n'a de carte : leur comportement direct reste inchangé", () => {
-    for (const bare of ["clear", "modlogs", "sync", "wl", "unwl", "cleanup", "modlog", "voicehub off"]) {
+    for (const bare of ["clear", "modlogs", "sync", "wl", "unwl", "cleanup", "modlog"]) {
       assert.ok(!commandForms.BARE_COMMAND_FORMS[bare], `"${bare}" ne doit pas avoir de carte (regression de raccourci)`);
     }
   });

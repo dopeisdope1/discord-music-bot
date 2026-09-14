@@ -3,18 +3,17 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Listes personnelles associées à certaines protections de !!panel (voir
-// utils/personalProtectionStore.js) : Anti-Cafard/Fuite Vocale/Anti-Mention
-// Perso/Anti-Stalker ont chacune une LISTE de membres surveillés, Mute Bot a
+// utils/personalProtectionStore.js) : Anti-Mention Perso a une LISTE de
+// membres surveillés, Mute Bot a
 // UNE seule cible désignée. Fichier séparé de personalProtectionStore.js —
 // ce dernier ne stocke que des booléens (le simple "activé/désactivé"), pas
 // le contenu des listes.
-// { [guildId]: { [userId]: { antiCafard: string[], fuiteVocale: string[],
-//                             antiMentionPerso: string[], antiStalker: string[],
+// { [guildId]: { [userId]: { antiMentionPerso: string[],
 //                             muteBotTarget: string|null } } }
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "personalLists.json");
 
-const CLES_LISTE = ["antiCafard", "fuiteVocale", "antiMentionPerso", "antiStalker"];
+const CLES_LISTE = ["antiMentionPerso"];
 
 let cache = null;
 
@@ -70,20 +69,6 @@ function setTarget(guildId, userId, targetId) {
   save();
 }
 
-/**
- * Recherche inverse : qui (dans ce serveur) surveille CET utilisateur via
- * `cle` — nécessaire pour Mute Bot (qui protège cette cible démutée ?) et
- * Anti-Stalker (qui a listé cet arrivant ?). O(n) sur les membres ayant une
- * liste dans ce serveur — pas un chemin chaud, jamais appelé par message.
- * @returns {string[]} identifiants des membres qui surveillent `targetId`
- */
-function findWatchers(guildId, targetId, cle) {
-  const data = load()[guildId] || {};
-  return Object.entries(data)
-    .filter(([, e]) => Array.isArray(e[cle]) && e[cle].includes(targetId))
-    .map(([userId]) => userId);
-}
-
 /** Variante de findWatchers pour Mute Bot (muteBotTarget n'est pas une liste). */
 function findMuteBotProtectors(guildId, targetId) {
   const data = load()[guildId] || {};
@@ -92,4 +77,4 @@ function findMuteBotProtectors(guildId, targetId) {
     .map(([userId]) => userId);
 }
 
-module.exports = { getList, toggleInList, getTarget, setTarget, findWatchers, findMuteBotProtectors };
+module.exports = { getList, toggleInList, getTarget, setTarget, findMuteBotProtectors };

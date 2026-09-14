@@ -46,8 +46,6 @@ const autoroleStore = require("./autoroleStore");
 const verificationStore = require("./verificationStore");
 const welcomeStore = require("./welcomeStore");
 const ticketStore = require("./ticketStore");
-const voiceChannels = require("./voiceChannels");
-const voiceHubSetup = require("./voiceHubSetup");
 const { roleAdmin } = require("./serverAdminCommands");
 const { computeSecurityScan } = require("./securityScan");
 const { computeStatus, formatUptime } = require("./statusDiagnostic");
@@ -57,18 +55,10 @@ const { utilityHandlers } = require("./utilityCommands");
 const giveawayStore = require("./giveawayStore");
 const { endGiveaway, rerollGiveaway } = require("./giveaways");
 const { handleEmbedButton } = require("./serverExtra");
-const { buildFavoritesPanel } = require("./favoritesPanel");
-const { LOOP_LABELS } = require("./nowPlayingPanel");
 const backupStore = require("./serverBackupStore");
 const { backup, countChannels, PRESET_BACKUPS } = require("./serverBackup");
 const botProfileStore = require("./botProfileStore");
 const { botProfileHandlers, STATUS_LABELS } = require("./botProfileCommands");
-
-// Même variable d'environnement que index.js/musicCommands.js — musique
-// suspendue = rubrique Musique masquée du panel elle aussi (famille "musique"
-// automatiquement retirée du menu, buildNav ne montrant déjà que les
-// familles ayant au moins une rubrique visible).
-const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
 
 // Noms donnés aux salons créés par le bouton "Créer les salons
 // automatiquement" (rubrique Logs) — ASCII simple, pas d'accent, pour éviter
@@ -95,7 +85,7 @@ const ID = "cfg";
 // OU écriture suffisent). Rien = toujours visible (page d'accueil).
 const SECTIONS = [
   { key: "home", label: "Accueil", description: "Vue d'ensemble de la configuration" },
-  { key: "prefixes", label: "Préfixes", description: "Musique, gestion, modération, sécurité et vocal", permission: "sys" },
+  { key: "prefixes", label: "Préfixes", description: "Gestion, modération, sécurité et vocal", permission: "sys" },
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage", permission: "sys" },
   {
     key: "permissions",
@@ -119,22 +109,16 @@ const SECTIONS = [
   },
   { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "stats", label: "Statistiques", description: "Compteurs serveur et activité des 7 derniers jours", permission: "server.stats.view" },
-  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", permission: "sys" },
+  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire", permission: "sys" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
   { key: "leave", label: "Départ", description: "Message envoyé quand un membre quitte le serveur", permission: "server.welcome.manage" },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés automatiquement à l'arrivée", permission: "members.autorole.manage" },
   { key: "verification", label: "Vérification", description: "Rôle et salon du bouton \"Se vérifier\"", permission: "members.verification.manage" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
-  { key: "voice", label: "Vocaux", description: "Salon générateur de vocaux temporaires (voir &voicehub)", permission: "server.voice.manage" },
   { key: "channels", label: "Salons", description: "Sélectionner plusieurs salons et les supprimer d'un coup", permission: "channels.manage" },
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
   { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
   { key: "polls", label: "Sondages", description: "Créer un sondage (2 à 5 options)", permission: "server.polls.manage" },
-  // Pas de `permission` : &play/&pause... ne sont pas gated par le moteur de
-  // permissions (seule l'appartenance au même salon vocal compte, voir
-  // index.js::canControlPlayer) — cette rubrique reste donc publique elle
-  // aussi, comme les commandes qu'elle affiche/relie.
-  { key: "musicPlayer", label: "Musique", description: "Lecteur en cours et favoris", enabled: MUSIC_ENABLED },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "backups", label: "Sauvegardes", description: "Structure du serveur : créer, restaurer, supprimer", permission: "sys" },
   { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
@@ -144,8 +128,7 @@ const SECTIONS = [
 
 function sectionVisible(section, member, isOwner) {
   // Indépendant des droits : une rubrique dont la fonctionnalité sous-jacente
-  // est globalement coupée (ex : musique suspendue) reste masquée pour tout
-  // le monde, y compris le propriétaire — volontairement testé AVANT tout le
+  // est globalement coupée reste masquée pour tout le monde, y compris le
   // reste, et volontairement un champ distinct de `visible`/`permission` :
   // ceux-ci comptent pour hasAnyPanelAccess (une vraie vérification de droit),
   // alors qu'un simple interrupteur de fonctionnalité n'en est pas un.
@@ -161,8 +144,8 @@ const sectionsFor = (member, isOwner) => SECTIONS.filter((s) => sectionVisible(s
 /**
  * Vrai si la personne a accès à AU MOINS une rubrique qui exige un vrai droit
  * pour apparaître — condition d'entrée de &panel. Une rubrique sans
- * `permission`/`visible`/`ownerOnly` (Accueil, Musique — ni l'une ni l'autre
- * gated par le moteur de permissions, voir leurs commentaires dans SECTIONS)
+ * `permission`/`visible`/`ownerOnly` (Accueil — ni l'une ni l'autre
+ * gated par le moteur de permissions)
  * est visible à tout le monde et NE COMPTE PAS ici : sinon &panel
  * deviendrait accessible à quiconque n'a strictement aucun droit, juste
  * parce qu'une rubrique publique existe.
@@ -181,7 +164,7 @@ const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") :
 // le menu principal ne montre que les familles, un second menu n'apparaît
 // que pour choisir une rubrique dans la famille ouverte. Onze familles
 // cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
-// Communication/Musique/Monitoring/Sauvegardes/Bot), toutes présentes
+// Communication/Monitoring/Sauvegardes/Bot), toutes présentes
 // désormais.
 //
 // Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
@@ -242,11 +225,11 @@ function definirSelectionSalons(guildId, userId, ids) {
 const MAX_COMMANDES_AFFICHEES = 27;
 const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
-// Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Vocaux
-// temporaires, Permissions, Giveaways — et non plus des familles abstraites
+// Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Permissions,
+// Giveaways — et non plus des familles abstraites
 // ("Serveur", "Communauté", "Communication") dans lesquelles il fallait
 // deviner ce qui se cachait. Demande explicite : « je veux genre des rubriques
-// comme Logs, Sécurité, Bienvenue, Voc temporaire, Permission, Giveaway ».
+// comme Logs, Sécurité, Bienvenue, Permission, Giveaway ».
 //
 // Chaque entrée ne contient qu'UNE rubrique — la famille "Sécurité"
 // (vue d'ensemble/anti-spam/anti-nuke/rôle de mute), seule à en regrouper
@@ -261,7 +244,6 @@ const FAMILIES = [
   { key: "logs", label: "Logs", description: "Salon de logs par catégorie", sections: ["logs"] },
   { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
   { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
-  { key: "vocaux", label: "Vocaux temporaires", description: "Salon générateur de vocaux à la demande", sections: ["voice"] },
   { key: "salons", label: "Salons", description: "Supprimer plusieurs salons d'un coup", sections: ["channels"] },
   { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions", "roletiers"] },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
@@ -270,13 +252,12 @@ const FAMILIES = [
   { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", sections: ["giveaways"] },
   { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", sections: ["polls"] },
   { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", sections: ["embedBuilder"] },
-  { key: "musique", label: "Musique", description: "Lecteur en cours et favoris", sections: ["musicPlayer"] },
   { key: "historique", label: "Historique", description: "Rechercher dans l'historique de modération", sections: ["history"] },
   { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", sections: ["stats"] },
-  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence, mémoire, nœuds Lavalink", sections: ["diagnostics"] },
+  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire", sections: ["diagnostics"] },
   { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", sections: ["backups"] },
   { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", sections: ["botProfile"] },
-  { key: "prefixes", label: "Préfixes", description: "Musique, gestion, modération, sécurité et vocal", sections: ["prefixes"] },
+  { key: "prefixes", label: "Préfixes", description: "Gestion, modération, sécurité et vocal", sections: ["prefixes"] },
   { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", sections: ["access"] },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
@@ -361,7 +342,6 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "prefixes") {
     return [
-      `> **Préfixe musique** : \`${prefixes.main}\``,
       `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
       `> **Préfixe modération** : \`${prefixes.moderation}\``,
       `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
@@ -528,15 +508,9 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "diagnostics") {
     const info = computeStatus(guild.client);
-    const lavalink = info.lavalinkNodes.length
-      ? info.lavalinkNodes.map((n) => `> \`${n.name}\` : ${n.connected ? "🟢 connecté" : `🔴 état ${n.state}`}`).join("\n")
-      : "> *aucun nœud déclaré*";
     return [
       `> **Uptime** : ${formatUptime(info.uptimeMs)} · **latence** : ${info.ping}ms · **mémoire** : ${info.memoryRssMB} Mo`,
       `> **Serveurs** : ${info.guildCount} · **Node.js** : ${info.nodeVersion} · **discord.js** : v${info.discordjsVersion}`,
-      "",
-      "**Lavalink :**",
-      lavalink,
     ].join("\n");
   }
 
@@ -684,26 +658,6 @@ function sectionBody(section, guild, member, state) {
     return lignes.join("\n");
   }
 
-  if (section === "voice") {
-    const hubId = voiceChannels.getHub(guildId);
-    const hubConfig = voiceChannels.getHubConfig(guildId);
-    const spawnOk = hubConfig.spawnCategoryId && guild.channels.cache.has(hubConfig.spawnCategoryId);
-    const panelOk = hubConfig.panelChannelId && guild.channels.cache.has(hubConfig.panelChannelId);
-    return [
-      `> **Salon générateur** : ${hubId && guild.channels.cache.has(hubId) ? `<#${hubId}>` : "*aucun — désactivé*"}`,
-      `> **Catégorie des salons créés** : ${spawnOk ? `<#${hubConfig.spawnCategoryId}>` : "*par défaut, même catégorie que le générateur*"}`,
-      `> **Salon-panneau partagé** : ${panelOk ? `<#${hubConfig.panelChannelId}>` : "*aucun — le bouton \"Gérer mon salon\" n'apparaît pas*"}`,
-      `> **Modèle de nom** : \`${hubConfig.voiceNameTemplate}\``,
-      "",
-      "Un seul panneau à boutons, partagé par tout le monde : il agit sur le salon vocal où la personne qui clique est connectée. " +
-        "Fini le salon texte compagnon créé puis détruit à chaque salon vocal.",
-      "",
-      hubId && guild.channels.cache.has(hubId)
-        ? "Configuré manuellement ou via \"Créer la configuration\" — le bouton ci-dessous ne recrée rien tant que c'est actif."
-        : "\"Créer la configuration\" crée en un clic les deux catégories, le salon générateur et le salon-panneau.",
-    ].join("\n");
-  }
-
   if (section === "giveaways") {
     const active = giveawayStore
       .listForGuild(guildId)
@@ -724,18 +678,6 @@ function sectionBody(section, guild, member, state) {
 
   if (section === "polls") {
     return "> *Sondages en mémoire, perdus au redémarrage du bot — le bouton ci-dessous ouvre le même formulaire que `&poll`.*";
-  }
-
-  if (section === "musicPlayer") {
-    const player = guild.client.kazagumo?.players?.get(guildId);
-    if (!player || !player.queue.current) return "> *Aucune lecture en cours.*";
-    const track = player.queue.current;
-    return [
-      `> **En cours** : [${track.title}](${track.uri})`,
-      `> **Demandé par** : <@${track.requester?.id || "?"}>`,
-      `> **État** : ${player.paused ? "en pause" : "lecture"} · **volume** : ${player.volume}% · **boucle** : ${LOOP_LABELS[player.loop] || "désactivée"}`,
-      `> **File d'attente** : ${player.queue.length} titre(s)`,
-    ].join("\n");
   }
 
   if (section === "banall") {
@@ -781,7 +723,6 @@ function sectionBody(section, guild, member, state) {
   }
 
   return [
-    `> **Préfixe musique** : \`${prefixes.main}\``,
     `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
     `> **Préfixe modération** : \`${prefixes.moderation}\``,
     `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
@@ -1116,7 +1057,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:prefix:main`).setLabel("Préfixe musique").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`${ID}:prefix:protection`).setLabel("Préfixe sécurité").setStyle(ButtonStyle.Secondary),
@@ -1700,57 +1640,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setStyle(ButtonStyle.Secondary)
       )
     );
-  } else if (meta.key === "voice") {
-    const hubId = voiceChannels.getHub(guild.id);
-    const hubConfig = voiceChannels.getHubConfig(guild.id);
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId(`${ID}:voicehubchannel`)
-          .setPlaceholder("Choisir le salon générateur")
-          .addChannelTypes(ChannelType.GuildVoice)
-          .setMinValues(0)
-          .setMaxValues(1)
-          .setDefaultChannels(hubId && guild.channels.cache.has(hubId) ? [hubId] : [])
-      )
-    );
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId(`${ID}:voicespawncategory`)
-          .setPlaceholder("Choisir la catégorie des salons créés (optionnel)")
-          .addChannelTypes(ChannelType.GuildCategory)
-          .setMinValues(0)
-          .setMaxValues(1)
-          .setDefaultChannels(hubConfig.spawnCategoryId && guild.channels.cache.has(hubConfig.spawnCategoryId) ? [hubConfig.spawnCategoryId] : [])
-      )
-    );
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ChannelSelectMenuBuilder()
-          .setCustomId(`${ID}:voicepanelchannel`)
-          .setPlaceholder("Choisir le salon-panneau partagé (optionnel)")
-          .addChannelTypes(ChannelType.GuildText)
-          .setMinValues(0)
-          .setMaxValues(1)
-          .setDefaultChannels(hubConfig.panelChannelId && guild.channels.cache.has(hubConfig.panelChannelId) ? [hubConfig.panelChannelId] : [])
-      )
-    );
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`${ID}:voicehubsetup`)
-          .setLabel("Créer la configuration")
-          .setStyle(ButtonStyle.Success)
-          .setDisabled(Boolean(hubId && guild.channels.cache.has(hubId))),
-        new ButtonBuilder().setCustomId(`${ID}:voicenames`).setLabel("Modifier les noms").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`${ID}:voicepanelrefresh`)
-          .setLabel("Actualiser le panneau")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!(hubConfig.panelChannelId && guild.channels.cache.has(hubConfig.panelChannelId)))
-      )
-    );
   } else if (meta.key === "giveaways") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1807,20 +1696,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
       )
     );
-  } else if (meta.key === "musicPlayer") {
-    const player = guild.client.kazagumo?.players?.get(guild.id);
-    const npMessage = guild.client.nowPlayingMessages?.get(guild.id);
-    const boutons = [];
-    // Lien direct vers le VRAI panneau de lecture (déjà suivi/rafraîchi par
-    // utils/musicPlayer.js) plutôt qu'une copie de ses boutons ici : les
-    // customId music_* sont routés par index.js en supposant qu'ils vivent
-    // sur CE message précis (il l'édite en retour) — les dupliquer dans le
-    // panel désynchroniserait les deux affichages.
-    if (player?.queue?.current && npMessage) {
-      boutons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Ouvrir le lecteur").setURL(npMessage.url));
-    }
-    boutons.push(new ButtonBuilder().setCustomId(`${ID}:musicfavlist`).setLabel("Mes favoris").setStyle(ButtonStyle.Secondary));
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
   } else if (meta.key === "backups") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1894,7 +1769,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 }
 
 const PREFIX_FIELDS = {
-  main: { label: "Préfixe musique", max: 3 },
   musicMod: { label: "Préfixe gestion", max: 3 },
   moderation: { label: "Préfixe modération", max: 3 },
   protection: { label: "Préfixe sécurité/protection", max: 3 },
@@ -2150,15 +2024,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "pollstart") {
     if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return interaction.reply(buildFormCard("poll_create", member));
-  }
-
-  // Musique : mêmes deux lignes que le bouton "Mes favoris" du panneau de
-  // lecture (index.js) — pas une deuxième implémentation.
-  if (action === "musicfavlist") {
-    const { main } = getPrefixes(guildId);
-    const panel = buildFavoritesPanel(interaction.user.id, main);
-    if (!panel) return interaction.reply({ content: "Tu n'as encore aucun favori.", flags: MessageFlags.Ephemeral });
-    return interaction.reply({ ...panel, flags: panel.flags | MessageFlags.Ephemeral });
   }
 
   // Sauvegardes : réutilise TEL QUEL &backup (utils/serverBackup.js) — un
@@ -2666,78 +2531,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     ticketStore.setConfig(guildId, { ownerCanClose: extra === "on" });
     return goto("tickets");
-  }
-
-  if (action === "voicehubchannel") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    voiceChannels.setHub(guildId, interaction.values[0] || null);
-    return goto("voice");
-  }
-
-  if (action === "voicespawncategory") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    voiceChannels.setSpawnCategory(guildId, interaction.values[0] || null);
-    return goto("voice");
-  }
-
-  if (action === "voicepanelchannel") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    voiceChannels.setPanelChannel(guildId, interaction.values[0] || null);
-    return goto("voice");
-  }
-
-  if (action === "voicehubsetup") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (voiceHubSetup.isAlreadyConfigured(guild)) {
-      return interaction.reply({ content: "Un générateur est déjà actif — change-le via le sélecteur plutôt que d'en recréer un.", flags: MessageFlags.Ephemeral });
-    }
-    await interaction.deferUpdate();
-    const { hubCategory, spawnCategory, hubChannel, panelChannel } = await voiceHubSetup.createVoiceHubSetup(guild);
-    await interaction
-      .followUp({
-        content: `Configuration créée : ${hubCategory} > ${hubChannel} (rejoindre crée un salon), ${spawnCategory} pour les salons créés, et ${panelChannel} pour les gérer.`,
-        flags: MessageFlags.Ephemeral,
-      })
-      .catch(() => {});
-    return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
-  }
-
-  if (action === "voicepanelrefresh") {
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    await interaction.deferUpdate();
-    const ok = await voiceHubSetup.refreshPanelCard(guild);
-    await interaction
-      .followUp({
-        content: ok ? "Panneau actualisé — les libellés/boutons repris sont ceux de la version actuelle du bot." : "Aucun salon-panneau configuré.",
-        flags: MessageFlags.Ephemeral,
-      })
-      .catch(() => {});
-    return;
-  }
-
-  if (action === "voicenames") {
-    if (interaction.isModalSubmit()) {
-      const voiceNameTemplate = interaction.fields.getTextInputValue("voice").trim();
-      voiceChannels.setNameTemplates(guildId, { voiceNameTemplate });
-      await interaction.reply({ content: "Modèle de nom enregistré.", flags: MessageFlags.Ephemeral });
-      return interaction.message?.edit(buildConfigPanel(guild, "voice", member)).catch(() => {});
-    }
-    if (!can(member, "server.voice.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-
-    const current = voiceChannels.getHubConfig(guildId);
-    const modal = new ModalBuilder().setCustomId(`${ID}:voicenames`).setTitle("Modèle de nom des salons");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("voice")
-          .setLabel("Nom du salon vocal créé ({pseudo})")
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(90)
-          .setRequired(true)
-          .setValue(current.voiceNameTemplate)
-      )
-    );
-    return interaction.showModal(modal);
   }
 
   if (action === "prefix") {

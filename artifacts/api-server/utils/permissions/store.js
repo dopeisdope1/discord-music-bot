@@ -3,7 +3,7 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("../jsonFile");
 
 // Même patron que utils/accessStore.js et utils/prefixStore.js : DATA_DIR
-// pointe vers un Volume Railway monté, sans quoi les octrois seraient
+// pointe vers un stockage persistant, sans quoi les octrois seraient
 // perdus à chaque redéploiement.
 //
 // Contrairement à accessStore.js (portées globales sys/banall/clear/salon,

@@ -44,7 +44,6 @@ function commandesAccessibles(member) {
 /** Le vrai préfixe d'une commande — toutes ne vivent pas sur le même. */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  if (cmd.prefix === "main") return prefixes.main;
   const bucket = commandRouting.bucketDe(cmd.name);
   if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;

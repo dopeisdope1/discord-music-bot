@@ -10,7 +10,6 @@ const {
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   UserSelectMenuBuilder,
-  ChannelType,
   MessageFlags,
 } = require("discord.js");
 const { EMOJI } = require("./emojis");
@@ -21,7 +20,6 @@ const messageOwner = require("./messageOwner");
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
-const voiceChannels = require("./voiceChannels");
 const muteStore = require("./muteStore");
 const { report } = require("./moderation/actions");
 
@@ -50,14 +48,11 @@ function rangLabel(userId) {
   return "Membre";
 }
 
-// Les 4 protections qui reposent sur une LISTE de membres plutôt qu'un
+// Les protections qui reposent sur une LISTE de membres plutôt qu'un
 // simple on/off (utils/personalListsStore.js) — "Gérer une liste
 // personnelle" ci-dessous les couvre toutes, un aller-retour à la fois.
 const LISTES_GEREES = [
-  { cle: "antiCafard", label: "Anti-Cafard : liste noire" },
-  { cle: "fuiteVocale", label: "Fuite Vocale : liste" },
   { cle: "antiMentionPerso", label: "Anti-Mention Perso : liste surveillée" },
-  { cle: "antiStalker", label: "Anti-Stalker : liste surveillée" },
   { cle: "muteBot", label: "Mute Bot : cible désignée" },
 ];
 
@@ -141,8 +136,7 @@ function buildPanel(member, state = {}) {
 
 /**
  * À appeler dans l'écouteur "messageCreate", en parallèle de
- * handleMusicTextCommand (voir index.js). Lit elle-même le préfixe "!!" —
- * même convention que utils/musicCommands.js::handleMusicTextCommand.
+ * handleTextCommand (voir index.js). Lit elle-même le préfixe "!!".
  */
 async function handleProtectionTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
@@ -457,104 +451,6 @@ async function enforceDeleteAlert(message) {
 }
 
 /**
- * Anti-Cafard / Fuite Vocale — à appeler depuis "voiceStateUpdate"
- * (index.js), dans un écouteur DÉDIÉ (pas celui qui gère la création/
- * suppression des salons temporaires ni celui d'enforceMoveProtection).
- * Se déclenche quand quelqu'un REJOINT un salon vocal temporaire (voir
- * utils/voiceChannels.js) dont le propriétaire surveille l'arrivant :
- * Anti-Cafard expulse l'arrivant, Fuite Vocale fait partir le
- * PROPRIÉTAIRE — priorité à Anti-Cafard si les deux listes matchent (on
- * règle le problème plutôt que de fuir, quand le choix se présente).
- */
-async function enforceVoiceBlocklists(oldState, newState) {
-  const arrivant = newState.member;
-  if (!arrivant || !newState.channelId || oldState.channelId === newState.channelId) return;
-  const info = voiceChannels.getChannelInfo(newState.channelId);
-  if (!info || info.ownerId === arrivant.id) return;
-
-  const guildId = newState.guild.id;
-  if (store.isEnabled(guildId, info.ownerId, "antiCafard") && lists.getList(guildId, info.ownerId, "antiCafard").includes(arrivant.id)) {
-    await arrivant.voice.disconnect("Anti-Cafard (!!panel)").catch(() => {});
-    return;
-  }
-  if (store.isEnabled(guildId, info.ownerId, "fuiteVocale") && lists.getList(guildId, info.ownerId, "fuiteVocale").includes(arrivant.id)) {
-    const proprietaire = await newState.guild.members.fetch(info.ownerId).catch(() => null);
-    await proprietaire?.voice?.disconnect("Fuite Vocale (!!panel)").catch(() => {});
-  }
-}
-
-/**
- * Anti-Stalker — même déclencheur qu'enforceVoiceBlocklists (quelqu'un
- * rejoint un salon vocal), appelé depuis le MÊME écouteur "voiceStateUpdate"
- * dédié. Alerte SEULEMENT (jamais de sanction, comme Anti-Ping-Fantôme) :
- * si l'arrivant est dans la liste de surveillance d'un membre protégé déjà
- * présent dans CE salon, prévient ce membre en MP.
- */
-async function enforceStalkerAlert(oldState, newState) {
-  const arrivant = newState.member;
-  if (!arrivant || !newState.channelId || oldState.channelId === newState.channelId) return;
-  const guildId = newState.guild.id;
-  const surveillants = lists.findWatchers(guildId, arrivant.id, "antiStalker");
-  if (!surveillants.length) return;
-
-  const channel = newState.guild.channels.cache.get(newState.channelId);
-  if (!channel) return;
-
-  for (const protegeId of surveillants) {
-    if (protegeId === arrivant.id) continue;
-    if (!store.isEnabled(guildId, protegeId, "antiStalker")) continue;
-    if (!channel.members?.has(protegeId)) continue;
-    const protege = await newState.guild.members.fetch(protegeId).catch(() => null);
-    await protege?.user
-      ?.send(`**${arrivant.user?.tag || "un membre que tu surveilles"}** vient de rejoindre ton salon vocal (**${channel.name}**).`)
-      .catch(() => {});
-  }
-}
-
-/**
- * Sanctuaire Vocal — écouteur "voiceStateUpdate" dédié, séparé
- * d'enforceMoveProtection : protège UNIQUEMENT dans le salon vocal
- * TEMPORAIRE dont on est propriétaire, et la légitimité s'y résume à
- * "est-ce moi qui l'ai fait" (pas estActionLegitime — même un modérateur
- * avec de vrais droits n'a rien à faire dans le salon de quelqu'un
- * d'autre). Limité aux DÉPLACEMENTS : Discord ne permet pas de reconnecter
- * quelqu'un après une déconnexion forcée, donc rien à annuler dans ce cas
- * (voir la description affichée dans !!panel).
- */
-async function enforceSanctuaryProtection(oldState, newState) {
-  const member = newState.member;
-  if (!member || !oldState.channelId || !newState.channelId || oldState.channelId === newState.channelId) return;
-  const info = voiceChannels.getChannelInfo(oldState.channelId);
-  if (!info || info.ownerId !== member.id) return;
-  if (!store.isEnabled(newState.guild.id, member.id, "sanctuaireVocal")) return;
-
-  const logs = await newState.guild.fetchAuditLogs({ type: AuditLogEvent.MemberMove, limit: 3 }).catch(() => null);
-  const recent = [...(logs?.entries?.values() || [])].find(
-    (e) => e.extra?.channel?.id === newState.channelId && Date.now() - e.createdTimestamp < 5000
-  );
-  if (!recent || recent.executorId === member.id) return; // pas de déplacement imposé détecté, ou fait par le propriétaire lui-même
-
-  await member.voice.setChannel(oldState.channelId, "Sanctuaire Vocal (!!panel)").catch((err) => {
-    console.error("[personalProtection] sanctuaire vocal impossible :", err.message);
-  });
-}
-
-/**
- * Clean Chat Vocal — à appeler depuis "messageCreate" (index.js). Si le
- * message est posté dans le chat d'un salon vocal TEMPORAIRE par son
- * propriétaire, planifie sa suppression après 5 minutes.
- */
-async function enforceCleanVoiceChat(message) {
-  if (!message.guild || message.author?.bot) return;
-  if (message.channel?.type !== ChannelType.GuildVoice) return;
-  const info = voiceChannels.getChannelInfo(message.channel.id);
-  if (!info || info.ownerId !== message.author.id) return;
-  if (!store.isEnabled(message.guild.id, message.author.id, "cleanChatVocal")) return;
-
-  setTimeout(() => message.delete().catch(() => {}), 5 * 60_000);
-}
-
-/**
  * Mute Bot — à appeler depuis un écouteur "guildMemberUpdate" (nouveau,
  * voir index.js). Se déclenche quand le rôle de mute (utils/muteStore.js)
  * disparaît d'un membre : si quelqu'un le protège avec Mute Bot (utils/
@@ -595,10 +491,6 @@ module.exports = {
   enforceGhostPingAlert,
   enforcePersonalMentionAlert,
   enforceDeleteAlert,
-  enforceVoiceBlocklists,
-  enforceStalkerAlert,
-  enforceSanctuaryProtection,
-  enforceCleanVoiceChat,
   enforceMuteBot,
   checkExpiredQuarantines,
   CUSTOM_ID,

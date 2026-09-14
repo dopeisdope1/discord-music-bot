@@ -2,16 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
-// DATA_DIR est configurable via la variable d'env DATA_DIR : sur Railway, le
-// disque du container est réinitialisé à chaque redéploiement, donc tout ce
-// qui est écrit dans le chemin par défaut (relatif au code) est perdu au
-// prochain push. Pointer DATA_DIR vers un Volume Railway monté (persistant,
-// lui, entre les redéploiements) rend ce fichier permanent. Voir le README.
+// DATA_DIR est configurable via la variable d'env DATA_DIR afin de conserver
+// les réglages entre les redéploiements.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-// Architecture 4 préfixes de commandes (+ musique) :
-//   main = "?"  → musique
+// Architecture 4 préfixes de commandes :
 //   musicMod = "&" → GESTION (rôles/salons/tickets/giveaways/logs/config…),
 //     partagé avec le CrowBot du serveur (voir utils/musicCommands.js)
 //   moderation = "-" → MODÉRATION (ban/kick/mute/warn/clear/lockdown…)
@@ -19,9 +15,8 @@ const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 //     protection PERSONNELLE (utils/personalProtection.js, "!!panel")
 //   owner = "=" → VOCAL (mute/deaf/move/… + carte d'accès "=owner")
 // Le routage mot→préfixe se fait par catégorie (voir utils/commandRouting.js).
-const DEFAULT_PREFIXES = { main: "?", musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
+const DEFAULT_PREFIXES = { musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
 const PREFIX_LABELS = {
-  main: "musique",
   musicMod: "gestion",
   moderation: "modération",
   protection: "sécurité/protection",
@@ -51,16 +46,17 @@ function save() {
 
 /**
  * @param {string} guildId
- * @returns {{ main: string, musicMod: string, moderation: string, protection: string, owner: string }}
+ * @returns {{ musicMod: string, moderation: string, protection: string, owner: string }}
  */
 function getPrefixes(guildId) {
   const data = load();
-  return { ...DEFAULT_PREFIXES, ...(data[guildId] || {}) };
+  const { main: _legacyMain, ...configured } = data[guildId] || {};
+  return { ...DEFAULT_PREFIXES, ...configured };
 }
 
 /**
  * @param {string} guildId
- * @param {"main"|"musicMod"|"moderation"|"protection"|"owner"} type
+ * @param {"musicMod"|"moderation"|"protection"|"owner"} type
  * @param {string} value
  */
 function setPrefix(guildId, type, value) {

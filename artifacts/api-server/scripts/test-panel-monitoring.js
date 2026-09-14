@@ -47,7 +47,7 @@ function makeGuild() {
     members: { cache: new Collection(), me: { roles: { highest: { position: 9 } } } },
     emojis: { cache: new Collection() },
     voiceStates: { cache: new Collection([["u1", { channelId: "vc1" }], ["u2", { channelId: "vc1" }]]) },
-    client: { uptime: 3 * 3600_000 + 42_000, ws: { ping: 37 }, guilds: { cache: new Collection([["gmon", {}]]) }, kazagumo: { shoukaku: { nodes: [] } } },
+    client: { uptime: 3 * 3600_000 + 42_000, ws: { ping: 37 }, guilds: { cache: new Collection([["gmon", {}]]) } },
   };
 }
 

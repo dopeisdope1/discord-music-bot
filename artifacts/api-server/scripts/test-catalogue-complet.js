@@ -106,7 +106,10 @@ cas("chaque permission citée par le catalogue est une clé du moteur de permiss
   for (const categorie of CATEGORIES) {
     for (const cmd of categorie.commands) {
       if (!cmd.permission || cmd.permission === "sys") continue;
-      if (!clesReelles.has(cmd.permission)) inconnues.add(`${cmd.name} -> ${cmd.permission}`);
+      const permissions = Array.isArray(cmd.permission) ? cmd.permission : [cmd.permission];
+      for (const permission of permissions) {
+        if (permission !== "sys" && !clesReelles.has(permission)) inconnues.add(`${cmd.name} -> ${permission}`);
+      }
     }
   }
   assert.deepStrictEqual([...inconnues], [], `permissions inexistantes : ${[...inconnues].join(", ")}`);

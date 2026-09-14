@@ -34,7 +34,7 @@ function checkCooldown(key, cooldownMs) {
  * choix a été inversé — également sur demande — et il referme au passage un
  * vrai trou : le déclencheur n'exige AUCUNE permission, si bien que n'importe
  * qui pouvait supprimer une carte de giveaway en cours, un panneau de tickets
- * ou le lecteur de musique, sans laisser de trace de modération.
+ * ou un panneau de gestion, sans laisser de trace de modération.
  *
  * Le message déclencheur lui-même part avec, puisqu'il appartient à la
  * personne qui l'a tapé. Les confirmations du bot (« Nettoyage en cours… »)

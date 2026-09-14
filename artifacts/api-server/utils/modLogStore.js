@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
-// Même logique que prefixStore.js : DATA_DIR pointe vers un Volume Railway
+// Même logique que prefixStore.js : DATA_DIR pointe vers un stockage persistant
 // monté, sans quoi le(s) salon(s) de logs choisi(s) seraient oubliés à
 // chaque redéploiement.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");

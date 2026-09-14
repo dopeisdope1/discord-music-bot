@@ -48,8 +48,9 @@ const { can } = require("../utils/permissions/engine");
  * Les identités de commandes que ce membre peut RÉELLEMENT lancer — même
  * règles que utils/helpPanel.js::groupByTier (implémentée + droit accordé).
  * Sert à vérifier qu'aucune pastille de carte ne promet une commande hors de
- * portée. `panel` est écartée : elle est gardée par hasAnyPanelAccess, pas
- * par une clé du catalogue, et a déjà son propre cas de test.
+ * portée. `panel` est écartée ici uniquement pour garder les assertions
+ * lisibles sur les commandes à permission simple : son catalogue porte une
+ * liste de clés alternatives, résolue par le même can() que l'exécution.
  */
 function identitesAccessibles(member) {
   const set = new Set();
@@ -84,9 +85,8 @@ const plain = { id: "plain-1", guild: { id: "g1" }, roles: { cache: new Collecti
 // correct. Un test qui doit être corrigé à chaque ajout légitime finit par
 // être corrigé sans être lu.
 //
-// `&panel` est le seul cas particulier : le catalogue ne lui donne aucune
-// permission, mais la vraie commande exige un accès à une rubrique du panel.
-// Elle ne rend donc pas sa catégorie publique.
+// `&panel` porte plusieurs clés alternatives dans le catalogue ; il ne rend
+// donc pas sa catégorie publique pour autant.
 const aUneCommandePublique = (categorie) =>
   categorie.commands.some((cmd) => cmd.permission === null && isImplemented(cmd) && identityOf(cmd) !== "panel");
 // Catégories avec au moins une commande publique : un membre sans aucun droit
@@ -257,7 +257,7 @@ function menuNavigation(json) {
 
   await cas("les préfixes de chaque famille sont indiqués clairement à l'accueil", () => {
     const subtitle = spec().sousTitre;
-    for (const expected of ["Musique : ?", "Gestion : &", "Modération : -", "Sécurité : !!", "Vocal : ="]) {
+    for (const expected of ["Gestion : &", "Modération : -", "Sécurité : !!", "Vocal : ="]) {
       assert.strictEqual((subtitle.match(new RegExp(expected.replace(/[?]/g, "\\$&"), "g")) || []).length, 1, `${expected} absent ou dupliqué : ${subtitle}`);
     }
   });

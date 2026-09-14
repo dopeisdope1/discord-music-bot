@@ -229,16 +229,16 @@ const handlers = {
   /** &vocinfo — état vocal du serveur, salon par salon. */
   async vocinfo(client, message) {
     if (!can(message.member, "server.info.view")) return;
-    const voiceChannels = [...message.guild.channels.cache.values()]
+    const voiceRooms = [...message.guild.channels.cache.values()]
       .filter((c) => c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice)
       .sort((a, b) => b.members.size - a.members.size || a.rawPosition - b.rawPosition);
 
-    const connected = voiceChannels.reduce((total, c) => total + c.members.size, 0);
-    const occupied = voiceChannels.filter((c) => c.members.size > 0);
+    const connected = voiceRooms.reduce((total, c) => total + c.members.size, 0);
+    const occupied = voiceRooms.filter((c) => c.members.size > 0);
     const states = [...message.guild.voiceStates.cache.values()].filter((s) => s.channelId);
 
     const lines = [
-      `**Salons vocaux** : ${voiceChannels.length} (dont ${occupied.length} occupé${occupied.length > 1 ? "s" : ""})`,
+      `**Salons vocaux** : ${voiceRooms.length} (dont ${occupied.length} occupé${occupied.length > 1 ? "s" : ""})`,
       `**Membres connectés** : ${connected}`,
       `**Micro coupé** : ${states.filter((s) => s.mute).length} — **casque coupé** : ${states.filter((s) => s.deaf).length}`,
       `**En partage d'écran/caméra** : ${states.filter((s) => s.streaming || s.selfVideo).length}`,

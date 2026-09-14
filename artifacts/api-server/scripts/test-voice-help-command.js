@@ -14,6 +14,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "voice-help-test-")
 process.env.BOT_OWNER_IDS = "";
 
 const { handleVoiceHelpTextCommand } = require("../utils/voiceHelpCommand");
+const { Collection } = require("discord.js");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -27,12 +28,13 @@ async function cas(nom, fn) {
   }
 }
 
-function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
+function fakeMessage(content, { guildId = "g1", authorId = "u1", member } = {}) {
   const channelSends = [];
   return {
     content,
     author: { id: authorId, bot: false },
     guild: { id: guildId },
+    member,
     channel: { send: async (p) => channelSends.push(p) },
     _channelSends: channelSends,
   };
@@ -65,6 +67,38 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     const msg = fakeMessage("=help", { authorId: "quidam-1" });
     await handleVoiceHelpTextCommand(null, msg);
     assert.strictEqual(msg._channelSends.length, 1);
+  });
+
+  const noAccess = {
+    id: "plain-1",
+    guild: { id: "g1" },
+    roles: { cache: new Collection() },
+    permissions: { has: () => false },
+  };
+  const owner = {
+    id: "owner-1",
+    guild: { id: "g1" },
+    roles: { cache: new Collection() },
+    permissions: { has: () => false },
+  };
+
+  await cas("un membre sans permissions ne voit pas les commandes vocales", async () => {
+    const msg = fakeMessage("=help", { member: noAccess });
+    await handleVoiceHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const interdit of ["=add", "=owner", "=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=mv", "=join", "=find", "=bringall", "=wakeup"]) {
+      assert.ok(!texte.includes(interdit), `"${interdit}" ne devrait pas apparaître : ${texte}`);
+    }
+  });
+
+  await cas("BOT_OWNER_IDS voit toutes les commandes vocales", async () => {
+    process.env.BOT_OWNER_IDS = "owner-1";
+    const msg = fakeMessage("=help", { authorId: "owner-1", member: owner });
+    await handleVoiceHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const attendu of ["=add", "=owner", "=mute", "=unmute", "=deaf", "=undeaf", "=disconnect", "=mv", "=join", "=find", "=bringall", "=wakeup"]) {
+      assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
+    }
   });
 
   await cas("mentionne toutes les vraies commandes vocales", async () => {

@@ -12,11 +12,10 @@ const { EMOJI } = require("./emojis");
 // par droit réel (utils/permissions/engine.js::can) reste appliqué à
 // l'intérieur de chaque catégorie, inchangé.
 //
-// `permission` est une clé de utils/permissions/catalog.js, résolue via
+// `permission` est une clé (ou une liste de clés alternatives) de
+// utils/permissions/catalog.js, résolue via
 // utils/permissions/engine.js::can(member, permission) — null = tout le
-// monde. `prefix` vaut "main" (préfixe musique) ou "mod" (préfixe &).
-// La musique est volontairement absente de ce catalogue : elle vit sur son
-// propre préfixe, rappelé en pied de l'aide, et l'encombrait inutilement.
+// monde. `prefix` vaut "mod" (préfixe &).
 //
 // IMPORTANT : ce catalogue contient DEUX types d'entrées, non distingués
 // dans la forme (mêmes champs) mais différents dans le fond :
@@ -634,7 +633,7 @@ const CATEGORIES = [
     label: "Serveur & Rôles",
     emoji: EMOJI.PENCIL,
     description: "Rôles, salons et vocaux",
-    highlights: ["addrole", "role create", "channel create", "voc"],
+    highlights: ["addrole", "role create", "channel create", "voicekick"],
     commands: [
       {
         name: "addrole @membre @rôle",
@@ -807,30 +806,6 @@ const CATEGORIES = [
         description: "Publie automatiquement les messages dans les salons d'annonces",
       },
       {
-        // Les actions vivent dans la description, plus dans le nom : la
-        // syntaxe complète faisait 72 caractères et se retrouvait tronquée
-        // à l'affichage, ce qui masquait justement la liste des actions.
-        name: "voc <action> [valeur]",
-        prefix: "mod",
-        permission: null,
-        // Formulée SANS " : " ni parenthèse : `resumer()` coupe la
-        // description à la première des deux, ce qui escamoterait la liste
-        // des actions — c'est-à-dire l'information utile de cette entrée.
-        description: "lock, unlock, limit <n>, rename <nom>, kick, add, remove, transfer @membre — sur TON salon vocal temporaire",
-      },
-      {
-        name: "h",
-        prefix: "mod",
-        permission: null,
-        description: "Rappel des commandes `voc` — ne répond que depuis TON salon vocal temporaire",
-      },
-      {
-        name: "voicehub #salon-vocal|off",
-        prefix: "mod",
-        permission: "server.voice.manage",
-        description: "Rejoindre ce salon crée un salon vocal personnel temporaire",
-      },
-      {
         name: "voicemove [salon] [salon]",
         prefix: "mod",
         permission: "server.voice.moveall",
@@ -853,18 +828,6 @@ const CATEGORIES = [
         prefix: "mod",
         permission: "server.voice.moveall",
         description: "Rassemble tous les membres connectés dans un même salon vocal",
-      },
-      {
-        name: "tempvoc",
-        prefix: "mod",
-        permission: "server.voice.manage",
-        description: "Affiche la configuration des salons vocaux temporaires (voir aussi &voicehub)",
-      },
-      {
-        name: "tempvoc cmd",
-        prefix: "mod",
-        permission: "server.voice.manage",
-        description: "Configure les commandes disponibles pour les salons vocaux temporaires",
       },
     ],
   },
@@ -1339,7 +1302,7 @@ const CATEGORIES = [
         name: "status",
         prefix: "mod",
         permission: "sys",
-        description: "Diagnostics techniques du bot (uptime, latence, mémoire, versions, état des nœuds Lavalink)",
+        description: "Diagnostics techniques du bot (uptime, latence, mémoire et versions)",
       },
       { name: "help", prefix: "mod", permission: null, description: "Ouvre le centre de commandes : tout ce que tu peux taper, classé par palier" },
       { name: "changelogs", prefix: "mod", permission: null, description: "Affiche les dernières notes de mise à jour" },
@@ -1425,7 +1388,26 @@ const CATEGORIES = [
       {
         name: "panel",
         prefix: "mod",
-        permission: null,
+        // Le panneau est utilisable dès qu'au moins une rubrique réelle est
+        // accessible. Le tableau reste dans le catalogue afin que &help et
+        // l'exécution passent tous deux par can(), sans annoncer &panel à un
+        // membre sans aucun droit.
+        permission: [
+          "sys",
+          "panel.permissions.manage",
+          "panel.roles.manage",
+          "logs.view",
+          "logs.manage",
+          "server.stats.view",
+          "server.welcome.manage",
+          "members.autorole.manage",
+          "members.verification.manage",
+          "server.tickets.manage",
+          "channels.manage",
+          "server.giveaways.manage",
+          "server.channels.manage",
+          "server.polls.manage",
+        ],
         description: "Panneau de configuration (rubriques visibles selon tes droits)",
       },
       {
@@ -1518,7 +1500,7 @@ const CATEGORIES = [
  * Catégories réellement utilisables par quelqu'un, commandes filtrées selon
  * ses droits ET réellement implémentées. Une catégorie dont rien n'est
  * accessible n'apparaît pas.
- * @param {(permission: string|null) => boolean} canUse
+ * @param {(permission: string|string[]|null) => boolean} canUse
  */
 function categoriesFor(canUse) {
   const { isImplemented } = require("./implementedCommands");

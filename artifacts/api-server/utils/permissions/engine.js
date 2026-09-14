@@ -13,6 +13,24 @@ const { isRoleGrantable } = require("./catalog");
 // donné.
 const LEGACY_BRIDGE = { "channels.lock": "salon", "channels.manage": "salon" };
 
+// Les commandes vocales ont deux voies d'autorisation, exactement comme
+// l'exécution (voiceAccess.peutVocal) : un droit global staff et un octroi
+// individuel `voice.<commande>` attribué depuis `=owner`/`=add`. Garder la
+// résolution ici permet aux aides de passer par le même `can()` que les
+// handlers, sans recopier cette logique dans chaque écran.
+const VOICE_GLOBAL_PERMISSION = {
+  "voice.mute": "server.voice.manage",
+  "voice.unmute": "server.voice.manage",
+  "voice.deaf": "server.voice.manage",
+  "voice.undeaf": "server.voice.manage",
+  "voice.disconnect": "server.voice.manage",
+  "voice.mv": "server.voice.manage",
+  "voice.join": "server.voice.manage",
+  "voice.find": "server.voice.manage",
+  "voice.bringall": "server.voice.moveall",
+  "voice.wakeup": "server.voice.manage",
+};
+
 /**
  * SEUL point de vérification des droits sur une clé de permission. Utilisé
  * partout : commandes texte, &help, panel, boutons — pas de logique dupliquée
@@ -31,10 +49,14 @@ const LEGACY_BRIDGE = { "channels.lock": "salon", "channels.manage": "salon" };
  *
  * @param {import('discord.js').GuildMember} member rôles déjà en cache,
  *   aucun appel Discord supplémentaire.
- * @param {string|null} key null = commande publique, toujours autorisée.
+ * @param {string|string[]|null} key null = commande publique, toujours autorisée.
  * @returns {boolean}
  */
 function can(member, key) {
+  // Certaines fonctionnalités (notamment &panel) sont accessibles si l'une
+  // de plusieurs rubriques est visible. Chaque branche reste résolue par ce
+  // même moteur, sans introduire une seconde notion d'autorisation.
+  if (Array.isArray(key)) return key.some((permission) => can(member, permission));
   if (!key) return true;
   if (!member || !member.guild) return false;
 
@@ -44,6 +66,10 @@ function can(member, key) {
 
   if (accessStore.isOwner(member.id)) return true;
   if (accessStore.isSys(member.id)) return true;
+
+  // Une autorisation globale débloque la commande vocale comme dans
+  // voiceAccess.peutVocal ; sinon l'octroi individuel est testé ci-dessous.
+  if (VOICE_GLOBAL_PERMISSION[key] && can(member, VOICE_GLOBAL_PERMISSION[key])) return true;
 
   const guildId = member.guild.id;
 

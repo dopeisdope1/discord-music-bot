@@ -1,18 +1,6 @@
 const { version: DISCORDJS_VERSION } = require("discord.js");
-const { Constants: ShoukakuConstants } = require("shoukaku");
 const { buildStatusEmbed } = require("./statusEmbed");
 const accessStore = require("./accessStore");
-
-const ShoukakuState = ShoukakuConstants.State;
-
-/** Même robustesse que index.js::listNodes — Map, tableau ou objet selon la version de Shoukaku. */
-function listNodes(client) {
-  const raw = client.kazagumo?.shoukaku?.nodes;
-  if (!raw) return [];
-  if (typeof raw.values === "function") return [...raw.values()];
-  if (Array.isArray(raw)) return raw;
-  return Object.values(raw);
-}
 
 function formatUptime(ms) {
   const s = Math.floor(ms / 1000);
@@ -34,7 +22,6 @@ function formatUptime(ms) {
  * mêmes compteurs client/process.
  */
 function computeStatus(client) {
-  const nodes = listNodes(client);
   const mem = process.memoryUsage();
   return {
     uptimeMs: client.uptime,
@@ -43,7 +30,6 @@ function computeStatus(client) {
     guildCount: client.guilds.cache.size,
     nodeVersion: process.version,
     discordjsVersion: DISCORDJS_VERSION,
-    lavalinkNodes: nodes.map((n) => ({ name: n.name, connected: n.state === ShoukakuState.CONNECTED, state: n.state })),
   };
 }
 
@@ -52,10 +38,6 @@ async function status(client, message) {
   if (!accessStore.isAllowed("sys", message.author.id)) return;
 
   const info = computeStatus(client);
-  const lavalinkLines = info.lavalinkNodes.length
-    ? info.lavalinkNodes.map((n) => `> \`${n.name}\` : ${n.connected ? "🟢 connecté" : `🔴 état ${n.state}`}`)
-    : ["> *aucun nœud déclaré*"];
-
   await message.reply({
     embeds: [
       buildStatusEmbed("info", null, {
@@ -67,7 +49,6 @@ async function status(client, message) {
           { name: "Serveurs", value: String(info.guildCount), inline: true },
           { name: "Node.js", value: info.nodeVersion, inline: true },
           { name: "discord.js", value: `v${info.discordjsVersion}`, inline: true },
-          { name: "Lavalink", value: lavalinkLines.join("\n") },
         ],
       }),
     ],

@@ -1,13 +1,6 @@
-const { LOOP_LABELS } = require("./nowPlayingPanel");
-const { buildMusicHelpPanel } = require("./helpPanels");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { handleSpotifyPlay } = require("./spotifyPlay");
-const { queueAndPlay, stopNowPlayingTracking, setPlayerPaused } = require("./musicPlayer");
-const { handleJoinSpotify } = require("./joinSpotify");
 const { getPrefixes } = require("./prefixStore");
 const commandRouting = require("./commandRouting");
-const { playbackErrorMessage, unresolvedQueryMessage } = require("./musicErrors");
-const { buildFavoritesPanel } = require("./favoritesPanel");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
@@ -39,20 +32,11 @@ const { setupTickets, claimTicket, addTicketMember, removeTicketMember, renameTi
 const ticketStore = require("./ticketStore");
 const { createPoll } = require("./polls");
 const { startGiveaway, rerollGiveaway, endGiveaway } = require("./giveaways");
-const { canControlPlayer, requestPlayerAccess, clearPlayerControl } = require("./playerControl");
-const { noteManualSkip } = require("./deadTrack");
-const { handleSourcesDiagnostic } = require("./sourcesDiagnostic");
 const { autoroleHandlers } = require("./autoroleCommands");
 const { setupVerification } = require("./verification");
 const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
 const levels = require("./levels");
-
-// Même variable d'environnement que index.js (qui vide LavalinkNodes) : la
-// musique suspendue doit aussi rendre le préfixe "?" muet, sinon &play etc.
-// répondraient encore en essayant d'utiliser un client.kazagumo sans aucun
-// nœud connecté.
-const MUSIC_ENABLED = process.env.MUSIC_ENABLED !== "false";
 
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
 // Ce sont les seules a etre limitees en frequence : elles sont accessibles
@@ -63,227 +47,7 @@ const COMMANDES_DESSINEES = new Set(["help", "panel"]);
 // quelqu'un qui navigue.
 const limiteurDessin = createRateLimiter(6, 30_000);
 
-const URL_REGEX = /^https?:\/\//i;
-const LOOP_KEYWORDS = {
-  off: "none",
-  désactivé: "none",
-  "0": "none",
-  song: "track",
-  chanson: "track",
-  "1": "track",
-  queue: "queue",
-  file: "queue",
-  "2": "queue",
-};
-
-function getPlayerOrReply(client, message) {
-  const player = client.kazagumo.players.get(message.guildId);
-  if (!player) {
-    message.reply({ embeds: [buildStatusEmbed("error", "Aucune musique en cours.")] });
-    return null;
-  }
-  return player;
-}
-
-/**
- * Vérifie que l'auteur du message peut utiliser une commande de contrôle
- * (pause/skip/stop/volume/loop/leave) : seule la personne qui a amené le bot
- * en vocal (ou quelqu'un qu'elle a autorisée) le peut — voir utils/playerControl.js.
- * Si ce n'est pas le cas, envoie une demande d'autorisation au propriétaire.
- * @returns {Promise<boolean>} true si la commande peut continuer
- */
-async function requirePlayerControl(client, message) {
-  if (canControlPlayer(client, message.guildId, message.author.id)) return true;
-  requestPlayerAccess(client, message.channel, message.author, message.guildId);
-  await message.reply({
-    embeds: [
-      buildStatusEmbed(
-        "info",
-        "Cette commande est réservée à la personne qui a lancé la musique. Une demande d'autorisation lui a été envoyée."
-      ),
-    ],
-  });
-  return false;
-}
-
-const handlers = {
-  async play(client, message, args) {
-    const query = args.join(" ");
-    // Sans titre : on propose la playlist des favoris plutôt que de renvoyer
-    // une erreur (voir utils/favoritesPanel.js).
-    if (!query) {
-      const { main } = getPrefixes(message.guild.id);
-      const panel = buildFavoritesPanel(message.author.id, main);
-      if (panel) return message.reply(panel);
-      return message.reply({
-        embeds: [
-          buildStatusEmbed(
-            "error",
-            `Indique un nom de musique/artiste, ou un lien YouTube/Spotify.\nTu n'as encore aucun favori — ajoute-en avec le bouton **Favori** du panel de lecture.`
-          ),
-        ],
-      });
-    }
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    if (URL_REGEX.test(query)) {
-      try {
-        const outcome = await queueAndPlay(client.kazagumo, {
-          voiceChannel: vc,
-          textChannel: message.channel,
-          member: message.member,
-          query,
-          client,
-        });
-        if (!outcome) {
-          return message.reply({ embeds: [buildStatusEmbed("error", unresolvedQueryMessage(query))] });
-        }
-        const label = outcome.alreadyPlaying ? "Ajouté à la file d'attente" : "Lancement de";
-        await message.reply({
-          embeds: [buildStatusEmbed("info", `${label} : **${outcome.result.tracks[0].title}**`)],
-        });
-      } catch (err) {
-        console.error(err);
-        await message.reply({
-          embeds: [buildStatusEmbed("error", playbackErrorMessage(err, unresolvedQueryMessage(query)))],
-        });
-      }
-      return;
-    }
-
-    await handleSpotifyPlay({
-      kazagumo: client.kazagumo,
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      member: message.member,
-      query,
-      requesterId: message.author.id,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async join(client, message) {
-    const vc = message.member.voice.channel;
-    if (!vc)
-      return message.reply({ embeds: [buildStatusEmbed("error", "Tu dois être dans un salon vocal.")] });
-
-    const listenerMember = message.mentions.members?.first() || message.member;
-
-    await handleJoinSpotify({
-      client,
-      voiceChannel: vc,
-      textChannel: message.channel,
-      listenerMember,
-      playerMember: message.member,
-      send: (payload) => message.reply(payload),
-    });
-  },
-
-  async skip(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    if (!player.queue.current) {
-      return message.reply({ embeds: [buildStatusEmbed("error", "Rien à passer.")] });
-    }
-    noteManualSkip(message.guildId);
-    player.skip();
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique passée.")] });
-  },
-
-  async stop(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({
-      embeds: [buildStatusEmbed("success", "Musique arrêtée et file d'attente vidée.")],
-    });
-  },
-
-  async leave(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    stopNowPlayingTracking(client, message.guildId);
-    clearPlayerControl(client, message.guildId);
-    player.destroy();
-    await message.reply({ embeds: [buildStatusEmbed("success", "J'ai quitté le salon vocal.")] });
-  },
-
-  async pause(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, true);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique en pause.")] });
-  },
-
-  async resume(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    setPlayerPaused(player, false);
-    await message.reply({ embeds: [buildStatusEmbed("success", "Musique reprise.")] });
-  },
-
-  async queue(client, message) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    const tracks = [player.queue.current, ...player.queue].filter(Boolean);
-    if (tracks.length === 0)
-      return message.reply({ embeds: [buildStatusEmbed("error", "La file d'attente est vide.")] });
-    const list = tracks
-      .slice(0, 15)
-      .map((t, i) => `${i === 0 ? "En cours :" : `${i}.`} **${t.title}**`)
-      .join("\n");
-    await message.reply({
-      embeds: [
-        buildStatusEmbed("info", list, { title: `File d'attente (${tracks.length} titres)` }),
-      ],
-    });
-  },
-
-  async volume(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const niveau = parseInt(args[0], 10);
-    if (isNaN(niveau) || niveau < 0 || niveau > 150) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Indique un volume entre 0 et 150. Ex : \`${main}volume 80\``)],
-      });
-    }
-    player.setVolume(niveau);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Volume réglé sur **${niveau}%**.`)],
-    });
-  },
-
-  async loop(client, message, args) {
-    const player = getPlayerOrReply(client, message);
-    if (!player) return;
-    if (!(await requirePlayerControl(client, message))) return;
-    const mode = LOOP_KEYWORDS[(args[0] || "").toLowerCase()];
-    if (!mode) {
-      const { main } = getPrefixes(message.guild.id);
-      return message.reply({
-        embeds: [buildStatusEmbed("error", `Mode invalide. Utilise : \`${main}loop off|song|queue\``)],
-      });
-    }
-    player.setLoop(mode);
-    await message.reply({
-      embeds: [buildStatusEmbed("success", `Mode de répétition : **${LOOP_LABELS[mode]}**`)],
-    });
-  },
-};
-// Commandes sur le préfixe "&" (musicMod). Ce préfixe est aussi celui du
+// Commandes sur le préfixe "&" (gestion). Ce préfixe est aussi celui du
 // CrowBot présent sur le serveur : le bot reste donc MUET sur tout ce qui
 // n'est pas listé ici, pour ne jamais répondre à la place de l'autre.
 /** N'exécute `handler` que si la personne a la portée demandée, sinon rien. */
@@ -367,14 +131,6 @@ const modHandlers = {
   // s'affichent que pour qui a le droit de s'en servir.
   p: palierPanel.handlePalierTextCommand,
 
-  // Dit d'où le son peut encore venir (voir utils/sourcesDiagnostic.js) : la
-  // seule façon de trancher, depuis la production, entre "ce morceau n'existe
-  // nulle part" et "cette source nous refuse l'accès".
-  async sources(client, message, args) {
-    if (!accessStore.isAllowed("sys", message.author.id)) return;
-    await handleSourcesDiagnostic(client, message, args);
-  },
-
   // Ces commandes vérifient leurs propres droits à l'intérieur (moteur de
   // permissions central, voir utils/permissions/engine.js) : banall inclut
   // le propriétaire du serveur, ce que requireScope ne sait pas exprimer, et
@@ -457,9 +213,6 @@ const modHandlers = {
   dero: serverAdmin.dero,
   antinuke: serverAdmin.antinuke,
   backup,
-  voicehub: serverAdmin.voicehub,
-  voc: serverAdmin.vc,
-  h: serverAdmin.voiceHelp,
   vc: utilityHandlers.vc,
   stats: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "history") return utilityHandlers.statsHistory(client, message, args.slice(1));
@@ -534,7 +287,6 @@ const modHandlers = {
   // utils/automodCommands.js, permission "protection.automod" (même que
   // l'anti-spam, configurable aussi depuis &panel > Protection).
   prefix: configHandlers.prefix,
-  tempvoc: configHandlers.tempvoc,
   join: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "settings") return configHandlers.joinSettings(client, message, args.slice(1));
   },
@@ -692,13 +444,13 @@ const modHandlers = {
 };
 
 /**
- * À appeler dans l'écouteur "messageCreate" du bot Musique.
+ * À appeler dans l'écouteur "messageCreate" du bot.
  */
-async function handleMusicTextCommand(client, message) {
+async function handleTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
-  const { main: MAIN_PREFIX, musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
+  const { musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
   const { moderation: MODERATION_PREFIX } = getPrefixes(message.guild.id);
 
   // Le préfixe "-" est réservé à la modération. Il partage les mêmes
@@ -807,23 +559,8 @@ async function handleMusicTextCommand(client, message) {
     // le CrowBot.
     return customCommands.repondreSiPersonnalisee(message, cmdLower).then(
       () => undefined,
-      (err) => console.error("[musicCommands] commande personnalisée :", err.message)
+      (err) => console.error("[commandDispatcher] commande personnalisée :", err.message)
     );
-  }
-
-  if (!content.startsWith(MAIN_PREFIX)) return;
-  // Musique suspendue : silence total sur ce préfixe, comme une commande
-  // inconnue — voir le commentaire au-dessus de MUSIC_ENABLED.
-  if (!MUSIC_ENABLED) return;
-
-  const [cmdRaw, ...args] = content.slice(MAIN_PREFIX.length).trim().split(/\s+/);
-  const cmd = (cmdRaw || "").toLowerCase();
-  if (cmd === "help") {
-    const prefixes = getPrefixes(message.guild.id);
-    return message.channel.send(buildMusicHelpPanel(MAIN_PREFIX, prefixes.musicMod, prefixes));
-  }
-  if (handlers[cmd]) {
-    return handlers[cmd](client, message, args);
   }
 }
 
@@ -893,4 +630,12 @@ const MOD_SUBCOMMANDS = {
 // même façon une commande câblée et une commande seulement documentée (voir
 // utils/implementedCommands.js). Dérivée de la table réelle, jamais recopiée
 // à la main — les deux ne peuvent donc pas diverger.
-module.exports = { handleMusicTextCommand, MOD_COMMAND_NAMES: Object.keys(modHandlers), MOD_SUBCOMMANDS, modHandlers };
+module.exports = {
+  handleTextCommand,
+  // Compatibility for existing external scripts; this is the management
+  // dispatcher and no longer handles playback commands.
+  handleMusicTextCommand: handleTextCommand,
+  MOD_COMMAND_NAMES: Object.keys(modHandlers),
+  MOD_SUBCOMMANDS,
+  modHandlers,
+};

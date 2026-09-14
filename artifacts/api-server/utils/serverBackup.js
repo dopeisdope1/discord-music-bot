@@ -2,7 +2,6 @@ const { ChannelType } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const backupStore = require("./serverBackupStore");
-const voiceChannels = require("./voiceChannels");
 const { requestConfirmation } = require("./serverAdminCommands");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
@@ -59,10 +58,6 @@ const PRESET_BACKUPS = {
         ].map((name) => ({ name, type: ChannelType.GuildVoice })),
       },
       {
-        name: "Salons vocaux temporaires",
-        channels: [{ name: "➕ Nouveau salon vocal", type: ChannelType.GuildVoice, isVoiceHub: true }],
-      },
-      {
         // La liste des "prv" continuait au-delà de prv 6 sur les captures
         // fournies mais a été coupée — seules prv 1 à 6 sont restaurées ici,
         // le reste est à recréer à la main après &backup load si besoin.
@@ -89,7 +84,6 @@ function captureGuildStructure(guild) {
     .filter((c) => CREATABLE_TYPES.has(c.type))
     .sort((a, b) => a.rawPosition - b.rawPosition);
 
-  const hubId = voiceChannels.getHub(guild.id);
   const categoriesById = new Map();
   const categories = [];
   for (const c of channels) {
@@ -104,7 +98,6 @@ function captureGuildStructure(guild) {
     if (c.type === ChannelType.GuildCategory) continue;
     const entry = { name: c.name, type: c.type };
     if (c.type === ChannelType.GuildVoice && c.userLimit) entry.userLimit = c.userLimit;
-    if (c.id === hubId) entry.isVoiceHub = true;
     const target = c.parentId && categoriesById.get(c.parentId);
     if (target) target.channels.push(entry);
     else uncategorized.push(entry);
@@ -128,8 +121,6 @@ function captureGuildStructure(guild) {
 async function applyStructure(guild, structure) {
   let categoriesCreated = 0;
   let channelsCreated = 0;
-  let hubChannelId = null;
-  let hubCategoryId = null;
 
   for (const cat of structure.categories) {
     const category = await guild.channels.create({ name: cat.name, type: ChannelType.GuildCategory });
@@ -142,10 +133,6 @@ async function applyStructure(guild, structure) {
         ...(ch.type === ChannelType.GuildVoice && ch.userLimit ? { userLimit: ch.userLimit } : {}),
       });
       channelsCreated++;
-      if (ch.isVoiceHub) {
-        hubChannelId = created.id;
-        hubCategoryId = category.id;
-      }
     }
   }
   for (const ch of structure.uncategorized || []) {
@@ -153,12 +140,7 @@ async function applyStructure(guild, structure) {
     channelsCreated++;
   }
 
-  if (hubChannelId) {
-    voiceChannels.setHub(guild.id, hubChannelId);
-    voiceChannels.setSpawnCategory(guild.id, hubCategoryId);
-  }
-
-  return { categoriesCreated, channelsCreated, wiredVoiceHub: Boolean(hubChannelId) };
+  return { categoriesCreated, channelsCreated };
 }
 
 function countChannels(structure) {
@@ -236,12 +218,12 @@ async function backup(client, message, args, options = {}) {
     if (!structure) return reply(message, "error", `Aucune sauvegarde nommée **${name}** (voir \`backup list\`).`);
     const total = countChannels(structure);
     const restore = async (interaction) => {
-      const { categoriesCreated, channelsCreated, wiredVoiceHub } = await applyStructure(interaction.guild, structure);
+      const { categoriesCreated, channelsCreated } = await applyStructure(interaction.guild, structure);
       await interaction.update({
         embeds: [
           buildStatusEmbed(
             "success",
-            `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.${wiredVoiceHub ? "\nLe générateur de salons vocaux temporaires a été rebranché automatiquement." : ""}`
+            `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.`
           ),
         ],
         components: [],

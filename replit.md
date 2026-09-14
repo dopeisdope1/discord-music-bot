@@ -1,6 +1,6 @@
-# Discord Music Bot
+# Discord Moderation Bot
 
-Bot Discord de musique, modération et sécurité, exécuté en continu sur Replit.
+Bot Discord de modération, sécurité et gestion de serveur, exécuté en continu.
 
 ## Run & Operate
 
@@ -10,34 +10,33 @@ Bot Discord de musique, modération et sécurité, exécuté en continu sur Repl
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - Secret obligatoire : `DISCORD_TOKEN`
-- Secrets optionnels : `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `LAVALINK_PASSWORD`
-- Variables optionnelles : `CLIENT_ID`, `GUILD_ID`, `LAVALINK_HOST`, `LAVALINK_PORT`, `LAVALINK_SECURE`, `MUSIC_ENABLED`, `MUSIC_SEARCH_ENGINE`, `BOT_OWNER_IDS`, `DATA_DIR`, `FFMPEG_PATH`
+- Variables optionnelles : `CLIENT_ID`, `GUILD_ID`, `BOT_OWNER_IDS`, `DATA_DIR`
 
 ## Stack
 
 - pnpm workspace, Node.js 24, CommonJS
 - Discord.js 14
-- Kazagumo + Shoukaku pour Lavalink
 - `@napi-rs/canvas` pour les cartes graphiques
 - Stockage local dans `data/`
 
 ## Where things live
 
 - `artifacts/api-server/index.js` — point d'entrée du bot et endpoint de santé
-- `artifacts/api-server/commands/` — commandes slash musique
-- `artifacts/api-server/utils/` — commandes, panneaux, sécurité, persistance et musique
-- `artifacts/api-server/deploy-commands.js` — publication des commandes slash
-- `artifacts/api-server/lavalink/` — configuration d'un nœud Lavalink privé
+- `artifacts/api-server/commands/` — commandes slash (à nettoyer avec `deploy-commands.js`)
+- `artifacts/api-server/utils/` — commandes, panneaux, sécurité et persistance
+- `artifacts/api-server/deploy-commands.js` — retrait des anciennes commandes slash
 
 ## Architecture decisions
 
-- Le service HTTP ne sert que les contrôles de santé Replit ; les fonctions utilisateur passent par Discord.
-- Le déploiement doit utiliser une VM toujours active, pas l'autoscaling, car la connexion Gateway Discord doit rester ouverte.
-- Sans variables `LAVALINK_*`, le bot utilise les nœuds publics de secours définis dans le code.
+- Le service HTTP ne sert que les contrôles de santé ; les fonctions utilisateur passent par Discord.
+- Le déploiement de production utilise une VM toujours active, pas l'autoscaling, car la connexion Gateway Discord doit rester ouverte.
+- Le déploiement principal est conservé sur une VM DigitalOcean.
 
 ## Product
 
-Lecture musicale, commandes de modération, protection anti-abus, panneaux interactifs, salons vocaux temporaires, tickets, giveaways et outils communautaires.
+Commandes de modération, protection anti-abus, panneaux interactifs, gestion
+des salons vocaux ordinaires, tickets, sauvegardes, giveaways et outils
+communautaires.
 
 ## User preferences
 
@@ -45,7 +44,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-- Activer les intents privilégiés `Server Members`, `Presence` et `Message Content` dans le portail développeur Discord.
+- Activer les intents privilégiés `Server Members` et `Message Content` dans le portail développeur Discord.
 - Publier avec le type **VM / Always Running**.
 - Les données stockées dans `data/` doivent être sauvegardées avant une reconstruction complète du déploiement.
 

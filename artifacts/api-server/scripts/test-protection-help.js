@@ -15,6 +15,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "protection-help-te
 process.env.BOT_OWNER_IDS = "";
 
 const { handleProtectionHelpTextCommand } = require("../utils/protectionHelpCommand");
+const { Collection } = require("discord.js");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -28,12 +29,13 @@ async function cas(nom, fn) {
   }
 }
 
-function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
+function fakeMessage(content, { guildId = "g1", authorId = "u1", member } = {}) {
   const channelSends = [];
   return {
     content,
     author: { id: authorId, bot: false },
     guild: { id: guildId },
+    member,
     channel: { send: async (p) => channelSends.push(p) },
     _channelSends: channelSends,
   };
@@ -60,6 +62,39 @@ function fakeMessage(content, { guildId = "g1", authorId = "u1" } = {}) {
     const msg = fakeMessage("!!help", { authorId: "quidam-1" });
     await handleProtectionHelpTextCommand(null, msg);
     assert.strictEqual(msg._channelSends.length, 1);
+  });
+
+  const noAccess = {
+    id: "plain-1",
+    guild: { id: "g1" },
+    roles: { cache: new Collection() },
+    permissions: { has: () => false },
+  };
+  const owner = {
+    id: "owner-1",
+    guild: { id: "g1" },
+    roles: { cache: new Collection() },
+    permissions: { has: () => false },
+  };
+
+  await cas("un membre sans permissions ne voit pas les commandes sécurité protégées", async () => {
+    const msg = fakeMessage("!!help", { member: noAccess });
+    await handleProtectionHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const interdit of ["!!secur", "!!security", "!!owner", "!!wl", "!!antinuke", "!!antilink", "!!antispam", "!!setclear"]) {
+      assert.ok(!texte.includes(interdit), `"${interdit}" ne devrait pas apparaître : ${texte}`);
+    }
+    assert.ok(texte.includes("!!panel"), texte);
+  });
+
+  await cas("BOT_OWNER_IDS voit toutes les commandes sécurité", async () => {
+    process.env.BOT_OWNER_IDS = "owner-1";
+    const msg = fakeMessage("!!help", { authorId: "owner-1", member: owner });
+    await handleProtectionHelpTextCommand(null, msg);
+    const texte = JSON.stringify(msg._channelSends[0].components);
+    for (const attendu of ["!!secur", "!!security", "!!owner", "!!wl", "!!antinuke", "!!antilink", "!!antispam", "!!setclear"]) {
+      assert.ok(texte.includes(attendu), `"${attendu}" manque : ${texte}`);
+    }
   });
 
   await cas("mentionne les commandes \"!!\" historiques avec leur permission réelle", async () => {

@@ -10,7 +10,6 @@ const {
 } = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
 const historyStore = require("./moderationHistoryStore");
-const voiceChannels = require("./voiceChannels");
 
 // Toute action qui compte comme "modération" au sens large : ce que fait ce
 // bot (&ban/&unban/&banall/&kick/...), ce que fait le CrowBot du serveur, et
@@ -467,9 +466,6 @@ async function logMessageDelete(client, message) {
  * gérées par MemberDisconnect ci-dessus) : ceci s'appuie sur
  * voiceStateUpdate directement (voir index.js).
  *
- * Volontairement muet pour les salons vocaux temporaires (&voicehub) : leur
- * churn est normal et fréquent, le journaliser noierait le salon de logs
- * sans rien apporter — seuls les VRAIS salons du serveur sont suivis.
  * @param {import('discord.js').Client} client
  * @param {import('discord.js').VoiceState} oldState
  * @param {import('discord.js').VoiceState} newState
@@ -481,9 +477,6 @@ async function logVoiceStateChange(client, oldState, newState) {
   const before = oldState.channelId;
   const after = newState.channelId;
   if (before === after) return; // sourdine/muet/statut... pas un changement de salon
-
-  const isTempChannel = (id) => Boolean(id && voiceChannels.getChannelInfo(id));
-  if (isTempChannel(before) || isTempChannel(after)) return;
 
   let title;
   let fields;

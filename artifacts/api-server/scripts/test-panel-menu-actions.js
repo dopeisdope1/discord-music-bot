@@ -154,24 +154,5 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
     assert.strictEqual(repondu, false, "la valeur piégée doit être ignorée, pas réexpédiée sans fin");
   });
 
-  await cas("un bouton LIEN garde sa rangée — une option de menu n'ouvre pas d'URL", () => {
-    // Le lecteur musique expose un lien vers le vrai panneau de lecture. Le
-    // convertir en option le ferait disparaître purement et simplement.
-    const client = {
-      uptime: 1,
-      ws: { ping: 1 },
-      guilds: { cache: new Collection() },
-      nowPlayingMessages: new Collection([["g1", { url: "https://discord.com/channels/g1/1/2" }]]),
-      kazagumo: { players: new Collection() },
-    };
-    const avecLecteur = { ...guild, client };
-    const liens = buildConfigPanel(avecLecteur, "musicPlayer", owner)
-      .components[0].toJSON()
-      .components.filter((c) => c.type === 1)
-      .flatMap((r) => r.components)
-      .filter((b) => b.type === 2 && b.url);
-    for (const lien of liens) assert.ok(lien.url.startsWith("https://"), JSON.stringify(lien));
-  });
-
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();

@@ -925,20 +925,6 @@ const FORMS = {
     },
   },
 
-  voicehub_set: {
-    label: "Configurer le salon générateur de vocaux",
-    category: "voice",
-    permission: "server.voice.manage",
-    fields: ["channel"],
-    ready: (v) => Boolean(v.channelId),
-    run: async (client, interaction, v) => {
-      const channel = interaction.guild.channels.cache.get(v.channelId);
-      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { channels: [channel] });
-      await serverAdmin.voicehub(client, msg, []);
-    },
-  },
-
   set_muterole_grant: {
     label: "Régler le rôle de mute",
     category: "protection",
@@ -1984,7 +1970,6 @@ const BARE_COMMAND_FORMS = {
   case: "case_view",
   "autorole add": "autorole_add",
   "autorole del": "autorole_del",
-  voicehub: "voicehub_set",
   link: "link_channel_exempt",
   spam: "spam_channel_exempt",
   // Clés à deux mots : commandes dont le premier mot est un dispatcher

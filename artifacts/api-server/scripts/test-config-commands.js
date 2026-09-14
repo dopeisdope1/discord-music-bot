@@ -1,7 +1,7 @@
 /**
  * Vérifie les commandes de configuration (utils/configCommands.js) : &prefix,
  * &set perm / &del perm / &clear perms, &join settings, &ticket settings,
- * &tempvoc, &clear limit. Elles écrivent dans les MÊMES stores que les
+ * &clear limit. Elles écrivent dans les MÊMES stores que les
  * rubriques correspondantes de &panel.
  *
  * Lancement : node scripts/test-config-commands.js
@@ -154,20 +154,13 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
 
   console.log("\nVues de configuration :");
 
-  await cas("&join settings, &ticket settings, &tempvoc et &clear limit répondent", async () => {
-    for (const handler of [configHandlers.joinSettings, configHandlers.ticketSettings, configHandlers.tempvoc, configHandlers.clearLimit]) {
+  await cas("&join settings, &ticket settings et &clear limit répondent", async () => {
+    for (const handler of [configHandlers.joinSettings, configHandlers.ticketSettings, configHandlers.clearLimit]) {
       const msg = makeMessage();
       await handler(null, msg);
       assert.strictEqual(msg._replies.length, 1, "chacune doit répondre");
       assert.ok(texte(msg).includes(">"), "et afficher l'état courant");
     }
-  });
-
-  await cas("un salon ou rôle configuré puis supprimé est signalé, pas affiché en cassé", async () => {
-    const msg = makeMessage();
-    await configHandlers.tempvoc(null, msg);
-    // Aucun hub configuré ici : la commande doit le dire clairement.
-    assert.ok(texte(msg).includes("aucun"), texte(msg));
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

@@ -188,7 +188,7 @@ function fakeMessage(member) {
     const member = fakeMemberFor(roleId, guild);
     const msg = fakeMessage(member);
     await serverExtra.voicemove(null, msg);
-    assert.strictEqual(msg._replies.length, 0, "aucune réponse : &voicekick/&voicehub seuls ne doivent pas débloquer &voicemove");
+    assert.strictEqual(msg._replies.length, 0, "aucune réponse : &voicekick seul ne doit pas débloquer &voicemove");
   });
 
   await cas("un rôle avec UNIQUEMENT server.voice.manage ne débloque pas non plus &bringall", async () => {

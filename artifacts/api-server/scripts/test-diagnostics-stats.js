@@ -129,12 +129,11 @@ async function cas(nom, fn) {
 
   console.log("\n&status :");
 
-  function makeClient({ pingMs = 42, guildCount = 3, nodes = [] } = {}) {
+  function makeClient({ pingMs = 42, guildCount = 3 } = {}) {
     return {
       uptime: 3 * 3600_000 + 5 * 60_000,
       ws: { ping: pingMs },
       guilds: { cache: new Collection(Array.from({ length: guildCount }, (_, i) => [`g${i}`, {}])) },
-      kazagumo: { shoukaku: { nodes: new Map(nodes.map((n) => [n.name, n])) } },
     };
   }
 
@@ -159,26 +158,6 @@ async function cas(nom, fn) {
     assert.ok(byName["Node.js"].startsWith("v"));
   });
 
-  await cas("&status montre l'état RÉEL de chaque nœud Lavalink (connecté vs hors ligne)", async () => {
-    const { Constants } = require("shoukaku");
-    const CONNECTED = Constants.State.CONNECTED;
-    const DISCONNECTED = CONNECTED === 0 ? 1 : 0;
-    const client = makeClient({ nodes: [{ name: "prive", state: CONNECTED }, { name: "public-1", state: DISCONNECTED }] });
-    const replies = [];
-    const msg = { author: { id: "owner-1" }, reply: async (p) => { replies.push(p); return {}; } };
-    await status(client, msg);
-    const lavalinkField = replies[0].embeds[0].data.fields.find((f) => f.name === "Lavalink");
-    assert.ok(lavalinkField.value.includes("prive") && lavalinkField.value.includes("🟢"));
-    assert.ok(lavalinkField.value.includes("public-1") && lavalinkField.value.includes("🔴"));
-  });
-
-  await cas("&status sans aucun nœud déclaré ne plante pas", async () => {
-    const client = makeClient({ nodes: [] });
-    const replies = [];
-    const msg = { author: { id: "owner-1" }, reply: async (p) => { replies.push(p); return {}; } };
-    await status(client, msg);
-    assert.ok(replies[0].embeds[0].data.fields.find((f) => f.name === "Lavalink").value.length > 0);
-  });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

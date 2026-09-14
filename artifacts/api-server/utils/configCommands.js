@@ -6,7 +6,6 @@ const permCatalog = require("./permissions/catalog");
 const welcomeStore = require("./welcomeStore");
 const leaveStore = require("./leaveStore");
 const ticketStore = require("./ticketStore");
-const voiceChannels = require("./voiceChannels");
 const accessStore = require("./accessStore");
 
 // Équivalents texte des rubriques de &panel qui n'en avaient pas encore
@@ -16,12 +15,9 @@ const accessStore = require("./accessStore");
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
 // `&prefix <valeur>` reste volontairement compatible avec l'ancien réglage :
-// il change le préfixe de gestion (&). Les cinq noms explicites permettent
+// il change le préfixe de gestion (&). Les noms explicites permettent
 // désormais de régler chaque famille sans ambiguïté.
 const PREFIX_TYPES = {
-  main: "main",
-  music: "main",
-  musique: "main",
   management: "musicMod",
   gestion: "musicMod",
   commands: "musicMod",
@@ -40,14 +36,12 @@ const PREFIX_TYPES = {
 };
 
 const PREFIX_LABELS = {
-  main: "Préfixe musique",
   musicMod: "Préfixe des commandes (gestion)",
   moderation: "Préfixe modération",
   protection: "Préfixe sécurité/protection",
   owner: "Préfixe vocal/owner",
 };
 const PREFIX_HELP_COMMANDS = {
-  main: "play",
   musicMod: "help",
   moderation: "ban",
   protection: "help",
@@ -226,25 +220,6 @@ const handlers = {
         staffRoleId && !existe ? "> ⚠️ Le rôle configuré n'existe plus sur le serveur." : null,
         "",
         "`&ticket setup [@rôle]` pour poster le bouton, `&panel` > Tickets pour changer le rôle.",
-      ]
-        .filter((l) => l !== null)
-        .join("\n")
-    );
-  },
-
-  /** &tempvoc — salon générateur de vocaux temporaires (rubrique Vocaux). */
-  async tempvoc(client, message) {
-    if (!can(message.member, "server.voice.manage")) return;
-    const hubId = voiceChannels.getHub(message.guild.id);
-    const existe = hubId && message.guild.channels.cache.has(hubId);
-    await reply(
-      message,
-      "info",
-      [
-        `> **Salon générateur** : ${existe ? `<#${hubId}>` : "*aucun — désactivé*"}`,
-        hubId && !existe ? "> ⚠️ Le salon configuré n'existe plus." : null,
-        "",
-        "`&voicehub` pour le régler, `&voc` pour piloter ton propre salon.",
       ]
         .filter((l) => l !== null)
         .join("\n")
