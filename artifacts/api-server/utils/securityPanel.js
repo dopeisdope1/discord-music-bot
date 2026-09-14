@@ -215,7 +215,7 @@ function controlesProtection(guild, member, state) {
 function corpsGuard(guildId) {
   const config = guardConfig.getConfig(guildId);
   const whitelist = guardWhitelist.getWhitelist(guildId);
-  const guardLines = ALL_GUARDS.map((d) => {
+  const guardLines = ALL_GUARDS.filter((d) => d.key !== "creationlimit").map((d) => {
     const rule = d.threshold ? `${d.threshold.count}/${d.threshold.windowMs / 1000}s` : "immédiat";
     const on = guardConfig.isGuardEnabled(guildId, d.key);
     // Sanction EFFECTIVE de ce guard (propre ou globale) — affichée seulement
@@ -228,7 +228,8 @@ function corpsGuard(guildId) {
     `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
     `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
     `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
-    `> **Compte minimum** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
+    `> **Anti-Fast (âge des comptes)** : ${config.antiFastEnabled ? "activé" : "désactivé"} — minimum ${config.antiFastMinAgeDays ? `${config.antiFastMinAgeDays} jour(s)` : "*non configuré*"}`,
+    `> Anti-Fast est indépendant de l'interrupteur général Anti-nuke.`,
     `> **Verrouillage auto si plafond atteint** : ${config.autoLockdownOnCap ? "activé" : "désactivé"}`,
     `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
     "",
@@ -250,7 +251,8 @@ function controlesGuard(guild, state) {
     { value: "guard_wl_role_add", label: "Whitelist : ajouter un rôle" },
     { value: "guard_wl_role_remove", label: "Whitelist : retirer un rôle" },
     { value: "guard_ping", label: "Changer le rôle pingé" },
-    { value: "guard_creationlimit", label: "Changer le seuil de compte" },
+    { value: "antifast_toggle", label: config.antiFastEnabled ? "Anti-Fast : désactiver" : "Anti-Fast : activer" },
+    { value: "antifast_config", label: "Changer le seuil de compte" },
     { value: "guard_autolockdown_toggle", label: config.autoLockdownOnCap ? "Verrouillage auto : désactiver" : "Verrouillage auto : activer" },
   ];
 
@@ -353,10 +355,13 @@ function controlesGuard(guild, state) {
           .setDefaultRoles(config.pingRoleId && guild.roles.cache.has(config.pingRoleId) ? [config.pingRoleId] : [])
       )
     );
-  } else if (state.guardAction === "guard_creationlimit") {
+  } else if (state.guardAction === "antifast_config" || state.guardAction === "guard_creationlimit") {
     rows.push(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:guardcreationlimit`).setLabel("Régler le seuil de création de compte").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder()
+          .setCustomId(`${CUSTOM_ID}:${state.guardAction === "antifast_config" ? "guardantifast" : "guardcreationlimit"}`)
+          .setLabel("Régler l'âge minimum Anti-Fast (jours)")
+          .setStyle(ButtonStyle.Secondary)
       )
     );
   }
@@ -602,6 +607,10 @@ async function handleSecurityInteraction(interaction) {
       guardConfig.setAutoLockdown(guildId, !guardConfig.getConfig(guildId).autoLockdownOnCap);
       return goto("guard");
     }
+    if (choice === "antifast_toggle") {
+      guardConfig.setAntiFastEnabled(guildId, !guardConfig.getConfig(guildId).antiFastEnabled);
+      return goto("guard");
+    }
     return goto("guard", { guardAction: choice });
   }
 
@@ -651,7 +660,41 @@ async function handleSecurityInteraction(interaction) {
     return goto("guard");
   }
 
+  if (action === "guardantifast") {
+    if (!can(interaction.member, "protection.guard.manage")) return refuse();
+    if (interaction.isModalSubmit()) {
+      const raw = interaction.fields.getTextInputValue("days").trim();
+      if (raw.toLowerCase() === "off") {
+        guardConfig.setAntiFastEnabled(guildId, false);
+        await interaction.reply({ content: "Anti-Fast désactivé.", flags: MessageFlags.Ephemeral });
+        return interaction.message?.edit(buildSecurityPanel(interaction.member, interaction.client, "guard")).catch(() => {});
+      }
+      if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 3650) {
+        return interaction.reply({ content: "Âge invalide — indique un nombre entier de jours (exemple : `7`).", flags: MessageFlags.Ephemeral });
+      }
+      guardConfig.setAntiFastMinAgeDays(guildId, Number(raw));
+      await interaction.reply({ content: `Anti-Fast configuré : les comptes de moins de **${raw} jour(s)** seront expulsés à l'arrivée.`, flags: MessageFlags.Ephemeral });
+      return interaction.message?.edit(buildSecurityPanel(interaction.member, interaction.client, "guard")).catch(() => {});
+    }
+    const modal = new ModalBuilder().setCustomId(`${CUSTOM_ID}:guardantifast`).setTitle("Configurer Anti-Fast");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("days")
+          .setLabel('Âge minimum du compte (jours, entier) ou "off"')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(4)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  // Ancien customId conservé pour les panneaux déjà ouverts et les intégrations
+  // utilisant `creationlimit`. Il alimente le même réglage Anti-Fast (aucune
+  // seconde vérification d'âge).
   if (action === "guardcreationlimit") {
+    if (!can(interaction.member, "protection.guard.manage")) return refuse();
     if (interaction.isModalSubmit()) {
       const raw = interaction.fields.getTextInputValue("duration").trim();
       if (!raw || raw.toLowerCase() === "off") {
@@ -665,7 +708,6 @@ async function handleSecurityInteraction(interaction) {
       await interaction.reply({ content: `Comptes créés il y a moins de **${raw}** sanctionnés à l'arrivée.`, flags: MessageFlags.Ephemeral });
       return interaction.message?.edit(buildSecurityPanel(interaction.member, interaction.client, "guard")).catch(() => {});
     }
-    if (!can(interaction.member, "protection.guard.manage")) return refuse();
     const modal = new ModalBuilder().setCustomId(`${CUSTOM_ID}:guardcreationlimit`).setTitle("Seuil de création de compte");
     modal.addComponents(
       new ActionRowBuilder().addComponents(

@@ -32,6 +32,11 @@ const DEFAULT_CONFIG = {
   // Âge minimum du compte pour pouvoir rejoindre sans être sanctionné —
   // "&antinuke creationlimit <durée>". 0 = désactivé (comportement d'avant).
   creationLimitMs: 0,
+  // Anti-Fast est volontairement indépendant de l'interrupteur anti-nuke
+  // général. `creationLimitMs` reste conservé comme champ de compatibilité
+  // avec les anciennes configurations et commandes.
+  antiFastEnabled: false,
+  antiFastMinAgeDays: 0,
   // "&antinuke autolockdown on/off" — au lieu de simplement ignorer les
   // sanctions une fois le plafond atteint (voir utils/guard/engine.js,
   // MAX_PUNISHMENTS_PER_MINUTE), verrouille tout le serveur une fois :
@@ -71,6 +76,15 @@ function guildEntry(guildId) {
   if (!Array.isArray(entry.disabledGuards)) entry.disabledGuards = [];
   if (typeof entry.pingRoleId !== "string") entry.pingRoleId = null;
   if (typeof entry.creationLimitMs !== "number") entry.creationLimitMs = 0;
+  if (typeof entry.antiFastMinAgeDays !== "number" || !Number.isInteger(entry.antiFastMinAgeDays) || entry.antiFastMinAgeDays < 0) {
+    entry.antiFastMinAgeDays = Math.max(0, Math.ceil(entry.creationLimitMs / 86400000));
+  }
+  if (typeof entry.antiFastEnabled !== "boolean") {
+    // Migration sûre : une ancienne limite configurée exprimait clairement
+    // l'intention d'activer cette protection. Elle ne devient plus dépendante
+    // de l'anti-nuke général après migration.
+    entry.antiFastEnabled = entry.creationLimitMs > 0;
+  }
   if (typeof entry.autoLockdownOnCap !== "boolean") entry.autoLockdownOnCap = false;
   if (!entry.punishmentPerGuard || typeof entry.punishmentPerGuard !== "object") entry.punishmentPerGuard = {};
   return entry;
@@ -94,9 +108,11 @@ function setPunishment(guildId, punishment) {
   return true;
 }
 
-/** Vrai si le guard `key` doit s'exécuter : anti-nuke actif globalement ET pas désactivé individuellement. */
+/** Vrai si le guard `key` doit s'exécuter. Anti-Fast est une exception
+ * indépendante ; les autres guards exigent l'anti-nuke général. */
 function isGuardEnabled(guildId, key) {
   const entry = guildEntry(guildId);
+  if (key === "creationlimit" || key === "antifast") return entry.antiFastEnabled;
   return entry.enabled && !entry.disabledGuards.includes(key);
 }
 
@@ -109,6 +125,13 @@ function isGuardEnabled(guildId, key) {
  */
 function setGuardEnabled(guildId, key, enabled) {
   const entry = guildEntry(guildId);
+  if (key === "creationlimit" || key === "antifast") {
+    const wasEnabled = entry.antiFastEnabled;
+    if (wasEnabled === enabled) return false;
+    entry.antiFastEnabled = Boolean(enabled);
+    save();
+    return true;
+  }
   const wasEnabled = !entry.disabledGuards.includes(key);
   if (wasEnabled === enabled) return false;
   entry.disabledGuards = enabled ? entry.disabledGuards.filter((k) => k !== key) : [...entry.disabledGuards, key];
@@ -132,7 +155,25 @@ function setPingRole(guildId, roleId) {
 
 /** @param {number} ms 0 pour désactiver. */
 function setCreationLimit(guildId, ms) {
-  guildEntry(guildId).creationLimitMs = Math.max(0, ms || 0);
+  const entry = guildEntry(guildId);
+  entry.creationLimitMs = Math.max(0, ms || 0);
+  entry.antiFastMinAgeDays = Math.max(0, Math.ceil(entry.creationLimitMs / 86400000));
+  entry.antiFastEnabled = entry.creationLimitMs > 0;
+  save();
+}
+
+function setAntiFastEnabled(guildId, enabled) {
+  guildEntry(guildId).antiFastEnabled = Boolean(enabled);
+  save();
+}
+
+/** @param {number} days entier positif ; 0 retire le seuil (le toggle reste séparé) */
+function setAntiFastMinAgeDays(guildId, days) {
+  const value = Number.isInteger(days) ? Math.max(0, days) : 0;
+  const entry = guildEntry(guildId);
+  entry.antiFastMinAgeDays = value;
+  // Compatibilité avec `creationlimit` et les configurations précédentes.
+  entry.creationLimitMs = value * 86400000;
   save();
 }
 
@@ -176,6 +217,8 @@ module.exports = {
   setGuardEnabled,
   setPingRole,
   setCreationLimit,
+  setAntiFastEnabled,
+  setAntiFastMinAgeDays,
   setAutoLockdown,
   getGuardPunishment,
   setGuardPunishment,

@@ -1211,12 +1211,12 @@ async function antinuke(client, message, args) {
   if (sub === "creationlimit") {
     if ((args[1] || "").toLowerCase() === "off") {
       guardConfig.setCreationLimit(guildId, 0);
-      return reply(message, "success", "Seuil de création de compte désactivé.");
+      return reply(message, "success", "Anti-Fast désactivé (seuil de création de compte retiré).");
     }
     const ms = parseDuration(args[1]);
     if (!ms) return reply(message, "error", "Indique une durée ou `off` : `antinuke creationlimit 7d` ou `antinuke creationlimit off`.");
     guardConfig.setCreationLimit(guildId, ms);
-    return reply(message, "success", `Les comptes créés il y a moins de **${args[1]}** seront sanctionnés à l'arrivée.`);
+    return reply(message, "success", `Anti-Fast : les comptes créés il y a moins de **${args[1]}** seront expulsés à l'arrivée.`);
   }
 
   const config = guardConfig.getConfig(guildId);
@@ -1228,14 +1228,14 @@ async function antinuke(client, message, args) {
           `> **Statut** : ${config.enabled ? "activé" : "désactivé"}`,
           `> **Sanction** : ${config.punishment}`,
           `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
-          `> **Seuil de création de compte** : ${config.creationLimitMs ? `${Math.round(config.creationLimitMs / 86400000)}j` : "*désactivé*"}`,
+          `> **Anti-Fast (âge minimum)** : ${config.antiFastEnabled && config.antiFastMinAgeDays ? `${config.antiFastMinAgeDays}j` : "*désactivé*"}`,
           "",
           "`antinuke on|off` — activer/désactiver",
           "`antinuke punishment timeout|kick|ban` — changer la sanction",
           "`antinuke wlrole @rôle` / `wluser @membre` — exempter/retirer un rôle ou un membre",
           "`antinuke clearwl` — vider toute la whitelist",
           "`antinuke ping @rôle|off` — pingé en plus du log à chaque déclenchement",
-          "`antinuke creationlimit <durée>|off` — sanctionne les comptes trop récents à l'arrivée",
+          "`antinuke creationlimit <durée>|off` — alias historique pour configurer Anti-Fast (expulsion des comptes trop récents)",
           "",
           "Liste des guards et leurs seuils : `&panel` > Anti-nuke.",
         ].join("\n"),

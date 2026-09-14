@@ -20,7 +20,7 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const permStore = require("../utils/permissions/store");
 const guardConfig = require("../utils/guard/config");
 const guardWhitelist = require("../utils/guard/whitelist");
-const { checkNewAccount } = require("../utils/guard/definitions");
+const { checkNewAccount, checkAntiFast } = require("../utils/guard/definitions");
 const { postModerationEntry } = require("../utils/moderationLog");
 const { setLogChannelId } = require("../utils/modLogStore");
 const serverAdmin = require("../utils/serverAdminCommands");
@@ -37,13 +37,16 @@ async function cas(nom, fn) {
   }
 }
 
-function fakeMember(id, { createdTimestamp, kicked = { value: false } } = {}) {
+function fakeMember(id, { createdTimestamp, kicked = { value: false }, kickFails = false } = {}) {
   return {
     id,
     user: { id, tag: `${id}#0000`, createdTimestamp },
     guild: null, // rempli par fakeGuild
     roles: { cache: new Collection(), highest: { position: 1 } },
-    kick: async function () { kicked.value = true; },
+    kick: async function () {
+      if (kickFails) throw new Error("permission denied");
+      kicked.value = true;
+    },
     ban: async function () { this.wasBanned = true; },
     timeout: async function (ms) { this.timedOutMs = ms; },
   };
@@ -196,6 +199,27 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     guardConfig.setCreationLimit("g-new4", 7 * 86400000);
     guardWhitelist.add("g-new4", "users", "young-3");
     await checkNewAccount(client, member);
+    assert.strictEqual(kicked.value, false);
+  });
+
+  await cas("Anti-Fast reste actif lorsque l'anti-nuke général est désactivé", async () => {
+    const kicked = { value: false };
+    const member = fakeMember("young-independent", { createdTimestamp: Date.now() - 1000, kicked });
+    fakeGuild("g-antifast-independent", member);
+    guardConfig.setEnabled("g-antifast-independent", false);
+    guardConfig.setAntiFastMinAgeDays("g-antifast-independent", 7);
+    guardConfig.setAntiFastEnabled("g-antifast-independent", true);
+    await checkAntiFast(client, member);
+    assert.strictEqual(kicked.value, true);
+  });
+
+  await cas("Anti-Fast consigne un échec de kick sans faire échouer le listener", async () => {
+    const kicked = { value: false };
+    const member = fakeMember("young-kick-failure", { createdTimestamp: Date.now() - 1000, kicked, kickFails: true });
+    fakeGuild("g-antifast-kick-failure", member);
+    guardConfig.setAntiFastMinAgeDays("g-antifast-kick-failure", 7);
+    guardConfig.setAntiFastEnabled("g-antifast-kick-failure", true);
+    await checkAntiFast(client, member);
     assert.strictEqual(kicked.value, false);
   });
 

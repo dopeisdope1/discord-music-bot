@@ -33,21 +33,23 @@ async function setGuard(client, message, args, guardKey) {
 
   const definition = ALL_GUARDS.find((d) => d.key === guardKey);
   const wanted = readOnOff(args[0]);
+  const antiFast = guardKey === "creationlimit" || guardKey === "antifast";
 
   if (wanted === null) {
     // guardConfig.isGuardEnabled() répond "est-ce que ça se déclenchera",
     // interrupteur général compris. Ici on veut l'état DU GUARD, et dire
     // séparément si le général le neutralise — sinon un guard bien activé
     // s'afficherait "désactivé" sans qu'on sache pourquoi.
-    const actif = !guardConfig.getConfig(message.guild.id).disabledGuards.includes(guardKey);
-    const global = guardConfig.getConfig(message.guild.id).enabled;
+    const config = guardConfig.getConfig(message.guild.id);
+    const actif = antiFast ? config.antiFastEnabled : !config.disabledGuards.includes(guardKey);
+    const global = config.enabled;
     return reply(
       message,
       "info",
       [
         `> **${definition.label}** : ${actif ? "activé" : "désactivé"}`,
         `> Déclenchement : ${definition.threshold ? `${definition.threshold.count} en ${definition.threshold.windowMs / 1000}s` : "immédiat"}`,
-        actif && !global ? "> ⚠️ Neutralisé : l'anti-nuke général est désactivé (`&antinuke on`)." : null,
+        !antiFast && actif && !global ? "> ⚠️ Neutralisé : l'anti-nuke général est désactivé (`&antinuke on`)." : null,
         "",
         `\`${message.content.trim().split(/\s+/)[0]} on\` ou \`off\`.`,
       ]
@@ -65,7 +67,11 @@ async function setGuard(client, message, args, guardKey) {
       `**${definition.label}** ${wanted ? "activé" : "désactivé"}.`,
       // Un guard actif alors que l'interrupteur général est coupé ne
       // déclenche rien : le taire ferait croire à une protection en place.
-      wanted && !global ? "\n⚠️ L'anti-nuke général est **désactivé** — ce guard ne se déclenchera pas. `&antinuke on` pour l'activer." : null,
+       !antiFast && wanted && !global
+         ? "\n⚠️ L'anti-nuke général est **désactivé** — ce guard ne se déclenchera pas. `&antinuke on` pour l'activer."
+         : antiFast && wanted
+           ? "\nAnti-Fast reste indépendant de l'interrupteur général Anti-nuke."
+           : null,
     ]
       .filter(Boolean)
       .join("")

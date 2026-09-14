@@ -169,43 +169,51 @@ async function checkJoinFlood(client, member) {
   });
 }
 
-// --- creationlimit : compte trop récent pour rejoindre sans être sanctionné
-// — "&antinuke creationlimit <durée>", désactivé tant qu'aucun seuil n'est
-// réglé (creationLimitMs = 0). Contrairement à antijoin (débit anormal de
-// joins), ça se déclenche sur CHAQUE arrivée dont le compte est trop jeune,
-// indépendamment du rythme des arrivées. ---
+// --- Anti-Fast : compte trop récent pour rejoindre sans être sanctionné.
+// Cette fonction est l'unique enforcement de l'ancien `creationlimit` :
+// l'ancien nom et son champ sont conservés pour migration, mais il n'existe
+// volontairement pas de seconde vérification d'âge. Anti-Fast est indépendant
+// de l'interrupteur anti-nuke général.
 async function checkNewAccount(client, member) {
-  if (!guardConfig.isGuardEnabled(member.guild.id, "creationlimit")) return;
+  if (!member?.guild || !member.user) return;
   const config = guardConfig.getConfig(member.guild.id);
-  if (!config.creationLimitMs) return;
+  if (!config.antiFastEnabled || !config.antiFastMinAgeDays) return;
   if (isFullyExempt(member)) return;
-  if (Date.now() - member.user.createdTimestamp >= config.creationLimitMs) return;
+  const ageMs = Date.now() - Number(member.user.createdTimestamp);
+  if (!Number.isFinite(ageMs) || ageMs >= config.antiFastMinAgeDays * 86400000) return;
 
   if (punishmentCapReached(member.guild.id)) {
-    console.warn(`[guard:creationlimit] plafond de sanctions atteint sur "${member.guild.name}", membre non sanctionné (log conservé).`);
+    console.warn(`[guard:antifast] plafond de sanctions atteint sur "${member.guild.name}", membre non sanctionné (log conservé).`);
     return;
   }
+  // Réutilise les protections de hiérarchie/propriétaire du moteur, tout en
+  // imposant kick (Anti-Fast ne suit pas la sanction globale anti-nuke).
   const punished = await applyPunishment(
     client,
     member.guild,
     member,
     config,
-    "Anti-nuke : compte trop récent pour rejoindre",
-    guardConfig.getGuardPunishment(member.guild.id, "creationlimit")
+    "Anti-Fast : compte Discord trop récent pour rejoindre",
+    "kick"
   );
   if (punished) recordPunishment(member.guild.id);
 
   await postModerationEntry(client, member.guild.id, "moderation", {
-    title: "Anti-nuke — Compte trop récent",
+    title: "Anti-Fast — Compte trop récent",
     fields: [
       { label: "Membre", value: `<@${member.id}> (${member.id})` },
       { label: "Compte créé", value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>` },
-      { label: "Sanction", value: punished ? config.punishment : "aucune (protégé, ou plafond de sanctions atteint)" },
+      { label: "Âge minimum", value: `${config.antiFastMinAgeDays} jour(s)` },
+      { label: "Sanction", value: punished ? "kick" : "échec de l'expulsion" },
     ],
-    moderatorTag: "Anti-nuke (automatique)",
+    moderatorTag: "Anti-Fast (automatique)",
     pingRoleId: config.pingRoleId,
   });
 }
+
+// Nom explicite pour les nouveaux appelants ; checkNewAccount reste exporté
+// afin de ne pas casser les intégrations et tests de l'ancien creationlimit.
+const checkAntiFast = checkNewAccount;
 
 // Liste complète pour le panel (&panel > Anti-nuke) : les guards basés sur
 // l'audit log + antieveryone/antijoin/creationlimit, qui n'y figurent pas
@@ -216,7 +224,9 @@ const ALL_GUARDS = [
   ...DEFINITIONS.map((d) => ({ key: d.key, label: d.label, threshold: d.threshold })),
   { key: "antieveryone", label: "Mention @everyone/@here non autorisée", threshold: null },
   { key: "antijoin", label: "Afflux de joins suspect", threshold: JOIN_FLOOD },
-  { key: "creationlimit", label: "Compte trop récent pour rejoindre", threshold: null },
+  // Clé historique conservée pour les commandes existantes et la migration.
+  // Son enforcement est checkAntiFast/checkNewAccount ci-dessus.
+  { key: "creationlimit", label: "Anti-Fast — compte trop récent", threshold: null },
 ];
 
-module.exports = { DEFINITIONS, ALL_GUARDS, checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkNewAccount };
+module.exports = { DEFINITIONS, ALL_GUARDS, checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkNewAccount, checkAntiFast };

@@ -25,7 +25,7 @@ const COMMANDES = [
     groupe: "Sécurité serveur",
     nom: "!!secur",
     permission: ["protection.automod", "protection.guard.manage"],
-    description: "Panneau de sécurité serveur + anti-nuke — droit `protection.automod` et/ou `protection.guard.manage`.",
+  description: "Panneau de sécurité serveur + anti-nuke + Anti-Fast (âge des comptes, indépendant de l'anti-nuke) — droit `protection.automod` et/ou `protection.guard.manage`.",
   },
   { groupe: "Sécurité serveur", nom: "!!security", permission: ["protection.automod", "protection.guard.manage"], description: "Alias de `!!secur` — ouvre exactement le même panneau." },
   { groupe: "Sécurité serveur", nom: "!!owner <@membre>", permission: "panel.permissions.manage", description: "Accorde/retire des permissions de sécurité individuelles (catégorie Protection) — droit `panel.permissions.manage`." },

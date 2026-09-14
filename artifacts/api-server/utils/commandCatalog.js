@@ -510,7 +510,7 @@ const CATEGORIES = [
         name: "antinuke creationlimit <durée/off>",
         prefix: "mod",
         permission: "protection.guard.manage",
-        description: "Sanctionne à l'arrivée les comptes créés il y a moins de cette durée",
+        description: "Alias historique pour Anti-Fast : expulse à l'arrivée les comptes créés il y a moins de cette durée (indépendant de l'anti-nuke général)",
       },
       {
         name: "antinuke autolockdown on|off",

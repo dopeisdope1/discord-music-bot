@@ -455,6 +455,48 @@ function labelsAction(payload, customIdSuffix) {
     assert.strictEqual(guardConfig.getConfig(gid).creationLimitMs, 0);
   });
 
+  await cas("Anti-Fast a son toggle indépendant et persiste l'âge entier en jours", async () => {
+    const gid = "g-antifast-panel";
+    permStore.grantToUser(gid, "staff-antifast", "protection.guard.manage");
+    const view = fakeInteraction("secur:subnav", { userId: "staff-antifast", guildId: gid, values: ["guard"] });
+    await securityPanel.handleSecurityInteraction(view);
+    const labels = labelsAction(view._updates[0], "secur:guardaction");
+    assert.ok(labels.some((label) => label.includes("Anti-Fast")), labels.join(" | "));
+
+    // Le général reste coupé : Anti-Fast est néanmoins activable.
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardaction", { userId: "staff-antifast", guildId: gid, values: ["antifast_toggle"] })
+    );
+    assert.strictEqual(guardConfig.getConfig(gid).antiFastEnabled, true);
+    assert.strictEqual(guardConfig.getConfig(gid).enabled, false);
+
+    await securityPanel.handleSecurityInteraction(
+      fakeInteraction("secur:guardantifast", {
+        userId: "staff-antifast",
+        guildId: gid,
+        isModal: true,
+        fields: { getTextInputValue: () => "14" },
+      })
+    );
+    const config = guardConfig.getConfig(gid);
+    assert.strictEqual(config.antiFastMinAgeDays, 14);
+    assert.strictEqual(config.creationLimitMs, 14 * 86400000);
+    assert.strictEqual(config.antiFastEnabled, true);
+  });
+
+  await cas("la configuration Anti-Fast refuse une modale sans protection.guard.manage", async () => {
+    const gid = "g-antifast-panel-refuse";
+    const interaction = fakeInteraction("secur:guardantifast", {
+      userId: "staff-antifast-no",
+      guildId: gid,
+      isModal: true,
+      fields: { getTextInputValue: () => "14" },
+    });
+    await securityPanel.handleSecurityInteraction(interaction);
+    assert.ok(interaction._replies.length > 0);
+    assert.strictEqual(guardConfig.getConfig(gid).antiFastMinAgeDays, 0);
+  });
+
   await cas("« Tout activer »/« Tout désactiver » agissent sur les 13 guards réels", async () => {
     permStore.grantToUser("g-gall", "staff-20", "protection.guard.manage");
     const gid = "g-gall";

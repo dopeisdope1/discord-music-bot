@@ -85,7 +85,7 @@ const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedMod
 const commandForms = require("./utils/commandForms");
 const { handleHelpInteraction } = require("./utils/helpPanel");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
-const { checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkNewAccount } = require("./utils/guard/definitions");
+const { checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkAntiFast } = require("./utils/guard/definitions");
 
 const client = new Client({
   intents: [
@@ -504,7 +504,7 @@ client.on("guildMemberAdd", async (member) => {
 // qui n'a aucun rapport avec l'activation de l'anti-nuke.
 client.on("guildMemberAdd", (member) => {
   checkJoinFlood(client, member).catch((err) => console.error("[guard:antijoin]", err));
-  checkNewAccount(client, member).catch((err) => console.error("[guard:creationlimit]", err));
+  checkAntiFast(client, member).catch((err) => console.error("[guard:antifast]", err));
 });
 
 // Rôles automatiques à l'arrivée (voir &panel > Membres, utils/autoroleCommands.js).
