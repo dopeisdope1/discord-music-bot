@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Discord Music Bot"
+description = "A small public status page for the Discord music bot that confirms the service is online and provides its health status while enabling Replit publishing."
+version = "1.0.0"
+id = "artifacts/bot-status"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22053
+
+[services.development]
+run = "pnpm --filter @workspace/bot-status run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/bot-status", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/bot-status/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22053"
+BASE_PATH = "/"

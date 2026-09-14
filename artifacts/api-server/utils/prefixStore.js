@@ -1,0 +1,66 @@
+const fs = require("fs");
+const path = require("path");
+const { ecrireJson, lireJson } = require("./jsonFile");
+
+// DATA_DIR est configurable via la variable d'env DATA_DIR : sur Railway, le
+// disque du container est réinitialisé à chaque redéploiement, donc tout ce
+// qui est écrit dans le chemin par défaut (relatif au code) est perdu au
+// prochain push. Pointer DATA_DIR vers un Volume Railway monté (persistant,
+// lui, entre les redéploiements) rend ce fichier permanent. Voir le README.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
+const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
+
+// Valeurs par défaut, utilisées tant que rien n'a été changé via &panel.
+// main = préfixe musique ; musicMod = préfixe des autres commandes, partagé
+// avec le CrowBot du serveur (voir utils/musicCommands.js) ; protection =
+// préfixe du panel de protection PERSONNELLE (utils/personalProtection.js),
+// volontairement séparé pour ne jamais se mélanger avec &panel (config
+// serveur) — demande explicite ; owner = préfixe "=" (utils/
+// serverAdminCommands.js), qui héberge deux commandes distinctes : "=add"
+// (même mécanisme que "&access") et "=owner" (transfert de propriété d'un
+// salon vocal, même mécanisme que "&voc transfer") — demande explicite.
+const DEFAULT_PREFIXES = { main: "?", musicMod: "&", protection: "!!", owner: "=" };
+
+let cache = null;
+
+function load() {
+  if (cache) return cache;
+  try {
+    cache = lireJson(DATA_FILE);
+  } catch {
+    cache = {};
+  }
+  return cache;
+}
+
+function save() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    ecrireJson(DATA_FILE, cache);
+  } catch (err) {
+    console.error("[prefixStore] échec de la sauvegarde :", err);
+  }
+}
+
+/**
+ * @param {string} guildId
+ * @returns {{ main: string, musicMod: string }} main = préfixe musique (!), musicMod = préfixe modération (?)
+ */
+function getPrefixes(guildId) {
+  const data = load();
+  return { ...DEFAULT_PREFIXES, ...(data[guildId] || {}) };
+}
+
+/**
+ * @param {string} guildId
+ * @param {"main"|"musicMod"|"protection"} type
+ * @param {string} value
+ */
+function setPrefix(guildId, type, value) {
+  const data = load();
+  if (!data[guildId]) data[guildId] = {};
+  data[guildId][type] = value;
+  save();
+}
+
+module.exports = { getPrefixes, setPrefix, DEFAULT_PREFIXES };

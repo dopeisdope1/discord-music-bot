@@ -1,0 +1,192 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+  --font-display: var(--app-font-display);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-pulse-slow: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-blob: blob 7s infinite;
+}
+
+/* LIGHT MODE */
+:root {
+  --app-font-sans: 'Inter', system-ui, sans-serif;
+  --app-font-serif: Georgia, serif;
+  --app-font-mono: 'Space Mono', ui-monospace, monospace;
+  --app-font-display: 'Clash Display', 'Inter', sans-serif;
+
+  --background: 240 25% 98%; 
+  --foreground: 240 50% 10%;
+
+  --border: 240 20% 90%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 240 50% 10%;
+  --card-border: 240 20% 90%;
+
+  --sidebar: 240 25% 98%;
+  --sidebar-foreground: 240 50% 10%;
+  --sidebar-border: 240 20% 90%;
+  --sidebar-primary: 240 50% 10%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 20% 90%;
+  --sidebar-accent-foreground: 240 50% 10%;
+  --sidebar-ring: 240 50% 10%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 50% 10%;
+  --popover-border: 240 20% 90%;
+
+  --primary: 235 86% 65%; /* Discord Blurple-ish */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 20% 96%;
+  --secondary-foreground: 240 50% 10%;
+
+  --muted: 240 20% 94%;
+  --muted-foreground: 240 10% 40%;
+
+  --accent: 330 80% 60%; /* Vibrant Pink */
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 240 20% 90%;
+  --ring: 235 86% 65%;
+  
+  --chart-1: 235 86% 65%;
+  --chart-2: 330 80% 60%;
+  --chart-3: 160 84% 39%;
+  --chart-4: 43 100% 50%;
+  --chart-5: 280 80% 60%;
+
+  --radius: 1rem;
+}
+
+.dark {
+  --background: 240 40% 4%;
+  --foreground: 0 0% 98%;
+
+  --border: 240 20% 18%;
+
+  --card: 240 30% 6%;
+  --card-foreground: 0 0% 98%;
+  --card-border: 240 20% 18%;
+
+  --sidebar: 240 30% 6%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-border: 240 20% 18%;
+  --sidebar-primary: 235 86% 65%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 20% 18%;
+  --sidebar-accent-foreground: 0 0% 98%;
+  --sidebar-ring: 235 86% 65%;
+
+  --popover: 240 30% 6%;
+  --popover-foreground: 0 0% 98%;
+  --popover-border: 240 20% 18%;
+
+  --primary: 235 86% 65%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 20% 12%;
+  --secondary-foreground: 0 0% 98%;
+
+  --muted: 240 20% 12%;
+  --muted-foreground: 240 10% 60%;
+
+  --accent: 330 80% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 240 20% 18%;
+  --ring: 235 86% 65%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground selection:bg-primary/20 selection:text-primary;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.glass-panel {
+  @apply bg-white/70 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-xl;
+}
+
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+}
+.dark .bg-grid-pattern {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
