@@ -653,6 +653,36 @@ const CATEGORIES = [
         permission: "server.roles.manage",
         description: "Plafonne le nombre de membres pouvant avoir ce rôle (sans argument : affiche la limite actuelle)",
       },
+      {
+        name: "promote @membre",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Fait monter un membre d'un cran sur l'échelle de grades (voir gradeladder)",
+      },
+      {
+        name: "demote @membre",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Fait descendre un membre d'un cran sur l'échelle de grades",
+      },
+      {
+        name: "gradeladder add @rôle",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Ajoute un rôle au sommet de l'échelle de grades (du plus bas au plus haut)",
+      },
+      {
+        name: "gradeladder remove @rôle",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Retire un rôle de l'échelle de grades",
+      },
+      {
+        name: "gradeladder list",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Affiche l'échelle de grades configurée, du plus bas au plus haut",
+      },
       { name: "role create <nom>", prefix: "mod", permission: "server.roles.manage", description: "Crée un nouveau rôle" },
       {
         name: "role delete @rôle",

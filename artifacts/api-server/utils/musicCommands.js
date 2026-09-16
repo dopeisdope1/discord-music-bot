@@ -37,6 +37,7 @@ const { setupVerification } = require("./verification");
 const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
 const levels = require("./levels");
+const rankLadder = require("./rankLadderCommands");
 
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
 // Ce sont les seules a etre limitees en frequence : elles sont accessibles
@@ -173,6 +174,9 @@ const modHandlers = {
   addrole: moderationHandlers.addrole,
   delrole: moderationHandlers.delrole,
   limitrole: serverAdmin.limitRole,
+  promote: rankLadder.promote,
+  demote: rankLadder.demote,
+  gradeladder: rankLadder.gradeLadder,
   absence: utilityHandlers.absence,
   staff: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "check") return utilityHandlers.staffCheck(client, message, args.slice(1));
@@ -582,6 +586,7 @@ const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
   staff: ["check"],
+  gradeladder: ["add", "remove", "list"],
   absence: ["set", "reset"],
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],
