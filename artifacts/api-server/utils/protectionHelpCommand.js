@@ -36,6 +36,7 @@ const COMMANDES = [
   { groupe: "Sécurité serveur", nom: "!!antinuke", permission: "protection.guard.manage", description: "Configure l'anti-nuke (identique à `!!antiraid`) — droit `protection.guard.manage`." },
   { groupe: "Sécurité serveur", nom: "!!antiraid", permission: "protection.guard.manage", description: "Synonyme de `!!antinuke` — même moteur, aucun système parallèle." },
   { groupe: "Sécurité serveur", nom: "!!antilink [on/off]", permission: "protection.automod", description: "Anti-lien — droit `protection.automod`." },
+  { groupe: "Sécurité serveur", nom: "!!antilink panel", permission: "protection.automod", description: "Panneau anti-lien : mode + bypass par membre/rôle — droit `protection.automod`." },
   { groupe: "Sécurité serveur", nom: "!!antispam [on/off]", permission: "protection.automod", description: "Anti-spam/anti-flood — droit `protection.automod`." },
   {
     groupe: "Protection personnelle",

@@ -30,6 +30,9 @@ const personalProtection = require("./utils/personalProtection");
 // Raccourci "&p" vers les paliers de permissions, en dehors de la machine à
 // états de &panel — voir utils/palierPanel.js.
 const palierPanel = require("./utils/palierPanel");
+// "!!antilink panel" — panneau dédié à l'anti-lien (mode + bypass), en dehors
+// de la machine à états de &panel/!!secur — voir utils/antiLinkPanel.js.
+const antiLinkPanel = require("./utils/antiLinkPanel");
 // Confessions anonymes ("!!confess") — voir utils/confessions.js.
 const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
@@ -161,7 +164,14 @@ client.on("interactionCreate", async (interaction) => {
   // Les autres panneaux (bannissement, ban de masse, confirmations
   // d'administration) portaient déjà cette vérification, chacun avec son
   // jeton ; ces deux-là ne l'avaient pas.
-  const PANNEAUX_PRIVES = ["cfg:", `${commandForms.CARD_ID}:`, `${personalProtection.CUSTOM_ID}:`, `${palierPanel.CUSTOM_ID}:`, `${SECUR_CUSTOM_ID}:`];
+  const PANNEAUX_PRIVES = [
+    "cfg:",
+    `${commandForms.CARD_ID}:`,
+    `${personalProtection.CUSTOM_ID}:`,
+    `${palierPanel.CUSTOM_ID}:`,
+    `${SECUR_CUSTOM_ID}:`,
+    `${antiLinkPanel.CUSTOM_ID}:`,
+  ];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
     if (!autorise) {
@@ -193,6 +203,12 @@ client.on("interactionCreate", async (interaction) => {
   // Raccourci "&p" vers les paliers de permissions (voir utils/palierPanel.js).
   if (interaction.customId?.startsWith(`${palierPanel.CUSTOM_ID}:`)) {
     await palierPanel.handlePalierInteraction(interaction).catch((err) => console.error("[palierPanel]", err));
+    return;
+  }
+
+  // "!!antilink panel" (voir utils/antiLinkPanel.js).
+  if (interaction.customId?.startsWith(`${antiLinkPanel.CUSTOM_ID}:`)) {
+    await antiLinkPanel.handleAntiLinkInteraction(interaction).catch((err) => console.error("[antiLinkPanel]", err));
     return;
   }
 

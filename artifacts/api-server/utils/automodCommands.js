@@ -4,6 +4,7 @@ const antiSpam = require("./automod/antiSpam");
 const antiLink = require("./automod/antiLink");
 const antiMention = require("./automod/antiMention");
 const badWords = require("./automod/badWords");
+const { handleAntiLinkPanelCommand } = require("./antiLinkPanel");
 
 // Commandes texte pour l'automod léger (anti-lien/anti-mass-mention/mots
 // interdits) — même clé de permission que l'anti-spam existant
@@ -86,6 +87,8 @@ const handlers = {
     if (!can(message.member, PERMISSION)) return;
     const sub = (args[0] || "").toLowerCase();
 
+    if (sub === "panel") return handleAntiLinkPanelCommand(client, message);
+
     if (sub === "on" || sub === "off") {
       antiLink.setEnabled(message.guild.id, sub === "on");
       return reply(message, "success", `Anti-lien ${sub === "on" ? "activé" : "désactivé"}.`);
@@ -101,7 +104,7 @@ const handlers = {
       message,
       "info",
       `Anti-lien : **${config.enabled ? "activé" : "désactivé"}** (mode : ${config.mode === "all" ? "tous les liens" : "invitations Discord"}).\n` +
-        "Utilise `antilink <on/off>` ou `antilink <invite/all>`."
+        "Utilise `antilink <on/off>`, `antilink <invite/all>`, ou `antilink panel` pour le panneau complet (mode + bypass)."
     );
   },
 

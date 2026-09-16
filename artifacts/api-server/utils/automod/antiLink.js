@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { report } = require("../moderation/actions");
 const { isWhitelisted } = require("./antiSpam");
+const linkBypass = require("./antiLinkBypass");
 const { ecrireJson, lireJson } = require("../jsonFile");
 
 // Anti-lien léger : supprime les messages contenant un lien (invitations
@@ -88,6 +89,14 @@ async function checkMessage(client, message) {
 
   const re = config.mode === "all" ? LINK_RE : INVITE_RE;
   if (!re.test(message.content)) return;
+
+  // Bypass dédié (panel Anti-Link, voir utils/antiLinkPanel.js) : "all"
+  // exempte tout, "invite" n'exempte que les invitations Discord — utile en
+  // mode Anti-All pour laisser passer les invitations sans lever l'anti-lien
+  // sur le reste.
+  if (linkBypass.isBypassed(message.member, "all")) return;
+  if (INVITE_RE.test(message.content) && linkBypass.isBypassed(message.member, "invite")) return;
+
   if (!message.deletable) return;
 
   await message.delete().catch(() => {});
