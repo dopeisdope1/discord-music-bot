@@ -1,18 +1,19 @@
 /**
- * Vérifie le REPLI TEXTE des tableaux de bord (&help, &panel).
+ * Vérifie le REPLI TEXTE du tableau de bord de &panel (&help est en texte
+ * pur depuis son passage en liste par palier de permission, il n'a donc plus
+ * rien à replier).
  *
- * Ces deux écrans sont une IMAGE et rien d'autre : leur message ne contient
- * qu'un MediaGallery pointant sur la pièce jointe (utils/dashboardImage.js).
- * Deux choses peuvent donc les faire disparaître entièrement, alors que tout
- * leur contenu existe déjà en texte dans la spec :
+ * &panel est une IMAGE et rien d'autre sur ses rubriques : le message ne
+ * contient qu'un MediaGallery pointant sur la pièce jointe
+ * (utils/dashboardImage.js). Deux choses peuvent donc le faire disparaître
+ * entièrement, alors que tout son contenu existe déjà en texte dans la spec :
  *
  *  - le DESSIN échoue (mémoire, police, spec inattendue) — le VPS est petit ;
  *  - l'ENVOI est refusé par Discord, typiquement quand le bot n'a pas la
  *    permission « Joindre des fichiers » dans le salon.
  *
  * Dans les deux cas, l'utilisateur ne voyait qu'un « Une erreur est survenue »
- * — ou, sur un clic de navigation, un « Échec de l'interaction » — alors que
- * &help est la seule porte d'entrée du bot pour qui ne le connaît pas. Même
+ * — ou, sur un clic de navigation, un « Échec de l'interaction ». Même
  * principe que les cartes de sanction (utils/actionCard.js) : ce qui compte
  * n'est pas le rendu, c'est que la commande reste utilisable sans lui.
  *
@@ -30,7 +31,6 @@ process.env.BOT_OWNER_IDS = "testeur";
 
 const { Collection, PermissionsBitField, ChannelType } = require("discord.js");
 const { rendreEnCache, enTexte } = require("../utils/dashboardImage");
-const { buildHelpPanel, buildHelpSpec, handleHelpInteraction } = require("../utils/helpPanel");
 const { buildConfigPanel, handleConfigInteraction, ID: ID_PANEL } = require("../utils/configPanel");
 const { handleMusicTextCommand } = require("../utils/musicCommands");
 
@@ -105,7 +105,15 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     author: utilisateur,
     member: { ...membre, guild, user: utilisateur },
     guild,
-    channel: { id: "c1", type: ChannelType.GuildText, permissionsFor: () => new PermissionsBitField(PermissionsBitField.All) },
+    channel: {
+      id: "c1",
+      type: ChannelType.GuildText,
+      permissionsFor: () => new PermissionsBitField(PermissionsBitField.All),
+      send: async (payload) => {
+        envois.push(payload);
+        return {};
+      },
+    },
     envois,
     reply: async (payload) => {
       envois.push(payload);
@@ -170,36 +178,6 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.doesNotThrow(() => enTexte({ cartes: [{ items: null }] }));
   });
 
-  console.log("\n&help sans image :");
-
-  await cas("le rendu normal reste une image jointe (pas de régression)", () => {
-    const panel = buildHelpPanel("g1", membre, null, "testeur");
-    assert.strictEqual(panel.files.length, 1);
-    assert.ok(composantsDe(panel).some((c) => c.type === GALERIE));
-  });
-
-  await cas("sansImage : aucune pièce jointe, aucune galerie qui pointerait dans le vide", () => {
-    const panel = buildHelpPanel("g1", membre, null, "testeur", 0, { sansImage: true });
-    assert.strictEqual(panel.files, undefined, "un MediaGallery sans pièce jointe ferait refuser tout le message");
-    assert.ok(!composantsDe(panel).some((c) => c.type === GALERIE));
-  });
-
-  await cas("sansImage : les catégories réellement dessinées sont bien là, en texte", () => {
-    const { spec } = buildHelpSpec("g1", membre, null, "testeur");
-    const texte = texteDe(buildHelpPanel("g1", membre, null, "testeur", 0, { sansImage: true }));
-    for (const carte of spec.cartes) assert.ok(texte.includes(carte.titre), `"${carte.titre}" manque dans le repli`);
-  });
-
-  await cas("sansImage : le menu de navigation survit — le repli reste pilotable", () => {
-    const panel = buildHelpPanel("g1", membre, null, "testeur", 0, { sansImage: true });
-    assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "sans menu, impossible d'ouvrir une catégorie");
-  });
-
-  await cas("sansImage : un palier ouvert liste ses commandes, pas seulement son titre", () => {
-    const texte = texteDe(buildHelpPanel("g1", membre, "configurable", "testeur", 0, { sansImage: true }));
-    assert.ok(texte.includes("&kick"), texte);
-  });
-
   console.log("\n&panel sans image :");
 
   await cas("l'accueil n'a plus d'image du tout — une RUBRIQUE, si", () => {
@@ -220,20 +198,6 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
 
   console.log("\nEnvoi refusé par Discord (pas de « Joindre des fichiers ») :");
 
-  await cas("&help répond quand même — la deuxième tentative part sans image", async () => {
-    const message = fakeMessage("help", { refuseFichiers: true });
-    await handleMusicTextCommand(message.client, message);
-    assert.strictEqual(message.envois.length, 2, "il doit y avoir une seconde tentative, en texte");
-    assert.ok(message.envois[0].files?.length, "la première tentative est bien celle avec l'image");
-    assert.strictEqual(message.envois[1].files, undefined, "la seconde ne doit plus rien joindre");
-    const texte = message.envois[1].components[0]
-      .toJSON()
-      .components.filter((c) => c.type === TEXTE)
-      .map((c) => c.content)
-      .join("\n");
-    assert.ok(texte.includes("CENTRE DE COMMANDES"), texte);
-  });
-
   await cas("&panel n'a rien à replier : son accueil ne joint aucun fichier", async () => {
     // Le repli existe toujours pour les RUBRIQUES, qui portent une image ;
     // l'accueil, lui, n'en a plus, donc un salon qui refuse les pièces
@@ -244,11 +208,11 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.strictEqual(message.envois[0].files, undefined);
   });
 
-  await cas("un salon NORMAL n'envoie qu'une seule fois — pas de doublon dû au repli", async () => {
-    const message = fakeMessage("help");
+  await cas("&help n'a rien à replier non plus : texte pur, jamais de pièce jointe", async () => {
+    const message = fakeMessage("help", { refuseFichiers: true });
     await handleMusicTextCommand(message.client, message);
-    assert.strictEqual(message.envois.length, 1);
-    assert.ok(message.envois[0].files?.length, "l'image doit rester la réponse par défaut");
+    assert.ok(message.envois.length >= 1, "au moins un envoi");
+    for (const envoi of message.envois) assert.strictEqual(envoi.files, undefined, "aucun envoi ne doit joindre de fichier");
   });
 
   console.log("\nNavigation refusée (le message est édité, pas recréé) :");
@@ -279,22 +243,6 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
       },
     };
   }
-
-  await cas("&help : une édition refusée est rejouée en texte, le palier s'ouvre quand même", async () => {
-    const clic = fakeClic("help_tier:testeur", "configurable");
-    await handleHelpInteraction(clic);
-    assert.strictEqual(clic.editions.length, 2, "la seconde édition (en texte) manque — le clic resterait sans réponse");
-    assert.strictEqual(clic.editions[1].files, undefined);
-    // `attachments: []` doit survivre au repli, sinon l'ancienne image reste
-    // affichée au-dessus du texte qui la remplace.
-    assert.deepStrictEqual(clic.editions[1].attachments, []);
-    const texte = clic.editions[1].components[0]
-      .toJSON()
-      .components.filter((c) => c.type === TEXTE)
-      .map((c) => c.content)
-      .join("\n");
-    assert.ok(texte.includes("&kick"), texte);
-  });
 
   await cas("&panel : le repli joue sur une RUBRIQUE, la seule à porter une image", async () => {
     // L'accueil n'a plus d'image : il n'y a rien à replier pour lui. Une

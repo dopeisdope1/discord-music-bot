@@ -912,8 +912,7 @@ function accessRows(scope, label) {
 /**
  * Ce qui est réellement DESSINÉ sur la rubrique `section` : la même donnée que
  * le corps texte, en structuré. Exporté pour que les tests vérifient le
- * contenu affiché sans avoir à lire une image — même approche que
- * utils/helpPanel.js::buildHelpSpec, et garantie plus solide qu'une
+ * contenu affiché sans avoir à lire une image — garantie plus solide qu'une
  * expression régulière sur du markdown.
  * @param {string} [corps] sortie de sectionBody(), recalculée si absente
  */

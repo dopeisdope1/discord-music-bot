@@ -4,7 +4,7 @@ const commandRouting = require("./commandRouting");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
-const { buildHelpPanel } = require("./helpPanel");
+const { buildHelpPages } = require("./helpPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
@@ -41,7 +41,9 @@ const levels = require("./levels");
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
 // Ce sont les seules a etre limitees en frequence : elles sont accessibles
 // sans droit particulier, et chaque appel mobilise le moteur de rendu.
-const COMMANDES_DESSINEES = new Set(["help", "panel"]);
+// &help n'en fait plus partie depuis son passage en texte pur (pas de dessin
+// a limiter).
+const COMMANDES_DESSINEES = new Set(["panel"]);
 // Genereux a dessein : personne ne tape `&help` six fois en trente secondes
 // sans le faire expres. Le but est d'arreter une boucle, pas de gener
 // quelqu'un qui navigue.
@@ -103,11 +105,12 @@ async function repondreAvecTableauDeBord(message, construire) {
 
 const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
-  // de la personne (voir utils/helpPanel.js).
+  // de la personne (voir utils/helpPanel.js). Texte pur, sans image : jamais
+  // besoin de repli (contrairement à &panel ci-dessous).
   async help(client, message) {
-    await repondreAvecTableauDeBord(message, (sansImage) =>
-      buildHelpPanel(message.guild.id, message.member, null, message.author.id, 0, { sansImage })
-    );
+    const pages = buildHelpPages(message.guild.id, message.member);
+    await message.reply(pages[0]);
+    for (const page of pages.slice(1)) await message.channel.send(page);
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne

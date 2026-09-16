@@ -1,11 +1,10 @@
 /**
  * Texte alternatif des images du bot.
  *
- * &help et les rubriques de &panel répondent par une IMAGE. Sans texte
+ * Les rubriques de &panel répondent par une IMAGE (&help est en texte pur
+ * depuis son passage en liste par palier de permission). Sans texte
  * alternatif, quelqu'un qui ne la voit pas — images désactivées, connexion
- * lente, lecteur d'écran — ne reçoit strictement RIEN. Un bot dont l'aide est
- * une image le rend indispensable : c'est la seule porte d'entrée pour
- * découvrir ce qu'il sait faire.
+ * lente, lecteur d'écran — ne reçoit strictement RIEN.
  *
  * Le repli en texte (`enTexte`) ne couvre pas ce cas : il ne se déclenche que
  * si l'image n'a pas pu être DESSINÉE ou ENVOYÉE. Une image bien envoyée mais
@@ -22,7 +21,6 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "alt-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildHelpPanel } = require("../utils/helpPanel");
 const { buildConfigPanel, SECTIONS } = require("../utils/configPanel");
 const { texteAlternatif } = require("../utils/dashboardImage");
 
@@ -63,19 +61,6 @@ const guild = {
 };
 
 console.log("Chaque image envoyée porte son texte alternatif :");
-
-cas("&help — accueil", () => {
-  const panneau = buildHelpPanel("g1", membre, null, membre.id);
-  const alt = panneau.files[0].description;
-  assert.ok(alt, "l'image de &help doit décrire son contenu");
-  assert.ok(alt.includes("Commandes publiques"), alt);
-});
-
-cas("&help — un palier ouvert décrit ses commandes, pas seulement son titre", () => {
-  const panneau = buildHelpPanel("g1", membre, "configurable", membre.id, 0);
-  const alt = panneau.files[0].description;
-  assert.ok(/&\w/.test(alt), `des commandes doivent apparaître : ${alt}`);
-});
 
 cas("TOUTES les rubriques de &panel, pas seulement celles qu'on pense à tester", () => {
   const sans = [];

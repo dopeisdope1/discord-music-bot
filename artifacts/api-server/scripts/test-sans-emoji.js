@@ -21,7 +21,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel, SECTIONS } = require("../utils/configPanel");
-const { buildHelpPanel } = require("../utils/helpPanel");
+const { buildHelpPages } = require("../utils/helpPanel");
 
 let reussis = 0;
 function cas(nom, fn) {
@@ -72,17 +72,12 @@ function emojisDe(panneau) {
     .map((e) => e.name || e.id);
 }
 
-console.log("&help : aucun emoji dans la navigation");
+console.log("&help : aucun emoji, texte pur");
 
-cas("le menu de &help n'affiche plus la maison, le globe, la clé ni le bouclier", () => {
-  const emojis = emojisDe(buildHelpPanel("g1", owner, null, owner.id));
-  assert.deepStrictEqual(emojis, [], `emojis restants : ${emojis.join(" ")}`);
-});
-
-cas("un palier ouvert n'en ramène pas non plus — ni sur la navigation, ni sur la pagination", () => {
-  for (const palier of ["public", "configurable", "sys"]) {
-    const emojis = emojisDe(buildHelpPanel("g1", owner, palier, owner.id, 0));
-    assert.deepStrictEqual(emojis, [], `${palier} : ${emojis.join(" ")}`);
+cas("aucune page de &help ne porte d'emoji décoratif", () => {
+  for (const page of buildHelpPages("g1", owner)) {
+    const emojis = emojisDe(page);
+    assert.deepStrictEqual(emojis, [], `emojis restants : ${emojis.join(" ")}`);
   }
 });
 

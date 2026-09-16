@@ -2,9 +2,9 @@
  * Quota sur les commandes qui DESSINENT une image
  * (utils/musicCommands.js).
  *
- * `&help` et `&panel` rendent une image à chaque appel. Elles sont
- * accessibles sans droit particulier, et le VPS n'a que 458 Mo : quelqu'un
- * qui les enchaîne en boucle mobilise la machine pour rien. Le cache amortit
+ * `&panel` rend une image à chaque appel (`&help` est passé en texte pur,
+ * elle n'a donc plus besoin de ce quota). Le VPS n'a que 458 Mo : quelqu'un
+ * qui l'enchaîne en boucle mobilise la machine pour rien. Le cache amortit
  * les rendus IDENTIQUES, pas ceux qui changent de page à chaque fois.
  *
  * CE QUE CE FICHIER PROTÈGE SURTOUT : que le quota ne déborde pas sur les
@@ -88,10 +88,10 @@ const texteDe = (payload) =>
 (async () => {
   console.log("Les commandes qui dessinent sont bornées :");
 
-  await cas("`&help` en boucle finit par être refusé, avec un message clair", async () => {
+  await cas("`&panel` en boucle finit par être refusé, avec un message clair", async () => {
     let refus = null;
     for (let i = 0; i < 12; i++) {
-      const m = message("&help", "spammeur");
+      const m = message("&panel", "spammeur");
       await handleMusicTextCommand(client, m);
       const dernier = m.reponses.at(-1);
       if (dernier && /Doucement/.test(texteDe(dernier))) {
@@ -106,11 +106,11 @@ const texteDe = (payload) =>
   });
 
   await cas("le quota est PAR PERSONNE — le spam de l'un ne bloque pas l'autre", async () => {
-    // Sinon une seule personne pourrait rendre `&help` inutilisable pour tout
+    // Sinon une seule personne pourrait rendre `&panel` inutilisable pour tout
     // le serveur, ce qui serait un déni de service offert sur un plateau.
-    for (let i = 0; i < 12; i++) await handleMusicTextCommand(client, message("&help", "spammeur-2"));
+    for (let i = 0; i < 12; i++) await handleMusicTextCommand(client, message("&panel", "spammeur-2"));
 
-    const innocent = message("&help", "quelquun-dautre");
+    const innocent = message("&panel", "quelquun-dautre");
     await handleMusicTextCommand(client, innocent);
     const dernier = innocent.reponses.at(-1);
     assert.ok(!/Doucement/.test(texteDe(dernier || {})), "une autre personne ne doit pas être pénalisée");
@@ -126,8 +126,8 @@ const texteDe = (payload) =>
     const ligne = /const COMMANDES_DESSINEES = new Set\(\[([^\]]*)\]\)/.exec(code);
     assert.ok(ligne, "la liste doit exister");
     const limitees = ligne[1].split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
-    assert.deepStrictEqual(limitees.sort(), ["help", "panel"], `liste inattendue : ${limitees.join(", ")}`);
-    for (const sanction of ["ban", "kick", "mute", "warn", "clear", "timeout"]) {
+    assert.deepStrictEqual(limitees.sort(), ["panel"], `liste inattendue : ${limitees.join(", ")}`);
+    for (const sanction of ["ban", "kick", "mute", "warn", "clear", "timeout", "help"]) {
       assert.ok(!limitees.includes(sanction), `${sanction} ne doit JAMAIS être limitée`);
     }
   });

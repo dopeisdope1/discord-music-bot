@@ -83,7 +83,6 @@ const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
-const { handleHelpInteraction } = require("./utils/helpPanel");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
 const { checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkAntiFast } = require("./utils/guard/definitions");
 
@@ -276,20 +275,6 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId?.startsWith("verify:")) {
     await handleVerifyButton(interaction).catch((err) => console.error("[verification]", err));
-    return;
-  }
-
-  // Choix d'une catégorie (bouton, "Centre de commandes") OU d'une page
-  // (menu, voir utils/helpPanel.js) dans &help : message public unique
-  // édité en place, réservé à qui a lancé la commande (son ID est encodé
-  // dans le customId).
-  // Les deux contrôles de &help sont des menus déroulants : le choix de
-  // catégorie (help_tier) et la pagination (help_page).
-  if (
-    interaction.isStringSelectMenu?.() &&
-    (interaction.customId?.startsWith("help_tier:") || interaction.customId?.startsWith("help_page:"))
-  ) {
-    await handleHelpInteraction(interaction).catch((err) => console.error("[helpPanel]", err));
     return;
   }
 

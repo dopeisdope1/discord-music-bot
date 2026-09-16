@@ -1,117 +1,34 @@
-const {
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  ActionRowBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  MediaGalleryBuilder,
-  MediaGalleryItemBuilder,
-  AttachmentBuilder,
-  MessageFlags,
-} = require("discord.js");
+const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
 const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
-const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
 
-// Couleur d'accent PARTAGÉE avec &panel (utils/configPanel.js) — même
-// identité visuelle pour les deux "pages" du même système, demande
-// explicite ("Centre de commandes" / "Centre de gestion").
+// Conservé pour compatibilité (utils/permsCommands.js l'importait) — plus
+// aucun composant ne colore quoi que ce soit dans &help.
 const ACCENT_COLOR = 0x2c2f5c;
 
-const SELECT_ID = "help_tier";
-const PAGE_SELECT_ID = "help_page";
-
-// Le tableau de bord est rendu en image (voir utils/dashboardImage.js) et
-// affiché DANS le Container Components V2. Le nom du fichier est fixe : il
-// est référencé par "attachment://" dans le composant MediaGallery.
-const NOM_IMAGE = "centre-de-commandes.png";
-
-// Plus AUCUNE couleur : demande explicite, sur &help comme sur &panel. Une
-// seule teinte neutre sert de gris de tracé pour les liserés et les titres,
-// de sorte que le rendu reste lisible sans rien colorer. Le palier d'une
-// commande reste indiqué par son libellé de colonne, plus par une teinte.
-const COULEUR_PAR_DEFAUT = "#d0d0d0";
-const TIER_COLORS = new Proxy({}, { get: () => COULEUR_PAR_DEFAUT });
-
-// Les trois PALIERS de l'ancien &help, réintroduits comme colonnes de la
-// grille : c'est ce qui donne du sens aux 3 colonnes (avant, elles étaient
-// un simple découpage en trois paquets égaux). Le palier se déduit du droit
-// exigé, il n'est jamais saisi à la main :
+// Les trois PALIERS de &help, déduits du droit exigé, jamais saisis à la
+// main :
 //   pas de permission  -> tout le monde
 //   permission "sys"   -> réservé au rang sys
 //   toute autre clé    -> accordable par rôle depuis &panel
 const PALIERS = [
-  {
-    cle: "public",
-    titre: "Publiques",
-    label: "Commandes publiques",
-    description: "Utilisables par tout le monde, sans droit particulier",
-    couleur: COULEUR_PAR_DEFAUT,
-  },
-  {
-    cle: "configurable",
-    titre: "Configurables",
-    label: "Commandes configurables",
-    description: "Accordées rôle par rôle depuis &panel > Permissions",
-    couleur: COULEUR_PAR_DEFAUT,
-  },
-  {
-    cle: "sys",
-    titre: "Sys",
-    label: "Commandes sys",
-    description: "Réservées au rang sys, jamais accordables par rôle",
-    couleur: COULEUR_PAR_DEFAUT,
-  },
+  { cle: "public", titre: "Publiques" },
+  { cle: "configurable", titre: "Configurables" },
+  { cle: "sys", titre: "Sys" },
 ];
-const PALIER_PAR_CLE = Object.fromEntries(PALIERS.map((p) => [p.cle, p]));
 function palierDe(cmd) {
   if (!cmd.permission) return "public";
   return cmd.permission === "sys" ? "sys" : "configurable";
 }
 
-// Commandes par colonne dans un palier ouvert.
-const PAR_COLONNE = 9;
-
-// Une page se remplit en LIGNES, pas en nombre de colonnes. Compter les
-// colonnes donnait 3 pages pour les 9 commandes publiques : chaque thème
-// n'en a qu'une ou deux, et deux colonnes d'une ligne suffisaient à remplir
-// une page. On empile donc les thèmes courts jusqu'à ce que la page soit
-// pleine, ce qui rend aussi les hauteurs de cartes comparables.
-const LIGNES_PAR_PAGE = 24;
-
-/**
- * Répartit les colonnes en pages d'au plus LIGNES_PAR_PAGE lignes. Une
- * colonne n'est jamais coupée en deux (elle l'a déjà été par PAR_COLONNE) et
- * une page reçoit toujours au moins une colonne, même trop longue.
- */
-function paginerColonnes(colonnes) {
-  const pages = [];
-  let courante = [];
-  let lignes = 0;
-  for (const colonne of colonnes) {
-    if (courante.length && lignes + colonne.entries.length > LIGNES_PAR_PAGE) {
-      pages.push(courante);
-      courante = [];
-      lignes = 0;
-    }
-    courante.push(colonne);
-    lignes += colonne.entries.length;
-  }
-  if (courante.length) pages.push(courante);
-  return pages.length ? pages : [[]];
-}
-
 /**
  * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
  * `prefix: "mod"` = préfixe de gestion (`&`, ou sa valeur configurée),
- * `null` = déclencheur SANS préfixe
- * (ex. `uo clear`). Afficher un préfixe devant ce dernier annoncerait une
- * commande qui n'existe pas.
+ * `null` = déclencheur SANS préfixe (ex. `uo clear`) — lui en coller un
+ * annoncerait une commande qui n'existe pas.
  */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
@@ -123,35 +40,12 @@ function prefixePour(cmd, prefixes) {
 }
 
 function descriptionPour(cmd, prefixes) {
-  return resumer(cmd.description).replace(/&(?=[a-z])/gi, prefixePour(cmd, prefixes));
+  return cmd.description.replace(/&(?=[a-z])/gi, prefixePour(cmd, prefixes));
 }
-
-/**
- * Ligne d'identité de l'image. Une image ne sait pas résoudre une mention
- * Discord (`<@id>` s'afficherait littéralement) : on prend donc le pseudo
- * réellement affiché quand on l'a, et on retombe sur l'identifiant sinon —
- * jamais un pseudo inventé.
- */
-function identiteAffichee(member, authorId) {
-  return member?.displayName || member?.user?.username || member?.user?.tag || `Membre ${authorId}`;
-}
-
-// Confirmé en prod via le vrai message d'erreur Discord (avant, avalé
-// silencieusement par un .catch vide — la vraie cause n'était pas celle
-// devinée au premier passage) :
-//   DiscordAPIError[50035] data.components[COMPONENT_DISPLAYABLE_TEXT_SIZE_EXCEEDED]:
-//   Components displayable text size exceeds maximum size of 4000
-// Ce n'est PAS une limite par composant (chaque TextDisplay peut déjà aller
-// jusqu'à 4000) mais le TOTAL du texte affichable de TOUS les composants du
-// message CUMULÉ. D'où : un seul bloc de commandes par page (pas deux), et
-// chunkBlocks vise plus bas que 4000 pour laisser de la place au titre/à la
-// légende qui partagent le même budget.
-const MAX_CHUNKS_PER_PAGE = 1;
 
 /**
  * Identité d'affichage d'une commande : tous les mots de TÊTE qui sont de
- * vrais mots du déclencheur (pas un argument) — même logique que
- * utils/implementedCommands.js::isImplemented. Sans ça, "role create",
+ * vrais mots du déclencheur (pas un argument). Sans ça, "role create",
  * "role delete", "role rename"... fusionnaient tous sous le seul mot
  * ambigu "role".
  * @param {{ name: string, prefix?: string }} cmd
@@ -168,22 +62,10 @@ function leadingWords(cmd) {
 }
 const identityOf = (cmd) => leadingWords(cmd).join(" ");
 
-// Regroupement par THÈME (Modération/Sécurité/Rôles & Membres/...) — demande
-// explicite de l'utilisateur, à la place de l'ancien tri par palier de
-// permission (public/configurable/sys), qui mélangeait des commandes sans
-// rapport dans le même palier "configurable". Les thèmes eux-mêmes sont
-// définis une seule fois dans utils/commandCatalog.js, jamais recopiés ici.
-const TIER_ORDER = CATEGORIES.map((c) => c.key);
-const TIER_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label]));
-const TIER_EMOJI = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.emoji]));
-const TIER_DESCRIPTIONS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.description]));
-
 /**
  * Réduit une liste d'entrées du catalogue à des IDENTITÉS distinctes, en
  * gardant la commande représentative (syntaxe + description) et les alias
- * de chacune. `identityOf` (pas le premier mot brut) garantit que des
- * sous-commandes différentes ("role create" / "role delete") restent deux
- * entrées séparées au lieu de se confondre sous "role".
+ * de chacune.
  * @returns {{ cmd: object, aliases: string[] }[]}
  */
 function dedupeByIdentity(commands) {
@@ -197,345 +79,116 @@ function dedupeByIdentity(commands) {
 }
 
 /**
- * Une commande, en bloc : nom (+alias) en gras, description, puis la syntaxe
- * réelle à taper. Un 🔒 discret signale une commande qui exige un droit
- * particulier — pas la clé technique exacte, juste le signal qu'elle est
- * restreinte (l'accès réel reste filtré en amont, ce n'est qu'un repère
- * visuel pour les commandes déjà accordées à cette personne).
+ * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a accès,
+ * groupées par PALIER de droit. Les commandes seulement documentées (sans
+ * backend) ne sont jamais incluses.
+ * @returns {Record<"public"|"configurable"|"sys", object[]>}
  */
-function formatCommandBlock(entry, prefixSymbol) {
-  const heading = entry.aliases.length ? `${identityOf(entry.cmd)}/${entry.aliases.join("/")}` : identityOf(entry.cmd);
-  const lock = entry.cmd.permission ? " 🔒" : "";
-  return `🔹 **${heading}**${lock} — ${entry.cmd.description}\n└ \`${prefixSymbol}${entry.cmd.name}\``;
-}
-
-/**
- * Répartit des blocs de texte en chunks — un par PAGE (voir
- * MAX_CHUNKS_PER_PAGE), jamais plusieurs dans le même message, puisque la
- * limite de 4000 caractères de Discord porte sur le TOTAL affichable du
- * message, titre+légende compris, pas sur chaque composant pris à part.
- * maxLen reste sous 4000 avec de la marge pour ce titre+légende. La coupe se
- * fait toujours ENTRE deux commandes, jamais au milieu de l'une d'elles.
- */
-function chunkBlocks(blocks, maxLen = 3600) {
-  const chunks = [];
-  let current = [];
-  let currentLen = 0;
-  for (const block of blocks) {
-    const addedLen = block.length + 2; // +2 pour le "\n\n" de séparation
-    if (current.length && currentLen + addedLen > maxLen) {
-      chunks.push(current.join("\n\n"));
-      current = [];
-      currentLen = 0;
-    }
-    current.push(block);
-    currentLen += addedLen;
-  }
-  if (current.length) chunks.push(current.join("\n\n"));
-  return chunks;
-}
-
-/**
- * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a
- * accès, groupées par THÈME (utils/commandCatalog.js::CATEGORIES). Les
- * commandes seulement documentées (sans backend) ne sont jamais incluses.
- * @returns {Record<string, object[]>} une entrée par clé de CATEGORIES
- */
-function groupByTier(member) {
-  const canUse = (permission) => can(member, permission);
+function groupByPalier(member) {
   const modeDecouverte = !hasConfiguredAccess(member);
-  const groups = Object.fromEntries(TIER_ORDER.map((key) => [key, []]));
+  const groups = { public: [], configurable: [], sys: [] };
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
       // Un membre encore inconnu du moteur ne reçoit pas l'inventaire des
       // commandes publiques : il ne voit que l'aide qu'il vient de demander.
-      // Dès qu'un octroi existe (même s'il ne débloque aucune commande de ce
-      // catalogue), on revient au filtrage normal par can().
       if (modeDecouverte && identityOf(cmd) !== "help") continue;
-      if (!canUse(cmd.permission)) continue;
-      groups[category.key].push(cmd);
+      if (!can(member, cmd.permission)) continue;
+      groups[palierDe(cmd)].push(cmd);
     }
   }
   return groups;
 }
 
-const TIER_HIGHLIGHTS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.highlights || []]));
+/** Une commande, en ligne : `> \`<préfixe><syntaxe>\` (description · alias : ...)`. */
+function formatLine(entry, prefixes) {
+  const prefix = prefixePour(entry.cmd, prefixes);
+  const description = entry.aliases.length
+    ? `${descriptionPour(entry.cmd, prefixes)} · alias : ${entry.aliases.join(", ")}`
+    : descriptionPour(entry.cmd, prefixes);
+  return `> \`${prefix}${entry.cmd.name}\` (${description})`;
+}
+
+// Texte brut Discord : Discord plafonne le texte affichable à 4000
+// caractères, et ce plafond porte sur le TOTAL du message, pas composant par
+// composant — donc plusieurs messages séparés plutôt qu'un mur de texte quand
+// ça déborde (même limite/logique que utils/permsCommands.js::buildTierCard).
+const LIMITE_PAGE = 3800;
+
+function paginerBlocs(blocs) {
+  const pages = [];
+  let courante = "";
+  for (const bloc of blocs) {
+    const candidate = courante ? `${courante}\n\n${bloc}` : bloc;
+    if (candidate.length > LIMITE_PAGE && courante) {
+      pages.push(courante);
+      courante = bloc;
+    } else {
+      courante = candidate;
+    }
+  }
+  if (courante) pages.push(courante);
+  return pages;
+}
 
 /**
- * Les quelques commandes mises en avant sur la carte d'une catégorie à
- * l'accueil. On part des "vedettes" curées dans le catalogue
- * (utils/commandCatalog.js::highlights, les commandes emblématiques du
- * thème), mais on ne garde QUE celles auxquelles ce membre a réellement
- * accès — une pastille ne doit jamais promettre une commande que la
- * personne ne peut pas lancer. Si aucune vedette n'est accessible, on
- * retombe sur ses premières commandes disponibles, pour ne pas afficher une
- * carte muette.
- * @param {string} tier clé de catégorie
- * @param {object[]} accessibles commandes de cette catégorie déjà filtrées sur les droits du membre
+ * Découpe les lignes d'UN palier en plusieurs blocs si besoin, chacun déjà
+ * sous LIMITE_PAGE — un palier chargé (ex. "Configurables" pour un membre à
+ * qui presque tout est accordé) ne doit jamais être TRONQUÉ, seulement
+ * réparti sur plusieurs messages, comme le reste de &help.
  */
-function highlightsFor(tier, accessibles) {
-  const disponibles = dedupeByIdentity(accessibles).map((e) => identityOf(e.cmd));
-  const vedettes = TIER_HIGHLIGHTS[tier].filter((id) => disponibles.includes(id));
-  return (vedettes.length ? vedettes : disponibles).slice(0, 4);
+function blocsPourPalier(titre, lignes) {
+  const groupes = [];
+  let courant = [];
+  let longueur = titre.length + 10;
+  for (const ligne of lignes) {
+    const ajout = ligne.length + 1;
+    if (courant.length && longueur + ajout > LIMITE_PAGE) {
+      groupes.push(courant);
+      courant = [];
+      longueur = titre.length + 10;
+    }
+    courant.push(ligne);
+    longueur += ajout;
+  }
+  if (courant.length) groupes.push(courant);
+  return groupes.map((lignesDuBloc, i) => `**${titre}${groupes.length > 1 ? ` (${i + 1}/${groupes.length})` : ""}**\n${lignesDuBloc.join("\n")}`);
 }
 
 /**
- * Menu déroulant de navigation entre catégories + "Accueil". Une rangée de
- * boutons occupait presque tout l'écran sur mobile (8 boutons = 5 rangées
- * empilées), alors qu'un menu tient sur une seule ligne quel que soit le
- * nombre de catégories. La catégorie ouverte est marquée par
- * `setDefault` — l'état "sélectionné" natif des menus, que les boutons
- * n'ont pas.
- */
-function buildCategorySelect(availableTiers, current, authorId) {
-  const options = [
-    new StringSelectMenuOptionBuilder()
-      .setLabel("Accueil")
-      .setValue("home")
-      .setDescription("Les trois paliers en un coup d'oeil")
-      .setDefault(current === null),
-    ...availableTiers.map((cle) =>
-      new StringSelectMenuOptionBuilder()
-        .setLabel(PALIER_PAR_CLE[cle].label)
-        .setValue(cle)
-        // Discord plafonne la description d'une option à 100 caractères.
-        .setDescription(PALIER_PAR_CLE[cle].description.slice(0, 100))
-        .setDefault(cle === current)
-    ),
-  ];
-  return new StringSelectMenuBuilder()
-    .setCustomId(`${SELECT_ID}:${authorId}`)
-    .setPlaceholder("Choisir un palier")
-    .addOptions(options);
-}
-
-/** Pagination de la catégorie active, même style que utils/listCard.js::buildListCard. */
-function buildPageSelect(tier, page, totalPages, authorId) {
-  const options = [];
-  if (page > 0) options.push(new StringSelectMenuOptionBuilder().setLabel("Page précédente").setValue(String(page - 1)));
-  if (page < totalPages - 1) options.push(new StringSelectMenuOptionBuilder().setLabel("Page suivante").setValue(String(page + 1)));
-  return new StringSelectMenuBuilder()
-    .setCustomId(`${PAGE_SELECT_ID}:${authorId}:${tier}`)
-    .setPlaceholder(`Page ${page + 1}/${totalPages}`)
-    .addOptions(options);
-}
-
-/**
- * &help — "Centre de commandes" : à l'accueil, chaque catégorie thématique
- * en bloc (emoji + description courte, JAMAIS de compteur de commandes) ;
- * une catégorie choisie détaille ses commandes. Filtré sur les droits RÉELS
- * de la personne — même moteur que les commandes et le panel
+ * &help — "Page d'aide" : chaque palier de droit en section, ses commandes
+ * triées par ordre alphabétique en dessous, une ligne par commande
+ * (`> \`préfixe+syntaxe\` (description)`). Filtré sur les droits RÉELS de la
+ * personne — même moteur que les commandes et le panel
  * (utils/permissions/engine.js), pas une liste séparée qui pourrait diverger.
  * @param {string} guildId
  * @param {import('discord.js').GuildMember} member
- * @param {string|null} [tier] catégorie active (une clé de CATEGORIES, ou null pour l'accueil)
- * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
- * @param {number} [page] page de commandes affichée dans la catégorie active
+ * @returns {object[]} un ou plusieurs payloads de message (Components V2),
+ *   à envoyer dans l'ordre — le premier en réponse, les suivants à la suite.
  */
-function buildHelpSpec(guildId, member, tier = null, authorId, page = 0) {
+function buildHelpPages(guildId, member) {
   const prefixes = getPrefixes(guildId);
-  const groups = groupByTier(member);
+  const groups = groupByPalier(member);
 
-  // La navigation se fait par PALIER (Publiques / Configurables / Sys), plus
-  // par thème : demande explicite. Les thèmes n'ont pas disparu pour autant,
-  // ils deviennent les colonnes à l'intérieur d'un palier — c'est ce qui
-  // donne un classement à une liste qui, sinon, serait un mur de commandes.
-  const parPalier = Object.fromEntries(PALIERS.map((p) => [p.cle, []]));
-  for (const categorie of TIER_ORDER) {
-    for (const cmd of groups[categorie]) parPalier[palierDe(cmd)].push({ cmd, categorie });
-  }
-  const availableTiers = PALIERS.map((p) => p.cle).filter((cle) => parPalier[cle].length);
-  const activeTier = availableTiers.includes(tier) ? tier : null;
-
-  let clampedPage = 0;
-  let totalPages = 1;
-  let spec;
-
-  if (activeTier) {
-    // Palier ouvert : ses commandes réparties en colonnes PAR THÈME. Le nom
-    // affiché est la syntaxe complète à taper, préfixe réel compris : une
-    // image ne se copie pas, autant qu'elle montre exactement quoi écrire.
-    //
-    // Un thème qui déborde s'étale sur plusieurs colonnes (marquées "suite")
-    // au lieu de laisser une colonne quasi vide à côté d'une colonne pleine :
-    // c'est ce qui recréait les grands blancs.
-    const colonnes = [];
-    for (const categorie of TIER_ORDER) {
-      const duTheme = dedupeByIdentity(parPalier[activeTier].filter((e) => e.categorie === categorie).map((e) => e.cmd));
-      for (let i = 0; i < duTheme.length; i += PAR_COLONNE) {
-        colonnes.push({
-          cle: categorie,
-          titre: i === 0 ? TIER_LABELS[categorie] : `${TIER_LABELS[categorie]} (suite)`,
-          couleur: COULEUR_PAR_DEFAUT,
-          entries: duTheme.slice(i, i + PAR_COLONNE),
-        });
-      }
-    }
-
-    const pages = paginerColonnes(colonnes);
-    totalPages = pages.length;
-    clampedPage = Math.min(Math.max(0, page), totalPages - 1);
-
-    spec = {
-      titre: PALIER_PAR_CLE[activeTier].label,
-      sousTitre:
-        `${identiteAffichee(member, authorId)} · Gestion : ${prefixes.musicMod} · Modération : ${prefixes.moderation} · ` +
-        `Sécurité : ${prefixes.protection} · Vocal : ${prefixes.owner} · [ ] facultatif, < > obligatoire`,
-      cartes: pages[clampedPage].map((c) => ({
-        cle: c.cle,
-        titre: c.titre,
-        couleur: c.couleur,
-        items: c.entries.map((e) => ({
-          nom: `${prefixePour(e.cmd, prefixes)}${e.cmd.name}`,
-          // Description ramenée à sa première proposition : en deux colonnes,
-          // la version longue se faisait couper en plein milieu d'une phrase.
-          // Les alias restent visibles : sans eux, `&avatar` semblerait ne
-          // pas exister.
-          description: e.aliases.length
-            ? `${descriptionPour(e.cmd, prefixes)} · alias : ${e.aliases.join(", ")}`
-            : descriptionPour(e.cmd, prefixes),
-        })),
-      })),
-      pied: totalPages > 1 ? `Page ${clampedPage + 1} / ${totalPages}` : undefined,
-      hauteursLibres: true,
-    };
-  } else {
-    // Accueil : les TROIS PALIERS, et rien d'autre. Demande explicite — la
-    // grille de commandes vedettes faisait doublon avec la vue détaillée
-    // qu'on ouvre juste après, pour un écran deux fois plus long.
-    //
-    // Chaque carte annonce ce que le palier contient par THÈME plutôt que par
-    // commande : c'est ce qui permet de choisir sans avoir à tout lire.
-    spec = {
-      titre: "Centre de commandes",
-      sousTitre:
-        `${identiteAffichee(member, authorId)} · Gestion : ${prefixes.musicMod} · ` +
-        `Modération : ${prefixes.moderation} · Sécurité : ${prefixes.protection} · Vocal : ${prefixes.owner}`,
-      cartes: availableTiers.map((cle) => {
-        const palier = PALIER_PAR_CLE[cle];
-        const entrees = parPalier[cle];
-        return {
-          cle,
-          titre: palier.label,
-          sousTitre: palier.description,
-          couleur: COULEUR_PAR_DEFAUT,
-          items: TIER_ORDER.filter((cat) => entrees.some((e) => e.categorie === cat)).map((cat) => {
-            const nb = dedupeByIdentity(entrees.filter((e) => e.categorie === cat).map((e) => e.cmd)).length;
-            return { nom: TIER_LABELS[cat], description: `${nb} commande${nb > 1 ? "s" : ""}` };
-          }),
-          vide: "Aucune commande accessible",
-        };
-      }),
-      pied: "Choisis un palier dans le menu pour voir les commandes",
-      // Sans ça, la carte la plus courte s'étire à la hauteur de sa voisine et
-      // laisse un grand rectangle vide sous sa dernière ligne.
-      hauteursLibres: true,
-    };
-    if (!availableTiers.length) {
-      spec.cartes = [{ titre: "Aucun accès", couleur: COULEUR_PAR_DEFAUT, items: [], vide: "Aucune commande accessible." }];
-      spec.pied = undefined;
-    }
+  const blocs = [];
+  for (const palier of PALIERS) {
+    const entries = dedupeByIdentity(groups[palier.cle]).sort((a, b) => identityOf(a.cmd).localeCompare(identityOf(b.cmd)));
+    if (!entries.length) continue;
+    blocs.push(...blocsPourPalier(palier.titre, entries.map((e) => formatLine(e, prefixes))));
   }
 
-  return { spec, availableTiers, activeTier, clampedPage, totalPages };
-}
+  const intro = "> Permet de voir la liste des commandes en fonction de vos permissions sur le bot";
+  const pages = paginerBlocs([intro, ...blocs]);
 
-/**
- * &help — "Centre de commandes". Le tableau de bord lui-même est une IMAGE
- * (utils/dashboardImage.js) affichée dans un Container Components V2 :
- * Discord ne sait pas disposer du texte en colonnes, c'est la seule façon
- * d'obtenir une vraie grille de cartes et une couleur par catégorie. Les
- * boutons de navigation, eux, restent de vrais composants Discord.
- * Le contenu vient des droits RÉELS de la personne — même moteur que les
- * commandes et le panel (utils/permissions/engine.js).
- * @param {string} guildId
- * @param {import('discord.js').GuildMember} member
- * @param {string|null} [tier] catégorie active (une clé de CATEGORIES, ou null pour l'accueil)
- * @param {string} authorId qui a lancé &help — seul lui peut piloter la navigation
- * @param {number} [page] page de commandes affichée dans la catégorie active
- * @param {{sansImage?: boolean}} [options] `sansImage` force le repli TEXTE —
- *   utilisé après un envoi refusé par Discord (voir utils/musicCommands.js) :
- *   inutile de redessiner une image que le salon n'acceptera pas davantage.
- */
-function buildHelpPanel(guildId, member, tier = null, authorId, page = 0, { sansImage = false } = {}) {
-  const { spec, availableTiers, activeTier, clampedPage, totalPages } = buildHelpSpec(guildId, member, tier, authorId, page);
-  // `null` = le dessin a échoué (rendreEnCache journalise le motif). &help
-  // est la seule porte d'entrée du bot pour qui ne le connaît pas : elle
-  // repasse en texte plutôt que de ne rien répondre.
-  const png = sansImage ? null : rendreEnCache(spec);
-
-  // AUCUNE couleur d'accent : demande explicite, sur &help comme sur
-  // &panel. La barre teintée à gauche du conteneur n'apportait rien.
-  const container = new ContainerBuilder();
-  if (png) {
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE}`))
+  return pages.map((page, i) => {
+    const container = new ContainerBuilder();
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`## Page d'aide${pages.length > 1 ? ` (${i + 1}/${pages.length})` : ""}`)
     );
-  } else {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enTexte(spec)));
-  }
-
-  if (availableTiers.length) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(buildCategorySelect(availableTiers, activeTier, authorId)));
-    if (activeTier && totalPages > 1) {
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(buildPageSelect(activeTier, clampedPage, totalPages, authorId)));
-    }
-  }
-
-  // Sans image, PAS de `files` : un MediaGallery pointant sur une pièce
-  // jointe absente ferait refuser tout le message par Discord.
-  return {
-    flags: MessageFlags.IsComponentsV2,
-    components: [container],
-    // `description` = le texte alternatif de la piece jointe. C'est la SEULE
-    // facon d'acceder au contenu quand l'image ne s'affiche pas : images
-    // desactivees, connexion lente, lecteur d'ecran. Un bot dont l'aide est
-    // une image le rend indispensable.
-    ...(png ? { files: [new AttachmentBuilder(png, { name: NOM_IMAGE, description: texteAlternatif(spec) })] } : {}),
-  };
-}
-
-/**
- * Toutes les interactions "help_tier:<authorId>:<catégorie|home>" (bouton de
- * navigation, revient à la page 0) ET "help_page:<authorId>:<catégorie>"
- * (menu de pagination dans la catégorie active) — voir index.js. Message
- * PUBLIC et unique, édité en place à chaque clic — jamais de nouveau message
- * — mais réservé à qui a lancé &help : n'importe qui d'autre verrait une
- * catégorie filtrée sur SES droits à lui, potentiellement plus larges,
- * affichée publiquement dans le salon.
- */
-async function handleHelpInteraction(interaction) {
-  // Les deux menus encodent l'auteur dans le customId ; la valeur choisie
-  // (catégorie ou numéro de page) vient de `values`, comme tout menu déroulant.
-  const [kind, authorId, tierDuCustomId] = interaction.customId.split(":");
-  if (interaction.user.id !== authorId) {
-    return interaction
-      .reply({ content: "Seule la personne qui a lancé `&help` peut utiliser ce menu.", flags: MessageFlags.Ephemeral })
-      .catch(() => {});
-  }
-  const estPagination = kind === PAGE_SELECT_ID;
-  const page = estPagination ? parseInt(interaction.values?.[0], 10) || 0 : 0;
-  const tier = estPagination ? tierDuCustomId : interaction.values?.[0] || null;
-  // `attachments: []` UNIQUEMENT ici : sur une ÉDITION, Discord conserve les
-  // pièces jointes existantes quand le champ est absent — le message
-  // accumulerait une image de plus à chaque clic. À la création (message.reply
-  // dans musicCommands.js), au contraire, ce champ écraserait la liste que
-  // discord.js construit pour l'upload et l'image ne s'afficherait pas.
-  const editer = (sansImage) =>
-    interaction.update({
-      ...buildHelpPanel(interaction.guild.id, interaction.member, tier, authorId, page, { sansImage }),
-      attachments: [],
-    });
-  // Une édition refusée (pièce jointe interdite dans le salon) laissait le
-  // clic sans réponse : la personne voit « Échec de l'interaction » et &help
-  // reste bloqué sur la page précédente. On rejoue alors la même page en
-  // texte, comme le fait le premier envoi (utils/musicCommands.js).
-  return editer(false).catch((err) => {
-    console.error("[helpPanel] interaction.update a échoué :", err);
-    return editer(true).catch((err2) => console.error("[helpPanel] repli texte refusé lui aussi :", err2));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(page.trim()));
+    return { flags: MessageFlags.IsComponentsV2, components: [container] };
   });
 }
 
-module.exports = { buildHelpPanel, buildHelpSpec, handleHelpInteraction, identityOf, SELECT_ID, PAGE_SELECT_ID, ACCENT_COLOR };
+module.exports = { buildHelpPages, identityOf, ACCENT_COLOR };
