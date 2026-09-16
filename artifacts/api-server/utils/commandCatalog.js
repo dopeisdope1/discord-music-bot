@@ -1429,6 +1429,18 @@ const CATEGORIES = [
         description: "Liste paginée du rang sys ; ajout/retrait réservés au propriétaire du bot",
       },
       {
+        name: "sys <@membre|id>",
+        prefix: "mod",
+        permission: "sys",
+        description: "Raccourci direct vers l'ajout au rang sys (voir aussi &owners) ; réservé au propriétaire du bot",
+      },
+      {
+        name: "unsys <@membre|id>",
+        prefix: "mod",
+        permission: "sys",
+        description: "Retire le rang sys ; réservé au propriétaire du bot",
+      },
+      {
         name: "access <@membre>",
         prefix: "mod",
         permission: "panel.permissions.manage",

@@ -90,6 +90,38 @@ async function owners(client, message) {
   await message.reply(buildOwnersCard(0, isOwner));
 }
 
+/** Mention ou identifiant brut en tête d'arguments — même résolution que access() ci-dessus. */
+function targetIdFromArgs(args) {
+  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
+  const idMatch = args[0]?.match(/^\d{15,25}$/);
+  return mentionMatch?.[1] || idMatch?.[0] || null;
+}
+
+/**
+ * "&sys <@membre|id>" — raccourci direct vers l'ajout au rang sys, sans
+ * passer par la carte &owners (mêmes garde-fous : réservé au PROPRIÉTAIRE du
+ * bot, jamais accordable par le rang sys lui-même — voir
+ * utils/accessStore.js::NO_SYS_INHERIT). Le rang sys est un accès bot,
+ * n'exige pas que la cible soit sur CE serveur.
+ */
+async function sysAdd(client, message, args) {
+  if (!accessStore.isOwner(message.author.id)) return;
+  const targetId = targetIdFromArgs(args);
+  if (!targetId) return reply(message, "error", "Indique un membre (mention ou identifiant) : `sys @membre`.");
+  if (accessStore.isOwner(targetId)) return reply(message, "info", "Déjà propriétaire du bot — le rang sys n'ajouterait rien.");
+  if (!accessStore.add("sys", targetId)) return reply(message, "info", `<@${targetId}> est déjà rang sys.`);
+  return reply(message, "success", `<@${targetId}> a désormais le rang sys.`);
+}
+
+/** "&unsys <@membre|id>" — retire le rang sys. */
+async function sysRemove(client, message, args) {
+  if (!accessStore.isOwner(message.author.id)) return;
+  const targetId = targetIdFromArgs(args);
+  if (!targetId) return reply(message, "error", "Indique un membre (mention ou identifiant) : `unsys @membre`.");
+  if (!accessStore.remove("sys", targetId)) return reply(message, "info", `<@${targetId}> n'a pas le rang sys.`);
+  return reply(message, "success", `Rang sys retiré à <@${targetId}>.`);
+}
+
 /**
  * Carte "&access <@membre>" — octroi de permissions INDIVIDUELLES à UN
  * membre précis (utils/permissions/store.js::grantToUser/revokeFromUser),
@@ -1301,6 +1333,8 @@ module.exports = {
   access,
   handleAddAccessTextCommand,
   ownerModeration,
+  sysAdd,
+  sysRemove,
   handleSecurityOwnerTextCommand,
   antinuke,
   whitelist,
