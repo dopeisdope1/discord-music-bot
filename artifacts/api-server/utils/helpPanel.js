@@ -82,6 +82,12 @@ function dedupeByIdentity(commands) {
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a accès,
  * groupées par PALIER de droit. Les commandes seulement documentées (sans
  * backend) ne sont jamais incluses.
+ *
+ * &help ne montre QUE les commandes du préfixe "&" (bucket "gestion") —
+ * même principe que !!help/=help, qui ont chacun leur propre liste figée
+ * limitée à leur préfixe : les commandes de modération ("-"), de sécurité
+ * ("!!") et vocales ("=") ne doivent jamais apparaître ici, même si le
+ * catalogue partagé (utils/commandCatalog.js) les référence toutes.
  * @returns {Record<"public"|"configurable"|"sys", object[]>}
  */
 function groupByPalier(member) {
@@ -90,6 +96,7 @@ function groupByPalier(member) {
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
+      if (commandRouting.bucketDe(cmd.name) !== commandRouting.BUCKET_GESTION) continue;
       // Un membre encore inconnu du moteur ne reçoit pas l'inventaire des
       // commandes publiques : il ne voit que l'aide qu'il vient de demander.
       if (modeDecouverte && identityOf(cmd) !== "help") continue;

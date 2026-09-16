@@ -137,11 +137,17 @@ function texteDe(member = owner) {
     assert.ok(texte.includes("`&banner [@membre]` (Affiche la bannière d'un membre)"), texte);
   });
 
-  await cas("chaque commande porte son VRAI préfixe — `uo clear` n'en a aucun, lui en coller un annoncerait une commande inexistante", () => {
+  await cas("&help ne montre QUE les commandes du préfixe \"&\" — jamais celles de modération/sécurité/vocal", () => {
+    // Architecture 4 préfixes (utils/commandRouting.js) : & = gestion,
+    // - = modération, !! = sécurité, = = vocal. Chaque aide reste sur SON
+    // préfixe — !!help et =help ont déjà chacun leur propre liste figée,
+    // &help doit filtrer le catalogue partagé du même principe.
     const texte = texteDe(owner);
-    assert.ok(texte.includes("`uo clear`"), texte);
-    assert.ok(!texte.includes("`&uo clear`"), "aucun préfixe ne doit être collé à un déclencheur qui n'en a pas");
-    assert.ok(texte.includes(`\`${getPrefixes("g1").moderation}kick @membre [raison]\``), "les commandes de modération portent le préfixe de leur famille");
+    assert.ok(!texte.includes(`\`${getPrefixes("g1").moderation}kick`), "une commande de modération ne doit pas apparaître dans &help");
+    assert.ok(!texte.includes("`uo clear`"), "\"uo clear\" (bucket modération, sans préfixe) ne doit pas apparaître dans &help");
+    for (const ligne of texte.split("\n").filter((l) => l.startsWith("> `"))) {
+      assert.ok(ligne.startsWith(`> \`${getPrefixes("g1").musicMod}`), `ligne hors préfixe "&" : ${ligne}`);
+    }
   });
 
   await cas("une pastille ne promet jamais une commande que le membre ne peut pas lancer", () => {
@@ -278,9 +284,11 @@ function texteDe(member = owner) {
   await cas("aucune commande ne se perd entre deux pages", () => {
     const pages = buildHelpPages("g1", owner);
     const texte = pages.map((p) => p.components[0].toJSON().components.map((c) => c.content).join("\n")).join("\n");
-    const attendues = CATEGORIES.flatMap((c) => c.commands).filter(isImplemented).map(identityOf);
+    const commandRouting = require("../utils/commandRouting");
+    const gestion = CATEGORIES.flatMap((c) => c.commands).filter((cmd) => commandRouting.bucketDe(cmd.name) === commandRouting.BUCKET_GESTION);
+    const attendues = gestion.filter(isImplemented).map(identityOf);
     for (const id of new Set(attendues)) {
-      const cmd = CATEGORIES.flatMap((c) => c.commands).find((c) => identityOf(c) === id);
+      const cmd = gestion.find((c) => identityOf(c) === id);
       if (!require("../utils/permissions/engine").can(owner, cmd.permission)) continue;
       assert.ok(texte.includes(`${id}\``) || texte.includes(`${id} `), `"${id}" est absente de &help`);
     }
