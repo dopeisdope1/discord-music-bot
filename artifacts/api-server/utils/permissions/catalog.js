@@ -20,6 +20,11 @@ const PERMISSIONS = [
   // à suivre automatiquement le droit de (dé)muter une personne précise.
   { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },
   { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)", roleGrantable: false },
+  {
+    key: "moderation.zinkiller",
+    category: "moderation",
+    label: "Ban persistant, re-banni automatiquement si débanni ailleurs (&zinkiller, &unzinkiller, &zinkillerlist)",
+  },
   // Séparée de moderation.unban : signalé — accorder juste "débannir un
   // membre" laissait accéder au débannissement de MASSE, un risque bien
   // plus large (peut réadmettre tout un raid d'un coup) qu'un simple

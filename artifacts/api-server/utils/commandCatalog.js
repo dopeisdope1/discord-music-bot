@@ -70,6 +70,24 @@ const CATEGORIES = [
         description: "Débannit un membre. Sans identifiant, propose la liste des bannis",
       },
       {
+        name: "zinkiller <@membre|id> [raison]",
+        prefix: "mod",
+        permission: "moderation.zinkiller",
+        description: "Ban persistant : re-banni automatiquement s'il est débanni ailleurs que par unzinkiller",
+      },
+      {
+        name: "unzinkiller <@membre|id>",
+        prefix: "mod",
+        permission: "moderation.zinkiller",
+        description: "Débannit et retire le ban persistant",
+      },
+      {
+        name: "zinkillerlist",
+        prefix: "mod",
+        permission: "moderation.zinkiller",
+        description: "Liste les membres sous ban persistant sur ce serveur",
+      },
+      {
         name: "softban @membre [raison]",
         prefix: "mod",
         permission: "moderation.softban",

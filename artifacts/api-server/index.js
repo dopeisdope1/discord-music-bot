@@ -33,6 +33,10 @@ const palierPanel = require("./utils/palierPanel");
 // "!!antilink panel" — panneau dédié à l'anti-lien (mode + bypass), en dehors
 // de la machine à états de &panel/!!secur — voir utils/antiLinkPanel.js.
 const antiLinkPanel = require("./utils/antiLinkPanel");
+// Ban persistant ("&zinkiller") — re-banni automatiquement si débanni
+// ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
+const zinkillerStore = require("./utils/zinkillerStore");
+const { report: reportModeration } = require("./utils/moderation/actions");
 // Confessions anonymes ("!!confess") — voir utils/confessions.js.
 const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
@@ -551,6 +555,32 @@ client.on("guildAuditLogEntryCreate", (entry, guild) => {
   personalProtection.handleAuditLogEntry(client, guild, entry).catch((err) => {
     console.error("[personalProtection] échec du traitement d'une entrée d'audit :", err);
   });
+});
+
+// Ban persistant ("&zinkiller", voir utils/zinkillerStore.js) : si la
+// personne est débannie autrement que par "&unzinkiller" (Discord natif, un
+// autre bot...), le store porte encore son entrée à ce stade — "&unzinkiller"
+// la retire AVANT de débannir, donc son propre débannissement ne redéclenche
+// jamais ce re-ban.
+client.on("guildBanRemove", async (ban) => {
+  const guild = ban.guild;
+  if (!zinkillerStore.isZinkilled(guild.id, ban.user.id)) return;
+  try {
+    await guild.members.ban(ban.user.id, { reason: "Ban persistant (&zinkiller) — re-banni automatiquement" });
+    console.log(`[zinkiller] ${ban.user.tag} re-banni automatiquement sur "${guild.name}".`);
+    await reportModeration(client, {
+      guildId: guild.id,
+      category: "moderation",
+      title: "Zinkiller — re-ban automatique",
+      fields: [{ label: "Cible", value: `<@${ban.user.id}> (${ban.user.id})` }],
+      action: "zinkiller-reban",
+      targetId: ban.user.id,
+      targetTag: ban.user.tag,
+      moderator: client.user,
+    });
+  } catch (err) {
+    console.error(`[zinkiller] échec du re-ban de ${ban.user.tag} :`, err.message);
+  }
 });
 
 // Dernier rempart. Sous Node, une promesse rejetée sans preneur arrête le

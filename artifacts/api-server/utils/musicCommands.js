@@ -38,6 +38,7 @@ const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
 const levels = require("./levels");
 const rankLadder = require("./rankLadderCommands");
+const zinkillerCommands = require("./zinkillerCommands");
 
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
 // Ce sont les seules a etre limitees en frequence : elles sont accessibles
@@ -143,6 +144,9 @@ const modHandlers = {
   banall: handleBanAll,
   ban: handleBan,
   unban: handleUnban,
+  zinkiller: zinkillerCommands.zinkiller,
+  unzinkiller: zinkillerCommands.unzinkiller,
+  zinkillerlist: zinkillerCommands.zinkillerlist,
 
   renew: requirePermission("channels.manage", channelHandlers.renew),
   hide: requirePermission("channels.manage", channelHandlers.hide),
