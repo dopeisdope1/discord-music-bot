@@ -234,6 +234,30 @@ const CATEGORIES = [
         description: "Lève le mute de tous les membres mute",
       },
       {
+        name: "bmute <@membre> [raison]",
+        prefix: "mod",
+        permission: "moderation.mutebot",
+        description: "Mute gradé : ne pourra être levé que par un grade au moins égal à celui du poseur",
+      },
+      {
+        name: "bunmute <@membre>",
+        prefix: "mod",
+        permission: "moderation.mutebot",
+        description: "Lève un mute gradé, si l'auteur a un grade suffisant",
+      },
+      {
+        name: "bmutelist",
+        prefix: "mod",
+        permission: "moderation.mutebot",
+        description: "Liste les mutes gradés actifs sur ce serveur",
+      },
+      {
+        name: "bmuteresetall",
+        prefix: "mod",
+        permission: "moderation.mutebot",
+        description: "Lève tous les mutes gradés du serveur d'un coup",
+      },
+      {
         name: "tempban <membre> <durée> [raison]",
         prefix: "mod",
         permission: "moderation.ban",

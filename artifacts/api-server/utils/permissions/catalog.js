@@ -49,6 +49,11 @@ const PERMISSIONS = [
   { key: "members.autorole.manage", category: "members", label: "Configurer les rôles automatiques à l'arrivée (&autorole, panel)" },
   { key: "members.verification.manage", category: "members", label: "Configurer la vérification (&verify setup, panel)" },
   { key: "members.rank.manage", category: "members", label: "Échelle de grades : promouvoir/rétrograder, configurer l'échelle (&promote, &demote, &gradeladder)" },
+  {
+    key: "moderation.mutebot",
+    category: "moderation",
+    label: "Mute bot gradé, verrouillé au grade du poseur (&bmute, &bunmute, &bmutelist, &bmuteresetall)",
+  },
   // Pas de clé pour &userinfo/&avatar/&serverinfo : ce sont des commandes
   // publiques de lecture seule, comme &pic/&banner/&server déjà existantes.
 

@@ -39,6 +39,7 @@ const { securityScan } = require("./securityScan");
 const levels = require("./levels");
 const rankLadder = require("./rankLadderCommands");
 const zinkillerCommands = require("./zinkillerCommands");
+const gradeMuteCommands = require("./gradeMuteCommands");
 
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
 // Ce sont les seules a etre limitees en frequence : elles sont accessibles
@@ -147,6 +148,10 @@ const modHandlers = {
   zinkiller: zinkillerCommands.zinkiller,
   unzinkiller: zinkillerCommands.unzinkiller,
   zinkillerlist: zinkillerCommands.zinkillerlist,
+  bmute: gradeMuteCommands.bmute,
+  bunmute: gradeMuteCommands.bunmute,
+  bmutelist: gradeMuteCommands.bmutelist,
+  bmuteresetall: gradeMuteCommands.bmuteresetall,
 
   renew: requirePermission("channels.manage", channelHandlers.renew),
   hide: requirePermission("channels.manage", channelHandlers.hide),
