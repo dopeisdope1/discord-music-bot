@@ -11,8 +11,11 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { getPrefixes } = require("./prefixStore");
-const { groupByPalier, dedupeByIdentity, formatLine, PALIERS, identityOf, estDangereux } = require("./helpPanel");
-const { can } = require("./permissions/engine");
+const { dedupeByIdentity, formatLine, PALIERS, identityOf, estDangereux } = require("./helpPanel");
+const { can, hasConfiguredAccess } = require("./permissions/engine");
+const { CATEGORIES } = require("./commandCatalog");
+const { isImplemented } = require("./implementedCommands");
+const commandRouting = require("./commandRouting");
 const { COMMANDES: COMMANDES_SECURITE } = require("./protectionHelpCommand");
 const { CATEGORIES: CATEGORIES_VOCAL } = require("./voiceHelpCommand");
 const messageOwner = require("./messageOwner");
@@ -64,14 +67,58 @@ function paginerLignes(lignes) {
   return pages.length ? pages : [[]];
 }
 
-/** Paliers de droit (public/configurable/sys) non vides, catalogue central — pour "&help"/"-help". */
+/**
+ * Assemble les lignes d'un palier à partir de groupes thématiques (catégorie
+ * du catalogue, ou "groupe" des listes figées "!!"/"="), CHACUN précédé de
+ * son propre en-tête emoji+libellé — demande explicite, calquée sur la
+ * présentation d'un autre bot ("Modération"/"Permissions"/"Listes"/...).
+ * `lignesParGroupe` : Map<libellé, { emoji, lignes: string[] }>, dans l'ordre
+ * d'insertion (celui du catalogue).
+ * @returns {{ lines: string[], count: number }} `lines` inclut les en-têtes
+ *   (pour l'affichage/pagination), `count` ne compte QUE les commandes.
+ */
+function assemblerGroupes(lignesParGroupe) {
+  const lines = [];
+  let count = 0;
+  for (const [label, { emoji, lignes }] of lignesParGroupe) {
+    if (!lignes.length) continue;
+    lines.push(`### ${emoji ? `${emoji} ` : ""}${label}`);
+    lines.push(...lignes);
+    count += lignes.length;
+  }
+  return { lines, count };
+}
+
+/** Paliers de droit (public/configurable/sys) non vides, groupés par catégorie du catalogue central — pour "&help"/"-help". */
 function buildTiersCatalogue(bucket, guildId, member) {
   const prefixes = getPrefixes(guildId);
-  const groups = groupByPalier(member, bucket);
+  const modeDecouverte = !hasConfiguredAccess(member);
+  // palier -> Map<libellé de catégorie, { emoji, cmds: [] }>
+  const parPalier = { public: new Map(), configurable: new Map(), sys: new Map() };
+
+  for (const categorie of CATEGORIES) {
+    for (const cmd of categorie.commands) {
+      if (!isImplemented(cmd)) continue;
+      if (commandRouting.bucketDe(cmd.name) !== bucket) continue;
+      if (modeDecouverte && identityOf(cmd) !== "help") continue;
+      if (!can(member, cmd.permission)) continue;
+
+      const palier = !cmd.permission ? "public" : estDangereux(cmd.permission) ? "sys" : "configurable";
+      const map = parPalier[palier];
+      if (!map.has(categorie.label)) map.set(categorie.label, { emoji: categorie.emoji, cmds: [] });
+      map.get(categorie.label).cmds.push(cmd);
+    }
+  }
+
   return PALIERS.map((palier) => {
-    const entries = dedupeByIdentity(groups[palier.cle]).sort((a, b) => identityOf(a.cmd).localeCompare(identityOf(b.cmd)));
-    return { key: palier.cle, label: palier.titre, lines: entries.map((e) => formatLine(e, prefixes)) };
-  }).filter((tier) => tier.lines.length);
+    const lignesParGroupe = new Map();
+    for (const [label, { emoji, cmds }] of parPalier[palier.cle]) {
+      const entries = dedupeByIdentity(cmds).sort((a, b) => identityOf(a.cmd).localeCompare(identityOf(b.cmd)));
+      lignesParGroupe.set(label, { emoji, lignes: entries.map((e) => formatLine(e, prefixes)) });
+    }
+    const { lines, count } = assemblerGroupes(lignesParGroupe);
+    return { key: palier.cle, label: palier.titre, lines, count };
+  }).filter((tier) => tier.count);
 }
 
 /** Une ligne au même format que formatLine (utils/helpPanel.js), pour les listes figées "!!"/"=". */
@@ -85,30 +132,45 @@ function palierFige(permission) {
   return estDangereux(permission) ? "sys" : "configurable";
 }
 
-/** Paliers non vides du "!!" — utils/protectionHelpCommand.js reste la source de vérité des commandes. */
+// Groupes "!!" : utils/protectionHelpCommand.js n'a pas d'emoji par groupe
+// (c'est une carte figée simple) — attribués ici, une fois, pour l'affichage
+// façon catalogue du "&help" unifié.
+const EMOJI_GROUPE_SECURITE = { "Sécurité serveur": "🛡️", "Protection personnelle": "🔒", Autres: "🧰" };
+
+/** Paliers non vides du "!!", groupés par thème — utils/protectionHelpCommand.js reste la source de vérité des commandes. */
 function buildTiersSecurite(guildId, member) {
   const prefix = getPrefixes(guildId).protection;
-  const groupes = { public: [], configurable: [], sys: [] };
+  const parPalier = { public: new Map(), configurable: new Map(), sys: new Map() };
   for (const c of COMMANDES_SECURITE) {
     if (c.nom.replace(/^!!/, "").split(/\s+/)[0] === "help") continue; // la commande elle-même, jamais listée
     if (!can(member, c.permission)) continue;
-    groupes[palierFige(c.permission)].push(ligneFigee(c.nom, c.description, "!!", prefix));
+    const map = parPalier[palierFige(c.permission)];
+    if (!map.has(c.groupe)) map.set(c.groupe, { emoji: EMOJI_GROUPE_SECURITE[c.groupe], lignes: [] });
+    map.get(c.groupe).lignes.push(ligneFigee(c.nom, c.description, "!!", prefix));
   }
-  return PALIERS.map((p) => ({ key: p.cle, label: p.titre, lines: groupes[p.cle] })).filter((t) => t.lines.length);
+  return PALIERS.map((p) => {
+    const { lines, count } = assemblerGroupes(parPalier[p.cle]);
+    return { key: p.cle, label: p.titre, lines, count };
+  }).filter((t) => t.count);
 }
 
-/** Paliers non vides du "=" — utils/voiceHelpCommand.js reste la source de vérité des commandes. */
+/** Paliers non vides du "=", groupés par catégorie (déjà illustrées d'un emoji) — utils/voiceHelpCommand.js reste la source de vérité des commandes. */
 function buildTiersVocal(guildId, member) {
   const prefix = getPrefixes(guildId).owner;
-  const groupes = { public: [], configurable: [], sys: [] };
+  const parPalier = { public: new Map(), configurable: new Map(), sys: new Map() };
   for (const cat of CATEGORIES_VOCAL) {
     for (const c of cat.commandes) {
       if (c.nom.replace(/^=/, "").split(/\s+/)[0] === "help") continue;
       if (!can(member, c.permission)) continue;
-      groupes[palierFige(c.permission)].push(ligneFigee(c.nom, c.description, "=", prefix));
+      const map = parPalier[palierFige(c.permission)];
+      if (!map.has(cat.nom)) map.set(cat.nom, { emoji: cat.emoji, lignes: [] });
+      map.get(cat.nom).lignes.push(ligneFigee(c.nom, c.description, "=", prefix));
     }
   }
-  return PALIERS.map((p) => ({ key: p.cle, label: p.titre, lines: groupes[p.cle] })).filter((t) => t.lines.length);
+  return PALIERS.map((p) => {
+    const { lines, count } = assemblerGroupes(parPalier[p.cle]);
+    return { key: p.cle, label: p.titre, lines, count };
+  }).filter((t) => t.count);
 }
 
 /**
@@ -134,7 +196,7 @@ function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
   let pageCount = 1;
   let page = 0;
   if (tierKey === "accueil") {
-    const lignes = tiers.map((t) => `**${t.label}** — ${t.lines.length} commande(s)`);
+    const lignes = tiers.map((t) => `**${t.label}** — ${t.count} commande(s)`);
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(lignes.length ? lignes.join("\n") : "*Aucune commande accessible pour l'instant.*")
     );
@@ -155,7 +217,7 @@ function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
     new StringSelectMenuOptionBuilder().setLabel("Accueil").setValue("accueil").setDefault(tierKey === "accueil"),
     ...tiers.map((t) =>
       new StringSelectMenuOptionBuilder()
-        .setLabel(`${t.label} (${t.lines.length})`)
+        .setLabel(`${t.label} (${t.count})`)
         .setValue(t.key)
         .setDefault(t.key === tierKey)
     ),
