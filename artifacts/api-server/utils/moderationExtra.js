@@ -15,6 +15,7 @@ const { formatDuration, parseDuration } = require("./moderationCommands");
 const historyStore = require("./moderationHistoryStore");
 const muteStore = require("./muteStore");
 const tempBanStore = require("./tempBanStore");
+const listNavigator = require("./listNavigator");
 
 // Extensions du catalogue Modération/Paramètres de modération documentées
 // dans le panel mais pas encore câblées — voir utils/commandCatalog.js.
@@ -208,10 +209,13 @@ const ilYA = (iso) => `<t:${Math.floor(new Date(iso).getTime() / 1000)}:R>`;
  */
 async function mutelist(client, message) {
   if (!can(message.member, "moderation.timeout")) return;
+  return listNavigator.repondreAvecListe("mutelist", message);
+}
 
-  const guildId = message.guild.id;
+listNavigator.registerProvider("mutelist", (guild) => {
+  const guildId = guild.id;
   const roleId = muteStore.getMuteRoleId(guildId);
-  const role = roleId ? message.guild.roles.cache.get(roleId) : null;
+  const role = roleId ? guild.roles.cache.get(roleId) : null;
   const tempMutes = muteStore.getTempMutesForGuild(guildId);
 
   const lignesMute = role
@@ -227,7 +231,7 @@ async function mutelist(client, message) {
   // Uniquement le cache : parcourir TOUT le serveur avec un fetch coûterait
   // cher sur un gros serveur pour une commande qui ne fait qu'informer (même
   // compromis que utils/securityScan.js).
-  const membresTimeout = message.guild.members.cache.filter(
+  const membresTimeout = guild.members.cache.filter(
     (m) => m.communicationDisabledUntil && new Date(m.communicationDisabledUntil).getTime() > Date.now()
   );
   const lignesTimeout = [...membresTimeout.values()].map((m) => {
@@ -236,28 +240,17 @@ async function mutelist(client, message) {
     return `<@${m.id}> — ${qui} — expire <t:${Math.floor(new Date(m.communicationDisabledUntil).getTime() / 1000)}:R>`;
   });
 
-  const total = lignesMute.length + lignesTimeout.length;
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Mutes actifs"));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${total}** fiche(s) active(s)`));
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `**Rôle de mute** (${lignesMute.length})\n${
-        role ? (lignesMute.length ? lignesMute.join("\n") : "*Personne n'est mute actuellement.*") : "*Aucun rôle de mute configuré.*"
-      }`
-    )
-  );
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`**Timeout Discord** (${lignesTimeout.length})\n${lignesTimeout.length ? lignesTimeout.join("\n") : "*Aucun timeout en cours.*"}`)
-  );
-
-  return message.reply({ flags: MessageFlags.IsComponentsV2, components: [container] });
-}
+  return {
+    title: "Mutes actifs",
+    compteur: `**${lignesMute.length + lignesTimeout.length}** fiche(s) active(s)`,
+    lines: [
+      `**Rôle de mute** (${lignesMute.length})`,
+      ...(lignesMute.length ? lignesMute : [role ? "*Personne n'est mute actuellement.*" : "*Aucun rôle de mute configuré.*"]),
+      `**Timeout Discord** (${lignesTimeout.length})`,
+      ...(lignesTimeout.length ? lignesTimeout : ["*Aucun timeout en cours.*"]),
+    ],
+  };
+});
 
 async function unmuteall(client, message) {
   if (!can(message.member, "moderation.unmuteall")) return;
@@ -572,12 +565,18 @@ async function checkExpiredTempbans(client) {
 
 async function banlist(client, message) {
   if (!can(message.member, "moderation.unban")) return;
-  const bans = await message.guild.bans.fetch().catch(() => null);
-  if (!bans) return reply(message, "error", "Impossible de récupérer la liste des bannis.");
-  if (!bans.size) return reply(message, "info", "Personne n'est banni.");
-  const lines = [...bans.values()].slice(0, 40).map((b) => `\`${b.user.tag}\` (${b.user.id})${b.reason ? ` — ${b.reason}` : ""}`);
-  return reply(message, "info", `**${bans.size} membre(s) banni(s)** :\n${lines.join("\n")}`);
+  return listNavigator.repondreAvecListe("banlist", message);
 }
+
+listNavigator.registerProvider("banlist", async (guild) => {
+  const bans = await guild.bans.fetch().catch(() => null);
+  if (!bans) return { title: "Membres bannis", erreur: "Impossible de récupérer la liste des bannis." };
+  return {
+    title: "Membres bannis",
+    vide: "Personne n'est banni.",
+    lines: [...bans.values()].map((b) => `\`${b.user.tag}\` (${b.user.id})${b.reason ? ` — ${b.reason}` : ""}`),
+  };
+});
 
 // --- &hideall / &unhideall ---
 

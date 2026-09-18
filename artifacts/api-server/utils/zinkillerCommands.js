@@ -3,6 +3,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const zinkillerStore = require("./zinkillerStore");
+const listNavigator = require("./listNavigator");
 
 // "&zinkiller"/"&unzinkiller" — ban PERSISTANT : re-banni automatiquement si
 // quelqu'un le débannit autrement que par &unzinkiller (Discord natif, un
@@ -108,18 +109,19 @@ async function unzinkiller(client, message, args) {
   return reply(message, "success", `**${existing.user.tag}** débanni, le ban persistant est retiré.`);
 }
 
-/** "&zinkillerlist" — membres sous ban persistant sur ce serveur. */
+/** "&zinkillerlist" — membres sous ban persistant sur ce serveur, un seul message paginé (voir utils/listNavigator.js). */
 async function zinkillerlist(client, message) {
   if (!can(message.member, PERMISSION)) return;
-
-  const entries = zinkillerStore.list(message.guild.id);
-  if (!entries.length) return reply(message, "info", "Aucun ban persistant actif sur ce serveur.");
-
-  const lines = entries
-    .slice(0, 40)
-    .map((e) => `<@${e.userId}> (${e.userId}) — par <@${e.moderatorId}>${e.reason ? ` — ${e.reason}` : ""}`);
-  const extra = entries.length > 40 ? `\n\n…et ${entries.length - 40} autre(s).` : "";
-  return reply(message, "info", `**${entries.length} ban(s) persistant(s)** :\n${lines.join("\n")}${extra}`);
+  return listNavigator.repondreAvecListe("zinkillerlist", message);
 }
+
+listNavigator.registerProvider("zinkillerlist", (guild) => {
+  const entries = zinkillerStore.list(guild.id);
+  return {
+    title: "Bans persistants",
+    vide: "Aucun ban persistant actif sur ce serveur.",
+    lines: entries.map((e) => `<@${e.userId}> (${e.userId}) — par <@${e.moderatorId}>${e.reason ? ` — ${e.reason}` : ""}`),
+  };
+});
 
 module.exports = { zinkiller, unzinkiller, zinkillerlist };

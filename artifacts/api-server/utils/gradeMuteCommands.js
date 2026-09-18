@@ -5,6 +5,7 @@ const { checkHierarchy, checkBotPermission } = require("./moderation/actions");
 const muteStore = require("./muteStore");
 const gradeMuteStore = require("./gradeMuteStore");
 const rankLadder = require("./rankLadderCommands");
+const listNavigator = require("./listNavigator");
 
 // "&bmute"/"&bunmute" — mute bot GRADÉ : un mute posé par quelqu'un au grade
 // N (échelle "&promote"/"&demote", voir utils/rankLadderCommands.js) ne peut
@@ -113,19 +114,22 @@ async function bunmute(client, message, args) {
   return reply(message, "success", `${target.user.tag} a été démute.`);
 }
 
-/** "&bmutelist" — mutes bot actifs sur ce serveur. */
+/** "&bmutelist" — mutes bot actifs sur ce serveur, un seul message paginé (voir utils/listNavigator.js). */
 async function bmutelist(client, message) {
   if (!can(message.member, PERMISSION)) return;
-
-  const entries = gradeMuteStore.list(message.guild.id);
-  if (!entries.length) return reply(message, "info", "Aucun mute bot actif sur ce serveur.");
-
-  const lines = entries
-    .slice(0, 40)
-    .map((e) => `<@${e.userId}> — par <@${e.moderatorId}> — niveau requis pour lever : ${gradeLabel(message.guild, e.gradeIndex)}`);
-  const extra = entries.length > 40 ? `\n\n…et ${entries.length - 40} autre(s).` : "";
-  return reply(message, "info", `**${entries.length} mute(s) bot actif(s)** :\n${lines.join("\n")}${extra}`);
+  return listNavigator.repondreAvecListe("bmutelist", message);
 }
+
+listNavigator.registerProvider("bmutelist", (guild) => {
+  const entries = gradeMuteStore.list(guild.id);
+  return {
+    title: "Mutes bot actifs",
+    vide: "Aucun mute bot actif sur ce serveur.",
+    lines: entries.map(
+      (e) => `<@${e.userId}> — par <@${e.moderatorId}> — niveau requis pour lever : ${gradeLabel(guild, e.gradeIndex)}`
+    ),
+  };
+});
 
 /** "&bmuteresetall" — lève TOUS les mutes bot du serveur d'un coup. */
 async function bmuteresetall(client, message) {

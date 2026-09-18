@@ -82,7 +82,15 @@ function fakeMessage(guild, authorId = "owner-1", content = "") {
   };
 }
 
-const texteDe = (p) => p.embeds?.[0]?.data?.description || p.embeds?.[0]?.toJSON?.().description || "";
+const texteDe = (p) =>
+  p.embeds?.[0]?.data?.description ||
+  p.embeds?.[0]?.toJSON?.().description ||
+  p.components?.[0]
+    ?.toJSON?.()
+    ?.components?.filter?.((c) => c.content)
+    ?.map?.((c) => c.content)
+    ?.join?.("\n") ||
+  "";
 
 (async () => {
   console.log("&zinkiller :");
