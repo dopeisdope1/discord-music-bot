@@ -5,6 +5,7 @@ const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
 const helpNavigator = require("./helpNavigator");
+const gradeCardPanel = require("./gradeCardPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
@@ -185,6 +186,17 @@ const modHandlers = {
   promote: rankLadder.promote,
   demote: rankLadder.demote,
   gradeladder: rankLadder.gradeLadder,
+  grade: async (client, message, args) => {
+    if (!can(message.member, "members.rank.manage")) return;
+    const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
+    const idArg = args[0]?.match(/^\d{15,25}$/);
+    const targetId = mention?.[1] || idArg?.[0];
+    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte)] });
+    if (!targetId) return erreur("Indique un membre (mention ou identifiant) : `grade @membre`.");
+    const target = await message.guild.members.fetch(targetId).catch(() => null);
+    if (!target) return erreur("Ce membre n'est pas sur le serveur.");
+    return gradeCardPanel.repondreAvecGradeCard(message, target);
+  },
   absence: utilityHandlers.absence,
   staff: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();

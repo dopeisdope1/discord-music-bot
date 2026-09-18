@@ -708,6 +708,12 @@ const CATEGORIES = [
         description: "Fait descendre un membre d'un cran sur l'échelle de grades",
       },
       {
+        name: "grade @membre",
+        prefix: "mod",
+        permission: "members.rank.manage",
+        description: "Panneau de grade : hiérarchie complète, saute directement à n'importe quel grade (plutôt que plusieurs promote/demote), retire le grade",
+      },
+      {
         name: "gradeladder add @rôle",
         prefix: "mod",
         permission: "members.rank.manage",
