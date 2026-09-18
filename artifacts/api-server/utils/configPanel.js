@@ -34,8 +34,7 @@ const permStore = require("./permissions/store");
 const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
-const { card: simpleCard } = require("./listCard");
-const { majSure, texteDUnEmbed } = require("./componentsV2");
+const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const statsStore = require("./statsStore");
@@ -749,12 +748,22 @@ function sectionBody(section, guild, member, state) {
  *   de rubrique de retour évidente.
  */
 function messageFromInteraction(interaction, retour) {
+  // Fonction plutôt que {section, state} directement : ce même objet
+  // "message" peut être transmis à utils/serverAdminCommands.js::
+  // requestConfirmation (confirmation à deux temps, ex: suppression de
+  // rôle) via `message.retour` — un require de buildConfigPanel depuis
+  // serverAdminCommands.js créerait un cycle (configPanel.js requiert déjà
+  // serverAdminCommands.js pour roleAdmin). En exposant directement la
+  // fonction de construction, l'appelant (ici) reste le seul à connaître
+  // buildConfigPanel ; serverAdminCommands.js se contente de l'appeler.
+  const construirePanel = retour ? (i) => buildConfigPanel(i.guild, retour.section, i.member, retour.state || {}, {}) : null;
   return {
     member: interaction.member,
     guild: interaction.guild,
     channel: interaction.channel,
     author: interaction.user,
     mentions: { roles: { first: () => null } },
+    retour: construirePanel,
     // update(), pas reply() : on vient toujours d'un clic sur LE panneau
     // (bouton, modale ouverte depuis un bouton), donc le résultat doit
     // remplacer son contenu, pas ouvrir un second message replié
@@ -777,16 +786,13 @@ function messageFromInteraction(interaction, retour) {
       // boutons Supprimer/Annuler, remplacés par le panel avant même que la
       // confirmation ait pu s'afficher.
       const embedSeul = payload?.embeds?.length && !payload.files?.length && !payload.components?.length;
-      if (!retour || !embedSeul) return majSure(interaction, payload);
+      if (!construirePanel || !embedSeul) return majSure(interaction, payload);
       // Demande explicite : une action lancée DEPUIS le panel doit y
       // ramener, jamais laisser la confirmation seule à la place ("&panel"
       // édité en simple "Rôle X créé.", sans retour possible au panel sans
       // le rouvrir). La confirmation reste visible, juste en bannière.
       const { texte } = texteDUnEmbed(payload.embeds[0]);
-      const panel = buildConfigPanel(interaction.guild, retour.section, interaction.member, retour.state || {}, {});
-      if (!texte) return majSure(interaction, { ...panel, attachments: [] });
-      const banniere = new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(texte));
-      return majSure(interaction, { ...panel, components: [banniere, ...panel.components], attachments: [] });
+      return majSure(interaction, banniereSurPanel(construirePanel(interaction), texte));
     },
   };
 }
@@ -1902,9 +1908,13 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "pruneroles") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const removed = pruneDeletedRoles(guild);
-    return interaction.update(
-      simpleCard("Terminé", removed.length ? `**${removed.length}** octroi(s) de rôle supprimé retiré(s).` : "Rien à nettoyer, tous les rôles avec des permissions accordées existent encore.")
-    );
+    const texte = removed.length
+      ? `**${removed.length}** octroi(s) de rôle supprimé retiré(s).`
+      : "Rien à nettoyer, tous les rôles avec des permissions accordées existent encore.";
+    // Retour sur "roletiers" (où vit le bouton), pas une carte isolée sans
+    // retour possible — même correctif que rolecreate/renamerole/roledelete.
+    const panel = buildConfigPanel(guild, "roletiers", member, {}, {});
+    return interaction.update(banniereSurPanel(panel, texte));
   }
 
   // Gestion rapide d'un palier (rubrique "Rôles (paliers)") : choisir le
@@ -1996,8 +2006,8 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "rolepresets") {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const choix = interaction.values[0];
-    if (choix === "create") return rolePresets.createPresetRoles(interaction.client, messageFromInteraction(interaction));
-    if (choix === "deleteall") return rolePresets.deleteAllRoles(interaction.client, messageFromInteraction(interaction));
+    if (choix === "create") return rolePresets.createPresetRoles(interaction.client, messageFromInteraction(interaction, { section: "roletiers" }));
+    if (choix === "deleteall") return rolePresets.deleteAllRoles(interaction.client, messageFromInteraction(interaction, { section: "roletiers" }));
     return;
   }
 
@@ -2066,7 +2076,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, rien n'a été sauvegardé.", flags: MessageFlags.Ephemeral });
-      await backup(interaction.client, messageFromInteraction(interaction), [name]);
+      await backup(interaction.client, messageFromInteraction(interaction, { section: "backups" }), [name]);
       return;
     }
     const modal = new ModalBuilder().setCustomId(`${ID}:backupsavebtn`).setTitle("Sauvegarder ce serveur");
@@ -2085,13 +2095,13 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "backupdelete") {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    await backup(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
+    await backup(interaction.client, messageFromInteraction(interaction, { section: "backups" }), ["delete", extra]);
     return;
   }
 
   if (action === "backuprestore") {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    await backup(interaction.client, messageFromInteraction(interaction), ["load", extra], { doubleConfirm: true });
+    await backup(interaction.client, messageFromInteraction(interaction, { section: "backups" }), ["load", extra], { doubleConfirm: true });
     return;
   }
 
@@ -2101,7 +2111,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const fn = botProfileHandlers[interaction.values[0]];
     if (!fn) return;
-    await fn(interaction.client, messageFromInteraction(interaction));
+    await fn(interaction.client, messageFromInteraction(interaction, { section: "botProfile" }));
     return;
   }
 
@@ -2110,7 +2120,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, rien n'a changé.", flags: MessageFlags.Ephemeral });
-      await botProfileHandlers.set(interaction.client, messageFromInteraction(interaction), ["name", name]);
+      await botProfileHandlers.set(interaction.client, messageFromInteraction(interaction, { section: "botProfile" }), ["name", name]);
       return;
     }
     const modal = new ModalBuilder().setCustomId(`${ID}:botnamebtn`).setTitle("Changer le nom du bot");

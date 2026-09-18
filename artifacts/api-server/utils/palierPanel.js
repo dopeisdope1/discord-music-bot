@@ -19,6 +19,7 @@ const permStore = require("./permissions/store");
 const { can } = require("./permissions/engine");
 const { roleAdmin } = require("./serverAdminCommands");
 const messageOwner = require("./messageOwner");
+const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
 
 // &p — raccourci direct vers les paliers de permissions, SANS passer par
 // &panel (accueil -> menu de familles -> sous-menu -> rubrique). Demande
@@ -203,7 +204,18 @@ async function handlePalierTextCommand(client, message) {
   return messageOwner.repondreEtRetenir(message, buildPalierPanel(message.guild, message.member, {}));
 }
 
-/** Adapte une interaction en "message" minimal pour réutiliser TEL QUEL utils/serverAdminCommands.js::roleAdmin (rename/delete, confirmation incluse). */
+/**
+ * Adapte une interaction en "message" minimal pour réutiliser TEL QUEL
+ * utils/serverAdminCommands.js::roleAdmin (rename/delete, confirmation
+ * incluse). `.retour` : le résultat revient sur la liste "&p" (bannière de
+ * confirmation au-dessus) au lieu de laisser un "Rôle renommé."/"Rôle
+ * supprimé." isolé sans façon d'y revenir — même correctif que utils/
+ * configPanel.js::messageFromInteraction, ici sans section (un seul écran).
+ * `majSure` (pas interaction.update direct) : roleAdmin répond par un embed
+ * classique, sur un panel qui est en Components V2 — sans conversion,
+ * Discord refuse tout le message (MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_
+ * COMPONENTS_V2).
+ */
 function messageFromInteraction(interaction) {
   return {
     member: interaction.member,
@@ -211,7 +223,13 @@ function messageFromInteraction(interaction) {
     channel: interaction.channel,
     author: interaction.user,
     mentions: { roles: { first: () => null } },
-    reply: (payload) => interaction.update(payload),
+    retour: (i) => buildPalierPanel(i.guild, i.member, {}),
+    reply: (payload) => {
+      const embedSeul = payload?.embeds?.length && !payload.files?.length && !payload.components?.length;
+      if (!embedSeul) return majSure(interaction, payload);
+      const { texte } = texteDUnEmbed(payload.embeds[0]);
+      return majSure(interaction, banniereSurPanel(buildPalierPanel(interaction.guild, interaction.member, {}), texte));
+    },
   };
 }
 

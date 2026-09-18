@@ -15,7 +15,6 @@ const { peutVocal } = require("./voiceAccess");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
 const { requestConfirmation } = require("./serverAdminCommands");
-const { majSure } = require("./componentsV2");
 const { preparerEmoji } = require("./emojiMedia");
 const tempRoleStore = require("./tempRoleStore");
 const autoReactStore = require("./autoReactStore");
@@ -393,7 +392,7 @@ async function unbanall(client, message) {
     body: `**${bans.size}** membre(s) actuellement banni(s) seront débannis. Cette action ne peut pas être annulée automatiquement.`,
     confirmLabel: "Débannir tout le monde",
     permission: "moderation.unbanall",
-    execute: async (interaction) => {
+    execute: async (interaction, terminer) => {
       const currentBans = await interaction.guild.bans.fetch().catch(() => null);
       let count = 0;
       for (const ban of currentBans?.values() || []) {
@@ -412,12 +411,10 @@ async function unbanall(client, message) {
         channelId: interaction.channel?.id || null,
         extra: { count },
       });
-      // `majSure` et non `interaction.update` : la confirmation est affichée en
-      // Components V2 dès qu'elle porte une carte dessinée, et Discord refuse
-      // alors un embed sur le même message (« MESSAGE_CANNOT_USE_LEGACY_FIELDS
-      // _WITH_COMPONENTS_V2 »). Le clic restait sans réponse, alors que les
-      // débannissements avaient bien eu lieu.
-      await majSure(interaction, { embeds: [buildStatusEmbed("success", `**${count}** membre(s) débanni(s).`)], components: [] });
+      // terminer() gère déjà la conversion Components V2 (voir
+      // utils/serverAdminCommands.js::construireTerminaison) — plus besoin de
+      // s'en soucier ici.
+      return terminer("Terminé", `**${count}** membre(s) débanni(s).`);
     },
   });
 }

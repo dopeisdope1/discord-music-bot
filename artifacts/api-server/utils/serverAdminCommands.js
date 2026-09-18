@@ -35,6 +35,7 @@ const { checkBotPermission, report } = require("./moderation/actions");
 const { parseDuration } = require("./moderationCommands");
 const roleLimitStore = require("./roleLimitStore");
 const { getPrefixes } = require("./prefixStore");
+const { majSure, banniereSurPanel } = require("./componentsV2");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
 
@@ -703,13 +704,38 @@ function rememberConfirm(data) {
 }
 
 /**
+ * Construit la fonction de terminaison passée à chaque `execute` : appelée
+ * avec (titre, corps) une fois l'action faite, elle décide comment le dire.
+ * Sans `retour` (commande tapée en texte, jamais lancée depuis un panel) :
+ * comportement inchangé, une carte isolée. AVEC `retour` (message.retour,
+ * voir utils/configPanel.js::messageFromInteraction) : revient sur le panel
+ * d'origine, résultat affiché en bannière — même mécanisme que la
+ * confirmation à UN temps (rolecreate/renamerole/roledelete), appliqué ici
+ * au second temps (le VRAI "Confirmer"/"Annuler").
+ * @param {import('discord.js').Interaction} interaction
+ * @param {((i: import('discord.js').Interaction) => object)|undefined} retour
+ */
+function construireTerminaison(interaction, retour) {
+  return (title, body) => {
+    if (!retour) return interaction.update(card(title, body));
+    const texte = body ? `## ${title}\n${body}` : `## ${title}`;
+    return majSure(interaction, banniereSurPanel(retour(interaction), texte));
+  };
+}
+
+/**
  * Demande une confirmation à deux temps. `carte` (facultatif) remplace le
  * corps texte par une carte dessinée (utils/actionCard.js) : même monde
  * visuel que les cartes de sanction. Le repli sur le texte est délibéré — une
  * confirmation qui ne s'affiche pas rendrait l'action impossible à lancer.
+ * `execute` reçoit désormais `(interaction, terminer)` : `terminer(titre,
+ * corps)` remplace un `interaction.update(card(...))` direct, pour que le
+ * résultat revienne sur le panel d'origine s'il y en a un (voir
+ * construireTerminaison ci-dessus) — jamais d'appel direct à
+ * `interaction.update` dans un `execute` pour le résultat FINAL.
  */
 function requestConfirmation(message, { title, body, confirmLabel, permission, execute, carte }) {
-  const token = rememberConfirm({ actorId: message.author.id, permission, execute });
+  const token = rememberConfirm({ actorId: message.author.id, permission, execute, retour: message.retour });
   const boutons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(EMOJI.CHECK),
     new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROSS)
@@ -733,18 +759,21 @@ function requestConfirmation(message, { title, body, confirmLabel, permission, e
 async function handleConfirmInteraction(interaction) {
   const [, , action, token] = interaction.customId.split(":"); // srv:confirm:go|no:TOKEN
   const pending = pendingConfirms.get(token);
+  // Jeton introuvable (expiré ou déjà consommé) : aucun `retour` à
+  // récupérer, la carte isolée reste le seul choix possible ici.
   if (!pending) return interaction.update(card("Expiré", "Relance la commande pour recommencer."));
   if (interaction.user.id !== pending.actorId) {
     return interaction.reply({ content: "Ce panneau n'est pas le tien.", flags: MessageFlags.Ephemeral });
   }
   pendingConfirms.delete(token);
+  const terminer = construireTerminaison(interaction, pending.retour);
 
-  if (action === "no") return interaction.update(card("Annulé", null));
+  if (action === "no") return terminer("Annulé", null);
 
   if (!can(interaction.member, pending.permission)) {
-    return interaction.update(card("Accès refusé", "Tu n'as plus ce droit."));
+    return terminer("Accès refusé", "Tu n'as plus ce droit.");
   }
-  await pending.execute(interaction);
+  await pending.execute(interaction, terminer);
 }
 
 async function roleAdmin(client, message, args) {
@@ -809,13 +838,13 @@ async function roleAdmin(client, message, args) {
       },
       confirmLabel: "Supprimer",
       permission: "server.roles.manage",
-      execute: async (interaction) => {
+      execute: async (interaction, terminer) => {
         const fresh = interaction.guild.roles.cache.get(roleId);
-        if (!fresh) return interaction.update(card("Rôle introuvable", "Ce rôle n'existe déjà plus."));
+        if (!fresh) return terminer("Rôle introuvable", "Ce rôle n'existe déjà plus.");
         try {
           await fresh.delete(`Rôle supprimé par ${interaction.user.tag}`);
         } catch (err) {
-          return interaction.update(card("Action impossible", `Discord a refusé : ${err.message}`));
+          return terminer("Action impossible", `Discord a refusé : ${err.message}`);
         }
         await report(interaction.client, {
           guildId: interaction.guild.id,
@@ -828,7 +857,7 @@ async function roleAdmin(client, message, args) {
           moderator: interaction.user,
           channelId: interaction.channelId,
         });
-        return interaction.update(card("Terminé", `Rôle **${name}** supprimé.`));
+        return terminer("Terminé", `Rôle **${name}** supprimé.`);
       },
     });
   }
@@ -915,14 +944,14 @@ async function roleAdmin(client, message, args) {
       ].join("\n"),
       confirmLabel: grant ? "Donner Administrateur" : "Retirer",
       permission: "server.roles.admin_grant",
-      execute: async (interaction) => {
+      execute: async (interaction, terminer) => {
         const fresh = interaction.guild.roles.cache.get(roleId);
-        if (!fresh) return interaction.update(card("Rôle introuvable", "Ce rôle n'existe plus."));
+        if (!fresh) return terminer("Rôle introuvable", "Ce rôle n'existe plus.");
         try {
           const next = grant ? fresh.permissions.add(PermissionFlagsBits.Administrator) : fresh.permissions.remove(PermissionFlagsBits.Administrator);
           await fresh.setPermissions(next, `${grant ? "Administrateur donné" : "Administrateur retiré"} par ${interaction.user.tag}`);
         } catch (err) {
-          return interaction.update(card("Action impossible", `Discord a refusé : ${err.message}`));
+          return terminer("Action impossible", `Discord a refusé : ${err.message}`);
         }
         await report(interaction.client, {
           guildId: interaction.guild.id,
@@ -935,7 +964,7 @@ async function roleAdmin(client, message, args) {
           moderator: interaction.user,
           channelId: interaction.channelId,
         });
-        return interaction.update(card("Terminé", `Administrateur ${grant ? "donné à" : "retiré de"} **${name}**.`));
+        return terminer("Terminé", `Administrateur ${grant ? "donné à" : "retiré de"} **${name}**.`);
       },
     });
   }
@@ -1029,13 +1058,13 @@ async function channelAdmin(client, message, args) {
       body: `**${name}** (${id})\n\nCette action est définitive et l'historique du salon part avec.`,
       confirmLabel: "Supprimer",
       permission: "server.channels.manage",
-      execute: async (interaction) => {
+      execute: async (interaction, terminer) => {
         const fresh = interaction.guild.channels.cache.get(id);
-        if (!fresh) return interaction.update(card("Salon introuvable", "Ce salon n'existe déjà plus."));
+        if (!fresh) return terminer("Salon introuvable", "Ce salon n'existe déjà plus.");
         try {
           await fresh.delete(`Salon supprimé par ${interaction.user.tag}`);
         } catch (err) {
-          return interaction.update(card("Action impossible", `Discord a refusé : ${err.message}`));
+          return terminer("Action impossible", `Discord a refusé : ${err.message}`);
         }
         await report(interaction.client, {
           guildId: interaction.guild.id,
@@ -1050,7 +1079,7 @@ async function channelAdmin(client, message, args) {
         });
         // Le salon qui portait la confirmation peut avoir disparu avec la
         // suppression (si on a confirmé depuis le salon ciblé lui-même).
-        return interaction.update(card("Terminé", `Salon **${name}** supprimé.`)).catch(() => {});
+        return terminer("Terminé", `Salon **${name}** supprimé.`).catch(() => {});
       },
     });
   }

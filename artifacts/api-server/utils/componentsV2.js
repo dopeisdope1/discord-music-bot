@@ -8,6 +8,24 @@ const {
   MediaGalleryItemBuilder,
 } = require("discord.js");
 
+/**
+ * Fusionne un texte de résultat avec un panel déjà construit, en bannière
+ * au-dessus — pour qu'une action lancée DEPUIS un panel (&panel, &p...) y
+ * revienne au lieu de laisser la confirmation seule à l'écran, sans bouton
+ * retour. Utilisé par utils/configPanel.js::messageFromInteraction ET
+ * utils/serverAdminCommands.js::handleConfirmInteraction (le second temps
+ * d'une confirmation à deux étapes) — un seul endroit pour ce mécanisme, pas
+ * deux logiques qui pourraient diverger.
+ * @param {object} panel payload déjà en Components V2 (flags + components)
+ * @param {string} texte déjà extrait (ex: via texteDUnEmbed pour un embed
+ *   classique, ou directement le titre/corps d'une carte utils/listCard.js)
+ */
+function banniereSurPanel(panel, texte) {
+  if (!texte) return { ...panel, attachments: [] };
+  const banniere = new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(texte));
+  return { ...panel, components: [banniere, ...panel.components], attachments: [] };
+}
+
 // Conversion d'une réponse CLASSIQUE (content / embeds / pièces jointes) en
 // message Components V2.
 //
@@ -151,4 +169,4 @@ function majSure(interaction, payload) {
   return interaction.update(cibleEstV2 ? enConteneurV2(payload) : payload);
 }
 
-module.exports = { enConteneurV2, majSure, texteDUnEmbed, estV2 };
+module.exports = { enConteneurV2, majSure, texteDUnEmbed, estV2, banniereSurPanel };

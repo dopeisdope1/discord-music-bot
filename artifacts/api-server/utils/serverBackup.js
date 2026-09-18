@@ -217,17 +217,9 @@ async function backup(client, message, args, options = {}) {
     const structure = resolveBackup(name);
     if (!structure) return reply(message, "error", `Aucune sauvegarde nommée **${name}** (voir \`backup list\`).`);
     const total = countChannels(structure);
-    const restore = async (interaction) => {
+    const restore = async (interaction, terminer) => {
       const { categoriesCreated, channelsCreated } = await applyStructure(interaction.guild, structure);
-      await interaction.update({
-        embeds: [
-          buildStatusEmbed(
-            "success",
-            `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.`
-          ),
-        ],
-        components: [],
-      });
+      return terminer("Terminé", `**${categoriesCreated}** catégorie(s) et **${channelsCreated}** salon(s) créés.`);
     };
     return requestConfirmation(message, {
       title: "Confirmer la restauration",
@@ -240,8 +232,15 @@ async function backup(client, message, args, options = {}) {
             // accusé réception : .reply() ici sert de premier accusé ET
             // remplace le message par la seconde confirmation, plutôt que
             // .update() qui n'aurait fait qu'éditer la première carte sans
-            // en garder de trace distincte.
-            const secondMessage = { author: message.author, guild: interaction.guild, reply: (payload) => interaction.reply(payload) };
+            // en garder de trace distincte. `retour` transmis : sinon la
+            // restauration finale perdrait le retour au panel entre les deux
+            // confirmations.
+            const secondMessage = {
+              author: message.author,
+              guild: interaction.guild,
+              retour: message.retour,
+              reply: (payload) => interaction.reply(payload),
+            };
             return requestConfirmation(secondMessage, {
               title: "Dernière confirmation",
               body: `Aucun retour en arrière automatique : **${total}** salon(s) vont être créés maintenant dans **${interaction.guild.name}**, d'après **${name}**.`,

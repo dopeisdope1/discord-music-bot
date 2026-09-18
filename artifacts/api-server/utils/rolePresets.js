@@ -3,7 +3,6 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const { checkBotPermission, report } = require("./moderation/actions");
 const { requestConfirmation } = require("./serverAdminCommands");
-const { card } = require("./listCard");
 const permStore = require("./permissions/store");
 
 // Refonte demandée de la hiérarchie des rôles : 13 paliers numérotés
@@ -176,7 +175,7 @@ async function createPresetRoles(client, message) {
     body: `**${TOTAL_ROLES}** rôles seront créés (13 paliers de permissions + 3 rôles hors hiérarchie), chacun avec les permissions du bot déjà réglées d'après les commandes prévues pour ce palier.`,
     confirmLabel: "Créer",
     permission: "sys",
-    execute: async (interaction) => {
+    execute: async (interaction, terminer) => {
       const guild = interaction.guild;
       let created = 0;
 
@@ -228,7 +227,7 @@ async function createPresetRoles(client, message) {
         channelId: null,
       });
 
-      return interaction.update(card("Terminé", `**${created}** rôle(s) créé(s) sur ${TOTAL_ROLES} — voir la rubrique "Rôles (paliers)" pour les retrouver.`));
+      return terminer("Terminé", `**${created}** rôle(s) créé(s) sur ${TOTAL_ROLES} — voir la rubrique "Rôles (paliers)" pour les retrouver.`);
     },
   });
 }
@@ -250,7 +249,7 @@ async function deleteAllRoles(client, message) {
     body: `**${deletable.length}** rôle(s) seront supprimés définitivement : ${apercu}\n\nLes permissions déjà accordées à ces rôles restent enregistrées mais n'ont plus d'effet, le rôle n'existant plus.\n\nCette action est définitive et ne peut pas être annulée.`,
     confirmLabel: "Supprimer tout",
     permission: "sys",
-    execute: async (interaction) => {
+    execute: async (interaction, terminer) => {
       // Relu au moment du clic : la liste a pu changer entre l'ouverture de
       // la confirmation et le clic sur "Supprimer tout".
       const fresh = [...interaction.guild.roles.cache.values()].filter((r) => r.id !== interaction.guild.id && !r.managed);
@@ -275,7 +274,7 @@ async function deleteAllRoles(client, message) {
         channelId: null,
       });
 
-      return interaction.update(card("Terminé", `**${deleted}** rôle(s) supprimé(s).`));
+      return terminer("Terminé", `**${deleted}** rôle(s) supprimé(s).`);
     },
   });
 }
