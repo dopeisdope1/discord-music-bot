@@ -52,7 +52,14 @@ function fakeMessage({ author = { id: "owner-1", tag: "owner#0001" }, member, gu
   };
 }
 
-const embedText = (reply) => reply?.embeds?.[0]?.data?.description || "";
+const embedText = (reply) =>
+  reply?.embeds?.[0]?.data?.description ||
+  reply?.components?.[0]
+    ?.toJSON?.()
+    ?.components?.filter?.((c) => c.content)
+    ?.map?.((c) => c.content)
+    ?.join?.("\n") ||
+  "";
 
 (async () => {
   console.log("&absence set/reset :");

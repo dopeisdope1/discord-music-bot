@@ -14,6 +14,8 @@ const wikipedia = require("./wikipedia");
 const statsStore = require("./statsStore");
 const { carteTableau, estTableau } = require("./sectionDashboard");
 const { repondreAvecCarte } = require("./actionCard");
+const staffCard = require("./staffCard");
+const listNavigator = require("./listNavigator");
 
 // Commandes utilitaires en LECTURE SEULE : les fiches d'info individuelles
 // (&pic/&server/&userinfo...) n'exigent aucune permission (`permission:
@@ -365,41 +367,23 @@ const handlers = {
   },
 
   /**
-   * &staff check [@membre] — ce qu'un membre a RÉELLEMENT comme droits sur ce
-   * serveur (rang bot, clés accordées par ses rôles + individuellement, et
-   * les commandes que ça débloque) — un "qui a le droit de quoi", pour
-   * vérifier sans avoir à recouper &perms/&helpall à la main.
+   * &staff [check] [@membre] — carte "Staff · Owner/Sys" (utils/
+   * staffCard.js) : rang bot, grade (échelle &promote/&demote), clés
+   * accordées par ses rôles + individuellement, et les commandes que ça
+   * débloque — un "qui a le droit de quoi", pour vérifier sans avoir à
+   * recouper &perms/&helpall à la main. "check" reste accepté (habitude),
+   * mais n'est plus obligatoire : "&staff @membre" marche directement.
    */
   async staffCheck(client, message, args) {
     if (!can(message.member, "server.info.view")) return;
     const target = message.mentions.members?.first() || message.member;
-    const guildId = message.guild.id;
+    return staffCard.repondreAvecStaffCard(message, target);
+  },
 
-    if (accessStore.isOwner(target.id)) {
-      return reply(message, "info", `**${target.user.tag}** est **propriétaire du bot** — accès total, sur tous les serveurs.`);
-    }
-    if (accessStore.isSys(target.id)) {
-      return reply(message, "info", `**${target.user.tag}** a le **rang sys** — accès total sur ce serveur (sauf distribuer le rang sys lui-même).`);
-    }
-
-    const keys = new Set(permStore.getUserGrants(guildId, target.id));
-    for (const roleId of target.roles.cache.keys()) {
-      for (const k of permStore.getRoleGrants(guildId, roleId)) keys.add(k);
-    }
-    if (!keys.size) return reply(message, "info", `**${target.user.tag}** n'a aucune permission particulière accordée sur ce serveur.`);
-
-    const commands = commandsForKeys([...keys]);
-    const prefixe = getPrefixes(guildId).musicMod;
-    const lines = [`**Membre** : ${target.user.tag} (${target.id})`, "", `**Commandes débloquées (${commands.length})** :`];
-    if (!commands.length) {
-      lines.push("*aucune*");
-    } else {
-      const MAX = 20;
-      lines.push(commands.slice(0, MAX).map((c) => `\`${prefixe}${c}\``).join(", "));
-      const reste = commands.length - MAX;
-      if (reste > 0) lines.push(`+${reste} autre(s) — voir \`&panel\` > Rôles et permissions`);
-    }
-    await reply(message, "info", lines.join("\n"), { title: "Vérification staff" });
+  /** &staff list — membres avec le rang sys sur CE serveur (Owner vient de BOT_OWNER_IDS, jamais listé ici : global, pas propre à un serveur). */
+  async staffList(client, message) {
+    if (!can(message.member, "server.info.view")) return;
+    return listNavigator.repondreAvecListe("stafflist", message);
   },
 
   /** &channel [#salon|id] — fiche d'info d'un salon (distinct de `channel create/delete/...`, réservé à server.channels.manage). */
@@ -469,5 +453,19 @@ const handlers = {
     await reply(message, "info", lines.join("\n\n"), { title: `Articles Wikipédia pour « ${term} »` });
   },
 };
+
+listNavigator.registerProvider("stafflist", (guild) => {
+  const owners = accessStore.ownerIds().filter((id) => guild.members.cache.has(id));
+  const sysIds = accessStore.list("sys").filter((id) => guild.members.cache.has(id));
+  const lines = [
+    ...owners.map((id) => `<@${id}> — Owner`),
+    ...sysIds.map((id) => `<@${id}> — Sys`),
+  ];
+  return {
+    title: "Staff (Owner / Sys)",
+    vide: "Aucun propriétaire ni rang sys sur ce serveur.",
+    lines,
+  };
+});
 
 module.exports = { utilityHandlers: handlers, resolveRole, resolveUser };

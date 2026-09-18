@@ -187,7 +187,11 @@ const modHandlers = {
   gradeladder: rankLadder.gradeLadder,
   absence: utilityHandlers.absence,
   staff: (client, message, args) => {
-    if ((args[0] || "").toLowerCase() === "check") return utilityHandlers.staffCheck(client, message, args.slice(1));
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "list") return utilityHandlers.staffList(client, message);
+    // "check" reste accepté mais n'est plus exigé — "&staff @membre" marche
+    // directement (staffCheck lit la mention, jamais les mots de `args`).
+    return utilityHandlers.staffCheck(client, message, sub === "check" ? args.slice(1) : args);
   },
   modlogs: moderationHandlers.modlogs,
   // "clear sanctions"/"clear all sanctions" gèrent l'historique d'un membre
@@ -598,7 +602,7 @@ async function handleTextCommand(client, message) {
 const MOD_SUBCOMMANDS = {
   role: [...serverAdmin.ROLE_ADMIN_SUBCOMMANDS],
   channel: ["create", "delete", "rename", "topic"],
-  staff: ["check"],
+  staff: ["check", "list"],
   gradeladder: ["add", "remove", "list"],
   absence: ["set", "reset"],
   banall: ["message"],

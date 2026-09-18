@@ -39,6 +39,8 @@ const helpNavigator = require("./utils/helpNavigator");
 const listNavigator = require("./utils/listNavigator");
 // "&gradeladder"/"&gradeladder list" — panel enrichi (compteurs + badges d'accès par grade) — voir utils/gradeLadderPanel.js.
 const gradeLadderPanel = require("./utils/gradeLadderPanel");
+// "&staff"/"&staff list" — carte Owner/Sys, bascule du rang sys — voir utils/staffCard.js.
+const staffCard = require("./utils/staffCard");
 // Ban persistant ("&zinkiller") — re-banni automatiquement si débanni
 // ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
 const zinkillerStore = require("./utils/zinkillerStore");
@@ -180,6 +182,7 @@ client.on("interactionCreate", async (interaction) => {
     `${helpNavigator.CUSTOM_ID}:`,
     `${listNavigator.CUSTOM_ID}:`,
     `${gradeLadderPanel.CUSTOM_ID}:`,
+    `${staffCard.CUSTOM_ID}:`,
   ];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
@@ -236,6 +239,12 @@ client.on("interactionCreate", async (interaction) => {
   // "&gradeladder" — panel enrichi (voir utils/gradeLadderPanel.js).
   if (interaction.customId?.startsWith(`${gradeLadderPanel.CUSTOM_ID}:`)) {
     await gradeLadderPanel.handleGradeLadderInteraction(interaction).catch((err) => console.error("[gradeLadderPanel]", err));
+    return;
+  }
+
+  // "&staff" — bascule du rang sys (voir utils/staffCard.js).
+  if (interaction.customId?.startsWith(`${staffCard.CUSTOM_ID}:`)) {
+    await staffCard.handleStaffCardInteraction(interaction).catch((err) => console.error("[staffCard]", err));
     return;
   }
 

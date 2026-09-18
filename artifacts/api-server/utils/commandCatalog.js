@@ -1190,10 +1190,16 @@ const CATEGORIES = [
       },
       { name: "snipe", prefix: "mod", permission: null, description: "Affiche le dernier message supprimé du salon" },
       {
-        name: "staff check [@membre]",
+        name: "staff [check] [@membre]",
         prefix: "mod",
         permission: "server.info.view",
-        description: "Affiche les droits réels d'un membre (rang, permissions accordées, commandes débloquées)",
+        description: "Carte Owner/Sys d'un membre (grade, permissions accordées, commandes débloquées) — bascule le rang sys pour le propriétaire du bot",
+      },
+      {
+        name: "staff list",
+        prefix: "mod",
+        permission: "server.info.view",
+        description: "Liste les membres avec le rang sys ou Owner sur ce serveur",
       },
       {
         name: "vc",
