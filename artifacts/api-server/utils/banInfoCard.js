@@ -20,17 +20,22 @@ const { carteSanctionMessage } = require("./actionCard");
 const { formatDuration } = require("./moderationCommands");
 const tempBanStore = require("./tempBanStore");
 const banReasonsStore = require("./banReasonsStore");
+const zinkillerStore = require("./zinkillerStore");
+const altLinksStore = require("./altLinksStore");
 const rankLadder = require("./rankLadderCommands");
 const messageOwner = require("./messageOwner");
 
 // "&baninfo <@membre>" — carte "raisons" (demande explicite, calquée sur la
 // présentation d'un autre bot) : choisir une raison PRÉDÉFINIE (gérée par
 // serveur via &panel, utils/banReasonsStore.js) ou personnalisée, une durée
-// (permanent ou temporaire, réutilise &tempban, utils/tempBanStore.js), puis
-// confirmer/annuler. Séparée de "&ban" (utils/banPanel.js), qui reste
-// volontairement instantané sans confirmation (demande explicite passée) :
-// "&baninfo" est le choix à faire quand la raison/durée méritent d'être
-// posées avant, jamais l'inverse.
+// (permanent ou temporaire, réutilise &tempban, utils/tempBanStore.js), et
+// optionnellement relier ce ban à un compte DÉJÀ signalé ("Double compte
+// de" — liste des bans persistants, utils/zinkillerStore.js, jamais une
+// détection automatique, voir utils/altLinksStore.js), puis confirmer/
+// annuler. Séparée de "&ban" (utils/banPanel.js), qui reste volontairement
+// instantané sans confirmation (demande explicite passée) : "&baninfo" est
+// le choix à faire quand la raison/durée/lien méritent d'être posés avant,
+// jamais l'inverse.
 const CUSTOM_ID = "baninfo";
 const PERMISSION = "moderation.ban";
 
@@ -65,10 +70,19 @@ function gradeDe(guild, member) {
   return role ? role.name : `niveau #${ladder.length - idx}`;
 }
 
+const AUCUN_LIEN = "aucun";
+
+/** Comptes déjà signalés (bans persistants, &zinkiller) proposables comme "compte principal" — jamais la cible elle-même. */
+function candidatsDoubleCompte(guild, target) {
+  return zinkillerStore.list(guild.id).filter((e) => e.userId !== target.id);
+}
+
 function buildBanInfoCard(guild, target, etat) {
   const raisons = banReasonsStore.list(guild.id);
   const raisonChoisie = etat.reasonLabel || "aucune";
   const dureeChoisie = DUREES.find((d) => d.id === etat.dureeId)?.label || "à choisir";
+  const candidats = candidatsDoubleCompte(guild, target);
+  const doubleCompteChoisi = etat.linkedToId ? `<@${etat.linkedToId}>` : "aucun";
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Blacklist · raisons"));
@@ -82,6 +96,7 @@ function buildBanInfoCard(guild, target, etat) {
         `**Durée** : ${dureeChoisie}`,
         "",
         `**Raison sélectionnée** : ${raisonChoisie}`,
+        `**Double compte de** : ${doubleCompteChoisi}`,
       ].join("\n")
     )
   );
@@ -109,6 +124,34 @@ function buildBanInfoCard(guild, target, etat) {
         .addOptions(DUREES.map((d) => new StringSelectMenuOptionBuilder().setLabel(d.label).setValue(d.id).setDefault(etat.dureeId === d.id)))
     )
   );
+  // "Double compte de" : relie ce ban à un compte DÉJÀ signalé (liste des
+  // bans persistants, &zinkiller) — jamais une détection automatique, juste
+  // le lien que le modérateur pose lui-même. Absent du menu si personne
+  // n'est encore signalé sur ce serveur.
+  if (candidats.length) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${CUSTOM_ID}:lien:${target.id}`)
+          .setPlaceholder("Double compte de…")
+          .addOptions(
+            new StringSelectMenuOptionBuilder()
+              .setLabel("Aucun — compte principal")
+              .setDescription("Ce compte n'est le double de personne")
+              .setValue(AUCUN_LIEN)
+              .setDefault(!etat.linkedToId),
+            ...candidats.slice(0, 24).map((e) => {
+              const tag = guild.members.cache.get(e.userId)?.user?.tag;
+              return new StringSelectMenuOptionBuilder()
+                .setLabel((tag || e.userId).slice(0, 100))
+                .setDescription((e.reason || "Aucune raison enregistrée").slice(0, 100))
+                .setValue(e.userId)
+                .setDefault(etat.linkedToId === e.userId);
+            })
+          )
+      )
+    );
+  }
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`${CUSTOM_ID}:go:${target.id}`).setLabel("Confirmer").setStyle(ButtonStyle.Danger),
@@ -121,7 +164,7 @@ function buildBanInfoCard(guild, target, etat) {
 
 async function repondreAvecBanInfo(message, target) {
   const envoye = await messageOwner.repondreEtRetenir(message, buildBanInfoCard(message.guild, target, {}));
-  if (envoye?.id) etats.set(envoye.id, { targetId: target.id, reasonId: null, reasonLabel: null, dureeId: null, at: Date.now() });
+  if (envoye?.id) etats.set(envoye.id, { targetId: target.id, reasonId: null, reasonLabel: null, dureeId: null, linkedToId: null, at: Date.now() });
   purger();
   return envoye;
 }
@@ -133,7 +176,7 @@ async function handleBanInfoInteraction(interaction) {
   }
 
   const messageId = interaction.message?.id;
-  const etat = etats.get(messageId) || { targetId, reasonId: null, reasonLabel: null, dureeId: null, at: Date.now() };
+  const etat = etats.get(messageId) || { targetId, reasonId: null, reasonLabel: null, dureeId: null, linkedToId: null, at: Date.now() };
 
   if (action === "reason" && interaction.values[0] === "custom") {
     const modal = new ModalBuilder().setCustomId(`${CUSTOM_ID}:reasoncustom:${targetId}`).setTitle("Raison personnalisée");
@@ -154,6 +197,8 @@ async function handleBanInfoInteraction(interaction) {
     etat.reasonLabel = choisie?.label || null;
   } else if (action === "duree") {
     etat.dureeId = interaction.values[0];
+  } else if (action === "lien") {
+    etat.linkedToId = interaction.values[0] === AUCUN_LIEN ? null : interaction.values[0];
   }
 
   const target = await interaction.guild.members.fetch(etat.targetId).catch(() => null);
@@ -183,6 +228,7 @@ async function handleBanInfoInteraction(interaction) {
       return interaction.reply({ content: `Discord a refusé : ${err.message}`, flags: MessageFlags.Ephemeral });
     }
     if (duree.ms) tempBanStore.add(interaction.guild.id, target.id, Date.now() + duree.ms);
+    if (etat.linkedToId) altLinksStore.link(interaction.guild.id, target.id, etat.linkedToId);
 
     await report(interaction.client, {
       guildId: interaction.guild.id,
@@ -192,6 +238,7 @@ async function handleBanInfoInteraction(interaction) {
         { label: "Cible", value: `<@${target.id}> (${target.id})` },
         { label: "Raison", value: etat.reasonLabel },
         { label: "Durée", value: duree.label },
+        ...(etat.linkedToId ? [{ label: "Double compte de", value: `<@${etat.linkedToId}>` }] : []),
       ],
       action: duree.ms ? "tempban" : "ban",
       targetId: target.id,
@@ -219,7 +266,9 @@ async function handleBanInfoInteraction(interaction) {
     }
     const container = new ContainerBuilder();
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## Blacklist · raisons\n**${tag}** banni — ${duree.label}.\nRaison : ${etat.reasonLabel}`)
+      new TextDisplayBuilder().setContent(
+        `## Blacklist · raisons\n**${tag}** banni — ${duree.label}.\nRaison : ${etat.reasonLabel}${etat.linkedToId ? `\nDouble compte de : <@${etat.linkedToId}>` : ""}`
+      )
     );
     return interaction.update({ flags: MessageFlags.IsComponentsV2, components: [container] });
   }
