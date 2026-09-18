@@ -943,6 +943,22 @@ function accessRows(scope, label) {
 // Statistiques, et la détection de sécurité vit là où elle a toujours vécu —
 // utils/securityScan.js, exposée par Sécurité > Vue d'ensemble et par
 // `&security scan`, qui la donne en entier.
+
+/**
+ * "🔎 Chercher une commande" (rubrique "Rôles et permissions") : trouve la
+ * catégorie du CATALOGUE DE PERMISSIONS (utils/permissions/catalog.js) dont
+ * une clé correspond au terme tapé — sur son libellé (qui cite déjà la
+ * commande entre parenthèses, ex: "Bannir un membre (&ban)") ou sur la clé
+ * elle-même. `null` si rien ne correspond.
+ * @param {string} terme
+ * @returns {string|null}
+ */
+function trouverCategoriePourTerme(terme) {
+  const t = terme.toLowerCase();
+  const trouve = permCatalog.PERMISSIONS.find((p) => p.label.toLowerCase().includes(t) || p.key.toLowerCase().includes(t));
+  return trouve?.category || null;
+}
+
 /**
  * Ce qui est réellement DESSINÉ sur la rubrique `section` : la même donnée que
  * le corps texte, en structuré. Exporté pour que les tests vérifient le
@@ -1190,6 +1206,23 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             )
         )
       );
+      // Demande explicite : plutôt que de parcourir les catégories une par
+      // une pour trouver où vit une commande précise, taper son nom
+      // ("ban") ouvre directement la catégorie qui la contient (ici
+      // "Modération"), où "clear"/"kick"/... sont juste à côté.
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:permsearchbtn:${state.permissionsRoleId}`)
+            .setLabel("🔎 Chercher une commande")
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+      if (state.permissionsSearchError) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`> *Aucune commande ne correspond à "${state.permissionsSearchError}".*`)
+        );
+      }
       const activeCategory = categories.find((c) => c.category === state.permissionsCategory);
       if (activeCategory) {
         const granted = permStore.getRoleGrants(guild.id, state.permissionsRoleId);
@@ -2197,6 +2230,30 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "permcat") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: extra, permissionsCategory: interaction.values[0] });
+  }
+
+  // "🔎 Chercher une commande" : taper "ban" ouvre directement la catégorie
+  // "Modération" (où vit &ban) — même résultat que choisir la catégorie à la
+  // main dans le menu déroulant juste au-dessus, en évitant de devoir savoir
+  // dans laquelle des 7 catégories une commande précise se trouve.
+  if (action === "permsearchbtn") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const terme = interaction.fields.getTextInputValue("terme").trim();
+      const categorie = terme ? trouverCategoriePourTerme(terme) : null;
+      return goto("permissions", {
+        permissionsRoleId: extra,
+        permissionsCategory: categorie || undefined,
+        permissionsSearchError: categorie ? null : terme,
+      });
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:permsearchbtn:${extra}`).setTitle("Chercher une commande");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("terme").setLabel("Nom de la commande").setPlaceholder("ex: ban").setStyle(TextInputStyle.Short).setMaxLength(50).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
   }
 
   if (action === "permkeys") {
