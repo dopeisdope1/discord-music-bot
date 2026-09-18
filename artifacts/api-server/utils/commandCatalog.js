@@ -70,6 +70,12 @@ const CATEGORIES = [
         description: "Débannit un membre. Sans identifiant, propose la liste des bannis",
       },
       {
+        name: "baninfo <@membre>",
+        prefix: "mod",
+        permission: "moderation.ban",
+        description: "Carte raison/durée avant de bannir (raisons prédéfinies via &panel > Modération, ou personnalisée) — &ban reste instantané, sans cette étape",
+      },
+      {
         name: "zinkiller <@membre|id> [raison]",
         prefix: "mod",
         permission: "moderation.zinkiller",

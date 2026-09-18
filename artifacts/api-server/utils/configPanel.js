@@ -28,6 +28,7 @@ const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboar
 const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
+const banReasonsStore = require("./banReasonsStore");
 const { can } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
@@ -349,10 +350,14 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "moderation") {
+    const raisons = banReasonsStore.list(guildId);
     return [
       // La dispense « accès legacy aux salons » a été retirée sur demande :
       // il ne reste que celle qui sert vraiment, le quota de `uo clear`.
       `> **Dispensés du quota de \`uo clear\`** : ${mentions(accessStore.list("clear"))}`,
+      "",
+      `**Raisons de ban prédéfinies (${raisons.length})** — proposées par \`&baninfo\` :`,
+      raisons.length ? raisons.map((r) => `> ${r.label}`).join("\n") : "> *Aucune — \"Raison personnalisée\" reste toujours disponible.*",
     ].join("\n");
   }
 
@@ -1114,6 +1119,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
+    if (can(member, "moderation.ban")) {
+      const raisons = banReasonsStore.list(guild.id);
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:banreasonadd`).setLabel("Ajouter une raison").setStyle(ButtonStyle.Success)
+        )
+      );
+      if (raisons.length) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${ID}:banreasondel`)
+              .setPlaceholder("Supprimer une raison")
+              .addOptions(raisons.slice(0, 25).map((r) => new StringSelectMenuOptionBuilder().setLabel(r.label.slice(0, 100)).setValue(r.id)))
+          )
+        );
+      }
+    }
   } else if (meta.key === "permissions") {
     const peutModifier = can(member, "panel.permissions.manage");
     // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
@@ -1922,6 +1945,29 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "subnav") {
     return goto(interaction.values[0]);
+  }
+
+  if (action === "banreasonadd") {
+    if (!can(member, "moderation.ban")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const label = interaction.fields.getTextInputValue("label").trim();
+      if (!label) return interaction.reply({ content: "Raison vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
+      banReasonsStore.add(guildId, label);
+      return goto("moderation", {});
+    }
+    const modal = new ModalBuilder().setCustomId(`${ID}:banreasonadd`).setTitle("Ajouter une raison de ban");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId("label").setLabel("Raison").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "banreasondel") {
+    if (!can(member, "moderation.ban")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    banReasonsStore.remove(guildId, interaction.values[0]);
+    return goto("moderation", {});
   }
 
   if (action === "permrole") {

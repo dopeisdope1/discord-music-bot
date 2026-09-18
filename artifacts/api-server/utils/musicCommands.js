@@ -11,6 +11,7 @@ const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
 const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
+const banInfoCard = require("./banInfoCard");
 const { moderationHandlers } = require("./moderationCommands");
 const { automodHandlers } = require("./automodCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
@@ -145,6 +146,17 @@ const modHandlers = {
   banall: handleBanAll,
   ban: handleBan,
   unban: handleUnban,
+  baninfo: async (client, message, args) => {
+    if (!can(message.member, "moderation.ban")) return;
+    const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
+    const idArg = args[0]?.match(/^\d{15,25}$/);
+    const targetId = mention?.[1] || idArg?.[0];
+    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte)] });
+    if (!targetId) return erreur("Indique un membre (mention ou identifiant) : `baninfo @membre`.");
+    const target = await message.guild.members.fetch(targetId).catch(() => null);
+    if (!target) return erreur("Ce membre n'est pas sur le serveur.");
+    return banInfoCard.repondreAvecBanInfo(message, target);
+  },
   zinkiller: zinkillerCommands.zinkiller,
   unzinkiller: zinkillerCommands.unzinkiller,
   zinkillerlist: zinkillerCommands.zinkillerlist,
