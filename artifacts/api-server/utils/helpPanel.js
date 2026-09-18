@@ -80,23 +80,26 @@ function dedupeByIdentity(commands) {
 
 /**
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a accès,
- * groupées par PALIER de droit. Les commandes seulement documentées (sans
+ * groupées par PALIER de droit, pour UN bucket de préfixe donné (voir
+ * utils/commandRouting.js). Les commandes seulement documentées (sans
  * backend) ne sont jamais incluses.
  *
- * &help ne montre QUE les commandes du préfixe "&" (bucket "gestion") —
- * même principe que !!help/=help, qui ont chacun leur propre liste figée
- * limitée à leur préfixe : les commandes de modération ("-"), de sécurité
- * ("!!") et vocales ("=") ne doivent jamais apparaître ici, même si le
- * catalogue partagé (utils/commandCatalog.js) les référence toutes.
+ * Généralisé pour servir "&help" (bucket "gestion") ET "-help" (bucket
+ * "modération") depuis le même moteur — même principe que !!help/=help, qui
+ * ont chacun leur propre liste figée limitée à leur préfixe : un bucket ne
+ * doit jamais montrer les commandes d'un autre, même si le catalogue partagé
+ * (utils/commandCatalog.js) les référence toutes.
+ * @param {import('discord.js').GuildMember} member
+ * @param {string} bucket voir utils/commandRouting.js (BUCKET_GESTION, BUCKET_MODERATION, ...)
  * @returns {Record<"public"|"configurable"|"sys", object[]>}
  */
-function groupByPalier(member) {
+function groupByPalier(member, bucket) {
   const modeDecouverte = !hasConfiguredAccess(member);
   const groups = { public: [], configurable: [], sys: [] };
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
-      if (commandRouting.bucketDe(cmd.name) !== commandRouting.BUCKET_GESTION) continue;
+      if (commandRouting.bucketDe(cmd.name) !== bucket) continue;
       // Un membre encore inconnu du moteur ne reçoit pas l'inventaire des
       // commandes publiques : il ne voit que l'aide qu'il vient de demander.
       if (modeDecouverte && identityOf(cmd) !== "help") continue;
@@ -175,7 +178,7 @@ function blocsPourPalier(titre, lignes) {
  */
 function buildHelpPages(guildId, member) {
   const prefixes = getPrefixes(guildId);
-  const groups = groupByPalier(member);
+  const groups = groupByPalier(member, commandRouting.BUCKET_GESTION);
 
   const blocs = [];
   for (const palier of PALIERS) {
@@ -198,4 +201,4 @@ function buildHelpPages(guildId, member) {
   });
 }
 
-module.exports = { buildHelpPages, identityOf, ACCENT_COLOR };
+module.exports = { buildHelpPages, identityOf, ACCENT_COLOR, groupByPalier, dedupeByIdentity, formatLine, PALIERS };

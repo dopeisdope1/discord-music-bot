@@ -33,6 +33,8 @@ const palierPanel = require("./utils/palierPanel");
 // "!!antilink panel" — panneau dédié à l'anti-lien (mode + bypass), en dehors
 // de la machine à états de &panel/!!secur — voir utils/antiLinkPanel.js.
 const antiLinkPanel = require("./utils/antiLinkPanel");
+// "&help"/"-help" navigables (menu "Choisir un palier") — voir utils/helpNavigator.js.
+const helpNavigator = require("./utils/helpNavigator");
 // Ban persistant ("&zinkiller") — re-banni automatiquement si débanni
 // ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
 const zinkillerStore = require("./utils/zinkillerStore");
@@ -175,6 +177,7 @@ client.on("interactionCreate", async (interaction) => {
     `${palierPanel.CUSTOM_ID}:`,
     `${SECUR_CUSTOM_ID}:`,
     `${antiLinkPanel.CUSTOM_ID}:`,
+    `${helpNavigator.CUSTOM_ID}:`,
   ];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
@@ -213,6 +216,12 @@ client.on("interactionCreate", async (interaction) => {
   // "!!antilink panel" (voir utils/antiLinkPanel.js).
   if (interaction.customId?.startsWith(`${antiLinkPanel.CUSTOM_ID}:`)) {
     await antiLinkPanel.handleAntiLinkInteraction(interaction).catch((err) => console.error("[antiLinkPanel]", err));
+    return;
+  }
+
+  // "&help"/"-help" navigables (voir utils/helpNavigator.js).
+  if (interaction.customId?.startsWith(`${helpNavigator.CUSTOM_ID}:`)) {
+    await helpNavigator.handleHelpNavInteraction(interaction).catch((err) => console.error("[helpNavigator]", err));
     return;
   }
 

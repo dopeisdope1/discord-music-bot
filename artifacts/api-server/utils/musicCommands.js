@@ -4,7 +4,7 @@ const commandRouting = require("./commandRouting");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
-const { buildHelpPages } = require("./helpPanel");
+const helpNavigator = require("./helpNavigator");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
@@ -108,12 +108,11 @@ async function repondreAvecTableauDeBord(message, construire) {
 
 const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
-  // de la personne (voir utils/helpPanel.js). Texte pur, sans image : jamais
-  // besoin de repli (contrairement à &panel ci-dessous).
+  // de la personne (voir utils/helpPanel.js). Un seul message, navigable via
+  // le menu "Choisir un palier" (utils/helpNavigator.js) — jamais plusieurs
+  // messages postés d'affilée, même avec 150+ commandes configurables.
   async help(client, message) {
-    const pages = buildHelpPages(message.guild.id, message.member);
-    await message.reply(pages[0]);
-    for (const page of pages.slice(1)) await message.channel.send(page);
+    return helpNavigator.repondreAvecAide("gestion", message);
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne
@@ -477,6 +476,11 @@ async function handleTextCommand(client, message) {
   if (MODERATION_PREFIX && content.startsWith(MODERATION_PREFIX)) {
     const [moderationCmd, ...moderationArgs] = content.slice(MODERATION_PREFIX.length).trim().split(/\s+/);
     const cmdLower = (moderationCmd || "").toLowerCase();
+    // "-help" est un cas à part, comme "!!help"/"=help" : le mot "help"
+    // n'est volontairement pas dans le catalogue partagé (utils/
+    // commandCatalog.js), sous peine de fausser commandRouting.bucketDe pour
+    // TOUS les préfixes qui l'utilisent (voir utils/helpNavigator.js).
+    if (cmdLower === "help") return helpNavigator.repondreAvecAide("moderation", message);
     if (commandRouting.bucketDe(cmdLower) !== commandRouting.BUCKET_MODERATION) return;
     const handler = modHandlers[cmdLower];
     if (handler) return handler(client, message, moderationArgs);
