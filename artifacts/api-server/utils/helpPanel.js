@@ -4,15 +4,34 @@ const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
+const { PERMISSIONS } = require("./permissions/catalog");
 
 // Conservé pour compatibilité (utils/permsCommands.js l'importait) — plus
 // aucun composant ne colore quoi que ce soit dans &help.
 const ACCENT_COLOR = 0x2c2f5c;
 
+// Catégorie du moteur de permissions (utils/permissions/catalog.js) pour
+// chaque clé — sert uniquement à savoir si une commande est "dangereuse"
+// pour l'affichage ci-dessous, jamais pour l'octroi réel (utils/
+// permissions/engine.js reste l'unique juge de ce qui est accordé).
+const CATEGORIE_PAR_CLE = new Map(PERMISSIONS.map((p) => [p.key, p.category]));
+
+// Demande explicite : même accordable par rôle, tout ce qui touche à
+// l'ACCÈS/PANEL/PROTECTION/SÉCURITÉ (octroi de permissions, panel,
+// anti-nuke/anti-spam...) doit apparaître dans "Sys" plutôt que
+// "Configurables", dans les QUATRE aides (&help/-help/!!help/=help) — un
+// rôle mal configuré sur ces droits-là est un bien plus gros risque qu'un
+// mauvais rôle sur "&kick".
+const CATEGORIES_DANGEREUSES = new Set(["panel", "protection"]);
+function estDangereux(permission) {
+  const cles = Array.isArray(permission) ? permission : [permission];
+  return cles.some((cle) => cle === "sys" || CATEGORIES_DANGEREUSES.has(CATEGORIE_PAR_CLE.get(cle)));
+}
+
 // Les trois PALIERS de &help, déduits du droit exigé, jamais saisis à la
 // main :
 //   pas de permission  -> tout le monde
-//   permission "sys"   -> réservé au rang sys
+//   "sys" / accès-panel/protection/sécurité -> réservé au rang sys (affichage)
 //   toute autre clé    -> accordable par rôle depuis &panel
 const PALIERS = [
   { cle: "public", titre: "Publiques" },
@@ -21,7 +40,7 @@ const PALIERS = [
 ];
 function palierDe(cmd) {
   if (!cmd.permission) return "public";
-  return cmd.permission === "sys" ? "sys" : "configurable";
+  return estDangereux(cmd.permission) ? "sys" : "configurable";
 }
 
 /**
@@ -201,4 +220,4 @@ function buildHelpPages(guildId, member) {
   });
 }
 
-module.exports = { buildHelpPages, identityOf, ACCENT_COLOR, groupByPalier, dedupeByIdentity, formatLine, PALIERS };
+module.exports = { buildHelpPages, identityOf, ACCENT_COLOR, groupByPalier, dedupeByIdentity, formatLine, PALIERS, estDangereux };
