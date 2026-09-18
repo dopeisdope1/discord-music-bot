@@ -35,7 +35,7 @@ const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = requi
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { card: simpleCard } = require("./listCard");
-const { majSure } = require("./componentsV2");
+const { majSure, texteDUnEmbed } = require("./componentsV2");
 const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const statsStore = require("./statsStore");
@@ -739,7 +739,16 @@ function sectionBody(section, guild, member, state) {
  * testés, avec confirmation et journalisation) plutôt que réimplémenter la
  * création/suppression de rôle depuis le panel.
  */
-function messageFromInteraction(interaction) {
+/**
+ * @param {import('discord.js').Interaction} interaction
+ * @param {{ section: string, state?: object }} [retour] quand fourni, le
+ *   résultat (roleAdmin/backup/rolePresets...) ne remplace plus le panneau
+ *   par une confirmation isolée — il revient sur CETTE rubrique du panel,
+ *   la confirmation affichée en bannière au-dessus. Sans lui, comportement
+ *   inchangé (confirmation seule) pour les appelants qui n'ont pas encore
+ *   de rubrique de retour évidente.
+ */
+function messageFromInteraction(interaction, retour) {
   return {
     member: interaction.member,
     guild: interaction.guild,
@@ -759,7 +768,26 @@ function messageFromInteraction(interaction) {
     // Components V2 — sans conversion, Discord refuse tout le message
     // (embeds[MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2], observé
     // en production).
-    reply: (payload) => majSure(interaction, payload),
+    reply: (payload) => {
+      // Une carte AVEC ses propres composants/fichiers (ex: la confirmation
+      // en image avant suppression, utils/serverAdminCommands.js::
+      // requestConfirmation) doit rester elle-même pleinement interactive —
+      // seul un résultat FINAL, simple embed de statut (buildStatusEmbed),
+      // revient sur le panel. Sinon "Supprimer ce rôle" perdrait ses
+      // boutons Supprimer/Annuler, remplacés par le panel avant même que la
+      // confirmation ait pu s'afficher.
+      const embedSeul = payload?.embeds?.length && !payload.files?.length && !payload.components?.length;
+      if (!retour || !embedSeul) return majSure(interaction, payload);
+      // Demande explicite : une action lancée DEPUIS le panel doit y
+      // ramener, jamais laisser la confirmation seule à la place ("&panel"
+      // édité en simple "Rôle X créé.", sans retour possible au panel sans
+      // le rouvrir). La confirmation reste visible, juste en bannière.
+      const { texte } = texteDUnEmbed(payload.embeds[0]);
+      const panel = buildConfigPanel(interaction.guild, retour.section, interaction.member, retour.state || {}, {});
+      if (!texte) return majSure(interaction, { ...panel, attachments: [] });
+      const banniere = new ContainerBuilder().addTextDisplayComponents(new TextDisplayBuilder().setContent(texte));
+      return majSure(interaction, { ...panel, components: [banniere, ...panel.components], attachments: [] });
+    },
   };
 }
 
@@ -2104,7 +2132,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (interaction.isModalSubmit()) {
       const name = interaction.fields.getTextInputValue("name").trim();
       if (!name) return interaction.reply({ content: "Nom vide, aucun rôle créé.", flags: MessageFlags.Ephemeral });
-      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["create", name]);
+      await roleAdmin(interaction.client, messageFromInteraction(interaction, { section: "permissions" }), ["create", name]);
       return;
     }
     const modal = new ModalBuilder().setCustomId(`${ID}:rolecreate`).setTitle("Créer un rôle");
@@ -2124,7 +2152,11 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       // roleAdmin résout la cible via un ID brut dans les args (mentions.roles
       // reste toujours vide sur messageFromInteraction) — voir "roledelete"
       // juste en dessous, même mécanique.
-      await roleAdmin(interaction.client, messageFromInteraction(interaction), ["rename", extra, ...name.split(/\s+/)]);
+      await roleAdmin(
+        interaction.client,
+        messageFromInteraction(interaction, { section: "permissions", state: { permissionsRoleId: extra } }),
+        ["rename", extra, ...name.split(/\s+/)]
+      );
       return;
     }
     const role = guild.roles.cache.get(extra);
@@ -2140,7 +2172,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "roledelete") {
     if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    await roleAdmin(interaction.client, messageFromInteraction(interaction), ["delete", extra]);
+    await roleAdmin(interaction.client, messageFromInteraction(interaction, { section: "permissions" }), ["delete", extra]);
     return;
   }
 

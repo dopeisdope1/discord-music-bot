@@ -4,6 +4,7 @@ const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const zinkillerStore = require("./zinkillerStore");
 const listNavigator = require("./listNavigator");
+const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 
 // "&zinkiller"/"&unzinkiller" — ban PERSISTANT : re-banni automatiquement si
 // quelqu'un le débannit autrement que par &unzinkiller (Discord natif, un
@@ -64,7 +65,16 @@ async function zinkiller(client, message, args) {
     channelId: message.channel.id,
   });
 
-  return reply(message, "success", `**${targetTag}** banni et re-banni automatiquement s'il est débanni ailleurs que par \`unzinkiller\`.`);
+  const carte = await carteSanctionMessage({
+    action: "zinkiller",
+    cible: targetMember || { id: targetId, user: { tag: targetTag } },
+    moderateur: message.author,
+    raison: reason,
+    serveur: message.guild.name,
+  });
+  return repondreAvecCarte(message, carte, () =>
+    reply(message, "success", `**${targetTag}** banni et re-banni automatiquement s'il est débanni ailleurs que par \`unzinkiller\`.`)
+  );
 }
 
 /** "&unzinkiller <@membre|id>" — débannit et retire le ban persistant. */
@@ -106,7 +116,13 @@ async function unzinkiller(client, message, args) {
     channelId: message.channel.id,
   });
 
-  return reply(message, "success", `**${existing.user.tag}** débanni, le ban persistant est retiré.`);
+  const carte = await carteSanctionMessage({
+    action: "unzinkiller",
+    cible: { id: targetId, user: existing.user },
+    moderateur: message.author,
+    serveur: message.guild.name,
+  });
+  return repondreAvecCarte(message, carte, () => reply(message, "success", `**${existing.user.tag}** débanni, le ban persistant est retiré.`));
 }
 
 /** "&zinkillerlist" — membres sous ban persistant sur ce serveur, un seul message paginé (voir utils/listNavigator.js). */

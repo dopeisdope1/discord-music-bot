@@ -101,7 +101,9 @@ const texteDe = (p) =>
     await zinkiller.zinkiller(null, msg, [`<@${TARGET}>`, "raid"]);
     assert.strictEqual(guild._banned.value, true);
     assert.strictEqual(zinkillerStore.isZinkilled("g1", TARGET), true);
-    assert.ok(texteDe(msg._replies[0]).includes("banni"), texteDe(msg._replies[0]));
+    // Confirmation en carte-image (utils/actionCard.js), comme &kick/&ban —
+    // le texte n'est qu'un repli si Discord refuse le fichier.
+    assert.ok(msg._replies[0].files?.length || texteDe(msg._replies[0]).includes("banni"), JSON.stringify(msg._replies[0]));
   });
 
   await cas("fonctionne aussi par ID brut, pour un membre qui a déjà quitté", async () => {

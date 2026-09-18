@@ -413,6 +413,10 @@ const SANCTIONS = {
   tempmute: { titre: "Mute temporaire", couleur: TEINTE },
   unmute: { titre: "Démute", couleur: TEINTE },
   warn: { titre: "Avertissement", couleur: TEINTE },
+  zinkiller: { titre: "Ban persistant (zinkiller)", couleur: TEINTE },
+  unzinkiller: { titre: "Débanni (unzinkiller)", couleur: TEINTE },
+  bmute: { titre: "Mute bot gradé", couleur: TEINTE },
+  bunmute: { titre: "Démute bot", couleur: TEINTE },
 };
 
 /**

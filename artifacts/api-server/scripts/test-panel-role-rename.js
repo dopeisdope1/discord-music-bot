@@ -156,7 +156,14 @@ function actionOptions(guild, member, state) {
       },
     });
     assert.strictEqual(role.name, "Modérateur en chef");
-    assert.ok(reponse?.embeds?.[0]?.data?.description?.includes("renommé"), JSON.stringify(reponse));
+    // Depuis la demande "revenir au panel" : la confirmation n'est plus un
+    // embed isolé, elle revient sur le panel (Rôles et permissions) avec la
+    // confirmation en bannière au-dessus — voir configPanel.js::
+    // messageFromInteraction.
+    const lire = (n) => [n.content || "", ...(n.components || []).map(lire)].join("\n");
+    const texte = reponse.components.map((c) => lire(c.toJSON())).join("\n");
+    assert.ok(texte.includes("renommé"), texte);
+    assert.ok(texte.includes("PANEL DE CONFIGURATION"), "doit revenir sur le panel, pas rester sur la seule confirmation");
   });
 
   await cas("panneau en Components V2 : la réponse (embed classique) est convertie, pas refusée par Discord — bug réel rencontré en production", async () => {

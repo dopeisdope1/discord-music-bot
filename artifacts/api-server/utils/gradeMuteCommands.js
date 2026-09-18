@@ -6,6 +6,7 @@ const muteStore = require("./muteStore");
 const gradeMuteStore = require("./gradeMuteStore");
 const rankLadder = require("./rankLadderCommands");
 const listNavigator = require("./listNavigator");
+const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 
 // "&bmute"/"&bunmute" — mute bot GRADÉ : un mute posé par quelqu'un au grade
 // N (échelle "&promote"/"&demote", voir utils/rankLadderCommands.js) ne peut
@@ -74,10 +75,20 @@ async function bmute(client, message, args) {
 
   gradeMuteStore.setMute(message.guild.id, target.id, { gradeIndex, moderatorId: message.author.id, reason });
 
-  return reply(
-    message,
-    "success",
-    `${target.user.tag} a été mute. Ne pourra être démute que par un grade au moins égal à ${gradeLabel(message.guild, gradeIndex)}.`
+  const carte = await carteSanctionMessage({
+    action: "bmute",
+    cible: target,
+    moderateur: message.author,
+    raison: reason,
+    duree: `démute par grade ≥ ${gradeLabel(message.guild, gradeIndex)}`,
+    serveur: message.guild.name,
+  });
+  return repondreAvecCarte(message, carte, () =>
+    reply(
+      message,
+      "success",
+      `${target.user.tag} a été mute. Ne pourra être démute que par un grade au moins égal à ${gradeLabel(message.guild, gradeIndex)}.`
+    )
   );
 }
 
@@ -111,7 +122,8 @@ async function bunmute(client, message, args) {
   }
 
   gradeMuteStore.removeMute(message.guild.id, target.id);
-  return reply(message, "success", `${target.user.tag} a été démute.`);
+  const carte = await carteSanctionMessage({ action: "bunmute", cible: target, moderateur: message.author, serveur: message.guild.name });
+  return repondreAvecCarte(message, carte, () => reply(message, "success", `${target.user.tag} a été démute.`));
 }
 
 /** "&bmutelist" — mutes bot actifs sur ce serveur, un seul message paginé (voir utils/listNavigator.js). */
