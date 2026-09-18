@@ -27,7 +27,11 @@ const PROVIDERS = new Map();
 
 /**
  * @param {string} kind identifiant unique de la liste (ex: "bmutelist")
- * @param {(guild: import('discord.js').Guild) => { title: string, lines: string[], vide?: string }} fournisseur
+ * @param {(guild: import('discord.js').Guild) => { title: string, lines: string[], vide?: string, numerote?: boolean }} fournisseur
+ *   `numerote: true` préfixe chaque ligne de son rang ("137. ...") dans la
+ *   liste ENTIÈRE, pas remis à zéro à chaque page — demande explicite pour
+ *   retrouver une entrée précise sans compter. Sans lui (ex: &mutelist, dont
+ *   les lignes mélangent des en-têtes de section), aucune numérotation.
  */
 function registerProvider(kind, fournisseur) {
   PROVIDERS.set(kind, fournisseur);
@@ -55,7 +59,7 @@ function paginerLignes(lignes) {
 
 async function buildListNavigator(kind, guild, page = 0) {
   const fournisseur = PROVIDERS.get(kind);
-  const { title, lines, vide, erreur, compteur } = await fournisseur(guild);
+  const { title, lines, vide, erreur, compteur, numerote } = await fournisseur(guild);
   const container = new ContainerBuilder();
 
   if (erreur) {
@@ -69,7 +73,11 @@ async function buildListNavigator(kind, guild, page = 0) {
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
   }
 
-  const pages = paginerLignes(lines);
+  // Numéroté sur le rang dans la liste ENTIÈRE, avant la pagination — sinon
+  // chaque page repartirait de "1.", et retrouver "l'entrée 137" perdrait
+  // tout son sens.
+  const lignesAffichees = numerote ? lines.map((ligne, i) => `${i + 1}. ${ligne}`) : lines;
+  const pages = paginerLignes(lignesAffichees);
   const pageActive = Math.min(Math.max(page, 0), pages.length - 1);
   const suffixe = pages.length > 1 ? ` (${pageActive + 1}/${pages.length})` : "";
   // `compteur` laisse une commande garder sa propre formulation ("N fiche(s)

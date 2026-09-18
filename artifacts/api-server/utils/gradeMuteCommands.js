@@ -137,6 +137,7 @@ listNavigator.registerProvider("bmutelist", (guild) => {
   return {
     title: "Mutes bot actifs",
     vide: "Aucun mute bot actif sur ce serveur.",
+    numerote: true,
     lines: entries.map(
       (e) => `<@${e.userId}> — par <@${e.moderatorId}> — niveau requis pour lever : ${gradeLabel(guild, e.gradeIndex)}`
     ),

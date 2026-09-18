@@ -92,7 +92,15 @@ function makeMessage(guild, authorId = "staff-1") {
   };
 }
 
-const texteDe = (p) => p.embeds?.[0]?.data?.description || p.embeds?.[0]?.toJSON?.().description || "";
+const texteDe = (p) =>
+  p.embeds?.[0]?.data?.description ||
+  p.embeds?.[0]?.toJSON?.().description ||
+  p.components?.[0]
+    ?.toJSON?.()
+    ?.components?.filter?.((c) => c.content)
+    ?.map?.((c) => c.content)
+    ?.join?.("\n") ||
+  "";
 
 (async () => {
   console.log("gradeladder — configuration de l'échelle :");
@@ -108,13 +116,15 @@ const texteDe = (p) => p.embeds?.[0]?.data?.description || p.embeds?.[0]?.toJSON
     assert.strictEqual(ladderStore.addRole("g1", ROLE_BAS), false);
   });
 
-  await cas("gradeladder list affiche l'échelle dans l'ordre", async () => {
+  await cas("gradeladder list affiche l'échelle du PLUS HAUT grade (niveau #1) au plus bas", async () => {
     const { guild } = makeGuild();
     const msg = makeMessage(guild);
     await rankLadder.gradeLadder(null, msg, ["list"]);
     const texte = texteDe(msg._replies[0]);
+    // Panel enrichi (utils/gradeLadderPanel.js) : même sens que &promote,
+    // "niveau #1" = le grade le plus haut, affiché en premier.
     assert.ok(
-      texte.indexOf(ROLE_BAS) < texte.indexOf(ROLE_MOYEN) && texte.indexOf(ROLE_MOYEN) < texte.indexOf(ROLE_HAUT),
+      texte.indexOf(ROLE_HAUT) < texte.indexOf(ROLE_MOYEN) && texte.indexOf(ROLE_MOYEN) < texte.indexOf(ROLE_BAS),
       texte
     );
   });

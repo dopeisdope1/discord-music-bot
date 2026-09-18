@@ -574,6 +574,7 @@ listNavigator.registerProvider("banlist", async (guild) => {
   return {
     title: "Membres bannis",
     vide: "Personne n'est banni.",
+    numerote: true,
     lines: [...bans.values()].map((b) => `\`${b.user.tag}\` (${b.user.id})${b.reason ? ` — ${b.reason}` : ""}`),
   };
 });

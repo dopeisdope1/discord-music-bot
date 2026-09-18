@@ -3,6 +3,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission } = require("./moderation/actions");
 const ladderStore = require("./rankLadderStore");
+const gradeLadderPanel = require("./gradeLadderPanel");
 
 // "&promote"/"&demote" — échelle de grades ordonnée (utils/rankLadderStore.js),
 // SÉPARÉE de "&rank" (utils/levels.js, niveaux/XP) et "&derank" (utils/
@@ -110,12 +111,7 @@ async function gradeLadder(client, message, args) {
   const sub = (args[0] || "").toLowerCase();
 
   if (sub === "list" || !sub) {
-    const ladder = ladderStore.getLadder(message.guild.id);
-    if (!ladder.length) {
-      return reply(message, "info", "Aucun grade configuré. `gradeladder add @rôle` pour en ajouter (du plus bas au plus haut).");
-    }
-    const lignes = ladder.map((id, i) => `${i + 1}. ${message.guild.roles.cache.has(id) ? `<@&${id}>` : `*rôle supprimé (${id})*`}`);
-    return reply(message, "info", lignes.join("\n"));
+    return gradeLadderPanel.repondreAvecGradeLadder(message);
   }
 
   const roleArg = (args[1] || "").replace(/\D/g, "");

@@ -136,6 +136,7 @@ listNavigator.registerProvider("zinkillerlist", (guild) => {
   return {
     title: "Bans persistants",
     vide: "Aucun ban persistant actif sur ce serveur.",
+    numerote: true,
     lines: entries.map((e) => `<@${e.userId}> (${e.userId}) — par <@${e.moderatorId}>${e.reason ? ` — ${e.reason}` : ""}`),
   };
 });
