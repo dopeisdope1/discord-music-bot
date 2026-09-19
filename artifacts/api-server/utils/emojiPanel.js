@@ -97,17 +97,30 @@ async function handleEmojiTextCommand(client, message, args) {
   if (sub === "list") {
     return message.reply(buildEmojiListCard(message.guild.id));
   }
+  const trouverSlot = (motif) =>
+    SLOTS.find((s) => s.key === motif || s.key.split(":")[1]?.toLowerCase() === motif.toLowerCase() || s.label.toLowerCase().includes(motif.toLowerCase()));
+
   if (sub === "reset") {
-    const slot = SLOTS.find((s) => s.key === args[1] || s.label.toLowerCase().includes((args[1] || "").toLowerCase()));
-    if (!slot) return message.reply({ content: "Slot introuvable — utilise `&emoji` pour voir la liste.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    const slot = trouverSlot(args[1] || "");
+    if (!slot) return message.reply({ content: "Slot introuvable — utilise `&emojicat` pour voir la liste.", flags: MessageFlags.Ephemeral }).catch(() => {});
     categoryEmojiStore.reset(message.guild.id, slot.key);
     return message.reply(`✅ **${slot.label}** remis à son emoji par défaut (${slot.defaultEmoji}).`);
   }
-  if (sub && sub !== "list" && sub !== "reset") {
-    return message.reply({
-      embeds: [],
-      content: "Utilisation : `&emoji` pour ouvrir le panel, `&emoji list`, ou `&emoji reset <clé>`.",
-    });
+
+  // Raccourci direct "&emojicat <clé> <emoji>" — change l'emoji d'un coup,
+  // sans passer par le panel/la modale (demande explicite, calquée sur
+  // "&emoji owner 👑" d'un autre bot).
+  if (sub && sub !== "list") {
+    const slot = trouverSlot(sub);
+    if (!slot) {
+      return message.reply("Utilisation : `&emojicat` pour ouvrir le panel, `&emojicat <clé> <emoji>`, ou `&emojicat reset <clé>`.");
+    }
+    const emoji = emojiValide(args.slice(1).join(" "));
+    if (!emoji) {
+      return message.reply("Ça ne ressemble pas à un seul emoji — `&emojicat <clé> <emoji>`.");
+    }
+    categoryEmojiStore.set(message.guild.id, slot.key, emoji);
+    return message.reply(`✅ Emoji mis à jour\n${emoji} \`${slot.key.split(":")[1] || slot.key}\` — ${slot.label}`);
   }
 
   return messageOwner.repondreEtRetenir(message, buildEmojiPanel(message.guild.id, null));
