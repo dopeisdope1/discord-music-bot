@@ -1,0 +1,163 @@
+const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  MessageFlags,
+} = require("discord.js");
+const { can } = require("./permissions/engine");
+const { SLOTS, emojiDe } = require("./emojiSlots");
+const categoryEmojiStore = require("./categoryEmojiStore");
+const messageOwner = require("./messageOwner");
+
+// "&emoji" — personnalise l'emoji de chaque GROUPE affiché dans l'aide (voir
+// utils/emojiSlots.js pour la liste des slots, utils/helpNavigator.js pour
+// leur affichage). Réservé au rang sys (comme &sys/&panel > paramètres du
+// bot) : c'est un réglage global du serveur, pas une permission ordinaire.
+const CUSTOM_ID = "emoji";
+const PERMISSION = "sys";
+
+/** Un emoji Discord (unicode ou custom `<a:nom:id>`/`<:nom:id>`) — une seule "unité" visuelle, pas une phrase. */
+function emojiValide(texte) {
+  const t = texte.trim();
+  if (/^<a?:\w+:\d+>$/.test(t)) return t;
+  // Unicode : accepte 1 à quelques points de code (emoji composés avec
+  // variation selector/ZWJ, ex: ❤️, 🧑‍💻) sans valider caractère par
+  // caractère — juste une longueur raisonnable pour écarter une phrase.
+  if (t.length && t.length <= 8 && !/[a-zA-Z0-9]/.test(t)) return t;
+  return null;
+}
+
+function buildEmojiPanel(guildId, slotKey) {
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent("## Emoji de l'aide\nChoisis un groupe pour changer l'emoji affiché dans &help/-help/!!help/=help.")
+  );
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+  const slot = SLOTS.find((s) => s.key === slotKey) || null;
+  if (slot) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**${slot.label}**\nEmoji actuel : ${emojiDe(guildId, slot.key)}`)
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:changebtn:${slotKey}`).setLabel("Changer").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`${CUSTOM_ID}:reset:${slotKey}`)
+          .setLabel("Réinitialiser")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!categoryEmojiStore.get(guildId, slotKey))
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  }
+
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`${CUSTOM_ID}:select`)
+        .setPlaceholder("Choisis l'emoji à changer")
+        .addOptions(
+          SLOTS.map((s) =>
+            new StringSelectMenuOptionBuilder().setLabel(s.label.slice(0, 100)).setValue(s.key).setDefault(s.key === slotKey)
+          )
+        )
+    )
+  );
+
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+function buildEmojiListCard(guildId) {
+  const overrides = categoryEmojiStore.list(guildId);
+  const container = new ContainerBuilder();
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Emojis personnalisés"));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  const lignes = SLOTS.filter((s) => overrides[s.key]).map((s) => `${overrides[s.key]} **${s.label}** *(défaut : ${s.defaultEmoji})*`);
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(lignes.length ? lignes.join("\n") : "*Aucun emoji personnalisé — tout est par défaut.*")
+  );
+  return { flags: MessageFlags.IsComponentsV2, components: [container] };
+}
+
+async function handleEmojiTextCommand(client, message, args) {
+  if (!can(message.member, PERMISSION)) return;
+  const sub = (args[0] || "").toLowerCase();
+
+  if (sub === "list") {
+    return message.reply(buildEmojiListCard(message.guild.id));
+  }
+  if (sub === "reset") {
+    const slot = SLOTS.find((s) => s.key === args[1] || s.label.toLowerCase().includes((args[1] || "").toLowerCase()));
+    if (!slot) return message.reply({ content: "Slot introuvable — utilise `&emoji` pour voir la liste.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    categoryEmojiStore.reset(message.guild.id, slot.key);
+    return message.reply(`✅ **${slot.label}** remis à son emoji par défaut (${slot.defaultEmoji}).`);
+  }
+  if (sub && sub !== "list" && sub !== "reset") {
+    return message.reply({
+      embeds: [],
+      content: "Utilisation : `&emoji` pour ouvrir le panel, `&emoji list`, ou `&emoji reset <clé>`.",
+    });
+  }
+
+  return messageOwner.repondreEtRetenir(message, buildEmojiPanel(message.guild.id, null));
+}
+
+async function handleEmojiInteraction(interaction) {
+  if (!can(interaction.member, PERMISSION)) {
+    return interaction.reply({ content: "Réservé au rang sys.", flags: MessageFlags.Ephemeral });
+  }
+  // Les clés de slot contiennent elles-mêmes un ":" ("cat:moderation",
+  // "sec:Autres"...) : on ne prend QUE le premier segment comme action,
+  // tout le reste reforme la clé complète — un split naïf en 3 la
+  // tronquerait ("cat" au lieu de "cat:moderation").
+  const [, action, ...resteCle] = interaction.customId.split(":");
+  const slotKey = resteCle.join(":");
+
+  if (action === "select") {
+    return interaction.update(buildEmojiPanel(interaction.guild.id, interaction.values[0]));
+  }
+
+  if (action === "reset") {
+    categoryEmojiStore.reset(interaction.guild.id, slotKey);
+    return interaction.update(buildEmojiPanel(interaction.guild.id, slotKey));
+  }
+
+  if (action === "changebtn") {
+    const modal = new ModalBuilder().setCustomId(`${CUSTOM_ID}:changesubmit:${slotKey}`).setTitle("Nouvel emoji");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("emoji")
+          .setLabel("Emoji (unicode ou personnalisé du serveur)")
+          .setPlaceholder("🛡️ ou <:nom:id>")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(40)
+          .setRequired(true)
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "changesubmit" && interaction.isModalSubmit()) {
+    const saisi = interaction.fields.getTextInputValue("emoji");
+    const emoji = emojiValide(saisi);
+    if (!emoji) {
+      return interaction.reply({ content: "Ça ne ressemble pas à un seul emoji — réessaie.", flags: MessageFlags.Ephemeral });
+    }
+    categoryEmojiStore.set(interaction.guild.id, slotKey, emoji);
+    return interaction.update(buildEmojiPanel(interaction.guild.id, slotKey));
+  }
+}
+
+module.exports = { CUSTOM_ID, buildEmojiPanel, handleEmojiTextCommand, handleEmojiInteraction };

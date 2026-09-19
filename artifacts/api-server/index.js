@@ -45,6 +45,8 @@ const staffCard = require("./utils/staffCard");
 const gradeCardPanel = require("./utils/gradeCardPanel");
 // "&baninfo <@membre>" — carte raison/durée avant de bannir — voir utils/banInfoCard.js.
 const banInfoCard = require("./utils/banInfoCard");
+// "&emoji" — personnalise l'emoji de chaque groupe de l'aide — voir utils/emojiPanel.js.
+const emojiPanel = require("./utils/emojiPanel");
 // Ban persistant ("&zinkiller") — re-banni automatiquement si débanni
 // ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
 const zinkillerStore = require("./utils/zinkillerStore");
@@ -189,6 +191,7 @@ client.on("interactionCreate", async (interaction) => {
     `${staffCard.CUSTOM_ID}:`,
     `${gradeCardPanel.CUSTOM_ID}:`,
     `${banInfoCard.CUSTOM_ID}:`,
+    `${emojiPanel.CUSTOM_ID}:`,
   ];
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
@@ -263,6 +266,12 @@ client.on("interactionCreate", async (interaction) => {
   // "&baninfo" — carte raison/durée avant de bannir (voir utils/banInfoCard.js).
   if (interaction.customId?.startsWith(`${banInfoCard.CUSTOM_ID}:`)) {
     await banInfoCard.handleBanInfoInteraction(interaction).catch((err) => console.error("[banInfoCard]", err));
+    return;
+  }
+
+  // "&emoji" — personnalise l'emoji de chaque groupe de l'aide (voir utils/emojiPanel.js).
+  if (interaction.customId?.startsWith(`${emojiPanel.CUSTOM_ID}:`)) {
+    await emojiPanel.handleEmojiInteraction(interaction).catch((err) => console.error("[emojiPanel]", err));
     return;
   }
 

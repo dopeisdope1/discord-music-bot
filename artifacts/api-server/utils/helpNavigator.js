@@ -18,6 +18,7 @@ const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
 const { COMMANDES: COMMANDES_SECURITE } = require("./protectionHelpCommand");
 const { CATEGORIES: CATEGORIES_VOCAL } = require("./voiceHelpCommand");
+const { emojiDe } = require("./emojiSlots");
 const messageOwner = require("./messageOwner");
 
 // Remplace les 4 "help" en texte pur/carte figée (&help, -help, !!help,
@@ -105,7 +106,7 @@ function buildTiersCatalogue(bucket, guildId, member) {
 
       const palier = !cmd.permission ? "public" : estDangereux(cmd.permission) ? "sys" : "configurable";
       const map = parPalier[palier];
-      if (!map.has(categorie.label)) map.set(categorie.label, { emoji: categorie.emoji, cmds: [] });
+      if (!map.has(categorie.label)) map.set(categorie.label, { emoji: emojiDe(guildId, `cat:${categorie.key}`), cmds: [] });
       map.get(categorie.label).cmds.push(cmd);
     }
   }
@@ -132,11 +133,6 @@ function palierFige(permission) {
   return estDangereux(permission) ? "sys" : "configurable";
 }
 
-// Groupes "!!" : utils/protectionHelpCommand.js n'a pas d'emoji par groupe
-// (c'est une carte figée simple) — attribués ici, une fois, pour l'affichage
-// façon catalogue du "&help" unifié.
-const EMOJI_GROUPE_SECURITE = { "Sécurité serveur": "🛡️", "Protection personnelle": "🔒", Autres: "🧰" };
-
 /** Paliers non vides du "!!", groupés par thème — utils/protectionHelpCommand.js reste la source de vérité des commandes. */
 function buildTiersSecurite(guildId, member) {
   const prefix = getPrefixes(guildId).protection;
@@ -145,7 +141,7 @@ function buildTiersSecurite(guildId, member) {
     if (c.nom.replace(/^!!/, "").split(/\s+/)[0] === "help") continue; // la commande elle-même, jamais listée
     if (!can(member, c.permission)) continue;
     const map = parPalier[palierFige(c.permission)];
-    if (!map.has(c.groupe)) map.set(c.groupe, { emoji: EMOJI_GROUPE_SECURITE[c.groupe], lignes: [] });
+    if (!map.has(c.groupe)) map.set(c.groupe, { emoji: emojiDe(guildId, `sec:${c.groupe}`), lignes: [] });
     map.get(c.groupe).lignes.push(ligneFigee(c.nom, c.description, "!!", prefix));
   }
   return PALIERS.map((p) => {
@@ -163,7 +159,7 @@ function buildTiersVocal(guildId, member) {
       if (c.nom.replace(/^=/, "").split(/\s+/)[0] === "help") continue;
       if (!can(member, c.permission)) continue;
       const map = parPalier[palierFige(c.permission)];
-      if (!map.has(cat.nom)) map.set(cat.nom, { emoji: cat.emoji, lignes: [] });
+      if (!map.has(cat.nom)) map.set(cat.nom, { emoji: emojiDe(guildId, `voc:${cat.nom}`), lignes: [] });
       map.get(cat.nom).lignes.push(ligneFigee(c.nom, c.description, "=", prefix));
     }
   }

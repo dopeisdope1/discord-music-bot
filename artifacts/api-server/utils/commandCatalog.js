@@ -1564,6 +1564,12 @@ const CATEGORIES = [
       { name: "remove activity", prefix: "mod", permission: "sys", description: "Supprime l'activité du bot" },
       { name: "online|idle|dnd|invisible", prefix: "mod", permission: "sys", description: "Change le statut du bot" },
       {
+        name: "emojicat [list|reset <clé>]",
+        prefix: "mod",
+        permission: "sys",
+        description: "Personnalise l'emoji de chaque groupe affiché dans l'aide (&help/-help/!!help/=help), par serveur",
+      },
+      {
         name: "mp settings",
         prefix: "mod",
         permission: "sys",

@@ -6,6 +6,7 @@ const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
 const helpNavigator = require("./helpNavigator");
 const gradeCardPanel = require("./gradeCardPanel");
+const emojiPanel = require("./emojiPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
@@ -198,6 +199,10 @@ const modHandlers = {
   promote: rankLadder.promote,
   demote: rankLadder.demote,
   gradeladder: rankLadder.gradeLadder,
+  // "emojicat", pas "emoji" : ce mot est déjà pris par &emoji <émoji>
+  // (utils/utilityCommands.js::emoji, récupère l'image d'un emoji existant) —
+  // deux commandes différentes n'ont jamais le même mot sur le même préfixe.
+  emojicat: emojiPanel.handleEmojiTextCommand,
   grade: async (client, message, args) => {
     if (!can(message.member, "members.rank.manage")) return;
     const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
@@ -628,6 +633,7 @@ const MOD_SUBCOMMANDS = {
   channel: ["create", "delete", "rename", "topic"],
   staff: ["check", "list"],
   gradeladder: ["add", "remove", "list"],
+  emojicat: ["list", "reset"],
   absence: ["set", "reset"],
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],
