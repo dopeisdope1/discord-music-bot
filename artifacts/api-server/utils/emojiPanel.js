@@ -144,7 +144,10 @@ async function handleEmojiTextCommand(client, message, args) {
     }
     const emoji = emojiValide(args.slice(1).join(" "));
     if (!emoji) {
-      return message.reply("Ça ne ressemble pas à un seul emoji — `&emoji <clé> <emoji>`.");
+      return message.reply(
+        "Ça ne ressemble pas à un seul emoji — `&emoji <clé> <emoji>`.\n" +
+          "Pour un emoji personnalisé, choisis-le dans le menu qui s'affiche quand tu tapes `:` (Discord l'insère alors sous la forme `<:nom:id>`) plutôt que de taper juste son nom."
+      );
     }
     categoryEmojiStore.set(message.guild.id, slot.key, emoji);
     return message.reply(`✅ Emoji mis à jour\n${emoji} \`${slot.key.split(":")[1] || slot.key}\` — ${slot.label}`);
@@ -197,7 +200,15 @@ async function handleEmojiInteraction(interaction) {
     const saisi = interaction.fields.getTextInputValue("emoji");
     const emoji = emojiValide(saisi);
     if (!emoji) {
-      return interaction.reply({ content: "Ça ne ressemble pas à un seul emoji — réessaie.", flags: MessageFlags.Ephemeral });
+      // Erreur fréquente : taper juste le NOM ("voice_channel~1") au lieu du
+      // code complet — la modale (simple champ texte) ne propose pas
+      // l'auto-complétion `:nom:` d'un vrai champ de message Discord.
+      return interaction.reply({
+        content:
+          "Ça ne ressemble pas à un seul emoji — réessaie.\n" +
+          "Pour un emoji personnalisé du serveur, il faut le CODE complet, pas juste son nom : tape `\\` suivi de l'emoji dans n'importe quel salon (ex. `\\🎙️` ou `\\:voice_channel~1:`), Discord affiche alors `<:voice_channel~1:123456789012345678>` — copie exactement ce texte-là ici.",
+        flags: MessageFlags.Ephemeral,
+      });
     }
     categoryEmojiStore.set(interaction.guild.id, slotKey, emoji);
     return interaction.update(buildEmojiPanel(interaction.guild.id, slotKey));
