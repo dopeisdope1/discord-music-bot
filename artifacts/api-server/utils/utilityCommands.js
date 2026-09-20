@@ -24,7 +24,7 @@ const listNavigator = require("./listNavigator");
 // fiche ciblée :
 //  - &vc/&stats -> `server.stats.view`
 //  - &alladmins/&botadmins/&boosters/&rolemembers -> `server.members.list`
-//  - &vocinfo/&user/&emoji -> `server.info.view`
+//  - &vocinfo/&user/&emojiinfo -> `server.info.view`
 //  - &wiki/&search wiki -> `server.tools.use` (avec &choose, utils/serverExtra.js)
 //
 // Contrairement aux commandes de modération, celles-ci RÉPONDENT en cas de
@@ -39,7 +39,7 @@ const listNavigator = require("./listNavigator");
 // deux lignes) sont dessinées en tableau de bord, comme les rubriques du
 // panel : c'est la même identité visuelle dans tout le bot. Le reste — une
 // phrase d'erreur, un paragraphe de Wikipédia, une réponse dont l'image EST
-// le contenu (`&emoji`) — reste un embed, qu'une carte rendrait moins
+// le contenu (`&emojiinfo`) — reste un embed, qu'une carte rendrait moins
 // lisible. Le message d'origine sert toujours de repli si le rendu échoue ou
 // si le salon refuse les pièces jointes.
 const reply = (message, kind, text, options = {}) => {
@@ -258,14 +258,14 @@ const handlers = {
   },
 
   /**
-   * &emoji — récupère l'image d'un émoji personnalisé, donné en émoji
+   * &emojiinfo — récupère l'image d'un émoji personnalisé, donné en émoji
    * (`<:nom:id>`), en ID ou en nom. Un émoji Unicode (😀) n'a pas d'image à
    * récupérer : il est rendu par la police du client, pas par Discord.
    */
-  async emoji(client, message, args) {
+  async emojiinfo(client, message, args) {
     if (!can(message.member, "server.info.view")) return;
     const raw = args.join(" ").trim();
-    if (!raw) return reply(message, "error", "Indique un émoji : `emoji <:nom:id>`, son nom ou son ID.");
+    if (!raw) return reply(message, "error", "Indique un émoji : `emojiinfo <:nom:id>`, son nom ou son ID.");
 
     const parsed = /<(a)?:(\w+):(\d+)>/.exec(raw);
     const id = parsed?.[3] || (/^\d{15,25}$/.test(raw) ? raw : null);

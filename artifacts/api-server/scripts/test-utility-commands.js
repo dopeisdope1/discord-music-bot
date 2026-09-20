@@ -434,17 +434,17 @@ const embedTitle = (payload) =>
     assert.strictEqual(msg._replies.length, 5);
   });
 
-  await cas("&vocinfo/&user/&emoji exigent server.info.view", async () => {
+  await cas("&vocinfo/&user/&emojiinfo exigent server.info.view", async () => {
     const g = fakeGuild({ channels: [] });
     const msg = fakeMessage(g, { args: ["😀"] });
     msg.member = { id: "membre-sans-droits", guild: g, roles: { cache: new Collection() } };
     await utilityHandlers.vocinfo(null, msg);
     await utilityHandlers.user(null, msg, []);
-    await utilityHandlers.emoji(null, msg, ["😀"]);
+    await utilityHandlers.emojiinfo(null, msg, ["😀"]);
     assert.strictEqual(msg._replies.length, 0, "aucune des trois ne doit répondre sans server.info.view");
   });
 
-  await cas("un rôle qui a UNIQUEMENT server.info.view débloque &vocinfo/&user/&emoji", async () => {
+  await cas("un rôle qui a UNIQUEMENT server.info.view débloque &vocinfo/&user/&emojiinfo", async () => {
     const g = fakeGuild({ channels: [] });
     const roleId = "role-info-only";
     permStore.setRoleGrants(g.id, roleId, ["server.info.view"]);
@@ -531,19 +531,19 @@ const embedTitle = (payload) =>
     assert.strictEqual(msg._replies.length, 0);
   });
 
-  await cas("&emoji reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {
+  await cas("&emojiinfo reconstruit l'URL d'un émoji d'un AUTRE serveur", async () => {
     const msg = fakeMessage(fakeGuild({}));
-    await utilityHandlers.emoji(null, msg, ["<a:danse:123456789012345678>"]);
+    await utilityHandlers.emojiinfo(null, msg, ["<a:danse:123456789012345678>"]);
     const body = embedText(msg._replies[0]);
     assert.ok(body.includes("123456789012345678"));
     assert.ok(body.includes("**Animé** : oui"));
     assert.ok(body.includes(".gif"), "un émoji animé doit pointer vers le .gif");
   });
 
-  await cas("&emoji explique qu'un émoji Unicode n'a pas d'image à récupérer", async () => {
+  await cas("&emojiinfo explique qu'un émoji Unicode n'a pas d'image à récupérer", async () => {
     for (const unicode of ["😀", "5️⃣", "🇫🇷"]) {
       const msg = fakeMessage(fakeGuild({}));
-      await utilityHandlers.emoji(null, msg, [unicode]);
+      await utilityHandlers.emojiinfo(null, msg, [unicode]);
       assert.ok(embedText(msg._replies[0]).includes("Unicode"), `${unicode} doit être reconnu comme un émoji Unicode`);
     }
   });
@@ -551,7 +551,7 @@ const embedTitle = (payload) =>
   await cas("un mot ou un nombre n'est PAS pris pour un émoji Unicode", async () => {
     for (const notEmoji of ["123", "#", "inconnu"]) {
       const msg = fakeMessage(fakeGuild({}));
-      await utilityHandlers.emoji(null, msg, [notEmoji]);
+      await utilityHandlers.emojiinfo(null, msg, [notEmoji]);
       assert.ok(embedText(msg._replies[0]).includes("introuvable"), `${notEmoji} doit donner "émoji introuvable"`);
     }
   });

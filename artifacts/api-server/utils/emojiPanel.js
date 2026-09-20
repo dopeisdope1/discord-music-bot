@@ -102,22 +102,22 @@ async function handleEmojiTextCommand(client, message, args) {
 
   if (sub === "reset") {
     const slot = trouverSlot(args[1] || "");
-    if (!slot) return message.reply({ content: "Slot introuvable — utilise `&emojicat` pour voir la liste.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    if (!slot) return message.reply({ content: "Slot introuvable — utilise `&emoji` pour voir la liste.", flags: MessageFlags.Ephemeral }).catch(() => {});
     categoryEmojiStore.reset(message.guild.id, slot.key);
     return message.reply(`✅ **${slot.label}** remis à son emoji par défaut (${slot.defaultEmoji}).`);
   }
 
-  // Raccourci direct "&emojicat <clé> <emoji>" — change l'emoji d'un coup,
+  // Raccourci direct "&emoji <clé> <emoji>" — change l'emoji d'un coup,
   // sans passer par le panel/la modale (demande explicite, calquée sur
   // "&emoji owner 👑" d'un autre bot).
   if (sub && sub !== "list") {
     const slot = trouverSlot(sub);
     if (!slot) {
-      return message.reply("Utilisation : `&emojicat` pour ouvrir le panel, `&emojicat <clé> <emoji>`, ou `&emojicat reset <clé>`.");
+      return message.reply("Utilisation : `&emoji` pour ouvrir le panel, `&emoji <clé> <emoji>`, ou `&emoji reset <clé>`.");
     }
     const emoji = emojiValide(args.slice(1).join(" "));
     if (!emoji) {
-      return message.reply("Ça ne ressemble pas à un seul emoji — `&emojicat <clé> <emoji>`.");
+      return message.reply("Ça ne ressemble pas à un seul emoji — `&emoji <clé> <emoji>`.");
     }
     categoryEmojiStore.set(message.guild.id, slot.key, emoji);
     return message.reply(`✅ Emoji mis à jour\n${emoji} \`${slot.key.split(":")[1] || slot.key}\` — ${slot.label}`);

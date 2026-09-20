@@ -1294,7 +1294,7 @@ const CATEGORIES = [
       { name: "server pic", prefix: "mod", permission: null, description: "Permet de récupérer l'icône du serveur" },
       { name: "server banner", prefix: "mod", permission: null, description: "Permet de récupérer la bannière du serveur" },
       {
-        name: "emoji <émoji>",
+        name: "emojiinfo <émoji>",
         prefix: "mod",
         permission: "server.info.view",
         description: "Récupère l'image d'un émoji personnalisé (émoji, nom ou ID), y compris venu d'un autre serveur",
@@ -1564,7 +1564,7 @@ const CATEGORIES = [
       { name: "remove activity", prefix: "mod", permission: "sys", description: "Supprime l'activité du bot" },
       { name: "online|idle|dnd|invisible", prefix: "mod", permission: "sys", description: "Change le statut du bot" },
       {
-        name: "emojicat [list|reset <clé>]",
+        name: "emoji [list|reset <clé>]",
         prefix: "mod",
         permission: "sys",
         description: "Personnalise l'emoji de chaque groupe affiché dans l'aide (&help/-help/!!help/=help), par serveur",

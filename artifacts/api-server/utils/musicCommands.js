@@ -199,10 +199,11 @@ const modHandlers = {
   promote: rankLadder.promote,
   demote: rankLadder.demote,
   gradeladder: rankLadder.gradeLadder,
-  // "emojicat", pas "emoji" : ce mot est déjà pris par &emoji <émoji>
-  // (utils/utilityCommands.js::emoji, récupère l'image d'un emoji existant) —
-  // deux commandes différentes n'ont jamais le même mot sur le même préfixe.
-  emojicat: emojiPanel.handleEmojiTextCommand,
+  // "&emoji" — panel de personnalisation des emojis de l'aide. La commande
+  // qui récupère l'image d'un emoji existant a été déplacée sur "&emojiinfo"
+  // pour libérer ce mot (deux commandes différentes n'ont jamais le même mot
+  // sur le même préfixe).
+  emoji: emojiPanel.handleEmojiTextCommand,
   grade: async (client, message, args) => {
     if (!can(message.member, "members.rank.manage")) return;
     const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
@@ -449,7 +450,7 @@ const modHandlers = {
   user: utilityHandlers.user,
   member: utilityHandlers.member,
   vocinfo: utilityHandlers.vocinfo,
-  emoji: utilityHandlers.emoji,
+  emojiinfo: utilityHandlers.emojiinfo,
   calc: utilityHandlers.calc,
   wiki: utilityHandlers.wiki,
   // "search wiki <mot-clé>" est la seule sous-commande de "search" : tout
@@ -633,7 +634,7 @@ const MOD_SUBCOMMANDS = {
   channel: ["create", "delete", "rename", "topic"],
   staff: ["check", "list"],
   gradeladder: ["add", "remove", "list"],
-  emojicat: ["list", "reset"],
+  emoji: ["list", "reset"],
   absence: ["set", "reset"],
   banall: ["message"],
   antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],

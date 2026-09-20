@@ -167,7 +167,7 @@ function texteDe(member = owner) {
 
   await cas("un membre sans server.members.list/server.info.view ne voit ni les listes de membres ni les fiches d'info", () => {
     const texte = texteDe(plain);
-    for (const nom of ["alladmins", "botadmins", "boosters", "rolemembers", "vocinfo", "user", "emoji"]) {
+    for (const nom of ["alladmins", "botadmins", "boosters", "rolemembers", "vocinfo", "user", "emojiinfo"]) {
       assert.ok(!texte.includes(`\`&${nom}`), `"${nom}" ne devrait pas apparaître sans permission dédiée`);
     }
   });
