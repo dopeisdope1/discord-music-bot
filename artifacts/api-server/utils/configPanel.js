@@ -1438,6 +1438,31 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             )
           );
         }
+        // "Déplacer vers..." : équivalent d'un glisser-déposer d'un rôle d'un
+        // palier à l'autre — demande explicite, calquée sur le geste natif de
+        // réorganisation des salons. Change ses PERMISSIONS (mêmes clés que le
+        // palier cible), jamais le rôle Discord lui-même — donc réservée à
+        // panel.permissions.manage, comme "Ajouter un rôle", pas à
+        // server.roles.manage (qui protège renommer/supprimer le rôle).
+        // Les paliers NUMÉROTÉS uniquement : un groupe exclusif n'a pas de
+        // signature de clés à copier (voir findManagedTier).
+        if (roleActif) {
+          const autresPaliers = computeTiers(guild.id).filter((t) => !gere.signature || tierSignature(t.keys) !== gere.signature);
+          if (autresPaliers.length) {
+            container.addActionRowComponents(
+              new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                  .setCustomId(`${ID}:tiermove:${roleActif}`)
+                  .setPlaceholder("Déplacer ce rôle vers un autre palier")
+                  .addOptions(
+                    autresPaliers
+                      .slice(0, 25)
+                      .map((t) => new StringSelectMenuOptionBuilder().setLabel(tierLabel(guild.id, t).slice(0, 100)).setValue(`t-${t.index}`))
+                  )
+              )
+            );
+          }
+        }
       }
     }
     // Provisionnement en masse (utils/rolePresets.js) : la hiérarchie de
@@ -2076,6 +2101,26 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     permStore.setRoleGrants(guildId, roleId, gere.keys);
     if (gere.exclusiveLabel) permStore.setRoleExclusive(guildId, roleId, true, gere.exclusiveLabel);
     return goto("roletiers", { tierManageKey: gere.key, tierManageRoleId: roleId });
+  }
+
+  // "Déplacer vers un autre palier" : même mécanique que "tieraddrole" (copie
+  // les clés du palier CIBLE sur le rôle), mais lancée depuis le rôle plutôt
+  // que depuis le palier — le rôle quitte son palier d'origine du même coup,
+  // puisqu'un palier n'est qu'un regroupement par ensemble de clés identique
+  // (voir utils/permsCommands.js::computeTiers). extra = l'ID du rôle déplacé,
+  // interaction.values[0] = "t-<numéro>" du palier cible choisi dans le menu.
+  if (action === "tiermove") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const roleId = extra;
+    if (!guild.roles.cache.has(roleId)) {
+      return interaction.reply({ content: "Ce rôle n'existe plus.", flags: MessageFlags.Ephemeral });
+    }
+    const cible = findManagedTier(guild, interaction.values[0]);
+    if (!cible) {
+      return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
+    }
+    permStore.setRoleGrants(guildId, roleId, cible.keys);
+    return goto("roletiers", { tierManageKey: cible.key, tierManageRoleId: roleId });
   }
 
   // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans

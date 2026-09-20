@@ -265,6 +265,43 @@ function texteDe(guild, member, state) {
     assert.ok(updated, "le panneau doit être mis à jour en place");
   });
 
+  await cas('"Déplacer vers un autre palier" copie les clés du palier CIBLE sur le rôle — glisser-déposer équivalent', async () => {
+    // Palier à un seul rôle (ROLE_A, ["moderation.kick", "moderation.ban"]) —
+    // le sélecteur "Déplacer" doit lister les AUTRES paliers (au moins celui
+    // de ROLE_B/ROLE_C, ["moderation.kick"]), jamais le sien.
+    const owner = mkMember("owner-1", null);
+    const avantDeplacement = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-2" });
+    const texteAvant = jsonDe(avantDeplacement.components[0].toJSON());
+    assert.ok(texteAvant.includes(`${ID}:tiermove:${ROLE_A}`), "le sélecteur de déplacement doit viser ce rôle");
+
+    let updated = null;
+    await handleConfigInteraction({
+      customId: `${ID}:tiermove:${ROLE_A}`,
+      values: ["t-1"],
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    assert.deepStrictEqual(permStore.getRoleGrants("gtiers", ROLE_A), permStore.getRoleGrants("gtiers", ROLE_B));
+    assert.ok(updated, "le panneau doit être mis à jour en place");
+  });
+
+  await cas('"Déplacer" est refusé sans panel.permissions.manage', async () => {
+    permStore.grantToUser("gtiers", "u-sans-gestion-move", "panel.roles.manage");
+    const sansDroit = mkMember("u-sans-gestion-move", null);
+    let refused = null;
+    await handleConfigInteraction({
+      customId: `${ID}:tiermove:${ROLE_A}`,
+      values: ["t-1"],
+      member: sansDroit,
+      guild,
+      client: {},
+      reply: async (p) => (refused = p),
+    });
+    assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
+  });
+
   await cas("le palier a maintenant 2 rôles : le sélecteur intermédiaire apparaît, pas de bouton direct", () => {
     const owner = mkMember("owner-1", null);
     const payload = buildConfigPanel(guild, "roletiers", owner, { tierManageKey: "t-1" });
