@@ -12,7 +12,7 @@ const {
   UserSelectMenuBuilder,
   MessageFlags,
 } = require("discord.js");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const store = require("./personalProtectionStore");
 const lists = require("./personalListsStore");
 const quarantineStore = require("./adminQuarantineStore");
@@ -42,9 +42,9 @@ const { report } = require("./moderation/actions");
 const CUSTOM_ID = "prot";
 
 /** Rang RÉEL (owner/sys, utils/accessStore.js) — jamais de rang inventé ("dev" n'existe pas ici). */
-function rangLabel(userId) {
-  if (accessStore.isOwner(userId)) return `${EMOJI.OWNER} Propriétaire`;
-  if (accessStore.isSys(userId)) return `${EMOJI.CROWN} Rang sys`;
+function rangLabel(userId, guildId) {
+  if (accessStore.isOwner(userId)) return `${iconDe(guildId, "OWNER")} Propriétaire`;
+  if (accessStore.isSys(userId)) return `${iconDe(guildId, "CROWN")} Rang sys`;
   return "Membre";
 }
 
@@ -59,7 +59,7 @@ const LISTES_GEREES = [
 function buildPanel(member, state = {}) {
   const settings = store.getSettings(member.guild.id, member.id);
   const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${EMOJI.LOCK} Panel perso`));
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${iconDe(member.guild.id, "LOCK")} Panel perso`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent("Ça te concerne **toi seul** — le reste du serveur n'est pas touché.")
@@ -71,8 +71,8 @@ function buildPanel(member, state = {}) {
     new TextDisplayBuilder().setContent(
       [
         "## 📊 Résumé",
-        `Compte : <@${member.id}> — ${rangLabel(member.id)}`,
-        `${EMOJI.CHECK} ${onCount} activée(s) · ${EMOJI.CROSS} ${Object.keys(store.PROTECTIONS).length - onCount} désactivée(s)`,
+        `Compte : <@${member.id}> — ${rangLabel(member.id, member.guild.id)}`,
+        `${iconDe(member.guild.id, "CHECK")} ${onCount} activée(s) · ${iconDe(member.guild.id, "CROSS")} ${Object.keys(store.PROTECTIONS).length - onCount} désactivée(s)`,
       ].join("\n")
     )
   );
@@ -83,7 +83,7 @@ function buildPanel(member, state = {}) {
       .setCustomId(`${CUSTOM_ID}:toggle:${key}`)
       .setLabel(`${def.label} — ${actif ? "ON" : "OFF"}`)
       .setStyle(actif ? ButtonStyle.Success : ButtonStyle.Secondary)
-      .setEmoji(actif ? EMOJI.CHECK : EMOJI.CROSS);
+      .setEmoji(actif ? iconDe(member.guild.id, "CHECK") : iconDe(member.guild.id, "CROSS"));
   });
   // Discord limite une ActionRow à 5 boutons.
   for (let i = 0; i < boutons.length; i += 5) {
@@ -91,7 +91,7 @@ function buildPanel(member, state = {}) {
   }
 
   const lignes = Object.entries(store.PROTECTIONS).map(
-    ([key, def]) => `${settings[key] ? EMOJI.CHECK : EMOJI.CROSS} **${def.label}** — ${def.description}`
+    ([key, def]) => `${settings[key] ? iconDe(member.guild.id, "CHECK") : iconDe(member.guild.id, "CROSS")} **${def.label}** — ${def.description}`
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));

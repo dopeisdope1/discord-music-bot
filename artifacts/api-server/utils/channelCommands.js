@@ -4,7 +4,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
 // Commandes agissant sur le salon courant. L'autorisation est vérifiée en
 // amont par le routeur (voir utils/musicCommands.js, portée "salon").
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Vrai si le bot possède la permission, sinon répond et renvoie faux. */
 async function requireBotPermission(message, flag, label) {
@@ -86,7 +86,7 @@ const handlers = {
       await channel.delete(`Renouvellement demandé par ${message.author.tag}`);
       // La confirmation part dans le NOUVEAU salon : l'ancien n'existe plus.
       await clone.send({
-        embeds: [buildStatusEmbed("success", `Salon recréé à neuf par ${message.author}.`)],
+        embeds: [buildStatusEmbed("success", `Salon recréé à neuf par ${message.author}.`, { guildId: message.guild.id })],
       });
     } catch (err) {
       console.error("[channelCommands] échec du renouvellement :", err);

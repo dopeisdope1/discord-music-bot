@@ -367,7 +367,7 @@ client.on("messageCreate", (message) => {
   handleTextCommand(client, message).catch((err) => {
     console.error(err);
     message
-      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.")] })
+      .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.", { guildId: message.guild?.id })] })
       .catch(() => {});
   });
   // "!!panel" — panel de protection personnelle, préfixe séparé exprès (voir

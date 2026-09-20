@@ -9,7 +9,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const { can } = require("./permissions/engine");
 const { parseDuration } = require("./moderationCommands");
 const giveawayStore = require("./giveawayStore");
@@ -48,7 +48,7 @@ function activeCard(giveaway) {
     ]
       .filter(Boolean)
       .join("\n"),
-    [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:join`).setLabel("Participer").setStyle(ButtonStyle.Primary).setEmoji(EMOJI.CROWN))]
+    [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:join`).setLabel("Participer").setStyle(ButtonStyle.Primary).setEmoji(iconDe(giveaway.guildId, "CROWN")))]
   );
 }
 
@@ -65,9 +65,9 @@ function activeCard(giveaway) {
 async function startGiveaway(client, message, args, options = {}) {
   if (!can(message.member, "server.giveaways.manage")) return;
   const ms = parseDuration(args[0]);
-  if (!ms) return message.reply({ embeds: [buildStatusEmbed("error", "Indique une durée valide : `10m`, `1h`, `1d` (max 28 jours).")] });
+  if (!ms) return message.reply({ embeds: [buildStatusEmbed("error", "Indique une durée valide : `10m`, `1h`, `1d` (max 28 jours).", { guildId: message.guild.id })] });
   const prize = args.slice(1).join(" ").trim();
-  if (!prize) return message.reply({ embeds: [buildStatusEmbed("error", "Indique le lot : `giveaway start 1h Nitro`.")] });
+  if (!prize) return message.reply({ embeds: [buildStatusEmbed("error", "Indique le lot : `giveaway start 1h Nitro`.", { guildId: message.guild.id })] });
 
   const winnersCount = Math.min(Math.max(1, parseInt(options.winnersCount, 10) || 1), MAX_WINNERS);
   const endsAt = Date.now() + ms;
@@ -166,8 +166,8 @@ async function checkExpiredGiveaways(client) {
 async function endGiveaway(client, message, args) {
   if (!can(message.member, "server.giveaways.manage")) return;
   const giveaway = args[0] ? giveawayStore.get(args[0]) : giveawayStore.getLatestInChannel(message.channel.id);
-  if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé (indique son ID, visible dans `giveaway reroll`).")] });
-  if (giveaway.ended) return message.reply({ embeds: [buildStatusEmbed("info", "Ce giveaway est déjà terminé.")] });
+  if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé (indique son ID, visible dans `giveaway reroll`).", { guildId: message.guild.id })] });
+  if (giveaway.ended) return message.reply({ embeds: [buildStatusEmbed("info", "Ce giveaway est déjà terminé.", { guildId: message.guild.id })] });
 
   const winnerIds = pickWinners(giveaway.participants, giveaway.winnersCount ?? 1);
   giveawayStore.markEnded(giveaway.messageId, winnerIds);
@@ -178,11 +178,11 @@ async function endGiveaway(client, message, args) {
 async function rerollGiveaway(client, message, args) {
   if (!can(message.member, "server.giveaways.manage")) return;
   const giveaway = args[0] ? giveawayStore.get(args[0]) : giveawayStore.getLatestInChannel(message.channel.id);
-  if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé dans ce salon.")] });
+  if (!giveaway) return message.reply({ embeds: [buildStatusEmbed("error", "Aucun giveaway trouvé dans ce salon.", { guildId: message.guild.id })] });
 
   const winnerIds = pickWinners(giveaway.participants, giveaway.winnersCount ?? 1);
   giveawayStore.markEnded(giveaway.messageId, winnerIds);
-  if (!winnerIds.length) return message.reply({ embeds: [buildStatusEmbed("info", "Aucun participant, personne à tirer au sort.")] });
+  if (!winnerIds.length) return message.reply({ embeds: [buildStatusEmbed("info", "Aucun participant, personne à tirer au sort.", { guildId: message.guild.id })] });
 
   const mentions = winnerIds.map((id) => `<@${id}>`).join(", ");
   await message.channel.send({

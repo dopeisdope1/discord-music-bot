@@ -17,7 +17,7 @@ const {
   TextInputStyle,
   MessageFlags,
 } = require("discord.js");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const accessStore = require("./accessStore");
@@ -404,7 +404,7 @@ function buildSecurityPanel(member, client, vue = "overview", state = {}) {
 
   const stats = statsBot(client);
   const resume = [
-    `${EMOJI.OWNER} **${accessStore.ownerIds().length}** propriétaire(s) · ${EMOJI.CROWN} **${accessStore.list("sys").length}** rang sys`,
+    `${iconDe(guild.id, "OWNER")} **${accessStore.ownerIds().length}** propriétaire(s) · ${iconDe(guild.id, "CROWN")} **${accessStore.list("sys").length}** rang sys`,
     `🔇 **${compterMuted(guild)}** muet(s) (rôle de mute)`,
   ];
   if (stats) resume.push(`⏱️ **${stats.uptime}** · 📶 **${stats.ping}ms**`);

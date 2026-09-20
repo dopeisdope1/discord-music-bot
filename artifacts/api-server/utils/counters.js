@@ -20,7 +20,7 @@ const INTERVALLE_MS = 6 * 60_000;
 
 const PERMISSION = "server.channels.manage";
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /**
  * État par salon : quand il a été renommé pour la dernière fois, et le

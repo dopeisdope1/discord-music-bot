@@ -11,7 +11,7 @@ const { handleAntiLinkPanelCommand } = require("./antiLinkPanel");
 // ("protection.automod"), configurable aussi depuis &panel > Protection.
 const PERMISSION = "protection.automod";
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 const handlers = {
   /**

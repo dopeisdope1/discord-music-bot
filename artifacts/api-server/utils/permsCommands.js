@@ -187,7 +187,7 @@ async function perms(client, message) {
   const tiers = computeTiers(guildId);
   const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
   if (!tiers.length && !exclusiveRoleIds.length) {
-    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
+    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).", { guildId })] });
   }
   return envoyerPages(
     message,
@@ -213,7 +213,7 @@ async function helpall(client, message) {
   const tiers = computeTiers(guildId);
   const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
   if (!tiers.length && !exclusiveRoleIds.length) {
-    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).")] });
+    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).", { guildId })] });
   }
   return envoyerPages(
     message,

@@ -36,14 +36,28 @@ function emojiValide(texte) {
   return null;
 }
 
-function buildEmojiPanel(guildId, slotKey) {
+// Discord limite un StringSelectMenu à 25 options — dépassé depuis l'ajout
+// des slots "icon:*" (12 slots d'aide + 27 icônes de design = 39 au total).
+// Solution : un premier select CHOISIT LA CATÉGORIE (8 au total, `s.categorie`
+// posé par utils/emojiSlots.js), un second liste seulement les slots de
+// cette catégorie (8 au plus dans le plus gros groupe) — jamais les deux
+// mélangés dans une pagination linéaire, moins lisible ici.
+function categoriesDe() {
+  const vues = [];
+  for (const s of SLOTS) if (!vues.includes(s.categorie)) vues.push(s.categorie);
+  return vues;
+}
+
+function buildEmojiPanel(guildId, slotKey, categorieForcee = null) {
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent("## Emoji de l'aide\nChoisis un groupe pour changer l'emoji affiché dans &help/-help/!!help/=help.")
+    new TextDisplayBuilder().setContent("## Emoji\nChoisis une catégorie, puis l'élément dont tu veux changer l'emoji (groupe d'aide ou icône du design).")
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
   const slot = SLOTS.find((s) => s.key === slotKey) || null;
+  const categorie = slot?.categorie || categorieForcee;
+
   if (slot) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(`**${slot.label}**\nEmoji actuel : ${emojiDe(guildId, slot.key)}`)
@@ -65,15 +79,28 @@ function buildEmojiPanel(guildId, slotKey) {
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`${CUSTOM_ID}:select`)
-        .setPlaceholder("Choisis l'emoji à changer")
+        .setCustomId(`${CUSTOM_ID}:selectcat`)
+        .setPlaceholder("Choisis une catégorie")
         .addOptions(
-          SLOTS.map((s) =>
-            new StringSelectMenuOptionBuilder().setLabel(s.label.slice(0, 100)).setValue(s.key).setDefault(s.key === slotKey)
-          )
+          categoriesDe().map((c) => new StringSelectMenuOptionBuilder().setLabel(c.slice(0, 100)).setValue(c).setDefault(c === categorie))
         )
     )
   );
+
+  if (categorie) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${CUSTOM_ID}:select`)
+          .setPlaceholder("Choisis l'emoji à changer")
+          .addOptions(
+            SLOTS.filter((s) => s.categorie === categorie).map((s) =>
+              new StringSelectMenuOptionBuilder().setLabel(s.label.slice(0, 100)).setValue(s.key).setDefault(s.key === slotKey)
+            )
+          )
+      )
+    );
+  }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
@@ -136,6 +163,10 @@ async function handleEmojiInteraction(interaction) {
   // tronquerait ("cat" au lieu de "cat:moderation").
   const [, action, ...resteCle] = interaction.customId.split(":");
   const slotKey = resteCle.join(":");
+
+  if (action === "selectcat") {
+    return interaction.update(buildEmojiPanel(interaction.guild.id, null, interaction.values[0]));
+  }
 
   if (action === "select") {
     return interaction.update(buildEmojiPanel(interaction.guild.id, interaction.values[0]));

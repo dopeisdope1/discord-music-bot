@@ -6,7 +6,7 @@ const store = require("./botProfileStore");
 // Contrôle du profil/de la présence du bot — réservé au rang sys (comme
 // &owners/&sources/&allbots) : ça touche le compte du bot lui-même, sur
 // tous les serveurs où il se trouve.
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 const sysOnly = (handler) => async (client, message, args) => {
   if (!accessStore.isAllowed("sys", message.author.id)) return;
   return handler(client, message, args);

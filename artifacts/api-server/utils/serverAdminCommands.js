@@ -20,7 +20,7 @@ const {
   TextInputStyle,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const { carteConfirmationFichier } = require("./actionCard");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
@@ -37,7 +37,7 @@ const roleLimitStore = require("./roleLimitStore");
 const { getPrefixes } = require("./prefixStore");
 const { majSure, banniereSurPanel } = require("./componentsV2");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 // Rendu des cartes (générique + listes paginées) : utils/listCard.js, partagé
 // avec les listes en lecture seule d'utils/utilityCommands.js.
@@ -232,7 +232,7 @@ function buildOwnerAccessCard(
     new TextDisplayBuilder().setContent(
       [
         `**Utilisateur** — <@${memberId}>`,
-        `**Statut** — ${grantedFiltre.length ? EMOJI.CHECK : EMOJI.CROSS} ${grantedFiltre.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
+        `**Statut** — ${grantedFiltre.length ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS")} ${grantedFiltre.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
         `**Consulté par** — ${consultePar}`,
       ].join("\n")
     )
@@ -275,7 +275,7 @@ function buildOwnerAccessCard(
               new StringSelectMenuOptionBuilder()
                 .setLabel(p.label.slice(0, 100))
                 .setValue(p.key)
-                .setEmoji(granted.includes(p.key) ? EMOJI.CHECK : EMOJI.CROSS)
+                .setEmoji(granted.includes(p.key) ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS"))
                 .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
                 .setDefault(p.key === derniereCle)
             )
@@ -306,7 +306,7 @@ function buildVoiceOwnerCard(guildId, memberId, consultePar, derniereCle = null)
     new TextDisplayBuilder().setContent(
       [
         `**Utilisateur** — <@${memberId}>`,
-        `**Statut** — ${granted.length ? EMOJI.CHECK : EMOJI.CROSS} ${granted.length ? "Accès vocaux actifs" : "Aucun accès vocal"}`,
+        `**Statut** — ${granted.length ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS")} ${granted.length ? "Accès vocaux actifs" : "Aucun accès vocal"}`,
         `**Attribué par** — ${consultePar}`,
       ].join("\n")
     )
@@ -336,7 +336,7 @@ function buildVoiceOwnerCard(guildId, memberId, consultePar, derniereCle = null)
             new StringSelectMenuOptionBuilder()
               .setLabel(a.label)
               .setValue(a.key)
-              .setEmoji(granted.includes(a.key) ? EMOJI.CHECK : EMOJI.CROSS)
+              .setEmoji(granted.includes(a.key) ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS"))
               .setDescription(a.description.slice(0, 100))
               .setDefault(a.key === derniereCle)
           )
@@ -737,8 +737,8 @@ function construireTerminaison(interaction, retour) {
 function requestConfirmation(message, { title, body, confirmLabel, permission, execute, carte }) {
   const token = rememberConfirm({ actorId: message.author.id, permission, execute, retour: message.retour });
   const boutons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(EMOJI.CHECK),
-    new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.CROSS)
+    new ButtonBuilder().setCustomId(`${ID}:confirm:go:${token}`).setLabel(confirmLabel).setStyle(ButtonStyle.Danger).setEmoji(iconDe(message.guild.id, "CHECK")),
+    new ButtonBuilder().setCustomId(`${ID}:confirm:no:${token}`).setLabel("Annuler").setStyle(ButtonStyle.Secondary).setEmoji(iconDe(message.guild.id, "CROSS"))
   );
 
   if (carte) {
@@ -1166,7 +1166,7 @@ async function dero(client, message, args) {
           "",
           "`dero role @rôle` pour ajouter/retirer, `dero off` pour tout désactiver.",
         ].join("\n"),
-        { title: "Dero automatique" }
+        { title: "Dero automatique", guildId }
       ),
     ],
   });
@@ -1300,7 +1300,7 @@ async function antinuke(client, message, args) {
           "",
           "Liste des guards et leurs seuils : `&panel` > Anti-nuke.",
         ].join("\n"),
-        { title: "Anti-nuke" }
+        { title: "Anti-nuke", guildId }
       ),
     ],
   });

@@ -1,5 +1,6 @@
 const { CATEGORIES } = require("./commandCatalog");
 const { CATEGORIES: CATEGORIES_VOCAL } = require("./voiceHelpCommand");
+const { EMOJI } = require("./emojis");
 const categoryEmojiStore = require("./categoryEmojiStore");
 
 // "&emoji" personnalise l'emoji de chaque GROUPE affiché dans l'aide (voir
@@ -12,10 +13,33 @@ const categoryEmojiStore = require("./categoryEmojiStore");
 // pour l'affichage ET la personnalisation.
 const EMOJI_GROUPE_SECURITE = { "Sécurité serveur": "🛡️", "Protection personnelle": "🔒", Autres: "🧰" };
 
+// Slots "icon:XXX" — un par clé du registre de design utils/emojis.js
+// (succès/erreur, ban, couronne, ticket...), personnalisables au même titre
+// que les groupes d'aide. Regroupés par thème pour un select menu lisible ;
+// `categorie` sert UNIQUEMENT à l'affichage groupé du panel (utils/
+// emojiPanel.js), jamais à la résolution (`icon:${clé}` reste la clé réelle).
+const GROUPES_ICONES = {
+  "Icônes — Statuts": ["SUCCESS", "ERROR", "INFO", "CHECK", "CROSS"],
+  "Icônes — Modération": ["BAN", "KICK", "MUTE", "UNMUTE", "DELETE", "PENCIL"],
+  "Icônes — Rangs": ["OWNER", "CROWN", "STAFF", "STAFF_AWAY"],
+  "Icônes — Serveur": ["TICKET", "LOCK", "MAIL", "RULES", "MEMBERS", "ONLINE", "VOICE", "SCREENSHARE"],
+  "Icônes — Divers": ["DISCORD", "ARROW", "ARROW_GREEN", "BOING"],
+};
+
+const SLOTS_ICONES = Object.entries(GROUPES_ICONES).flatMap(([groupe, cles]) =>
+  cles.map((cle) => ({ key: `icon:${cle}`, label: `${groupe} — ${cle}`, defaultEmoji: EMOJI[cle], categorie: groupe }))
+);
+
+// SLOTS_ICONES en DERNIER : "voc:Voice" (aide vocale) et "icon:VOICE" (icône
+// de design) partagent le même second segment de clé une fois en minuscule
+// ("voice") — `trouverSlot()` (utils/emojiPanel.js) s'arrête au premier
+// match trouvé, donc l'ordre d'insertion fait gagner le slot d'aide déjà
+// existant sur `&emoji voice ...`, sans rien changer à son comportement.
 const SLOTS = [
-  ...CATEGORIES.map((c) => ({ key: `cat:${c.key}`, label: `&help — ${c.label}`, defaultEmoji: c.emoji })),
-  ...Object.entries(EMOJI_GROUPE_SECURITE).map(([groupe, emoji]) => ({ key: `sec:${groupe}`, label: `!!help — ${groupe}`, defaultEmoji: emoji })),
-  ...CATEGORIES_VOCAL.map((c) => ({ key: `voc:${c.nom}`, label: `=help — ${c.nom}`, defaultEmoji: c.emoji })),
+  ...CATEGORIES.map((c) => ({ key: `cat:${c.key}`, label: `&help — ${c.label}`, defaultEmoji: c.emoji, categorie: "&help" })),
+  ...Object.entries(EMOJI_GROUPE_SECURITE).map(([groupe, emoji]) => ({ key: `sec:${groupe}`, label: `!!help — ${groupe}`, defaultEmoji: emoji, categorie: "!!help" })),
+  ...CATEGORIES_VOCAL.map((c) => ({ key: `voc:${c.nom}`, label: `=help — ${c.nom}`, defaultEmoji: c.emoji, categorie: "=help" })),
+  ...SLOTS_ICONES,
 ];
 
 const SLOT_PAR_CLE = new Map(SLOTS.map((s) => [s.key, s]));
@@ -27,4 +51,9 @@ function emojiDe(guildId, slotKey) {
   return categoryEmojiStore.get(guildId, slotKey) || slot.defaultEmoji;
 }
 
-module.exports = { SLOTS, EMOJI_GROUPE_SECURITE, emojiDe };
+/** L'icône réellement affichée pour cette clé de utils/emojis.js sur ce serveur — personnalisée, ou celle du registre. */
+function iconDe(guildId, emojiKey) {
+  return emojiDe(guildId, `icon:${emojiKey}`) || EMOJI[emojiKey] || null;
+}
+
+module.exports = { SLOTS, EMOJI_GROUPE_SECURITE, emojiDe, iconDe };

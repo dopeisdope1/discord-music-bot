@@ -15,7 +15,7 @@ const SANS_MENTIONS = { parse: [], repliedUser: false };
 
 const PERMISSION = "server.customcommands.manage";
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /**
  * Les mots déjà pris par une vraie commande du bot.
@@ -91,6 +91,7 @@ async function listcmd(client, message) {
     embeds: [
       buildStatusEmbed("info", lignes.join("\n"), {
         title: `Commandes personnalisées (${entrees.length}/${store.MAX_PAR_SERVEUR})`,
+        guildId: message.guild.id,
       }),
     ],
     allowedMentions: SANS_MENTIONS,

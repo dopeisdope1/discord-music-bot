@@ -22,7 +22,7 @@ const autoReactStore = require("./autoReactStore");
 // Extensions de la catégorie "Gestion du serveur" documentées dans le panel
 // mais pas encore câblées — voir utils/commandCatalog.js.
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Cible = PREMIER argument exactement (mention ou ID) — même règle que utils/moderationExtra.js. */
 function parseTarget(args) {
@@ -64,7 +64,7 @@ async function choose(client, message, args) {
 async function embedPrompt(client, message) {
   if (!can(message.member, "server.channels.manage")) return;
   return message.reply({
-    embeds: [buildStatusEmbed("info", "Clique pour ouvrir le constructeur d'embed.")],
+    embeds: [buildStatusEmbed("info", "Clique pour ouvrir le constructeur d'embed.", { guildId: message.guild.id })],
     components: [
       new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("srvextra:embedopen").setLabel("Construire un embed").setStyle(ButtonStyle.Secondary)),
     ],

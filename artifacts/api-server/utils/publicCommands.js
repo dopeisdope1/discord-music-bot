@@ -23,7 +23,7 @@ const handlers = {
     const user = await resolveTarget(message, args);
     const url = user.displayAvatarURL({ size: 512 });
     await message.reply({
-      embeds: [buildStatusEmbed("info", `Avatar de **${user.tag}**`, { image: url })],
+      embeds: [buildStatusEmbed("info", `Avatar de **${user.tag}**`, { image: url, guildId: message.guild.id })],
     });
   },
 
@@ -36,11 +36,11 @@ const handlers = {
 
     if (!url) {
       return message.reply({
-        embeds: [buildStatusEmbed("error", `**${user.tag}** n'a pas de bannière.`)],
+        embeds: [buildStatusEmbed("error", `**${user.tag}** n'a pas de bannière.`, { guildId: message.guild.id })],
       });
     }
     await message.reply({
-      embeds: [buildStatusEmbed("info", `Bannière de **${user.tag}**`, { image: url })],
+      embeds: [buildStatusEmbed("info", `Bannière de **${user.tag}**`, { image: url, guildId: message.guild.id })],
     });
   },
 
@@ -81,6 +81,7 @@ const handlers = {
               title: guild.name,
               thumbnail: guild.iconURL({ size: 256 }) || undefined,
               fields: champs,
+              guildId: guild.id,
             }),
           ],
         })
@@ -91,7 +92,7 @@ const handlers = {
     const sniped = client.snipes?.get(message.channel.id);
     if (!sniped) {
       return message.reply({
-        embeds: [buildStatusEmbed("error", "Aucun message supprimé récemment dans ce salon.")],
+        embeds: [buildStatusEmbed("error", "Aucun message supprimé récemment dans ce salon.", { guildId: message.guild.id })],
       });
     }
 
@@ -101,6 +102,7 @@ const handlers = {
           title: `Dernier message supprimé — ${sniped.authorTag}`,
           thumbnail: sniped.authorAvatar || undefined,
           fields: [{ name: "Supprimé", value: `<t:${Math.floor(sniped.deletedAt / 1000)}:R>` }],
+          guildId: message.guild.id,
         }),
       ],
     });

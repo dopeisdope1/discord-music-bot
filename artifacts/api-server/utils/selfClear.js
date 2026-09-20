@@ -76,7 +76,7 @@ async function handleSelfClear(client, message) {
   if (!allowed) {
     const minutes = Math.ceil(retryAfterMs / 60_000);
     const warning = await channel
-      .send({ embeds: [buildStatusEmbed("error", `Réessaie dans ${minutes} min.`)] })
+      .send({ embeds: [buildStatusEmbed("error", `Réessaie dans ${minutes} min.`, { guildId: message.guild.id })] })
       .catch(() => null);
     setTimeout(() => warning?.delete().catch(() => {}), 15_000);
     return true;
@@ -86,7 +86,7 @@ async function handleSelfClear(client, message) {
   // secondes à cause du rate-limit Discord sur bulkDelete), puis l'édite avec
   // le nombre exact une fois terminé.
   const tempMessage = await channel
-    .send({ embeds: [buildStatusEmbed("success", "Nettoyage en cours…")] })
+    .send({ embeds: [buildStatusEmbed("success", "Nettoyage en cours…", { guildId: message.guild.id })] })
     .catch(() => null);
   if (tempMessage) setTimeout(() => tempMessage.delete().catch(() => {}), 15_000);
 
@@ -94,7 +94,7 @@ async function handleSelfClear(client, message) {
   const toDelete = messages ? collectOwnConversation([...messages.values()], message.author.id, client?.user?.id) : [];
   const count = toDelete.length ? await deleteMessages(channel, toDelete) : 0;
 
-  tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** message(s) supprimé(s).`)] }).catch(() => {});
+  tempMessage?.edit({ embeds: [buildStatusEmbed("success", `**${count}** message(s) supprimé(s).`, { guildId: message.guild.id })] }).catch(() => {});
 
   return true;
 }

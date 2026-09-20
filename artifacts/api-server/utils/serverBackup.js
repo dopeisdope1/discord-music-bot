@@ -4,7 +4,7 @@ const { can } = require("./permissions/engine");
 const backupStore = require("./serverBackupStore");
 const { requestConfirmation } = require("./serverAdminCommands");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 // Préréglages intégrés au code (pas dans le store JSON) : servent à
 // restaurer un serveur que le BOT n'a plus les moyens de visiter lui-même
@@ -179,7 +179,7 @@ async function backup(client, message, args, options = {}) {
           ]
             .filter(Boolean)
             .join("\n"),
-          { title: "Sauvegarde de serveur" }
+          { title: "Sauvegarde de serveur", guildId: message.guild.id }
         ),
       ],
     });
@@ -195,7 +195,7 @@ async function backup(client, message, args, options = {}) {
         buildStatusEmbed(
           "info",
           all.map((b) => `> **${b.name}**${b.preset ? " *(préréglage)*" : ""} — ${b.channelCount} salon(s) — ${b.sourceGuildName}`).join("\n"),
-          { title: "Sauvegardes disponibles" }
+          { title: "Sauvegardes disponibles", guildId: message.guild.id }
         ),
       ],
     });

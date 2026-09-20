@@ -7,7 +7,7 @@ const { ALL_GUARDS } = require("./guard/definitions");
 // Équivalents texte de &panel > Anti-nuke. Même store (utils/guard/config.js)
 // et même whitelist que le panel : deux façons de régler la même chose.
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 const PERMISSION = "protection.guard.manage";
 
 // Un nom de commande par guard. La clé "antirole-admin" porte un tiret, qui

@@ -50,6 +50,7 @@ async function status(client, message) {
           { name: "Node.js", value: info.nodeVersion, inline: true },
           { name: "discord.js", value: `v${info.discordjsVersion}`, inline: true },
         ],
+        guildId: message.guild?.id,
       }),
     ],
   });

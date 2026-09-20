@@ -19,7 +19,7 @@ const {
   ChannelType,
 } = require("discord.js");
 const { can } = require("./permissions/engine");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const { startGiveaway, rerollGiveaway, endGiveaway, MAX_WINNERS } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
@@ -88,7 +88,7 @@ const FORMS = {
     label: "Lancer un giveaway",
     category: "server",
     permission: "server.giveaways.manage",
-    emoji: EMOJI.CROWN,
+    emojiKey: "CROWN",
     fields: ["channel", "role"],
     // Le rôle ne désigne pas la cible de l'action ici, mais qui a le DROIT de
     // participer — et il reste facultatif.
@@ -162,7 +162,7 @@ const FORMS = {
     label: "Créer un sondage",
     category: "server",
     permission: "server.polls.manage",
-    emoji: EMOJI.PENCIL,
+    emojiKey: "PENCIL",
     fields: ["channel"],
     textFields: [
       { key: "question", label: "Question", max: 200 },
@@ -184,7 +184,7 @@ const FORMS = {
     label: "Configurer les tickets",
     category: "server",
     permission: "server.tickets.manage",
-    emoji: EMOJI.TICKET,
+    emojiKey: "TICKET",
     fields: ["channel", "role"],
     ready: (v) => Boolean(v.channelId),
     run: async (client, interaction, v) => {
@@ -199,7 +199,7 @@ const FORMS = {
     label: "Expulser un membre",
     category: "moderation",
     permission: "moderation.kick",
-    emoji: EMOJI.KICK,
+    emojiKey: "KICK",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -215,7 +215,7 @@ const FORMS = {
     label: "Timeout un membre",
     category: "moderation",
     permission: "moderation.timeout",
-    emoji: EMOJI.MUTE,
+    emojiKey: "MUTE",
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
@@ -235,7 +235,7 @@ const FORMS = {
     label: "Créer un rôle",
     category: "server",
     permission: "server.roles.manage",
-    emoji: EMOJI.PENCIL,
+    emojiKey: "PENCIL",
     fields: [],
     textFields: [{ key: "name", label: "Nom du rôle", max: 100 }],
     ready: (v) => Boolean(v.text?.name),
@@ -249,7 +249,7 @@ const FORMS = {
     label: "Bannir un membre",
     category: "moderation",
     permission: "moderation.ban",
-    emoji: EMOJI.BAN,
+    emojiKey: "BAN",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -265,7 +265,7 @@ const FORMS = {
     label: "Softban un membre",
     category: "moderation",
     permission: "moderation.softban",
-    emoji: EMOJI.BAN,
+    emojiKey: "BAN",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -281,7 +281,7 @@ const FORMS = {
     label: "Débannir (par ID)",
     category: "moderation",
     permission: "moderation.unban",
-    emoji: EMOJI.CHECK,
+    emojiKey: "CHECK",
     fields: [],
     textFields: [{ key: "id", label: "Identifiant Discord du membre banni", max: 25 }],
     ready: (v) => Boolean(v.text?.id),
@@ -295,7 +295,7 @@ const FORMS = {
     label: "Ajouter un rôle à un membre",
     category: "moderation",
     permission: "members.role",
-    emoji: EMOJI.CHECK,
+    emojiKey: "CHECK",
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {
@@ -311,7 +311,7 @@ const FORMS = {
     label: "Retirer un rôle à un membre",
     category: "moderation",
     permission: "members.role",
-    emoji: EMOJI.CROSS,
+    emojiKey: "CROSS",
     fields: ["user", "role"],
     ready: (v) => Boolean(v.userId && v.roleId),
     run: async (client, interaction, v) => {
@@ -370,7 +370,7 @@ const FORMS = {
     label: "Mute un membre",
     category: "moderation",
     permission: "moderation.timeout",
-    emoji: EMOJI.MUTE,
+    emojiKey: "MUTE",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -389,7 +389,7 @@ const FORMS = {
     label: "Derank un membre (retire tous ses rôles)",
     category: "moderation",
     permission: "members.role",
-    emoji: EMOJI.DELETE,
+    emojiKey: "DELETE",
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -404,7 +404,7 @@ const FORMS = {
     label: "Lever un timeout",
     category: "moderation",
     permission: "moderation.timeout",
-    emoji: EMOJI.UNMUTE,
+    emojiKey: "UNMUTE",
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -419,7 +419,7 @@ const FORMS = {
     label: "Lever un mute",
     category: "moderation",
     permission: "moderation.timeout",
-    emoji: EMOJI.UNMUTE,
+    emojiKey: "UNMUTE",
     fields: ["user"],
     ready: (v) => Boolean(v.userId),
     run: async (client, interaction, v) => {
@@ -434,7 +434,7 @@ const FORMS = {
     label: "Tempmute un membre",
     category: "moderation",
     permission: "moderation.timeout",
-    emoji: EMOJI.MUTE,
+    emojiKey: "MUTE",
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
@@ -453,7 +453,7 @@ const FORMS = {
     label: "Tempban un membre",
     category: "moderation",
     permission: "moderation.ban",
-    emoji: EMOJI.BAN,
+    emojiKey: "BAN",
     fields: ["user"],
     textFields: [
       { key: "duration", label: "Durée (ex : 1d, 12h, 1w)", max: 20 },
@@ -1106,7 +1106,7 @@ const FORMS = {
     label: "Avertir un membre",
     category: "moderation",
     permission: "moderation.warn",
-    emoji: EMOJI.INFO,
+    emojiKey: "INFO",
     fields: ["user"],
     textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
     ready: (v) => Boolean(v.userId),
@@ -1136,7 +1136,7 @@ const FORMS = {
     label: "Retirer un avertissement",
     category: "moderation",
     permission: "logs.manage",
-    emoji: EMOJI.CROSS,
+    emojiKey: "CROSS",
     fields: ["user"],
     textFields: [{ key: "caseNumber", label: "Numéro de case (voir &warnings)", max: 10 }],
     ready: (v) => Boolean(v.userId && v.text?.caseNumber),
@@ -1665,7 +1665,7 @@ function buildFormCard(formKey, member) {
       .setLabel("Lancer")
       .setStyle(ButtonStyle.Success)
       .setDisabled(!form.ready(active));
-    if (form.emoji) launchButton;
+    if (form.emojiKey) launchButton.setEmoji(iconDe(member.guild.id, form.emojiKey));
     buttons.push(launchButton);
   }
   if (buttons.length) rows.push(new ActionRowBuilder().addComponents(...buttons));

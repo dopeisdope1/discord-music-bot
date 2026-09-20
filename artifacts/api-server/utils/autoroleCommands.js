@@ -3,7 +3,7 @@ const { can } = require("./permissions/engine");
 const autoroleStore = require("./autoroleStore");
 const roleLimitStore = require("./roleLimitStore");
 
-const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
+const reply = (message, kind, text, options) => message.reply({ embeds: [buildStatusEmbed(kind, text, { ...options, guildId: message.guild.id })] });
 
 function parseRoleArg(message, args) {
   return message.mentions.roles?.first() || (args[0] ? message.guild.roles.cache.get(args[0]) : null);

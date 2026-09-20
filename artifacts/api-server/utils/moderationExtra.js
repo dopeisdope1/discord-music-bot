@@ -20,7 +20,7 @@ const listNavigator = require("./listNavigator");
 // Extensions du catalogue Modération/Paramètres de modération documentées
 // dans le panel mais pas encore câblées — voir utils/commandCatalog.js.
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Cible = PREMIER argument exactement (mention ou ID) — jamais "une mention trouvée n'importe où" (voir le fix &clear). */
 function parseTarget(args) {

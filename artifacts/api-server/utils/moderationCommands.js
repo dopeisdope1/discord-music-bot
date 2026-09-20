@@ -8,7 +8,7 @@ const { deleteMessages } = require("./deleteMessages");
 const historyStore = require("./moderationHistoryStore");
 const roleLimitStore = require("./roleLimitStore");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Menu de traduction des durées "&timeout @membre 10m" -> millisecondes. Plafond Discord : 28 jours. */
 const DURATION_UNITS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -502,7 +502,7 @@ const handlers = {
       }),
       () =>
         message.reply({
-          embeds: [buildStatusEmbed("info", corps, { title: "Informations membre", thumbnail: mentioned.user.displayAvatarURL() })],
+          embeds: [buildStatusEmbed("info", corps, { title: "Informations membre", thumbnail: mentioned.user.displayAvatarURL(), guildId: message.guild.id })],
         })
     );
   },
@@ -526,7 +526,7 @@ const handlers = {
     await repondreAvecCarte(
       message,
       carteTableau(corps, { titre, sousTitre: message.guild.name, couleur: "#a78bfa", guild: message.guild, nomFichier: "modlogs.png" }),
-      () => message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: titre })] })
+      () => message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: titre, guildId: message.guild.id })] })
     );
   },
 };
@@ -615,7 +615,7 @@ async function clear(client, message, args) {
 
   // Confirmation supprimée instantanément après l'envoi, pour la même raison.
   const confirmation = await message.channel
-    .send({ embeds: [buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`)] })
+    .send({ embeds: [buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`, { guildId: message.guild.id })] })
     .catch(() => null);
   if (confirmation) confirmation.delete().catch(() => {});
 }

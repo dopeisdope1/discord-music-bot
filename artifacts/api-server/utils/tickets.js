@@ -11,12 +11,12 @@ const {
   MessageFlags,
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 const { can } = require("./permissions/engine");
 const { checkBotPermission, report } = require("./moderation/actions");
 const ticketStore = require("./ticketStore");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 const ID = "ticket";
 
@@ -48,7 +48,7 @@ async function setupTickets(client, message, args) {
         : "Besoin d'aide ? Ouvre un ticket ci-dessous.",
       [
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:open`).setLabel("Ouvrir un ticket").setStyle(ButtonStyle.Primary).setEmoji(EMOJI.TICKET)
+          new ButtonBuilder().setCustomId(`${ID}:open`).setLabel("Ouvrir un ticket").setStyle(ButtonStyle.Primary).setEmoji(iconDe(message.guild.id, "TICKET"))
         ),
       ]
     )
@@ -211,7 +211,7 @@ async function handleTicketButton(interaction) {
       card(
         "Ticket ouvert",
         `<@${interaction.user.id}>${staffRoleId ? ` — <@&${staffRoleId}>` : ""}\nDécris ta demande, le staff te répondra ici.`,
-        [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:close`).setLabel("Fermer").setStyle(ButtonStyle.Danger).setEmoji(EMOJI.LOCK))]
+        [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${ID}:close`).setLabel("Fermer").setStyle(ButtonStyle.Danger).setEmoji(iconDe(interaction.guild.id, "LOCK")))]
       )
     );
 

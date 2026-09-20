@@ -9,7 +9,7 @@ const { createLogChannelsAutomatically } = require("./logChannels");
 // (utils/logChannels.js) que les boutons du panel : deux façons de faire la
 // même chose, jamais deux comportements.
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /**
  * Une commande par catégorie du store, plutôt qu'un `&log <catégorie>`

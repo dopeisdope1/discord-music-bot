@@ -66,8 +66,10 @@ console.log("\n&choose :");
 
 (async () => {
   await casAsync("choisit toujours parmi les options données", async () => {
+    const guild = { id: "g1" };
     const message = {
-      member: { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      member: { id: "owner-1", guild, roles: { cache: new Collection() } },
+      guild,
       reply: async (p) => (message._reply = p),
     };
     await serverExtra.choose(null, message, ["pizza,,burger,,sushi"]);
@@ -76,8 +78,10 @@ console.log("\n&choose :");
   });
 
   await casAsync("refuse avec moins de 2 options", async () => {
+    const guild = { id: "g1" };
     const message = {
-      member: { id: "owner-1", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      member: { id: "owner-1", guild, roles: { cache: new Collection() } },
+      guild,
       reply: async (p) => (message._reply = p),
     };
     await serverExtra.choose(null, message, ["pizza"]);
@@ -85,8 +89,10 @@ console.log("\n&choose :");
   });
 
   await casAsync("&choose exige server.tools.use — silencieux sans la permission", async () => {
+    const guild = { id: "g1" };
     const message = {
-      member: { id: "membre-sans-droits", guild: { id: "g1" }, roles: { cache: new Collection() } },
+      member: { id: "membre-sans-droits", guild, roles: { cache: new Collection() } },
+      guild,
       reply: async (p) => (message._reply = p),
     };
     await serverExtra.choose(null, message, ["pizza,,burger"]);

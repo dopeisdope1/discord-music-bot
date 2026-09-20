@@ -122,7 +122,7 @@ async function securityScan(client, message) {
   if (warnings.length) lines.push("**🟠 Avertissements :**", ...warnings.map((l) => `> ${l}`), "");
   lines.push("**🟢 OK :**", ...ok.map((l) => `> ${l}`));
 
-  await message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Sécurité du serveur" })] });
+  await message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: "Sécurité du serveur", guildId: guild.id })] });
 }
 
 module.exports = { securityScan, computeSecurityScan };

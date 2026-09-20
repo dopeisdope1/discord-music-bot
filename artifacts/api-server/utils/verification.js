@@ -3,7 +3,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const verificationStore = require("./verificationStore");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 const ID = "verify";
 

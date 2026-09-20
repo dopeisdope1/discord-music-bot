@@ -1,6 +1,6 @@
-const { EMOJI } = require("./emojis");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
+const { iconDe } = require("./emojiSlots");
 const levelStore = require("./levelStore");
 const readOnlyLists = require("./readOnlyLists");
 const { buildListCard } = require("./listCard");
@@ -24,7 +24,7 @@ async function checkMessage(client, message) {
 
   const salon = config.levelUpChannelId ? message.guild.channels.cache.get(config.levelUpChannelId) : message.channel;
   await salon
-    ?.send(`${EMOJI.CROWN} <@${message.author.id}> passe **niveau ${resultat.level}** !`)
+    ?.send(`${iconDe(message.guild.id, "CROWN")} <@${message.author.id}> passe **niveau ${resultat.level}** !`)
     .catch(() => {});
 }
 
@@ -40,7 +40,8 @@ async function rank(client, message, args) {
   await message.reply({
     embeds: [
       buildStatusEmbed("info", null, {
-        title: `${EMOJI.CROWN} Niveau de ${cible.displayName}`,
+        guildId: message.guild.id,
+        title: `${iconDe(message.guild.id, "CROWN")} Niveau de ${cible.displayName}`,
         thumbnail: cible.user.displayAvatarURL({ size: 256 }),
         fields: [
           { name: "Niveau", value: String(donnees.level), inline: true },
@@ -63,11 +64,11 @@ async function levelsToggle(client, message, args) {
   if (!can(message.member, "server.levels.manage")) return;
   const sub = (args[0] || "").toLowerCase();
   if (sub !== "on" && sub !== "off") {
-    return message.reply({ embeds: [buildStatusEmbed("info", "Utilisation : `&levels on` ou `&levels off`.")] });
+    return message.reply({ embeds: [buildStatusEmbed("info", "Utilisation : `&levels on` ou `&levels off`.", { guildId: message.guild.id })] });
   }
   levelStore.setEnabled(message.guild.id, sub === "on");
   return message.reply({
-    embeds: [buildStatusEmbed("success", `Système de niveaux ${sub === "on" ? "activé" : "désactivé"} sur ce serveur.`)],
+    embeds: [buildStatusEmbed("success", `Système de niveaux ${sub === "on" ? "activé" : "désactivé"} sur ce serveur.`, { guildId: message.guild.id })],
   });
 }
 

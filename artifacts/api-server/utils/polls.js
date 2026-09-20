@@ -57,12 +57,12 @@ async function createPoll(client, message, args) {
   const parts = parseQuoted(args.join(" "));
   if (parts.length < 3) {
     return message.reply({
-      embeds: [buildStatusEmbed("error", 'Utilise : `poll "question" "option1" "option2" [...]` (2 à 5 options, guillemets obligatoires).')],
+      embeds: [buildStatusEmbed("error", 'Utilise : `poll "question" "option1" "option2" [...]` (2 à 5 options, guillemets obligatoires).', { guildId: message.guild.id })],
     });
   }
   const [question, ...options] = parts;
   if (options.length > MAX_OPTIONS) {
-    return message.reply({ embeds: [buildStatusEmbed("error", `Maximum ${MAX_OPTIONS} options.`)] });
+    return message.reply({ embeds: [buildStatusEmbed("error", `Maximum ${MAX_OPTIONS} options.`, { guildId: message.guild.id })] });
   }
 
   const poll = { question, options, votes: new Map() };

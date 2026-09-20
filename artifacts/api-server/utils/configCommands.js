@@ -12,7 +12,7 @@ const accessStore = require("./accessStore");
 // (Préfixes, Permissions, Bienvenue, Tickets, Vocaux). Mêmes stores que le
 // panel : ce sont deux façons de régler la même chose, pas deux réglages.
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 // `&prefix <valeur>` reste volontairement compatible avec l'ancien réglage :
 // il change le préfixe de gestion (&). Les noms explicites permettent

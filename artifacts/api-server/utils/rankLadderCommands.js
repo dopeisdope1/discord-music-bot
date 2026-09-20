@@ -11,7 +11,7 @@ const gradeLadderPanel = require("./gradeLadderPanel");
 // pour autre chose, l'échelle de grades utilise donc son propre vocabulaire.
 const PERMISSION = "members.rank.manage";
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Cible = PREMIER argument exactement (mention ou ID) — même règle que &kick/&derank. */
 function parseTarget(args) {

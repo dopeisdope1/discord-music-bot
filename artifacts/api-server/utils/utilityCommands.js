@@ -43,7 +43,7 @@ const listNavigator = require("./listNavigator");
 // lisible. Le message d'origine sert toujours de repli si le rendu échoue ou
 // si le salon refuse les pièces jointes.
 const reply = (message, kind, text, options = {}) => {
-  const embed = () => message.reply({ embeds: [buildStatusEmbed(kind, text, options)] });
+  const embed = () => message.reply({ embeds: [buildStatusEmbed(kind, text, { ...options, guildId: message.guild.id })] });
   if (kind !== "info" || !options.title || options.image || !estTableau(text)) return embed();
   return repondreAvecCarte(
     message,

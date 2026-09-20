@@ -17,7 +17,7 @@ const confessStore = require("./confessStore");
 const { can } = require("./permissions/engine");
 const { report } = require("./moderation/actions");
 const { buildCarteVisuelle, buildCarteVisuelleConfession } = require("./confessCard");
-const { EMOJI } = require("./emojis");
+const { iconDe } = require("./emojiSlots");
 
 // !!confess — confessions anonymes, avec VALIDATION avant publication
 // (sixième refonte, demande explicite — "on va changer de méthode") :
@@ -128,7 +128,7 @@ function libelleStatut(c) {
  * est édité (voir cette même fonction) pour les retirer et afficher le
  * résultat.
  */
-function buildValidationCard(c) {
+function buildValidationCard(c, guildId) {
   const { fichier, galerie } = buildCarteVisuelleConfession(c.texte, { hauteur: 150 });
 
   const infos = [
@@ -146,8 +146,8 @@ function buildValidationCard(c) {
   if (c.status === "attente") {
     conteneur.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.SUCCESS),
-        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Secondary).setEmoji(EMOJI.ERROR)
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:accepter:${c.id}`).setLabel("Accepter").setStyle(ButtonStyle.Secondary).setEmoji(iconDe(guildId, "SUCCESS")),
+        new ButtonBuilder().setCustomId(`${CUSTOM_ID}:refuser:${c.id}`).setLabel("Refuser").setStyle(ButtonStyle.Secondary).setEmoji(iconDe(guildId, "ERROR"))
       )
     );
   }
@@ -289,7 +289,7 @@ async function handleConfessInteraction(interaction) {
       authorTag: interaction.user.tag,
     });
     const confession = confessStore.getConfession(etat.guildId, id);
-    const envoye = await salonValidation.send(buildValidationCard(confession)).catch(() => null);
+    const envoye = await salonValidation.send(buildValidationCard(confession, etat.guildId)).catch(() => null);
     if (envoye) confessStore.setModerationMessageId(etat.guildId, id, envoye.id);
 
     return interaction.reply({ content: "C'est envoyé ! Ta confession est en attente de validation.", flags: MessageFlags.Ephemeral });
@@ -335,7 +335,7 @@ async function handleConfessInteraction(interaction) {
       channelId: interaction.channel?.id || null,
     }).catch((err) => console.error("[confessions] log échoué :", err));
 
-    return interaction.update(buildValidationCard(confession));
+    return interaction.update(buildValidationCard(confession, guildId));
   }
 }
 

@@ -17,7 +17,7 @@ const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 // muteStore.js) pour ne pas exiger un second rôle à créer.
 const PERMISSION = "moderation.mutebot";
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 function parseTarget(args) {
   const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);

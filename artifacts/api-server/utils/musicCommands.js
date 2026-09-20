@@ -152,7 +152,7 @@ const modHandlers = {
     const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
     const idArg = args[0]?.match(/^\d{15,25}$/);
     const targetId = mention?.[1] || idArg?.[0];
-    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte)] });
+    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte, { guildId: message.guild.id })] });
     if (!targetId) return erreur("Indique un membre (mention ou identifiant) : `baninfo @membre`.");
     const target = await message.guild.members.fetch(targetId).catch(() => null);
     if (!target) return erreur("Ce membre n'est pas sur le serveur.");
@@ -209,7 +209,7 @@ const modHandlers = {
     const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
     const idArg = args[0]?.match(/^\d{15,25}$/);
     const targetId = mention?.[1] || idArg?.[0];
-    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte)] });
+    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte, { guildId: message.guild.id })] });
     if (!targetId) return erreur("Indique un membre (mention ou identifiant) : `grade @membre`.");
     const target = await message.guild.members.fetch(targetId).catch(() => null);
     if (!target) return erreur("Ce membre n'est pas sur le serveur.");
@@ -598,7 +598,7 @@ async function handleTextCommand(client, message) {
         const secondes = Math.ceil(retryAfterMs / 1000);
         return message
           .reply({
-            embeds: [buildStatusEmbed("error", `Doucement — réessaie dans ${secondes} seconde(s).`)],
+            embeds: [buildStatusEmbed("error", `Doucement — réessaie dans ${secondes} seconde(s).`, { guildId: message.guild.id })],
           })
           .catch(() => {});
       }

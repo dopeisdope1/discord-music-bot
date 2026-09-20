@@ -7,7 +7,7 @@ const automod = require("./automod/antiSpam");
 const serverAdmin = require("./serverAdminCommands");
 const securityPanel = require("./securityPanel");
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 // "!!" devient l'écosystème SÉCURITÉ complet (architecture 4 préfixes,
 // & = gestion / - = modération / !! = sécurité / = = vocal) : chaque mot ci-dessous

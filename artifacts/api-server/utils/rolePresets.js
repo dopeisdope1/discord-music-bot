@@ -162,7 +162,7 @@ const EXCLUSIVE = [
 
 const TOTAL_ROLES = TIERS.reduce((n, t) => n + t.names.length, 0) + EXCLUSIVE.length;
 
-const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text)] });
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Depuis le panel (rubrique "Rôles (paliers)") : crée les 33 rôles prédéfinis, avec leurs permissions déjà réglées. */
 async function createPresetRoles(client, message) {
