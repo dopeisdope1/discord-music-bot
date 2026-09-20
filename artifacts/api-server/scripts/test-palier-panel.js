@@ -146,17 +146,17 @@ function fakeMessage(authorId, guild, member) {
     assert.ok(!texte.includes(`${palierPanel.CUSTOM_ID}:`));
   });
 
-  await cas("un palier à UN SEUL rôle affiche direct Supprimer(rouge)/Ajouter(vert)/Renommer(bleu)", () => {
+  await cas("un palier à UN SEUL rôle affiche direct Supprimer(rouge)/Gérer(vert)/Renommer(bleu)", () => {
     const owner = mkMember("owner-1", null);
     const brut = palierPanel.buildPalierPanel(guild, owner, {}).components[0].toJSON();
     const iLigne = brut.components.findIndex((c) => c.content?.includes("Permission 1"));
     const rangee = brut.components[iLigne + 1];
     assert.strictEqual(rangee.type, 1);
-    const [supp, ajout, ren] = rangee.components;
+    const [supp, gerer, ren] = rangee.components;
     assert.strictEqual(supp.custom_id, `${palierPanel.CUSTOM_ID}:del:${ROLE_B}`);
     assert.strictEqual(supp.style, 4);
-    assert.strictEqual(ajout.custom_id, `${palierPanel.CUSTOM_ID}:addopen:t-1:0`);
-    assert.strictEqual(ajout.style, 3);
+    assert.strictEqual(gerer.custom_id, `${palierPanel.CUSTOM_ID}:addopen:t-1:0`);
+    assert.strictEqual(gerer.style, 3);
     assert.strictEqual(ren.custom_id, `${palierPanel.CUSTOM_ID}:ren:${ROLE_B}`);
     assert.strictEqual(ren.style, 1);
   });
@@ -169,9 +169,9 @@ function fakeMessage(authorId, guild, member) {
     assert.deepStrictEqual(doublons, []);
   });
 
-  console.log('\n"Ajouter" — ouvre le palier (remplace la liste, budget de composants oblige) :');
+  console.log('\n"Gérer" — ouvre le palier (remplace la liste, budget de composants oblige) :');
 
-  await cas('cliquer "Ajouter" REMPLACE la liste par CE palier seul, avec son RoleSelectMenu et un retour', async () => {
+  await cas('cliquer "Gérer" REMPLACE la liste par CE palier seul, avec son RoleSelectMenu et un retour', async () => {
     const owner = mkMember("owner-1", null);
     let updated = null;
     await palierPanel.handlePalierInteraction({
@@ -189,6 +189,53 @@ function fakeMessage(authorId, guild, member) {
     assert.ok(iSelecteur > iLigne);
     const labels = composants.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
     assert.ok(labels.includes("◀ Retour à la liste"));
+  });
+
+  console.log('\n"Déplacer vers un autre palier" — glisser-déposer équivalent :');
+
+  await cas("le sélecteur \"Déplacer\" apparaît en gérant un palier à un seul rôle, listant les AUTRES paliers", () => {
+    const owner = mkMember("owner-1", null);
+    // ROLE_B (Permission 1) géré : le sélecteur doit lister Permission 2
+    // (ROLE_A), jamais Permission 1 elle-même. Avant le test "add" suivant,
+    // qui rend ce palier multi-rôles (le sélecteur n'a alors plus de sens :
+    // "déplacer LEQUEL ?" — même règle que Renommer/Supprimer directs).
+    const brut = palierPanel.buildPalierPanel(guild, owner, { addOpenKey: "t-1" }).components[0].toJSON();
+    const select = brut.components.find((c) => c.components?.[0]?.custom_id === `${palierPanel.CUSTOM_ID}:move:${ROLE_B}:0`);
+    assert.ok(select, "le sélecteur de déplacement doit être présent");
+    const valeurs = select.components[0].options.map((o) => o.value);
+    assert.deepStrictEqual(valeurs, ["t-2"]);
+  });
+
+  await cas('"Déplacer" copie les clés du palier CIBLE sur le rôle', async () => {
+    const owner = mkMember("owner-1", null);
+    let updated = null;
+    await palierPanel.handlePalierInteraction({
+      customId: `${palierPanel.CUSTOM_ID}:move:${ROLE_B}:0`,
+      values: ["t-2"],
+      member: owner,
+      guild,
+      client: {},
+      update: async (p) => (updated = p),
+    });
+    assert.deepStrictEqual(permStore.getRoleGrants("gpalier", ROLE_B), permStore.getRoleGrants("gpalier", ROLE_A));
+    assert.ok(updated, "le panneau doit être mis à jour en place");
+    // Remis en l'état d'origine pour ne pas fausser les tests suivants
+    // (Permission 1 doit rester ["kick"] pour la section "plusieurs rôles").
+    permStore.setRoleGrants("gpalier", ROLE_B, ["moderation.kick"]);
+  });
+
+  await cas('"Déplacer" est refusé sans panel.permissions.manage', async () => {
+    const sansDroit = mkMember("u-sans-move", null);
+    let refused = null;
+    await palierPanel.handlePalierInteraction({
+      customId: `${palierPanel.CUSTOM_ID}:move:${ROLE_B}:0`,
+      values: ["t-2"],
+      member: sansDroit,
+      guild,
+      client: {},
+      reply: async (p) => (refused = p),
+    });
+    assert.ok(refused?.content?.includes("pas la permission"));
   });
 
   await cas("choisir un rôle dans ce sélecteur copie les clés du palier", async () => {
@@ -209,13 +256,13 @@ function fakeMessage(authorId, guild, member) {
 
   console.log("\nPalier à plusieurs rôles (Permission 1 en a 2 maintenant) :");
 
-  await cas('affiche "Ajouter" + "Renommer/Supprimer" (pas de bouton direct, ambigu)', () => {
+  await cas('affiche "Gérer" + "Renommer/Supprimer" (pas de bouton direct, ambigu)', () => {
     const owner = mkMember("owner-1", null);
     const brut = palierPanel.buildPalierPanel(guild, owner, {}).components[0].toJSON();
     const iLigne = brut.components.findIndex((c) => c.content?.includes("Permission 1"));
     const rangee = brut.components[iLigne + 1];
     const labels = rangee.components.map((b) => b.label);
-    assert.deepStrictEqual(labels, ["Ajouter", "Renommer/Supprimer"]);
+    assert.deepStrictEqual(labels, ["Gérer", "Renommer/Supprimer"]);
   });
 
   await cas('"Renommer/Supprimer" révèle deux sélecteurs (lequel renommer, lequel supprimer)', async () => {
@@ -312,7 +359,7 @@ function fakeMessage(authorId, guild, member) {
     assert.ok(refused?.content?.includes("pas la permission"));
   });
 
-  await cas("avec panel.permissions.manage mais SANS server.roles.manage : Renommer/Supprimer refusés, Ajouter permis", async () => {
+  await cas("avec panel.permissions.manage mais SANS server.roles.manage : Renommer/Supprimer refusés, Gérer permis", async () => {
     permStore.grantToUser("gpalier", "u-perm-seule", "panel.permissions.manage");
     const permSeule = mkMember("u-perm-seule", null);
 
@@ -338,7 +385,7 @@ function fakeMessage(authorId, guild, member) {
       client: {},
       update: async (p) => (updated = p),
     });
-    assert.ok(updated, "Ajouter ne demande que panel.permissions.manage");
+    assert.ok(updated, "Gérer ne demande que panel.permissions.manage");
   });
 
   console.log("\nÉtat vide :");

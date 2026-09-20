@@ -93,7 +93,7 @@ const boutonsDe = (section, state) => composantsDe(section, state).filter((c) =>
     // rubrique n'a aucune ligne, donc aucun bouton de ligne à vérifier.
     permStore.setRoleGrants("g1", ROLE_ID, ["moderation.kick"]);
     const labels = boutonsDe("roletiers").map((b) => b.label);
-    for (const attendu of ["Supprimer", "Ajouter", "Renommer"]) {
+    for (const attendu of ["Supprimer", "Gérer", "Renommer"]) {
       assert.ok(labels.includes(attendu), `"${attendu}" manque — boutons trouvés : ${labels.join(", ")}`);
     }
     permStore.setRoleGrants("g1", ROLE_ID, []);

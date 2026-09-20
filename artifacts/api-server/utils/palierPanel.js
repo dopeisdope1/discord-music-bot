@@ -124,10 +124,12 @@ function buildPalierPanel(guild, member, state = {}) {
     if (ligne.roleIds.length === 1 && peutRoles) {
       // Un seul rôle (le cas normal, voir utils/rolePresets.js) : les
       // boutons agissent directement dessus.
+      // "Gérer" (et non "Ajouter", trompeur : ouvre les vrais contrôles du
+      // palier — ajouter un rôle, ET maintenant le déplacer vers un autre).
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:del:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:ren:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
         )
       );
@@ -137,7 +139,7 @@ function buildPalierPanel(guild, member, state = {}) {
       // sélecteurs juste en dessous.
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`${CUSTOM_ID}:manopen:${ligne.cle}:${page}`)
             .setLabel("Renommer/Supprimer")
@@ -155,6 +157,27 @@ function buildPalierPanel(guild, member, state = {}) {
             .setPlaceholder(`Choisir le rôle à ajouter à ${ligne.libelle}`.slice(0, 150))
         )
       );
+      // "Déplacer" — équivalent du glisser-déposer natif de Discord (comme
+      // réorganiser des salons), appliqué à un rôle unique de ce palier :
+      // copie les clés du palier CIBLE sur ce rôle (même mécanique que
+      // "Ajouter", dans l'autre sens — voir action "move" plus bas). N'a de
+      // sens que pour un palier à UN SEUL rôle (sinon "lequel ?") et s'il
+      // existe au moins un autre palier où aller.
+      if (ligne.roleIds.length === 1) {
+        const autresPaliers = lignesPaliers(guild).filter((l) => l.cle !== ligne.cle && l.cle.startsWith("t-"));
+        if (autresPaliers.length) {
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`${CUSTOM_ID}:move:${ligne.roleIds[0]}:${page}`)
+                .setPlaceholder("Déplacer ce rôle vers un autre palier")
+                .addOptions(
+                  autresPaliers.slice(0, 25).map((l) => new StringSelectMenuOptionBuilder().setLabel(l.libelle.slice(0, 100)).setValue(l.cle))
+                )
+            )
+          );
+        }
+      }
     }
     if (state.manOpenKey === ligne.cle && peutRoles && ligne.roleIds.length) {
       const options = ligne.roleIds
@@ -268,6 +291,22 @@ async function handlePalierInteraction(interaction) {
     const roleId = interaction.values[0];
     permStore.setRoleGrants(guild.id, roleId, ligne.keys);
     if (ligne.exclusiveLabel) permStore.setRoleExclusive(guild.id, roleId, true, ligne.exclusiveLabel);
+    return interaction.update(buildPalierPanel(guild, member, { page }));
+  }
+
+  // "Déplacer vers un autre palier" : même mécanique que "add" (copie les
+  // clés du palier CIBLE sur le rôle), lancée depuis le rôle plutôt que
+  // depuis le palier cible — p1 = l'ID du rôle déplacé, p2 = la page
+  // d'origine (pour y revenir), interaction.values[0] = "t-<numéro>" cible.
+  if (action === "move") {
+    const roleId = p1;
+    const page = Number(p2) || 0;
+    if (!guild.roles.cache.has(roleId)) {
+      return interaction.reply({ content: "Ce rôle n'existe plus.", flags: MessageFlags.Ephemeral });
+    }
+    const cible = trouverLigne(guild, interaction.values[0]);
+    if (!cible) return interaction.reply({ content: "Ce palier n'existe plus — retape &p.", flags: MessageFlags.Ephemeral });
+    permStore.setRoleGrants(guild.id, roleId, cible.keys);
     return interaction.update(buildPalierPanel(guild, member, { page }));
   }
 

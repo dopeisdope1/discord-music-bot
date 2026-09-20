@@ -1312,9 +1312,12 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         // Un seul rôle : les boutons agissent directement dessus, en
         // réutilisant les actions existantes (mêmes droits, même confirmation
         // de suppression) — aucune logique dupliquée.
+        // "Gérer" (et non "Ajouter", trompeur : il ouvre la vue détail
+        // complète du palier — Renommer/Supprimer/Ajouter un rôle/Déplacer
+        // vers un autre palier — pas seulement l'ajout).
         boutons.push(
           new ButtonBuilder().setCustomId(`${ID}:roledelete:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`${ID}:renamerole:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
         );
       } else {
@@ -1324,7 +1327,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         // "palopen" dans handleConfigInteraction), mais chaque composant d'un
         // même message doit avoir un identifiant distinct.
         boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Ajouter").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`${ID}:palopen:${ligne.cle}`)
             .setLabel(ligne.roleIds.length ? "Choisir un rôle" : "Aucun rôle")

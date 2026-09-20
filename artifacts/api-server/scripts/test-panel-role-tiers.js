@@ -106,7 +106,7 @@ function texteDe(guild, member, state) {
     // On vérifie donc qu'ils existent, ce qui est une garantie plus forte que
     // la présence d'un texte.
     const boutons = brut.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
-    for (const attendu of ["Supprimer", "Ajouter", "Renommer"]) {
+    for (const attendu of ["Supprimer", "Gérer", "Renommer"]) {
       assert.ok(boutons.includes(attendu), `"${attendu}" doit être un bouton de ligne : ${boutons.join(", ")}`);
     }
   });
