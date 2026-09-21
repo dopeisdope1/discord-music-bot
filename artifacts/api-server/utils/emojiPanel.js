@@ -25,10 +25,28 @@ const messageOwner = require("./messageOwner");
 const CUSTOM_ID = "emoji";
 const PERMISSION = "sys";
 
-/** Un emoji Discord (unicode ou custom `<a:nom:id>`/`<:nom:id>`) — une seule "unité" visuelle, pas une phrase. */
-function emojiValide(texte) {
+/**
+ * Un emoji Discord (unicode, custom `<a:nom:id>`/`<:nom:id>`, ou juste
+ * `:nom:` — voir ci-dessous) — une seule "unité" visuelle, pas une phrase.
+ * @param {string} texte
+ * @param {import('discord.js').Guild} [guild] pour résoudre `:nom:` contre
+ *   les emojis DU SERVEUR — sur mobile, `\` (qui révèle le code `<:nom:id>`
+ *   sur desktop) n'a pas d'équivalent, donc on accepte le raccourci court.
+ */
+function emojiValide(texte, guild) {
   const t = texte.trim();
   if (/^<a?:\w+:\d+>$/.test(t)) return t;
+  // ":nom:" (sans les chevrons ni l'ID, ce que le picker mobile insère) —
+  // recherche par nom dans les emojis du serveur, insensible à la casse.
+  // Pas de \w strict : Discord tolère des noms d'émojis avec des caractères
+  // hors \w (ex. "voice_channel~1", vu en pratique) — on se contente
+  // d'exclure ":" pour distinguer la fin du nom.
+  const nomCourt = /^:([^:]+):$/.exec(t);
+  if (nomCourt && guild) {
+    const trouve = guild.emojis.cache.find((e) => e.name?.toLowerCase() === nomCourt[1].toLowerCase());
+    if (trouve) return trouve.toString();
+    return null;
+  }
   // Unicode : accepte 1 à quelques points de code (emoji composés avec
   // variation selector/ZWJ, ex: ❤️, 🧑‍💻) sans valider caractère par
   // caractère — juste une longueur raisonnable pour écarter une phrase.
@@ -142,11 +160,11 @@ async function handleEmojiTextCommand(client, message, args) {
     if (!slot) {
       return message.reply("Utilisation : `&emoji` pour ouvrir le panel, `&emoji <clé> <emoji>`, ou `&emoji reset <clé>`.");
     }
-    const emoji = emojiValide(args.slice(1).join(" "));
+    const emoji = emojiValide(args.slice(1).join(" "), message.guild);
     if (!emoji) {
       return message.reply(
         "Ça ne ressemble pas à un seul emoji — `&emoji <clé> <emoji>`.\n" +
-          "Pour un emoji personnalisé, choisis-le dans le menu qui s'affiche quand tu tapes `:` (Discord l'insère alors sous la forme `<:nom:id>`) plutôt que de taper juste son nom."
+          "Pour un emoji personnalisé DE CE SERVEUR : `:nom:` suffit (ex. `:voice_channel~1:`), ou choisis-le dans le menu qui s'affiche quand tu tapes `:`. Pour un emoji d'un AUTRE serveur, il faut son code complet `<:nom:id>`."
       );
     }
     categoryEmojiStore.set(message.guild.id, slot.key, emoji);
@@ -186,8 +204,8 @@ async function handleEmojiInteraction(interaction) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("emoji")
-          .setLabel("Emoji (unicode ou personnalisé du serveur)")
-          .setPlaceholder("🛡️ ou <:nom:id>")
+          .setLabel("Emoji (unicode, :nom: ou <:nom:id>)")
+          .setPlaceholder("🛡️ ou :voice_channel~1:")
           .setStyle(TextInputStyle.Short)
           .setMaxLength(40)
           .setRequired(true)
@@ -198,15 +216,15 @@ async function handleEmojiInteraction(interaction) {
 
   if (action === "changesubmit" && interaction.isModalSubmit()) {
     const saisi = interaction.fields.getTextInputValue("emoji");
-    const emoji = emojiValide(saisi);
+    const emoji = emojiValide(saisi, interaction.guild);
     if (!emoji) {
-      // Erreur fréquente : taper juste le NOM ("voice_channel~1") au lieu du
-      // code complet — la modale (simple champ texte) ne propose pas
-      // l'auto-complétion `:nom:` d'un vrai champ de message Discord.
+      // Erreur fréquente : taper juste le nom SANS les ":" ("voice_channel~1"
+      // au lieu de ":voice_channel~1:") — la modale ne propose pas
+      // l'auto-complétion d'un vrai champ de message Discord.
       return interaction.reply({
         content:
           "Ça ne ressemble pas à un seul emoji — réessaie.\n" +
-          "Pour un emoji personnalisé du serveur, il faut le CODE complet, pas juste son nom : tape `\\` suivi de l'emoji dans n'importe quel salon (ex. `\\🎙️` ou `\\:voice_channel~1:`), Discord affiche alors `<:voice_channel~1:123456789012345678>` — copie exactement ce texte-là ici.",
+          "Pour un emoji personnalisé DE CE SERVEUR, entoure son nom de deux-points : `:voice_channel~1:`. Pour un emoji d'un AUTRE serveur, il faut son code complet `<:nom:id>` (tape `\\` suivi de l'emoji dans un salon, sur ordinateur, pour l'obtenir).",
         flags: MessageFlags.Ephemeral,
       });
     }
