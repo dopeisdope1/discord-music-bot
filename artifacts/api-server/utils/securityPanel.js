@@ -153,24 +153,45 @@ function sectionsProtection(guildId) {
   ];
 }
 
+// Les 5 bascules ON/OFF de la vue Protection — un bouton direct par
+// protection (demande explicite), plutôt qu'une entrée de plus dans le menu
+// déroulant : c'est l'action la plus fréquente, elle mérite un seul clic.
+// Les réglages plus fins (seuil, durée, salons, whitelist) restent dans le
+// menu, qui garde donc moins d'options une fois les *_toggle retirés.
+const BASCULES_PROTECTION = [
+  { valeur: "spam_toggle", label: "Anti-spam", actif: (guildId) => automod.getConfig(guildId).enabled },
+  { valeur: "link_toggle", label: "Anti-lien", actif: (guildId) => antiLink.getConfig(guildId).enabled },
+  { valeur: "mention_toggle", label: "Anti-mass-mention", actif: (guildId) => antiMention.getConfig(guildId).enabled },
+  { valeur: "badwords_toggle", label: "Mots interdits", actif: (guildId) => badWords.getConfig(guildId).enabled },
+  { valeur: "scam_toggle", label: "Anti-scam", actif: (guildId) => antiScam.getConfig(guildId).enabled },
+];
+
 function controlesProtection(guild, member, state) {
   const rows = [];
   const words = badWords.getWords(guild.id);
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      BASCULES_PROTECTION.map((b) => {
+        const on = b.actif(guild.id);
+        return new ButtonBuilder()
+          .setCustomId(`${CUSTOM_ID}:protectiontoggle:${b.valeur}`)
+          .setLabel(`${b.label} — ${on ? "ON" : "OFF"}`)
+          .setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary);
+      })
+    )
+  );
+
   const options = [
-    { value: "spam_toggle", label: "Anti-spam : activer/désactiver" },
     { value: "spam_threshold", label: "Anti-spam : changer le seuil (messages / secondes)" },
     { value: "spam_timeout", label: "Anti-spam : durée du timeout" },
     { value: "spam_exempt", label: "Anti-spam : salons exemptés" },
-    { value: "link_toggle", label: "Anti-lien : activer/désactiver" },
     { value: "link_mode", label: "Anti-lien : changer le mode (invitations ↔ tous les liens)" },
     { value: "link_allow", label: "Anti-lien : salons où les liens restent autorisés" },
-    { value: "mention_toggle", label: "Anti-mass-mention : activer/désactiver" },
     { value: "mention_threshold", label: "Anti-mass-mention : changer le seuil" },
     { value: "mention_timeout", label: "Anti-mass-mention : durée du timeout" },
-    { value: "badwords_toggle", label: "Mots interdits : activer/désactiver" },
     { value: "badwords_add", label: "Mots interdits : ajouter un mot" },
     ...(words.length ? [{ value: "badwords_remove", label: "Mots interdits : retirer un mot" }] : []),
-    { value: "scam_toggle", label: "Anti-scam : activer/désactiver" },
     ...(can(member, "protection.whitelist")
       ? [
           { value: "whitelist_add", label: "Whitelist : ajouter quelqu'un" },
@@ -183,7 +204,7 @@ function controlesProtection(guild, member, state) {
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`${CUSTOM_ID}:protectionaction`)
-        .setPlaceholder("Choisir une action")
+        .setPlaceholder("Réglages avancés")
         .addOptions(options.map((o) => new StringSelectMenuOptionBuilder().setLabel(o.label.slice(0, 100)).setValue(o.value)))
     )
   );
@@ -527,25 +548,32 @@ async function handleSecurityInteraction(interaction) {
 
   // ---- Protection ----
 
+  // Bascule ON/OFF directe (bouton) — même mécanique que les anciennes
+  // entrées "*_toggle" du menu, une seule fonction pour les 5 protections
+  // plutôt que 5 handlers séparés : chacune n'est qu'un couple
+  // getConfig/setEnabled symétrique.
+  if (action === "protectiontoggle") {
+    if (!can(interaction.member, "protection.automod")) return refuse();
+    const bascule = BASCULES_PROTECTION.find((b) => b.valeur === extra);
+    if (!bascule) return;
+    const setters = {
+      spam_toggle: () => automod.setEnabled(guildId, !automod.getConfig(guildId).enabled),
+      link_toggle: () => antiLink.setEnabled(guildId, !antiLink.getConfig(guildId).enabled),
+      mention_toggle: () => antiMention.setEnabled(guildId, !antiMention.getConfig(guildId).enabled),
+      badwords_toggle: () => badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled),
+      scam_toggle: () => antiScam.setEnabled(guildId, !antiScam.getConfig(guildId).enabled),
+    };
+    setters[extra]();
+    return goto("protection");
+  }
+
   if (action === "protectionaction") {
     const choice = interaction.values[0];
     const requiredPerm = choice.startsWith("whitelist_") ? "protection.whitelist" : "protection.automod";
     if (!can(interaction.member, requiredPerm)) return refuse();
 
-    if (choice === "spam_toggle") {
-      automod.setEnabled(guildId, !automod.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    if (choice === "link_toggle") {
-      antiLink.setEnabled(guildId, !antiLink.getConfig(guildId).enabled);
-      return goto("protection");
-    }
     if (choice === "link_mode") {
       antiLink.setMode(guildId, antiLink.getConfig(guildId).mode === "all" ? "invite" : "all");
-      return goto("protection");
-    }
-    if (choice === "mention_toggle") {
-      antiMention.setEnabled(guildId, !antiMention.getConfig(guildId).enabled);
       return goto("protection");
     }
     if (choice === "mention_threshold") {
@@ -583,14 +611,6 @@ async function handleSecurityInteraction(interaction) {
     }
     if (choice === "spam_exempt" || choice === "link_allow") {
       return goto("protection", { protectionAction: choice });
-    }
-    if (choice === "badwords_toggle") {
-      badWords.setEnabled(guildId, !badWords.getConfig(guildId).enabled);
-      return goto("protection");
-    }
-    if (choice === "scam_toggle") {
-      antiScam.setEnabled(guildId, !antiScam.getConfig(guildId).enabled);
-      return goto("protection");
     }
     // badwords_add / badwords_remove / whitelist_add / whitelist_remove : révèle le contrôle correspondant.
     return goto("protection", { protectionAction: choice });

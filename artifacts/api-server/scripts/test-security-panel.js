@@ -188,6 +188,8 @@ function labelsAction(payload, customIdSuffix) {
     const interaction = fakeInteraction("secur:subnav", { userId: "staff-6", guildId: "g-plabels", values: ["protection"] });
     await securityPanel.handleSecurityInteraction(interaction);
     const labels = labelsAction(interaction._updates[0], "secur:protectionaction");
+    // Les 5 bascules ON/OFF (dont Anti-scam) sont des BOUTONS, plus des
+    // entrées de ce menu — voir le cas dédié plus bas.
     for (const attendu of [
       "Anti-spam : changer le seuil (messages / secondes)",
       "Anti-spam : durée du timeout",
@@ -195,7 +197,6 @@ function labelsAction(payload, customIdSuffix) {
       "Anti-lien : salons où les liens restent autorisés",
       "Anti-mass-mention : durée du timeout",
       "Mots interdits : ajouter un mot",
-      "Anti-scam : activer/désactiver",
     ]) {
       assert.ok(labels.includes(attendu), `"${attendu}" manque : ${labels.join(" | ")}`);
     }
@@ -213,15 +214,18 @@ function labelsAction(payload, customIdSuffix) {
     assert.ok(labelsAction(avec._updates[0], "secur:protectionaction").includes("Whitelist : ajouter quelqu'un"));
   });
 
-  await cas("spam_toggle/link_toggle/link_mode/mention_toggle/badwords_toggle s'exécutent immédiatement", async () => {
+  await cas("spam_toggle/link_toggle/mention_toggle/badwords_toggle/scam_toggle s'exécutent immédiatement (boutons)", async () => {
+    // Ces cinq bascules sont désormais des BOUTONS dédiés (demande explicite),
+    // customId "secur:protectiontoggle:<clé>" — plus des entrées du menu
+    // déroulant "protectionaction", qui ne garde que les réglages fins.
     permStore.grantToUser("g-ptoggle", "staff-8", "protection.automod");
     const gid = "g-ptoggle";
     const avantSpam = automod.getConfig(gid).enabled;
-    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["spam_toggle"] }));
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectiontoggle:spam_toggle", { userId: "staff-8", guildId: gid }));
     assert.strictEqual(automod.getConfig(gid).enabled, !avantSpam);
 
     const avantLink = antiLink.getConfig(gid).enabled;
-    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["link_toggle"] }));
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectiontoggle:link_toggle", { userId: "staff-8", guildId: gid }));
     assert.strictEqual(antiLink.getConfig(gid).enabled, !avantLink);
 
     const avantMode = antiLink.getConfig(gid).mode;
@@ -229,16 +233,33 @@ function labelsAction(payload, customIdSuffix) {
     assert.notStrictEqual(antiLink.getConfig(gid).mode, avantMode);
 
     const avantMention = antiMention.getConfig(gid).enabled;
-    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["mention_toggle"] }));
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectiontoggle:mention_toggle", { userId: "staff-8", guildId: gid }));
     assert.strictEqual(antiMention.getConfig(gid).enabled, !avantMention);
 
     const avantWords = badWords.getConfig(gid).enabled;
-    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["badwords_toggle"] }));
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectiontoggle:badwords_toggle", { userId: "staff-8", guildId: gid }));
     assert.strictEqual(badWords.getConfig(gid).enabled, !avantWords);
 
     const avantScam = antiScam.getConfig(gid).enabled;
-    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectionaction", { userId: "staff-8", guildId: gid, values: ["scam_toggle"] }));
+    await securityPanel.handleSecurityInteraction(fakeInteraction("secur:protectiontoggle:scam_toggle", { userId: "staff-8", guildId: gid }));
     assert.strictEqual(antiScam.getConfig(gid).enabled, !avantScam);
+  });
+
+  await cas("les bascules ON/OFF sont bien des boutons dans la vue Protection, pas des entrées du menu", () => {
+    permStore.grantToUser("g-pboutons", "staff-8b", "protection.automod");
+    const member = { id: "staff-8b", guild: fakeGuild("g-pboutons"), roles: { cache: new Collection() } };
+    const payload = securityPanel.buildSecurityPanel(member, null, "protection", {});
+    const json = payload.components[0].toJSON();
+    const boutons = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).filter((c) => c.type === 2);
+    const idsBoutons = boutons.map((b) => b.custom_id);
+    for (const cle of ["spam_toggle", "link_toggle", "mention_toggle", "badwords_toggle", "scam_toggle"]) {
+      assert.ok(idsBoutons.includes(`secur:protectiontoggle:${cle}`), `bouton manquant pour ${cle}`);
+    }
+    const menu = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).find((c) => c.custom_id === "secur:protectionaction");
+    const valeurs = menu.options.map((o) => o.value);
+    for (const cle of ["spam_toggle", "link_toggle", "mention_toggle", "badwords_toggle", "scam_toggle"]) {
+      assert.ok(!valeurs.includes(cle), `${cle} ne doit plus être une entrée du menu déroulant`);
+    }
   });
 
   await cas("les seuils/durées défilent par paliers valides", async () => {
