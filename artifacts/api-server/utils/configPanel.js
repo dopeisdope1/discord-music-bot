@@ -24,7 +24,7 @@ const {
 } = require("discord.js");
 const { getPrefixes, setPrefix, prefixConflicts, prefixConflictMessage } = require("./prefixStore");
 const { EMOJI } = require("./emojis");
-const { rendreEnCache, resumer, enTexte, texteAlternatif } = require("./dashboardImage");
+const { rendreEnCache, resumer, enTexte, texteAlternatif, THEME_BLEU } = require("./dashboardImage");
 const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
@@ -183,10 +183,10 @@ const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 // l'image. Les sujets proches partagent une famille de couleur (protection en
 // vert, communauté en ambre, réglages du bot en gris-bleu) pour que le panel
 // garde une cohérence malgré le nombre d'entrées.
-// Plus AUCUNE couleur : demande explicite. Une seule teinte neutre sert de
-// gris de tracé pour les liserés et les titres des images, de sorte que le
-// rendu reste lisible sans rien colorer.
-const TEINTE_NEUTRE = "#d0d0d0";
+// Refonte visuelle (identité bleu-sombre) : une seule teinte d'accent sert de
+// liseré/titre pour toutes les images du panel — voir utils/dashboardImage.js
+// ::THEME_BLEU.accent, même source que le reste de la refonte.
+const TEINTE_NEUTRE = THEME_BLEU.accent;
 
 // Salons cochés dans la rubrique "Salons", en attente de suppression.
 //
@@ -980,6 +980,9 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
     guild,
     // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle
     // des lignes (deux colonnes seulement si rien n'y serait tronqué).
+    // Identité visuelle de la refonte (fond/cartes bleu-sombre) — voir
+    // utils/dashboardImage.js::THEME_BLEU.
+    theme: THEME_BLEU,
   });
 }
 
