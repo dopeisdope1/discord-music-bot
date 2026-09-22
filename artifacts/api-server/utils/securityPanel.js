@@ -102,7 +102,15 @@ function corpsOverview(guild) {
 
 // ---- Vue Protection (anti-spam/anti-lien/anti-mass-mention/mots interdits/whitelist) ----
 
-function corpsProtection(guildId) {
+/**
+ * Un sous-système de protection = une petite section indépendante (titre +
+ * lignes), plutôt qu'un unique mur de texte de 6 réglages mis bout à bout —
+ * refonte visuelle : Components V2 n'a pas de couleur de container, donc la
+ * hiérarchie se fait par SEGMENTATION en plusieurs TextDisplay/Separator
+ * (voir l'assemblage dans buildSecurityPanel), pas par une teinte.
+ * @returns {{titre: string, lignes: string[]}[]}
+ */
+function sectionsProtection(guildId) {
   const config = automod.getConfig(guildId);
   const whitelist = automod.getWhitelist(guildId);
   const linkConfig = antiLink.getConfig(guildId);
@@ -111,21 +119,38 @@ function corpsProtection(guildId) {
   const wordsConfig = badWords.getConfig(guildId);
   const words = badWords.getWords(guildId);
   return [
-    `> **Anti-spam/anti-flood** : ${config.enabled ? "activé" : "désactivé"}`,
-    `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
-    `> Salons exemptés : ${automod.getExemptChannels(guildId).length ? automod.getExemptChannels(guildId).map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
-    "",
-    `> **Anti-lien** : ${linkConfig.enabled ? "activé" : "désactivé"} (mode : ${linkConfig.mode === "all" ? "tous les liens" : "invitations Discord"})`,
-    `> Salons où les liens restent autorisés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
-    "",
-    `> **Anti-mass-mention** : ${mentionConfig.enabled ? "activé" : "désactivé"} (seuil : ${mentionConfig.maxMentions} mentions, timeout ${mentionConfig.timeoutSeconds}s)`,
-    "",
-    `> **Mots interdits** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`,
-    "",
-    `> **Anti-scam** : ${antiScam.getConfig(guildId).enabled ? "activé" : "désactivé"} (faux-nitro, faux Steam)`,
-    "",
-    `> **Whitelist (exemptés)** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
-  ].join("\n");
+    {
+      titre: "Anti-spam / anti-flood",
+      lignes: [
+        `> **État** : ${config.enabled ? "activé" : "désactivé"}`,
+        `> Seuil : ${config.maxMessages} messages en ${config.windowSeconds}s déclenchent un timeout de ${config.timeoutSeconds}s`,
+        `> Salons exemptés : ${automod.getExemptChannels(guildId).length ? automod.getExemptChannels(guildId).map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
+      ],
+    },
+    {
+      titre: "Anti-lien",
+      lignes: [
+        `> **État** : ${linkConfig.enabled ? "activé" : "désactivé"} (mode : ${linkConfig.mode === "all" ? "tous les liens" : "invitations Discord"})`,
+        `> Salons où les liens restent autorisés : ${linkAllowed.length ? linkAllowed.map((id) => `<#${id}>`).join(", ") : "*aucun*"}`,
+      ],
+    },
+    {
+      titre: "Anti-mass-mention",
+      lignes: [`> **État** : ${mentionConfig.enabled ? "activé" : "désactivé"} (seuil : ${mentionConfig.maxMentions} mentions, timeout ${mentionConfig.timeoutSeconds}s)`],
+    },
+    {
+      titre: "Mots interdits",
+      lignes: [`> **État** : ${wordsConfig.enabled ? "activé" : "désactivé"} (${words.length} mot(s) dans la liste)`],
+    },
+    {
+      titre: "Anti-scam",
+      lignes: [`> **État** : ${antiScam.getConfig(guildId).enabled ? "activé" : "désactivé"} (faux-nitro, faux Steam)`],
+    },
+    {
+      titre: "Whitelist (exemptés)",
+      lignes: [`> ${mentions([...whitelist.users, ...whitelist.roles])}`],
+    },
+  ];
 }
 
 function controlesProtection(guild, member, state) {
@@ -212,7 +237,14 @@ function controlesProtection(guild, member, state) {
 
 // ---- Vue Anti-nuke ----
 
-function corpsGuard(guildId) {
+/**
+ * Réglages généraux et liste des détecteurs séparés en deux sections
+ * (voir sectionsProtection ci-dessus pour le principe) — les 13 détecteurs
+ * ont largement de quoi remplir leur propre bloc, mélangés aux 7 réglages
+ * généraux ils noyaient l'ensemble dans un seul mur de texte.
+ * @returns {{titre: string, lignes: string[]}[]}
+ */
+function sectionsGuard(guildId) {
   const config = guardConfig.getConfig(guildId);
   const whitelist = guardWhitelist.getWhitelist(guildId);
   const guardLines = ALL_GUARDS.filter((d) => d.key !== "creationlimit").map((d) => {
@@ -225,16 +257,20 @@ function corpsGuard(guildId) {
     return `> ${on ? "🟢" : "🔴"} \`${d.key}\` (${rule})${suffixe}`;
   });
   return [
-    `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
-    `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
-    `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
-    `> **Anti-Fast (âge des comptes)** : ${config.antiFastEnabled ? "activé" : "désactivé"} — minimum ${config.antiFastMinAgeDays ? `${config.antiFastMinAgeDays} jour(s)` : "*non configuré*"}`,
-    `> Anti-Fast est indépendant de l'interrupteur général Anti-nuke.`,
-    `> **Verrouillage auto si plafond atteint** : ${config.autoLockdownOnCap ? "activé" : "désactivé"}`,
-    `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
-    "",
-    ...guardLines,
-  ].join("\n");
+    {
+      titre: "Réglages généraux",
+      lignes: [
+        `> **Anti-nuke** (interrupteur général) : ${config.enabled ? "activé" : "désactivé"}`,
+        `> **Sanction** : ${config.punishment}${config.punishment === "timeout" ? ` (${config.punishmentDurationMs / 60000} min)` : ""}`,
+        `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
+        `> **Anti-Fast (âge des comptes)** : ${config.antiFastEnabled ? "activé" : "désactivé"} — minimum ${config.antiFastMinAgeDays ? `${config.antiFastMinAgeDays} jour(s)` : "*non configuré*"}`,
+        `> Anti-Fast est indépendant de l'interrupteur général Anti-nuke.`,
+        `> **Verrouillage auto si plafond atteint** : ${config.autoLockdownOnCap ? "activé" : "désactivé"}`,
+        `> **Whitelist** : ${mentions([...whitelist.users, ...whitelist.roles])}`,
+      ],
+    },
+    { titre: "Détecteurs", lignes: guardLines },
+  ];
 }
 
 function controlesGuard(guild, state) {
@@ -397,6 +433,22 @@ function controlesMute(guild) {
 
 // ---- Assemblage ----
 
+/**
+ * Ajoute un titre de vue puis une section par entrée de `sections` — chacune
+ * son propre bloc de texte, séparé par un Separator — au lieu d'un unique
+ * mur de texte pour toute la vue. C'est la structure qui remplace la couleur
+ * pour hiérarchiser l'information (Components V2 n'a pas de teinte de
+ * container ; voir sectionsProtection/sectionsGuard).
+ * @param {{titre: string, lignes: string[]}[]} sections
+ */
+function ajouterSections(container, titreVue, sections) {
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${titreVue}`));
+  for (const section of sections) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${section.titre}\n${section.lignes.join("\n")}`));
+  }
+}
+
 function buildSecurityPanel(member, client, vue = "overview", state = {}) {
   const guild = member.guild;
   const container = new ContainerBuilder();
@@ -415,14 +467,14 @@ function buildSecurityPanel(member, client, vue = "overview", state = {}) {
 
   if (vue === "protection") {
     if (can(member, "protection.automod")) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Protection\n${corpsProtection(guild.id)}`));
+      ajouterSections(container, "Protection", sectionsProtection(guild.id));
       for (const row of controlesProtection(guild, member, state)) container.addActionRowComponents(row);
     } else {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Protection\n🔒 droit `protection.automod` requis"));
     }
   } else if (vue === "guard") {
     if (can(member, "protection.guard.manage")) {
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Anti-nuke\n${corpsGuard(guild.id)}`));
+      ajouterSections(container, "Anti-nuke", sectionsGuard(guild.id));
       for (const row of controlesGuard(guild, state)) container.addActionRowComponents(row);
     } else {
       container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Anti-nuke\n🔒 droit `protection.guard.manage` requis"));
