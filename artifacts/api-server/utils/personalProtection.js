@@ -90,11 +90,21 @@ function buildPanel(member, state = {}) {
     container.addActionRowComponents(new ActionRowBuilder().addComponents(boutons.slice(i, i + 5)));
   }
 
-  const lignes = Object.entries(store.PROTECTIONS).map(
-    ([key, def]) => `${settings[key] ? iconDe(member.guild.id, "CHECK") : iconDe(member.guild.id, "CROSS")} **${def.label}** — ${def.description}`
-  );
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lignes.join("\n")));
+  // Une section PAR CATÉGORIE (utils/personalProtectionStore.js::PROTECTIONS
+  // [clé].categorie) au lieu d'un unique bloc de 12 lignes — refonte
+  // visuelle : Components V2 n'a pas de couleur de container, la hiérarchie
+  // se fait donc par segmentation en plusieurs TextDisplay/Separator, même
+  // principe que utils/securityPanel.js.
+  const parCategorie = new Map();
+  for (const [key, def] of Object.entries(store.PROTECTIONS)) {
+    const categorie = def.categorie || "Protections";
+    if (!parCategorie.has(categorie)) parCategorie.set(categorie, []);
+    parCategorie.get(categorie).push(`${settings[key] ? iconDe(member.guild.id, "CHECK") : iconDe(member.guild.id, "CROSS")} **${def.label}** — ${def.description}`);
+  }
+  for (const [categorie, lignes] of parCategorie) {
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`### ${categorie}\n${lignes.join("\n")}`));
+  }
 
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(

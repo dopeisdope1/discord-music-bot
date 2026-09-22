@@ -12,56 +12,72 @@ const DATA_FILE = path.join(DATA_DIR, "personalProtection.json");
 // Liste de vérité des protections disponibles. Ajouter une clé ici suffit à
 // la faire apparaître dans !!panel (voir utils/personalProtection.js) avec
 // sa valeur par défaut à `false` — rien à changer côté stockage.
+// `categorie` : regroupement purement d'AFFICHAGE (refonte visuelle du panel,
+// une section par catégorie au lieu d'un seul bloc de 12 lignes) — jamais lu
+// par la logique de garde-fou (estActionLegitime, quarantaine...), aucun
+// effet sur le comportement des protections elles-mêmes.
 const PROTECTIONS = {
   antiRoleRemove: {
     label: "Anti-Retrait Rôle",
     description: "Réapplique automatiquement un rôle qu'on t'a retiré",
+    categorie: "Anti-sanction",
   },
   antiMove: {
     label: "Anti-Déplacement Vocal",
     description: "Te replace dans ton salon vocal si quelqu'un t'en déplace de force",
+    categorie: "Anti-sanction",
   },
   antiMuteDeafen: {
     label: "Anti-Sourdine Forcée",
     description: "Annule un mute/sourdine vocal qu'on t'impose",
+    categorie: "Anti-sanction",
   },
   antiTimeout: {
     label: "Anti-Timeout",
     description: "Annule un timeout (mise en sourdine textuelle) qu'on t'inflige",
+    categorie: "Anti-sanction",
   },
   antiRename: {
     label: "Anti-Renommage",
     description: "Restaure ton pseudo si quelqu'un le change à ta place",
+    categorie: "Anti-sanction",
   },
   antiBan: {
     label: "Anti-Bannissement",
     description: "Te débannit automatiquement si quelqu'un d'autre te bannit",
+    categorie: "Anti-sanction",
   },
   antiKick: {
     label: "Alerte Expulsion",
     description: "T'envoie un lien pour revenir si on t'expulse (un bot ne peut pas te rajouter de force)",
+    categorie: "Anti-sanction",
   },
   antiGhostPing: {
     label: "Anti Ping Fantôme",
     description: "T'envoie en MP le contenu d'un message qui t'a mentionné puis a été supprimé",
+    categorie: "Anti-sanction",
   },
   // --- Modération (audit log, utils/moderation/actions.js) ---
   quarantineAdmin: {
     label: "Quarantaine Admin",
     description: "Retire temporairement (1h) les rôles de quiconque agit illégitimement contre toi, le temps d'une vérification",
+    categorie: "Modération",
   },
   muteBot: {
     label: "Mute Bot",
     description: "Réapplique automatiquement le rôle de mute sur ta cible désignée si quelqu'un d'autre que toi la démute",
+    categorie: "Modération",
   },
   // --- Alertes (aucune sanction, juste un MP — comme Anti Ping Fantôme) ---
   antiMentionPerso: {
     label: "Anti-Mention Perso",
     description: "T'alerte en MP quand un membre de ta liste te mentionne",
+    categorie: "Alertes",
   },
   antiDeleteMessage: {
     label: "Anti-Delete Message",
     description: "T'alerte en MP quand un de TES messages est supprimé par quelqu'un d'autre",
+    categorie: "Alertes",
   },
 };
 
