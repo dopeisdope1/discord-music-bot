@@ -89,6 +89,40 @@ function commandesAffichables(keys, guildId) {
   return commandsForKeys(keys).map((nom) => `\`${prefixeDeCommande(nom, prefixes)}${nom}\``);
 }
 
+// Ordre d'affichage stable des groupes de préfixe — celui dans lequel les
+// buckets sont déjà présentés ailleurs (gestion en premier, comme &help).
+const ORDRE_PREFIXES = [
+  { bucket: commandRouting.BUCKET_GESTION, cle: "musicMod", label: "Gestion" },
+  { bucket: commandRouting.BUCKET_MODERATION, cle: "moderation", label: "Modération" },
+  { bucket: commandRouting.BUCKET_SECURITE, cle: "protection", label: "Sécurité" },
+  { bucket: commandRouting.BUCKET_VOCAL, cle: "owner", label: "Vocal" },
+];
+
+/**
+ * Les commandes débloquées, REGROUPÉES par préfixe réel — un groupe par
+ * préfixe effectivement représenté, dans l'ordre gestion/modération/
+ * sécurité/vocal. Pensé pour une présentation en plusieurs petites listes
+ * (une carte par groupe) plutôt qu'une seule ligne de N commandes, qui
+ * devient illisible ou se fait tronquer au-delà d'une vingtaine (&role info).
+ * @returns {{label: string, prefixe: string, commandes: string[]}[]} `commandes`
+ *   SANS backtick ni préfixe collé (juste le nom) — à l'appelant de les
+ *   présenter comme il veut (une par ligne, grille...).
+ */
+function commandesParPrefixe(keys, guildId) {
+  const prefixes = getPrefixes(guildId);
+  const parBucket = new Map();
+  for (const nom of commandsForKeys(keys)) {
+    const bucket = commandRouting.bucketDe(nom);
+    if (!parBucket.has(bucket)) parBucket.set(bucket, []);
+    parBucket.get(bucket).push(nom);
+  }
+  return ORDRE_PREFIXES.filter((g) => parBucket.has(g.bucket)).map((g) => ({
+    label: g.label,
+    prefixe: prefixes[g.cle],
+    commandes: parBucket.get(g.bucket).sort(),
+  }));
+}
+
 // Calculés à l'APPEL, pas au chargement du module : `isImplemented` fait un
 // require différé vers musicCommands.js (voir implementedCommands.js) pour
 // casser un cycle — l'appeler dès le chargement de ce module le rouvrirait,
@@ -259,4 +293,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, commandesAffichables, prefixeDeCommande, nonCommandGrants, buildTierCard, LIMITE_PAGE };
+module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, commandesAffichables, commandesParPrefixe, prefixeDeCommande, nonCommandGrants, buildTierCard, LIMITE_PAGE };

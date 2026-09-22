@@ -6,7 +6,7 @@ const { moderationHandlers } = require("./moderationCommands");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const accessStore = require("./accessStore");
-const { commandesAffichables } = require("./permsCommands");
+const { commandesParPrefixe } = require("./permsCommands");
 const absenceStore = require("./absenceStore");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
@@ -305,49 +305,61 @@ const handlers = {
     const role = resolveRole(message, args);
     if (!role) return reply(message, "error", "Indique un rôle (mention, ID ou nom) : `role @rôle`.");
 
+    // Identité et statistiques SÉPARÉES en deux cartes (au lieu d'une seule
+    // carte de 8 lignes) : ### ouvre une nouvelle carte dans le dashboard
+    // dessiné (utils/sectionDashboard.js::decouper), donc ce découpage suffit
+    // à obtenir deux mini-cartes en grille — refonte visuelle, section
+    // "Informations rôle" plus compacte, jamais une longue liste verticale.
     const lines = [
-      `**Rôle** : ${role.toString()}`,
+      "### Identité",
       `**ID** : ${role.id}`,
       `**Couleur** : ${role.hexColor}`,
+      `**Créé le** : <t:${Math.floor(role.createdTimestamp / 1000)}:D>`,
+      "",
+      "### Statistiques",
       `**Position** : ${role.position}`,
       `**Membres** : ${role.members.size}`,
       `**Affiché séparément** : ${role.hoist ? "oui" : "non"}`,
       `**Mentionnable** : ${role.mentionable ? "oui" : "non"}`,
-      `**Créé le** : <t:${Math.floor(role.createdTimestamp / 1000)}:D>`,
     ];
 
     // Demande explicite : voir d'un coup, sur la fiche du rôle, QUI l'a et
     // ce qu'il débloque — jusque-là il fallait &rolemembers ET &panel >
     // Rôles et permissions séparément pour la même information.
     const granted = permStore.getRoleGrants(message.guild.id, role.id);
-    // Chaque commande avec son VRAI préfixe (bug corrigé : tout apparaissait
-    // sous "&" y compris des commandes de "-"/"!!"/"=" — voir
-    // utils/permsCommands.js::commandesAffichables).
-    const commands = commandesAffichables(granted, message.guild.id);
-    lines.push("", `**Commandes débloquées (${commands.length})** :`);
-    if (!commands.length) {
-      lines.push("*aucune*");
+    // Regroupées par préfixe réel (Gestion/Modération/Sécurité/Vocal), UNE
+    // COMMANDE PAR LIGNE CITÉE — jamais une longue chaîne jointe par des
+    // virgules, jamais tronquée par "...". Chaque groupe devient sa propre
+    // carte (### ouvre une carte), qui se prolonge automatiquement en
+    // "(suite)" si elle dépasse LIGNES_PAR_CARTE — voir
+    // utils/sectionDashboard.js::enSpec. Toutes les commandes restent donc
+    // consultables, quel que soit leur nombre.
+    const groupes = commandesParPrefixe(granted, message.guild.id);
+    const totalCommandes = groupes.reduce((n, g) => n + g.commandes.length, 0);
+    if (!totalCommandes) {
+      lines.push("", "### Commandes débloquées (0)", "*aucune*");
     } else {
-      // Une ligne CITÉE ("> ...") : le rendu en dashboard (utils/
-      // sectionDashboard.js) la classe dans le CORPS de la carte, découpée sur
-      // plusieurs lignes/cartes si besoin — sans le ">", elle finissait en pied
-      // de page à une seule ligne, où un texte de cette longueur (jusqu'à
-      // 20 commandes) débordait du cadre et devenait invisible.
-      const MAX = 20;
-      lines.push(`> ${commands.slice(0, MAX).join(", ")}`);
-      const resteCommandes = commands.length - MAX;
-      if (resteCommandes > 0) lines.push(`+${resteCommandes} autre(s) — voir \`&panel\` > Rôles et permissions`);
+      // Pas de carte "Commandes débloquées (N)" à part : un sous-titre sans
+      // ligne en dessous ouvrirait une carte vide (le total figure déjà dans
+      // le libellé de chaque groupe). Chaque groupe DEVIENT directement sa
+      // propre carte.
+      for (const groupe of groupes) {
+        lines.push("", `### ${groupe.label} (${groupe.prefixe}) — ${groupe.commandes.length}`);
+        for (const nom of groupe.commandes) lines.push(`> ${groupe.prefixe}${nom}`);
+      }
     }
 
+    // Membres : même traitement — une ligne par membre, jamais une liste
+    // jointe tronquée. Un rôle à très grand nombre de membres reste consultable
+    // en entier via &rolemembers (liste dédiée, paginée) ; ici on affiche tout
+    // sans céder de place artificiellement, le mécanisme "(suite)" absorbe le
+    // volume comme pour les commandes.
     const membres = [...role.members.values()];
-    const MAX_MEMBRES = 30;
-    lines.push("", `**Membres ayant ce rôle (${membres.length})** :`);
+    lines.push("", `### Membres ayant ce rôle (${membres.length})`);
     if (!membres.length) {
       lines.push("*personne*");
     } else {
-      lines.push(membres.slice(0, MAX_MEMBRES).map((m) => m.user?.tag || m.id).join(", "));
-      const resteMembres = membres.length - MAX_MEMBRES;
-      if (resteMembres > 0) lines.push(`+${resteMembres} autre(s)`);
+      for (const m of membres) lines.push(`> ${m.user?.tag || m.id}`);
     }
 
     await reply(message, "info", lines.join("\n"), { title: "Informations rôle" });
