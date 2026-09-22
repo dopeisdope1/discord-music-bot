@@ -132,14 +132,15 @@ function membre(id, tag, { avatar = true } = {}) {
   console.log("\nCartes de sanction :");
 
   await cas("chaque action de modération a son titre — c'est lui, et lui seul, qui la distingue", () => {
-    // La teinte distinguait les actions avant la demande « aucune couleur ».
-    // Toute la charge repose donc sur le titre : deux actions opposées qui
-    // partageraient le même laisseraient la carte illisible au coup d'œil.
+    // Toutes les sanctions partagent la MÊME teinte (l'accent de la refonte
+    // visuelle, utils/dashboardImage.js::THEME_BLEU.accent) : la couleur ne
+    // porte aucune information de sévérité, c'est le titre qui distingue une
+    // action de son opposée — deux actions opposées qui partageraient le
+    // même titre laisseraient la carte illisible au coup d'œil.
+    const { THEME_BLEU } = require("../utils/dashboardImage");
     for (const [action, meta] of Object.entries(SANCTIONS)) {
       assert.ok(meta.titre, `${action} doit avoir un titre`);
-      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(meta.couleur));
-      assert.ok(m, `${action} : couleur invalide`);
-      assert.ok(m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase(), `${action} : teinte non neutre — ${meta.couleur}`);
+      assert.strictEqual(meta.couleur, THEME_BLEU.accent, `${action} : doit reprendre l'accent unique de la refonte visuelle`);
     }
     // La contrainte posée et la contrainte levée doivent se lire différemment.
     assert.notStrictEqual(SANCTIONS.ban.titre, SANCTIONS.unmute.titre);

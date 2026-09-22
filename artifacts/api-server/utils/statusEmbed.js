@@ -1,11 +1,11 @@
 const { EmbedBuilder } = require("discord.js");
 const { EMOJI } = require("./emojis");
 const { iconDe } = require("./emojiSlots");
+const { THEME_BLEU } = require("./dashboardImage");
 
-// Toujours pas de couleur ni de vignette (choix conservé) : juste un emoji
-// custom du serveur au tout début du texte, selon `type`. "warning" réutilise
-// l'emoji info — les deux seuls appels avec ce type (sélection/demande
-// expirée) sont de simples avis, pas des échecs.
+// Un emoji custom du serveur au tout début du texte, selon `type`. "warning"
+// réutilise l'emoji info — les deux seuls appels avec ce type (sélection/
+// demande expirée) sont de simples avis, pas des échecs.
 //
 // Repli utilisé quand `options.guildId` est absent (site pas encore migré,
 // ou appel hors contexte de serveur) — ne JAMAIS supprimer : c'est ce qui
@@ -19,12 +19,24 @@ const TYPE_EMOJI = {
 
 const CLE_ICONE_PAR_TYPE = { success: "SUCCESS", error: "ERROR", info: "INFO", warning: "INFO" };
 
+// Bordure latérale de couleur — rupture assumée du choix "pas de couleur"
+// tenu jusqu'ici (refonte visuelle globale, identité bleu-sombre) : success
+// garde le vert, error le rouge, info/warning prennent l'accent bleu de la
+// refonte (utils/dashboardImage.js::THEME_BLEU). Un seul fichier à changer,
+// les ~33 appelants de buildStatusEmbed en bénéficient automatiquement.
+const COULEUR_PAR_TYPE = {
+  success: THEME_BLEU.succes,
+  error: THEME_BLEU.danger,
+  info: THEME_BLEU.accent,
+  warning: THEME_BLEU.accent,
+};
+
 /**
- * Construit un embed de statut : pas de couleur ni de vignette, juste le
- * texte précédé d'un emoji selon `type`, personnalisable par serveur via
- * `options.guildId` (voir "&emoji", utils/emojiSlots.js::iconDe) — absent,
- * retombe sur l'icône par défaut de utils/emojis.js. `options.icon` reste
- * ignoré (aucun appelant ne le renseigne).
+ * Construit un embed de statut : une bordure de couleur selon `type`, et le
+ * texte précédé d'un emoji, personnalisable par serveur via `options.guildId`
+ * (voir "&emoji", utils/emojiSlots.js::iconDe) — absent, retombe sur l'icône
+ * par défaut de utils/emojis.js. `options.icon` reste ignoré (aucun appelant
+ * ne le renseigne).
  * @param {"success"|"error"|"info"|"warning"} type
  * @param {string} description
  * @param {{ title?: string, thumbnail?: string, image?: string, fields?: {name: string, value: string, inline?: boolean}[], guildId?: string }} [options]
@@ -38,6 +50,7 @@ function buildStatusEmbed(type, description, options = {}) {
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.image) embed.setImage(options.image);
   if (options.fields?.length) embed.addFields(options.fields);
+  embed.setColor(COULEUR_PAR_TYPE[type] ?? COULEUR_PAR_TYPE.info);
   return embed;
 }
 

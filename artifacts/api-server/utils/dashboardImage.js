@@ -97,14 +97,18 @@ function largeur(ctx, texte) {
   return total;
 }
 
-// Gris PURS, sans la moindre teinte : demande explicite, et les gris violacés
-// précédents se lisaient encore comme une couleur.
+// Gris PURS, sans la moindre teinte : demande explicite (aide, &giveaway...),
+// et les gris violacés précédents se lisaient encore comme une couleur. Ce
+// thème reste le REPLI par défaut de rendre() (spec.theme absent) — c'est ce
+// qui garde le système d'aide (utils/familyHelp.js, seul appelant en dehors
+// du périmètre de la refonte visuelle) pixel pour pixel identique : il ne
+// passe jamais spec.theme.
 //
 // L'autre moitié du problème était le contraste. Discord réduit l'image à
 // ~500 px de large : un gris à 4,5:1 sur fond sombre, une fois écrasé de
 // moitié, devient illisible. Les descriptions sont donc nettement éclaircies
 // (~9:1), pas seulement désaturées.
-const THEME = {
+const THEME_DEFAUT = {
   fond: "#0e0e0e",
   fondHaut: "#161616",
   cadre: "#3a3a3a",
@@ -114,6 +118,28 @@ const THEME = {
   texte: "#ffffff",
   texteDoux: "#c4c4c4",
   texteFaible: "#9a9a9a",
+};
+
+// Identité "dashboard premium" de la refonte visuelle (&panel, !!secur,
+// !!panel, fiches de rôle/staff/grade, cartes de sanction...) — même
+// contraste (~9:1) que THEME_DEFAUT, teinte bleu-nuit au lieu du gris pur.
+// Jamais le repli par défaut : un appelant doit explicitement demander
+// `theme: THEME_BLEU` dans sa spec pour l'obtenir (voir sectionDashboard.js
+// ::enSpec). Les fichiers du système d'aide ne le font jamais.
+const THEME_BLEU = {
+  fond: "#0a0d12",
+  fondHaut: "#12161c",
+  cadre: "#2a3644",
+  carte: "#161b23",
+  carteBord: "#2a3644",
+  carteEntete: "#1c2430",
+  texte: "#f4f7fb",
+  texteDoux: "#aeb9c9",
+  texteFaible: "#7c8797",
+  accent: "#3b82f6",
+  accentClair: "#60a5fa",
+  danger: "#ef4444",
+  succes: "#22c55e",
 };
 
 // Discord réduit une image jointe à ~500 px de large dans le fil : plus
@@ -199,18 +225,22 @@ function disposer(cartes, colonnes = COLONNES) {
 }
 
 /**
+ * @param {object} theme palette effective (THEME_DEFAUT ou THEME_BLEU) —
+ *   jamais lue depuis une constante de module, pour que le système d'aide
+ *   (qui n'en passe jamais) et la refonte visuelle (qui passe THEME_BLEU)
+ *   dessinent chacun avec leur propre palette sans se marcher dessus.
  * @param {number} [hauteurImposee] hauteur commune à toute la rangée : sans
  *   elle, une carte à 3 lignes finirait plus haut que sa voisine à 4 et la
  *   grille aurait des bas de cartes en escalier.
  */
-function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
+function dessinerCarte(ctx, theme, carte, x, y, largeur, hauteurImposee) {
   const avecTitre = Boolean(carte.titre);
   const hauteur = hauteurImposee || hauteurCarte(carte.items, avecTitre, Boolean(carte.sousTitre));
 
   cheminArrondi(ctx, x, y, largeur, hauteur, 12);
-  ctx.fillStyle = THEME.carte;
+  ctx.fillStyle = theme.carte;
   ctx.fill();
-  ctx.strokeStyle = THEME.carteBord;
+  ctx.strokeStyle = theme.carteBord;
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -222,7 +252,7 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     ctx.save();
     cheminArrondi(ctx, x, y, largeur, hauteur, 12);
     ctx.clip();
-    ctx.fillStyle = THEME.carteEntete;
+    ctx.fillStyle = theme.carteEntete;
     ctx.fillRect(x, y, largeur, 50);
     ctx.fillStyle = carte.couleur;
     ctx.fillRect(x, y, 5, 50);
@@ -236,13 +266,13 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
   let ligneY = y + (avecTitre ? 50 + 30 : 32);
   if (carte.sousTitre) {
     ctx.font = "15px ChakraRegular";
-    ctx.fillStyle = THEME.texteFaible;
+    ctx.fillStyle = theme.texteFaible;
     ecrire(ctx, tronquer(ctx, carte.sousTitre, largeur - 36), x + 18, y + 68);
     ligneY += 24;
   }
   if (!carte.items.length) {
     ctx.font = "13px ChakraRegular";
-    ctx.fillStyle = THEME.texteFaible;
+    ctx.fillStyle = theme.texteFaible;
     ecrire(ctx, tronquer(ctx, carte.vide || "—", largeur - 36), x + 18, ligneY);
     return hauteur;
   }
@@ -265,12 +295,12 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
     const texteX = x + 52;
     const dispo = largeur - (texteX - x) - 16;
     ctx.font = "20px ChakraBold";
-    ctx.fillStyle = THEME.texte;
+    ctx.fillStyle = theme.texte;
     ecrire(ctx, tronquer(ctx, item.nom, dispo), texteX, ligneY - 8);
 
     if (item.description) {
       ctx.font = "16px ChakraRegular";
-      ctx.fillStyle = THEME.texteDoux;
+      ctx.fillStyle = theme.texteDoux;
       ecrire(ctx, tronquer(ctx, item.description, dispo), texteX, ligneY + 12);
     }
     ligneY += 50;
@@ -285,9 +315,14 @@ function dessinerCarte(ctx, carte, x, y, largeur, hauteurImposee) {
  * @param {string} spec.sousTitre ligne d'identité sous le titre
  * @param {{titre: string, couleur: string, items: {nom: string, description?: string}[], vide?: string}[]} spec.cartes
  * @param {string} [spec.pied]
+ * @param {object} [spec.theme] palette à utiliser (THEME_BLEU pour la
+ *   refonte visuelle) — absent = THEME_DEFAUT (gris neutre, comportement
+ *   historique, celui que reçoit le système d'aide qui ne le renseigne
+ *   jamais).
  * @returns {Buffer} PNG
  */
 function rendre(spec) {
+  const theme = spec.theme || THEME_DEFAUT;
   // Une rubrique de réglages (5 lignes « Label : valeur ») se lit bien mieux
   // sur UNE colonne pleine largeur que coupée en deux demi-colonnes où chaque
   // valeur se fait tronquer. L'appelant décide ; deux colonnes restent la
@@ -310,13 +345,13 @@ function rendre(spec) {
   const ctx = canvas.getContext("2d");
 
   const degrade = ctx.createLinearGradient(0, 0, 0, hauteur);
-  degrade.addColorStop(0, THEME.fondHaut);
-  degrade.addColorStop(1, THEME.fond);
+  degrade.addColorStop(0, theme.fondHaut);
+  degrade.addColorStop(1, theme.fond);
   ctx.fillStyle = degrade;
   ctx.fillRect(0, 0, LARGEUR, hauteur);
 
   cheminArrondi(ctx, 14, 14, LARGEUR - 28, hauteur - 28, 18);
-  ctx.strokeStyle = THEME.cadre;
+  ctx.strokeStyle = theme.cadre;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
@@ -327,16 +362,16 @@ function rendre(spec) {
   const largeurTitre = largeurEspacee(ctx, spec.titre.toUpperCase(), 2.4);
   const boiteL = largeurTitre + 44;
   cheminArrondi(ctx, MARGE, 42, boiteL, 52, 10);
-  ctx.fillStyle = THEME.carteEntete;
+  ctx.fillStyle = theme.carteEntete;
   ctx.fill();
-  ctx.strokeStyle = THEME.cadre;
+  ctx.strokeStyle = theme.cadre;
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = THEME.texte;
+  ctx.fillStyle = theme.texte;
   texteEspace(ctx, spec.titre.toUpperCase(), MARGE + 22, 68, 2.4);
 
   ctx.font = "17px ChakraRegular";
-  ctx.fillStyle = THEME.texteDoux;
+  ctx.fillStyle = theme.texteDoux;
   ecrire(ctx, tronquer(ctx, spec.sousTitre, LARGEUR - MARGE * 2), MARGE + 2, 112);
 
   // Bandeau d'état et alertes de sécurité, DESSINÉS : en texte Discord, une
@@ -347,10 +382,10 @@ function rendre(spec) {
     yEntete += 26;
     ctx.beginPath();
     ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
-    ctx.fillStyle = THEME.texte;
+    ctx.fillStyle = theme.texte;
     ctx.fill();
     ctx.font = "16px ChakraRegular";
-    ctx.fillStyle = THEME.texte;
+    ctx.fillStyle = theme.texte;
     ecrire(ctx, tronquer(ctx, spec.banniere, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
   for (const alerte of spec.alertes || []) {
@@ -359,10 +394,10 @@ function rendre(spec) {
     ctx.arc(MARGE + 7, yEntete, 5, 0, Math.PI * 2);
     // La gravité n'est plus portée par une couleur : le texte de l'alerte dit
     // déjà ce qui cloche, et `&security scan` reste la vue détaillée.
-    ctx.fillStyle = THEME.texteDoux;
+    ctx.fillStyle = theme.texteDoux;
     ctx.fill();
     ctx.font = "15px ChakraRegular";
-    ctx.fillStyle = THEME.texteDoux;
+    ctx.fillStyle = theme.texteDoux;
     ecrire(ctx, tronquer(ctx, alerte.texte, LARGEUR - MARGE * 2 - 24), MARGE + 22, yEntete);
   }
 
@@ -381,7 +416,7 @@ function rendre(spec) {
       // s'aligner sur la plus haute. Indispensable quand les colonnes sont
       // très inégales (un palier à 1 commande à côté d'un palier à 9) —
       // sinon la courte devient un grand rectangle vide.
-      dessinerCarte(ctx, carte, x, y, largeur, spec.hauteursLibres ? undefined : hauteurRangee);
+      dessinerCarte(ctx, theme, carte, x, y, largeur, spec.hauteursLibres ? undefined : hauteurRangee);
       x += largeur + GOUTTIERE;
     }
     y += hauteurRangee + GOUTTIERE;
@@ -399,7 +434,7 @@ function rendre(spec) {
       ctx.arc(lx + 5, y + 6, 5, 0, Math.PI * 2);
       ctx.fillStyle = entree.couleur;
       ctx.fill();
-      ctx.fillStyle = THEME.texteDoux;
+      ctx.fillStyle = theme.texteDoux;
       ecrire(ctx, entree.texte, lx + 17, y + 6);
       lx += 12 + 6 + largeur(ctx, entree.texte) + ESPACE;
     }
@@ -408,7 +443,7 @@ function rendre(spec) {
 
   if (spec.pied) {
     ctx.font = "14px ChakraRegular";
-    ctx.fillStyle = THEME.texteFaible;
+    ctx.fillStyle = theme.texteFaible;
     const l = largeur(ctx, spec.pied);
     ecrire(ctx, spec.pied, (LARGEUR - l) / 2, y + 6);
   }
@@ -544,4 +579,4 @@ function texteAlternatif(spec) {
   return texte.length > ALT_MAX ? `${texte.slice(0, ALT_MAX - 1)}…` : texte;
 }
 
-module.exports = { rendre, rendreEnCache, resumer, enTexte, texteAlternatif, ecrire, largeur, LARGEUR };
+module.exports = { rendre, rendreEnCache, resumer, enTexte, texteAlternatif, ecrire, largeur, LARGEUR, THEME_DEFAUT, THEME_BLEU };

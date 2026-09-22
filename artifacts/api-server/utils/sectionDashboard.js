@@ -166,7 +166,7 @@ const LIGNES_PAR_CARTE = 9;
  * @param {string} o.sousTitre ligne d'identité
  * @param {import('discord.js').Guild} [o.guild] pour résoudre les mentions
  */
-function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
+function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes, theme }) {
   const blocs = decouper(corps, guild);
   const cartes = [];
   const notes = [];
@@ -254,6 +254,11 @@ function enSpec(corps, { titre, couleur, sousTitre, guild, colonnes }) {
     // qu'en carte : ce sont des phrases, pas des réglages.
     pied: notes.length ? notes.join(" · ") : undefined,
     hauteursLibres: true,
+    // Transmis tel quel à dashboardImage.js::rendre — absent par défaut, donc
+    // aucun appelant existant (dont le système d'aide, qui ne le renseigne
+    // jamais) ne change de palette. Voir utils/dashboardImage.js::THEME_BLEU
+    // pour la refonte visuelle.
+    theme,
   };
 }
 
@@ -278,9 +283,9 @@ function estTableau(texte) {
  * d'envoi quand le salon interdit les pièces jointes).
  * @returns {{files: import('discord.js').AttachmentBuilder[]}|null}
  */
-function carteTableau(corps, { titre, couleur = "#38bdf8", sousTitre, guild, nomFichier = "tableau.png" }) {
+function carteTableau(corps, { titre, couleur = "#38bdf8", sousTitre, guild, nomFichier = "tableau.png", theme }) {
   try {
-    const spec = enSpec(corps, { titre, couleur, sousTitre, guild });
+    const spec = enSpec(corps, { titre, couleur, sousTitre, guild, theme });
     const png = rendreEnCache(spec);
     if (!png) return null;
     return { files: [new AttachmentBuilder(png, { name: nomFichier, description: texteAlternatif(spec) })] };

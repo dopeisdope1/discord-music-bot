@@ -2,28 +2,21 @@ const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const { AttachmentBuilder } = require("discord.js");
 
 // Carte d'action en image : « untel a reçu le rôle X », « untel a été banni ».
-// Même monde visuel que le tableau de bord de &help/&panel
-// (utils/dashboardImage.js, mêmes polices déjà enregistrées par ce module —
-// d'où le require ci-dessous, qui n'est pas décoratif : il déclenche
-// l'enregistrement des polices Chakra Petch).
-const { ecrire, largeur } = require("./dashboardImage");
+// Même monde visuel que le tableau de bord de &panel/fiches (utils/
+// dashboardImage.js, mêmes polices déjà enregistrées par ce module — d'où le
+// require ci-dessous, qui n'est pas décoratif : il déclenche l'enregistrement
+// des polices Chakra Petch). Palette IMPORTÉE, pas dupliquée : les deux
+// fichiers divergeaient légèrement avant (fondHaut #1a1a1a ici, #161616 côté
+// dashboardImage.js) — corrigé en partageant la même source, THEME_BLEU
+// (identité de la refonte visuelle).
+const { ecrire, largeur, THEME_BLEU } = require("./dashboardImage");
 
-// Mêmes gris purs et mêmes contrastes que le tableau de bord
-// (utils/dashboardImage.js) : les deux images se croisent dans le même salon,
-// des fonds légèrement violacés à côté de gris neutres se verraient.
-// Seule la teinte de la sanction subsiste, elle porte une information.
-const THEME = {
-  fond: "#0e0e0e",
-  fondHaut: "#1a1a1a",
-  cadre: "#3a3a3a",
-  texte: "#ffffff",
-  texteDoux: "#c4c4c4",
-  texteFaible: "#9a9a9a",
-};
+const THEME = THEME_BLEU;
 
-// Teinte UNIQUE de toutes les cartes, gris pur : le titre dit déjà si le
-// membre est banni ou démute, la couleur n'ajoutait rien qu'une couleur.
-const TEINTE = "#d0d0d0";
+// Teinte UNIQUE de toutes les cartes de sanction : le titre dit déjà si le
+// membre est banni ou démute, une couleur par sévérité n'ajoutait rien.
+// Reprend l'accent de la refonte visuelle plutôt qu'un gris isolé.
+const TEINTE = THEME_BLEU.accent;
 
 const LARGEUR = 900;
 const MARGE = 34;
