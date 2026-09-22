@@ -6,6 +6,8 @@ const permCatalog = require("./permissions/catalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
+const commandRouting = require("./commandRouting");
+const { getPrefixes } = require("./prefixStore");
 
 // &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
 // dans le même style "Permission 1, 2, 3..." qu'une référence montrée par
@@ -55,6 +57,36 @@ function commandsForKeys(keys) {
   const set = new Set(keys);
   const names = ALL_COMMANDS.filter((cmd) => cmd.permission && set.has(cmd.permission) && isImplemented(cmd)).map(identityOf);
   return [...new Set(names)];
+}
+
+/**
+ * Le vrai préfixe d'une commande, tapée telle qu'affichée : toutes ne vivent
+ * PAS sur "&" (gestion) — "kick"/"ban" sont sur "-" (modération), "secur" sur
+ * "!!" (sécurité), "owner" sur "=" (vocal). Bug corrigé ici : &role info /
+ * &staff affichaient TOUT préfixé "&", y compris des commandes de -modération,
+ * ce qui les rendait fausses telles quelles copiées-collées.
+ * @param {string} nomCommande identité affichée (identityOf), ex. "kick"
+ * @param {ReturnType<typeof getPrefixes>} prefixes
+ */
+function prefixeDeCommande(nomCommande, prefixes) {
+  const bucket = commandRouting.bucketDe(nomCommande);
+  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
+  if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
+  if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
+  return prefixes.musicMod;
+}
+
+/**
+ * Les commandes débloquées par ces clés, PRÉFIXÉES CORRECTEMENT chacune
+ * (voir prefixeDeCommande) — ex. ["`-kick`", "`&role`"] plutôt qu'un unique
+ * préfixe appliqué à toutes. Utilisé par &role info et &staff (utils/
+ * utilityCommands.js, utils/staffCard.js), qui listaient jusque-là tout sous
+ * "&" même pour des commandes d'un autre préfixe.
+ * @returns {string[]} chaque commande déjà entourée de ses backticks
+ */
+function commandesAffichables(keys, guildId) {
+  const prefixes = getPrefixes(guildId);
+  return commandsForKeys(keys).map((nom) => `\`${prefixeDeCommande(nom, prefixes)}${nom}\``);
 }
 
 // Calculés à l'APPEL, pas au chargement du module : `isImplemented` fait un
@@ -227,4 +259,4 @@ async function helpall(client, message) {
   );
 }
 
-module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, nonCommandGrants, buildTierCard, LIMITE_PAGE };
+module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, commandesAffichables, prefixeDeCommande, nonCommandGrants, buildTierCard, LIMITE_PAGE };

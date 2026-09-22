@@ -6,8 +6,7 @@ const { moderationHandlers } = require("./moderationCommands");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const accessStore = require("./accessStore");
-const { commandsForKeys } = require("./permsCommands");
-const { getPrefixes } = require("./prefixStore");
+const { commandesAffichables } = require("./permsCommands");
 const absenceStore = require("./absenceStore");
 const calc = require("./calc");
 const wikipedia = require("./wikipedia");
@@ -321,14 +320,21 @@ const handlers = {
     // ce qu'il débloque — jusque-là il fallait &rolemembers ET &panel >
     // Rôles et permissions séparément pour la même information.
     const granted = permStore.getRoleGrants(message.guild.id, role.id);
-    const commands = commandsForKeys(granted);
-    const prefixe = getPrefixes(message.guild.id).musicMod;
+    // Chaque commande avec son VRAI préfixe (bug corrigé : tout apparaissait
+    // sous "&" y compris des commandes de "-"/"!!"/"=" — voir
+    // utils/permsCommands.js::commandesAffichables).
+    const commands = commandesAffichables(granted, message.guild.id);
     lines.push("", `**Commandes débloquées (${commands.length})** :`);
     if (!commands.length) {
       lines.push("*aucune*");
     } else {
+      // Une ligne CITÉE ("> ...") : le rendu en dashboard (utils/
+      // sectionDashboard.js) la classe dans le CORPS de la carte, découpée sur
+      // plusieurs lignes/cartes si besoin — sans le ">", elle finissait en pied
+      // de page à une seule ligne, où un texte de cette longueur (jusqu'à
+      // 20 commandes) débordait du cadre et devenait invisible.
       const MAX = 20;
-      lines.push(commands.slice(0, MAX).map((c) => `\`${prefixe}${c}\``).join(", "));
+      lines.push(`> ${commands.slice(0, MAX).join(", ")}`);
       const resteCommandes = commands.length - MAX;
       if (resteCommandes > 0) lines.push(`+${resteCommandes} autre(s) — voir \`&panel\` > Rôles et permissions`);
     }

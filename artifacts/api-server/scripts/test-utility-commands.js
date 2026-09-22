@@ -482,6 +482,23 @@ const embedTitle = (payload) =>
     assert.ok(texte.includes("Membres ayant ce rôle (2)"), texte);
   });
 
+  await cas("&role affiche chaque commande avec son VRAI préfixe, pas toujours \"&\"", async () => {
+    // "kick"/"ban" vivent sur le préfixe de modération ("-"), pas sur "&" —
+    // bug corrigé : toutes les commandes débloquées apparaissaient sous "&",
+    // y compris celles d'un autre préfixe.
+    const role = fakeRole("role-info-prefixe", "Modo");
+    const g = fakeGuild({ roles: [role] });
+    permStore.setRoleGrants(g.id, role.id, ["moderation.kick", "moderation.ban"]);
+    const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
+    await utilityHandlers.roleInfo(null, msg, []);
+    // Le texte alternatif de l'image (files[0].description) n'a pas de
+    // markdown (le canvas ne dessine pas de backticks) — on vérifie donc le
+    // PRÉFIXE lui-même, présent ou non, plutôt que le rendu \`-kick\` exact.
+    const texte = embedText(msg._replies[0]);
+    assert.ok(texte.includes("-kick") && texte.includes("-ban"), texte);
+    assert.ok(!texte.includes("&kick") && !texte.includes("&ban"), texte);
+  });
+
   await cas("&role sur un rôle sans permission accordée le dit clairement (aucune commande)", async () => {
     const role = fakeRole("role-info-vide", "Vide");
     const g = fakeGuild({ roles: [role] });

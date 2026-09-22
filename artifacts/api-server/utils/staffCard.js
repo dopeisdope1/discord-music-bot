@@ -11,8 +11,7 @@ const {
 const accessStore = require("./accessStore");
 const rankLadder = require("./rankLadderCommands");
 const permStore = require("./permissions/store");
-const { commandsForKeys } = require("./permsCommands");
-const { getPrefixes } = require("./prefixStore");
+const { commandesAffichables } = require("./permsCommands");
 const messageOwner = require("./messageOwner");
 
 // "&staff [@membre]" — carte "Staff · Owner/Sys" (demande explicite, calquée
@@ -79,14 +78,16 @@ function buildStaffCard(guild, target, viewerId) {
   } else if (!keys.size) {
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*N'a aucune permission particulière accordée sur ce serveur.*"));
   } else {
-    const commands = commandsForKeys([...keys]);
-    const prefixe = getPrefixes(guild.id).musicMod;
+    // Chaque commande avec son VRAI préfixe (bug corrigé : tout apparaissait
+    // sous "&" y compris des commandes de "-"/"!!"/"=" — voir
+    // utils/permsCommands.js::commandesAffichables).
+    const commands = commandesAffichables([...keys], guild.id);
     const lines = [`**Commandes débloquées (${commands.length})** :`];
     if (!commands.length) {
       lines.push("*aucune*");
     } else {
       const MAX = 20;
-      lines.push(commands.slice(0, MAX).map((c) => `\`${prefixe}${c}\``).join(", "));
+      lines.push(commands.slice(0, MAX).join(", "));
       const reste = commands.length - MAX;
       if (reste > 0) lines.push(`+${reste} autre(s) — voir \`&panel\` > Rôles et permissions`);
     }
