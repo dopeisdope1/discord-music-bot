@@ -118,11 +118,11 @@ function vueFiche(guild, roleId) {
 
   if (g.role?.members && g.membres) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    const apercu = [...g.role.members.values()].slice(0, 15).map((m) => `<@${m.id}>`);
-    const reste = g.membres - apercu.length;
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`**Membres**\n${apercu.join(", ")}${reste > 0 ? `, et ${reste} autre(s)` : ""}`)
-    );
+    // Tous les membres, jamais tronqués par "et N autre(s)" — un TextDisplay
+    // tient largement plus que 15 mentions avant d'approcher le plafond
+    // Discord de texte cumulé (4000 caractères par message).
+    const mentions = [...g.role.members.values()].map((m) => `<@${m.id}>`).join(", ");
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Membres**\n${mentions}`));
   }
 
   return container;

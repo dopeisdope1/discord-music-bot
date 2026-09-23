@@ -11,7 +11,7 @@ const {
 const accessStore = require("./accessStore");
 const rankLadder = require("./rankLadderCommands");
 const permStore = require("./permissions/store");
-const { commandesAffichables } = require("./permsCommands");
+const { commandesParPrefixe } = require("./permsCommands");
 const messageOwner = require("./messageOwner");
 
 // "&staff [@membre]" — carte "Staff · Owner/Sys" (demande explicite, calquée
@@ -78,20 +78,23 @@ function buildStaffCard(guild, target, viewerId) {
   } else if (!keys.size) {
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*N'a aucune permission particulière accordée sur ce serveur.*"));
   } else {
-    // Chaque commande avec son VRAI préfixe (bug corrigé : tout apparaissait
-    // sous "&" y compris des commandes de "-"/"!!"/"=" — voir
-    // utils/permsCommands.js::commandesAffichables).
-    const commands = commandesAffichables([...keys], guild.id);
-    const lines = [`**Commandes débloquées (${commands.length})** :`];
-    if (!commands.length) {
-      lines.push("*aucune*");
+    // Regroupées par préfixe RÉEL (bug corrigé : tout apparaissait sous "&"
+    // y compris des commandes de "-"/"!!"/"=" — voir utils/permsCommands.js
+    // ::commandesParPrefixe), une section par groupe plutôt qu'une seule
+    // ligne tronquée à 20 commandes avec "+N autre(s)" — plus aucune
+    // troncature, quel que soit le nombre de commandes débloquées.
+    const groupes = commandesParPrefixe([...keys], guild.id);
+    const total = groupes.reduce((n, g) => n + g.commandes.length, 0);
+    if (!total) {
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent("**Commandes débloquées (0)**\n*aucune*"));
     } else {
-      const MAX = 20;
-      lines.push(commands.slice(0, MAX).join(", "));
-      const reste = commands.length - MAX;
-      if (reste > 0) lines.push(`+${reste} autre(s) — voir \`&panel\` > Rôles et permissions`);
+      for (const groupe of groupes) {
+        const lignes = groupe.commandes.map((nom) => `\`${groupe.prefixe}${nom}\``).join(", ");
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`**${groupe.label} (${groupe.prefixe}) — ${groupe.commandes.length}**\n${lignes}`)
+        );
+      }
     }
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n")));
   }
 
   // Owner n'est jamais proposé : voir le commentaire en tête de fichier.
