@@ -22,6 +22,7 @@ const {
 const { buildStatusEmbed } = require("./statusEmbed");
 const { iconDe } = require("./emojiSlots");
 const { carteConfirmationFichier } = require("./actionCard");
+const { THEME_BLEU } = require("./dashboardImage");
 const { can } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
@@ -826,7 +827,10 @@ async function roleAdmin(client, message, args) {
       body: `**${name}** (${roleId})\n\nCette action est définitive et ne peut pas être annulée.`,
       carte: {
         titre: `Supprimer le rôle ${name} ?`,
-        couleur: "#ff6b6b",
+        // Rouge de la refonte visuelle (utils/dashboardImage.js::THEME_BLEU
+        // .danger) — même teinte que les autres alertes/confirmations
+        // dangereuses du bot, plutôt qu'un rouge isolé propre à ce fichier.
+        couleur: THEME_BLEU.danger,
         lignes: [
           { label: "Rôle", valeur: name, couleur: role.color ? `#${role.color.toString(16).padStart(6, "0")}` : undefined },
           { label: "Identifiant", valeur: roleId },
