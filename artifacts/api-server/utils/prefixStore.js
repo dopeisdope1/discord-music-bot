@@ -7,20 +7,18 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "prefixes.json");
 
-// Architecture 4 préfixes de commandes :
+// Architecture 3 préfixes de commandes :
 //   musicMod = "&" → GESTION (rôles/salons/tickets/giveaways/logs/config…),
 //     partagé avec le CrowBot du serveur (voir utils/musicCommands.js)
 //   moderation = "-" → MODÉRATION (ban/kick/mute/warn/clear/lockdown…)
 //   protection = "!!" → SÉCURITÉ (antinuke/antiraid/automod/whitelist…) +
 //     protection PERSONNELLE (utils/personalProtection.js, "!!panel")
-//   owner = "=" → VOCAL (mute/deaf/move/… + "=owner" global / "=add" granulaire)
 // Le routage mot→préfixe se fait par catégorie (voir utils/commandRouting.js).
-const DEFAULT_PREFIXES = { musicMod: "&", moderation: "-", protection: "!!", owner: "=" };
+const DEFAULT_PREFIXES = { musicMod: "&", moderation: "-", protection: "!!" };
 const PREFIX_LABELS = {
   musicMod: "gestion",
   moderation: "modération",
   protection: "sécurité/protection",
-  owner: "vocal/owner",
 };
 
 let cache = null;
@@ -46,7 +44,7 @@ function save() {
 
 /**
  * @param {string} guildId
- * @returns {{ musicMod: string, moderation: string, protection: string, owner: string }}
+ * @returns {{ musicMod: string, moderation: string, protection: string }}
  */
 function getPrefixes(guildId) {
   const data = load();
@@ -56,7 +54,7 @@ function getPrefixes(guildId) {
 
 /**
  * @param {string} guildId
- * @param {"musicMod"|"moderation"|"protection"|"owner"} type
+ * @param {"musicMod"|"moderation"|"protection"} type
  * @param {string} value
  */
 function setPrefix(guildId, type, value) {

@@ -13,7 +13,7 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "icon-slots-test-"));
 
 const { EMOJI } = require("../utils/emojis");
-const { SLOTS, emojiDe, iconDe } = require("../utils/emojiSlots");
+const { SLOTS, iconDe } = require("../utils/emojiSlots");
 const categoryEmojiStore = require("../utils/categoryEmojiStore");
 const { buildStatusEmbed } = require("../utils/statusEmbed");
 
@@ -70,14 +70,6 @@ cas("iconDe() sur une clé inconnue ne lève pas, renvoie null", () => {
   assert.strictEqual(iconDe(GUILD, "N_EXISTE_PAS"), null);
 });
 
-console.log("\nCollision connue \"voc:Voice\" / \"icon:VOICE\" — le slot d'aide existant doit rester prioritaire :");
-
-cas("emojiDe(\"voc:Voice\") continue de fonctionner sans interférence du nouveau slot icon:VOICE", () => {
-  const slotVocal = SLOTS.find((s) => s.key === "voc:Voice");
-  assert.ok(slotVocal, "le slot d'aide vocale \"voc:Voice\" doit toujours exister");
-  assert.strictEqual(emojiDe(GUILD, "voc:Voice"), slotVocal.defaultEmoji);
-});
-
 console.log("\nbuildStatusEmbed — personnalisable via options.guildId, inchangé sans lui :");
 
 function descriptionDe(embed) {
@@ -103,3 +95,4 @@ cas("avec guildId mais sans personnalisation, retombe sur l'icône par défaut",
 });
 
 console.log(`\n${reussis} cas vérifiés${process.exitCode ? ", des échecs sont survenus." : ", tout est vert."}`);
+

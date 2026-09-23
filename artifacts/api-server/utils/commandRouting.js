@@ -1,7 +1,7 @@
 const { CATEGORIES } = require("./commandCatalog");
 
-// Routage des mots de commande vers un PRÉFIXE, pour l'architecture 4
-// préfixes : & = gestion, - = modération, !! = sécurité, = = vocal/owner.
+// Routage des mots de commande vers un PRÉFIXE, pour l'architecture 3
+// préfixes : & = gestion, - = modération, !! = sécurité.
 //
 // Source de vérité : la catégorie de chaque commande dans
 // utils/commandCatalog.js. Un mot qui apparaît dans plusieurs catégories
@@ -9,7 +9,6 @@ const { CATEGORIES } = require("./commandCatalog");
 // puis les catégories de gestion). Bucket final :
 //   moderation  -> "-"
 //   securite    -> "!!"
-//   owner/vocal -> "="
 //   tout le reste (serveurroles/communaute/informations/outils/bot, ou mot
 //   absent du catalogue) -> "&" (gestion)
 //
@@ -19,14 +18,12 @@ const { CATEGORIES } = require("./commandCatalog");
 
 const BUCKET_MODERATION = "moderation";
 const BUCKET_SECURITE = "securite";
-const BUCKET_VOCAL = "vocal";
 const BUCKET_GESTION = "gestion";
 
 const OVERRIDES = {
   set: BUCKET_GESTION, // config/bot, pas sécurité
   alladmins: BUCKET_GESTION,
   botadmins: BUCKET_GESTION,
-  owner: BUCKET_VOCAL,
   muterole: BUCKET_MODERATION, // rôle de mute (utilisé par -mute)
   purge: BUCKET_MODERATION, // alias de clear
   panic: BUCKET_MODERATION, // alias de lockdown
@@ -50,7 +47,7 @@ for (const cat of CATEGORIES) {
 
 /**
  * Bucket de routage d'un mot de commande.
- * @returns {"moderation"|"securite"|"vocal"|"gestion"}
+ * @returns {"moderation"|"securite"|"gestion"}
  */
 function bucketDe(word) {
   const w = motDeBase(String(word || ""));
@@ -58,7 +55,6 @@ function bucketDe(word) {
   const cat = WORD_CATEGORY[w];
   if (cat === "moderation") return BUCKET_MODERATION;
   if (cat === "securite") return BUCKET_SECURITE;
-  if (w === "owner" || cat === "vocal") return BUCKET_VOCAL;
   return BUCKET_GESTION; // gestion, ou mot inconnu (reste sur "&")
 }
 
@@ -66,7 +62,6 @@ module.exports = {
   bucketDe,
   BUCKET_MODERATION,
   BUCKET_SECURITE,
-  BUCKET_VOCAL,
   BUCKET_GESTION,
   WORD_CATEGORY,
   OVERRIDES,

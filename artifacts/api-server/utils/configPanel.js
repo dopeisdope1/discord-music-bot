@@ -345,7 +345,6 @@ function sectionBody(section, guild, member, state) {
       `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
       `> **Préfixe modération** : \`${prefixes.moderation}\``,
       `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
-      `> **Préfixe vocal/owner** : \`${prefixes.owner}\``,
     ].join("\n");
   }
 
@@ -730,7 +729,6 @@ function sectionBody(section, guild, member, state) {
     `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
     `> **Préfixe modération** : \`${prefixes.moderation}\``,
     `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
-    `> **Préfixe vocal/owner** : \`${prefixes.owner}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
@@ -1116,8 +1114,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:protection`).setLabel("Préfixe sécurité").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:owner`).setLabel("Préfixe vocal").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:protection`).setLabel("Préfixe sécurité").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
@@ -1892,7 +1889,6 @@ const PREFIX_FIELDS = {
   musicMod: { label: "Préfixe gestion", max: 3 },
   moderation: { label: "Préfixe modération", max: 3 },
   protection: { label: "Préfixe sécurité/protection", max: 3 },
-  owner: { label: "Préfixe vocal/owner", max: 3 },
 };
 
 /**

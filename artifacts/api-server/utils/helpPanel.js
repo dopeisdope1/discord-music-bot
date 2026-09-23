@@ -54,7 +54,6 @@ function prefixePour(cmd, prefixes) {
   const bucket = commandRouting.bucketDe(cmd.name);
   if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
-  if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
   return prefixes.musicMod;
 }
 

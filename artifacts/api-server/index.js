@@ -82,9 +82,7 @@ const {
   handleServerAdminInteraction,
   handleConfirmInteraction,
   applyDeroToNewChannel,
-  handleAddAccessTextCommand,
   handleSecurityOwnerTextCommand,
-  handleVoiceAliasTextCommand,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -386,18 +384,8 @@ client.on("messageCreate", (message) => {
   // "!!antilink"/"!!antispam"/"!!security"/"!!lockdown" — voir
   // utils/securityAliases.js.
   handleSecurityAliasTextCommand(client, message).catch((err) => console.error("[securityAliases]", err));
-  // "!!help" — voir utils/helpNavigator.js (même moteur navigable que les 3 autres).
+  // "!!help" — voir utils/helpNavigator.js (même moteur navigable que les autres).
   helpNavigator.handleSecuriteHelpTextCommand(client, message).catch((err) => console.error("[helpNavigator]", err));
-  // "=owner <@membre>" bascule tout l'accès vocal ; "=add <@membre>" ouvre
-  // la carte granulaire — préfixe séparé exprès (voir
-  // utils/serverAdminCommands.js::handleAddAccessTextCommand).
-  handleAddAccessTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
-  // "=mute"/"=unmute"/"=deaf"/"=undeaf"/"=disconnect"/"=move" — catalogue de
-  // commandes vocales sur "=" (voir utils/serverAdminCommands.js::
-  // handleVoiceAliasTextCommand, délègue à utils/serverExtra.js).
-  handleVoiceAliasTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
-  // "=help" — voir utils/helpNavigator.js (même moteur navigable que les 3 autres).
-  helpNavigator.handleVocalHelpTextCommand(client, message).catch((err) => console.error("[helpNavigator]", err));
   // "!!owner" — carte "Owner" filtrée à la sécurité (voir
   // utils/serverAdminCommands.js::handleSecurityOwnerTextCommand). "&owner"
   // n'a pas besoin d'appel ici : c'est une vraie commande "&" enregistrée

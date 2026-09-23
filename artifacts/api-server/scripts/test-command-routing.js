@@ -1,8 +1,8 @@
 /**
- * Routage 4 préfixes (utils/commandRouting.js + le dispatch de
+ * Routage 3 préfixes (utils/commandRouting.js + le dispatch de
  * utils/musicCommands.js / utils/securityAliases.js) : chaque mot de commande
  * est servi par UN seul préfixe selon sa catégorie.
- *   & = gestion, - = modération, !! = sécurité, = = vocal.
+ *   & = gestion, - = modération, !! = sécurité.
  * Déplacement DUR : un mot de modération/sécurité ne répond PLUS sur "&".
  *
  * Lancement : node scripts/test-command-routing.js
@@ -20,7 +20,6 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const routing = require("../utils/commandRouting");
 const { handleMusicTextCommand, modHandlers } = require("../utils/musicCommands");
 const { handleSecurityAliasTextCommand } = require("../utils/securityAliases");
-const { handleVoiceHelpTextCommand } = require("../utils/voiceHelpCommand");
 const permStore = require("../utils/permissions/store");
 const guardConfig = require("../utils/guard/config");
 const { getPrefixes } = require("../utils/prefixStore");
@@ -54,16 +53,15 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
 }
 
 (async () => {
-  console.log("Les 4 préfixes existent et sont distincts :");
+  console.log("Les 3 préfixes existent et sont distincts :");
 
-  await cas("main/musicMod/moderation/protection/owner = ? & - !! =", () => {
+  await cas("main/musicMod/moderation/protection = ? & - !!", () => {
     const p = getPrefixes("g-x");
     assert.strictEqual(p.musicMod, "&");
     assert.strictEqual(p.moderation, "-");
     assert.strictEqual(p.protection, "!!");
-    assert.strictEqual(p.owner, "=");
-    const vals = [p.musicMod, p.moderation, p.protection, p.owner];
-    assert.strictEqual(new Set(vals).size, 4, "les 4 préfixes doivent être distincts");
+    const vals = [p.musicMod, p.moderation, p.protection];
+    assert.strictEqual(new Set(vals).size, 3, "les 3 préfixes doivent être distincts");
   });
 
   await cas("les anciennes données de préfixe récupèrent les familles ajoutées", () => {
@@ -71,7 +69,6 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
     assert.strictEqual(p.musicMod, "~", "la valeur persistée doit rester prioritaire");
     assert.strictEqual(p.moderation, "-", "la modération absente doit reprendre son défaut");
     assert.strictEqual(p.protection, "!!", "la sécurité absente doit reprendre son défaut");
-    assert.strictEqual(p.owner, "=", "le vocal absent doit reprendre son défaut");
   });
 
   console.log("\nbucketDe : chaque mot vers sa catégorie :");
@@ -80,10 +77,6 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
     for (const w of ["ban", "kick", "mute", "warn", "clear", "lockdown", "purge", "cmute"]) {
       assert.strictEqual(routing.bucketDe(w), "moderation", `${w} devrait être modération`);
     }
-  });
-
-  await cas("owner → vocal/owner, jamais modération", () => {
-    assert.strictEqual(routing.bucketDe("owner"), routing.BUCKET_VOCAL);
   });
 
   await cas("sécurité : antinuke/antibot/antichannel/badwords/wl/antispam → securite", () => {
@@ -121,12 +114,6 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
       modHandlers.kick = original;
     }
     assert.ok(called, "-kick doit atteindre le dispatcher modération");
-  });
-
-  await cas("dispatch positif vocal : =help", async () => {
-    const msg = fakeMessage({ guildId: "gdispatch", content: "=help" });
-    await handleVoiceHelpTextCommand(null, msg);
-    assert.ok(msg._replies.length, "=help doit être consommé par la famille vocal");
   });
 
   console.log('\nDéplacement dur : sécurité RETIRÉE de "&", servie sur "!!" :');

@@ -82,7 +82,7 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
 
   await cas("refuse un doublon exact avec une autre famille", async () => {
     const msg = makeMessage();
-    await configHandlers.prefix(null, msg, ["moderation", "="]);
+    await configHandlers.prefix(null, msg, ["moderation", "!!"]);
     assert.strictEqual(getPrefixes("g1").moderation, "-", "le doublon ne doit pas être enregistré");
     assert.ok(texte(msg).includes("chevauchent"), texte(msg));
   });

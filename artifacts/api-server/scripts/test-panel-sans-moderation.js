@@ -141,7 +141,6 @@ const CLES = SECTIONS.map((s) => s.key);
       "Vérification",
       "Rôles automatiques",
       "Sauvegardes",
-      "Vocaux",
       "Sondages",
     ]) {
       assert.ok(labels.includes(attendu), `"${attendu}" a disparu du panel : ${labels.join(", ")}`);

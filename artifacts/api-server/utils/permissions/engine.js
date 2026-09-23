@@ -13,24 +13,6 @@ const { isRoleGrantable, isOwnerOnlyGrant } = require("./catalog");
 // donné.
 const LEGACY_BRIDGE = { "channels.lock": "salon", "channels.manage": "salon" };
 
-// Les commandes vocales ont deux voies d'autorisation, exactement comme
-// l'exécution (voiceAccess.peutVocal) : un droit global staff et un octroi
-// individuel `voice.<commande>` attribué depuis `=owner`/`=add`. Garder la
-// résolution ici permet aux aides de passer par le même `can()` que les
-// handlers, sans recopier cette logique dans chaque écran.
-const VOICE_GLOBAL_PERMISSION = {
-  "voice.mute": "server.voice.manage",
-  "voice.unmute": "server.voice.manage",
-  "voice.deaf": "server.voice.manage",
-  "voice.undeaf": "server.voice.manage",
-  "voice.disconnect": "server.voice.manage",
-  "voice.mv": "server.voice.manage",
-  "voice.join": "server.voice.manage",
-  "voice.find": "server.voice.manage",
-  "voice.bringall": "server.voice.moveall",
-  "voice.wakeup": "server.voice.manage",
-};
-
 /**
  * Vrai quand le membre a été explicitement configuré dans le moteur de
  * permissions de ce serveur (octroi individuel ou octroi sur l'un de ses
@@ -88,10 +70,6 @@ function can(member, key) {
 
   if (accessStore.isOwner(member.id)) return true;
   if (accessStore.isSys(member.id)) return true;
-
-  // Une autorisation globale débloque la commande vocale comme dans
-  // voiceAccess.peutVocal ; sinon l'octroi individuel est testé ci-dessous.
-  if (VOICE_GLOBAL_PERMISSION[key] && can(member, VOICE_GLOBAL_PERMISSION[key])) return true;
 
   const guildId = member.guild.id;
 

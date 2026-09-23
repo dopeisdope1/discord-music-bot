@@ -26,7 +26,6 @@ const { THEME_BLEU } = require("./dashboardImage");
 const { can, peutAccorder } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
-const voiceAccess = require("./voiceAccess");
 const accessStore = require("./accessStore");
 const automod = require("./automod/antiSpam");
 const guardConfig = require("./guard/config");
@@ -289,76 +288,15 @@ function buildOwnerAccessCard(
 }
 
 /**
- * Carte "Owner" VOCALE de "=add" (préfixe vocal "=") — liste PLATE des vraies
- * commandes vocales à cocher (✓ accordée / ✗ refusée), comme la capture
- * "Ajouter ou retirer un accès" : PAS de sélecteur de catégorie
- * (Modération/Salons/…), directement les accès vocaux. Chaque coche donne
- * VRAIMENT le droit d'utiliser la commande (permStore "voice.<cmd>", vérifié
- * par voiceAccess.peutVocal). `derniereCle` porte la coche bleue native de
- * Discord sur l'accès qui vient d'être basculé.
- */
-function buildVoiceOwnerCard(guildId, memberId, consultePar, derniereCle = null) {
-  const granted = permStore.getUserGrants(guildId, memberId).filter((k) => voiceAccess.VOICE_ACCESS_KEYS.includes(k));
-
-  const container = new ContainerBuilder();
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        `**Utilisateur** — <@${memberId}>`,
-        `**Statut** — ${granted.length ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS")} ${granted.length ? "Accès vocaux actifs" : "Aucun accès vocal"}`,
-        `**Attribué par** — ${consultePar}`,
-      ].join("\n")
-    )
-  );
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        `**Accès attribués — ${granted.length}**`,
-        "",
-        granted.length
-          ? granted.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${voiceAccess.LABEL_PAR_CLE[key]}`).join("\n")
-          : "*Aucun accès vocal pour l'instant.*",
-      ].join("\n")
-    )
-  );
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(
-    new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`srv:voiceowner:${memberId}`)
-        .setPlaceholder("Ajouter ou retirer un accès")
-        .addOptions(
-          voiceAccess.VOICE_ACCESS.map((a) =>
-            new StringSelectMenuOptionBuilder()
-              .setLabel(a.label)
-              .setValue(a.key)
-              .setEmoji(granted.includes(a.key) ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS"))
-              .setDescription(a.description.slice(0, 100))
-              .setDefault(a.key === derniereCle)
-          )
-        )
-    )
-  );
-
-  return { flags: MessageFlags.IsComponentsV2, components: [container] };
-}
-
-/**
  * &access <@membre|id> — ouvre le panneau d'octroi de permissions
  * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
- * "=add"/"&owner"/"!!owner" (préfixes séparés, voir les handlers
- * dédiés ci-dessous) délèguent ici mais doivent rappeler LEUR propre
- * syntaxe ; `ownerStyle` fait poster la carte "Owner" (buildOwnerAccessCard)
- * au lieu de la carte générique — même mécanisme de fond, présentation
- * différente ; `categoriesAutorisees`, transmis tel quel à
- * buildOwnerAccessCard, restreint quelles catégories du catalogue "&owner"/
- * "!!owner" peuvent voir et modifier (jamais utilisé par "&access"/"=add",
- * qui gardent le catalogue complet).
+ * "&owner"/"!!owner" (préfixes séparés, voir les handlers dédiés
+ * ci-dessous) délèguent ici mais doivent rappeler LEUR propre syntaxe ;
+ * `ownerStyle` fait poster la carte "Owner" (buildOwnerAccessCard) au lieu
+ * de la carte générique — même mécanisme de fond, présentation différente ;
+ * `categoriesAutorisees`, transmis tel quel à buildOwnerAccessCard,
+ * restreint quelles catégories du catalogue "&owner"/"!!owner" peuvent voir
+ * et modifier (jamais utilisé par "&access", qui garde le catalogue complet).
  */
 async function access(client, message, args, label = "access", ownerStyle = false, categoriesAutorisees = null, variante = "owner") {
   if (!can(message.member, "panel.permissions.manage")) return;
@@ -383,70 +321,6 @@ async function access(client, message, args, label = "access", ownerStyle = fals
   await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
 }
 
-/**
- * "=add <@membre|id>" ouvre la carte "Owner" VOCALE
- * (buildVoiceOwnerCard), liste plate des commandes vocales à cocher. Cocher
- * une commande donne vraiment le droit de l'utiliser (voiceAccess). Gardé
- * sous le droit `panel.permissions.manage` (qui peut OUVRIR la carte).
- *
- * "=owner <@membre|id>" est l'action rapide du même préfixe : elle bascule
- * l'accès à TOUTES les clés de voiceAccess.VOICE_ACCESS_KEYS en une fois.
- * Cette bascule ne touche qu'aux permissions individuelles du préfixe "=" ;
- * elle ne distribue ni ne modifie le rang propriétaire du bot ou le rang sys.
- * Le catalogue générique reste dispo via "&access"/"&owner"/"!!owner".
- */
-async function handleAddAccessTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const { owner: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
-
-  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  const mot = (cmd || "").toLowerCase();
-  if (mot !== "add" && mot !== "owner") return; // mot inconnu sur ce préfixe : silence
-
-  if (!can(message.member, "panel.permissions.manage")) return;
-
-  const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
-  const idMatch = args[0]?.match(/^\d{15,25}$/);
-  const targetId = mentionMatch?.[1] || idMatch?.[0];
-  if (!targetId) return reply(message, "error", `Indique un membre (mention ou identifiant) : \`${mot} @membre\`.`);
-
-  const target = await message.guild.members.fetch(targetId).catch(() => null);
-  if (!target) return reply(message, "error", "Ce membre n'est pas sur le serveur.");
-
-  if (accessStore.isOwner(target.id) || accessStore.isSys(target.id)) {
-    return reply(message, "info", `${target.user.tag} est déjà propriétaire/rang sys — accès complet, rien à accorder en plus.`);
-  }
-
-  if (mot === "owner") {
-    const granted = permStore.getUserGrants(message.guild.id, target.id);
-    const hasEveryVoiceKey = voiceAccess.VOICE_ACCESS_KEYS.every((key) => granted.includes(key));
-
-    if (hasEveryVoiceKey) {
-      for (const key of voiceAccess.VOICE_ACCESS_KEYS) {
-        permStore.revokeFromUser(message.guild.id, target.id, key);
-      }
-      return reply(
-        message,
-        "success",
-        `${target.user.tag} — l'accès complet au préfixe "=" a été retiré (toutes les commandes vocales).`
-      );
-    }
-
-    for (const key of voiceAccess.VOICE_ACCESS_KEYS) {
-      if (!granted.includes(key)) permStore.grantToUser(message.guild.id, target.id, key);
-    }
-    return reply(
-      message,
-      "success",
-      `${target.user.tag} a maintenant accès à l'intégralité du préfixe "=" (toutes les commandes vocales).`
-    );
-  }
-
-  return message.reply(buildVoiceOwnerCard(message.guild.id, target.id, message.author.tag));
-}
-
 const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
 const CATEGORIES_OWNER_SECURITE = ["protection"];
 
@@ -456,8 +330,7 @@ const CATEGORIES_OWNER_SECURITE = ["protection"];
  * les permissions sécurité/serveur/panel qui n'ont rien à faire ici.
  * La commande publique `&owner` reste réservée par le routeur à la famille
  * gestion ; ce helper reste exporté pour les anciennes interactions internes
- * et la compatibilité du catalogue de permissions. L'action rapide `=owner`
- * est gérée séparément par handleAddAccessTextCommand.
+ * et la compatibilité du catalogue de permissions.
  */
 async function ownerModeration(client, message, args) {
   return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
@@ -599,21 +472,6 @@ async function handleServerAdminInteraction(interaction) {
     return interaction.update(
       buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category, key, categories, variante)
     );
-  }
-
-  // Carte "Owner" VOCALE de "=add" — liste plate d'accès vocaux
-  // (voir buildVoiceOwnerCard). Un seul sélecteur, pas d'étape catégorie.
-  if (action === "voiceowner") {
-    if (!can(interaction.member, "panel.permissions.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    }
-    const memberId = idKind;
-    const key = interaction.values[0];
-    if (!voiceAccess.VOICE_ACCESS_KEYS.includes(key)) return interaction.deferUpdate().catch(() => {});
-    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
-    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
-    else permStore.grantToUser(interaction.guild.id, memberId, key);
-    return interaction.update(buildVoiceOwnerCard(interaction.guild.id, memberId, interaction.user.tag, key));
   }
 
   const LISTS = {
@@ -1324,61 +1182,9 @@ async function antinuke(client, message, args) {
   });
 }
 
-// --- Écosystème VOCAL sur "=" (architecture 4 préfixes : & = gestion,
-// !! = sécurité, = = vocal) — voir index.js pour le dispatch du préfixe.
-// Un simple catalogue de commandes vocales RÉELLES, chacune une action de
-// modération vocale ponctuelle sur N'IMPORTE QUEL membre en vocal — PAS un
-// nouveau système de propriété/salons temporaires (revert explicite d'une
-// première version qui était partie dans cette direction, à tort). "=kick"/
-// "=move" délèguent aux commandes déjà existantes et testées
-// (utils/serverExtra.js::voicekick/mv, même permission server.voice.manage) ;
-// "=mute"/"=unmute"/"=deaf"/"=undeaf" (utils/serverExtra.js) sont neufs mais
-// suivent exactement le même patron — même permission, mêmes helpers
-// (parseTarget/fetchTargetOrReply), aucune notion de salon "à soi".
-
-/**
- * Un seul dispatcher pour tous les mots vocaux sur "=" ci-dessus — même
- * patron que utils/securityAliases.js::handleSecurityAliasTextCommand.
- * "=owner" (bascule complète) et "=add" (carte granulaire) restent gérés par
- * handleAddAccessTextCommand, un handler indépendant. Require PARESSEUX
- * exprès (à l'intérieur de la fonction) : utils/serverExtra.js requiert déjà
- * CE fichier (requestConfirmation) — un require en haut de fichier créerait
- * un cycle où les fonctions vocales vaudraient `undefined` à l'exécution
- * (serverExtra.js n'aurait pas fini de se charger au moment du require) ;
- * lu ici, au moment de l'APPEL plutôt que du chargement du module, il
- * résout correctement.
- */
-async function handleVoiceAliasTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const { owner: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
-
-  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  const serverExtra = require("./serverExtra");
-  const VOICE_ALIASES = {
-    mute: serverExtra.voicemute,
-    unmute: serverExtra.voiceunmute,
-    deaf: serverExtra.voicedeaf,
-    undeaf: serverExtra.voiceundeaf,
-    disconnect: serverExtra.voicekick,
-    move: serverExtra.mv,
-    mv: serverExtra.mv,
-    find: serverExtra.voicefind,
-    bringall: serverExtra.bringall,
-    wakeup: serverExtra.voicewakeup,
-    join: serverExtra.voicejoin,
-  };
-  const handler = VOICE_ALIASES[(cmd || "").toLowerCase()];
-  if (!handler) return; // mot inconnu sur ce préfixe (ou "add") : silence
-
-  return handler(client, message, args);
-}
-
 module.exports = {
   owners,
   access,
-  handleAddAccessTextCommand,
   ownerModeration,
   sysAdd,
   sysRemove,
@@ -1392,7 +1198,6 @@ module.exports = {
   channelAdmin,
   dero,
   applyDeroToNewChannel,
-  handleVoiceAliasTextCommand,
   handleConfirmInteraction,
   requestConfirmation,
   ROLE_ADMIN_SUBCOMMANDS,

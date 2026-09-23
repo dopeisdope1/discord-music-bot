@@ -47,7 +47,6 @@ function prefixePour(cmd, prefixes) {
   const bucket = commandRouting.bucketDe(cmd.name);
   if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
-  if (bucket === commandRouting.BUCKET_VOCAL) return prefixes.owner;
   return prefixes.musicMod;
 }
 
@@ -147,13 +146,13 @@ function buildFamilyCard(mot, member, guildId, { sansImage = false } = {}) {
     titre: `${prefixe}${mot}`,
     sousTitre:
       `Gestion : ${prefixes.musicMod} · Modération : ${prefixes.moderation} · Sécurité : ${prefixes.protection} · ` +
-      `Vocal : ${prefixes.owner} · [ ] facultatif, < > obligatoire`,
+      `[ ] facultatif, < > obligatoire`,
     cartes,
     // Une seule colonne : ces cartes ont peu de lignes mais des syntaxes
     // longues, que deux demi-colonnes tronqueraient en plein milieu.
     colonnes: 1,
     hauteursLibres: true,
-    pied: `${prefixes.musicMod}help pour la gestion · ${prefixes.protection}help sécurité · ${prefixes.owner}help vocal`,
+    pied: `${prefixes.musicMod}help pour la gestion · ${prefixes.protection}help sécurité`,
   };
 
   const png = sansImage ? null : rendreEnCache(spec);

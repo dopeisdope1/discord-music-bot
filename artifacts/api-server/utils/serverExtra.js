@@ -11,7 +11,6 @@ const {
 } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
-const { peutVocal } = require("./voiceAccess");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
 const { requestConfirmation } = require("./serverAdminCommands");
@@ -222,7 +221,7 @@ async function voicemove(client, message) {
 }
 
 async function voicekick(client, message, args) {
-  if (!peutVocal(message.member, "voice.disconnect")) return;
+  if (!can(message.member, "server.voice.manage")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -237,7 +236,7 @@ async function voicekick(client, message, args) {
 
 /** &mv <@membre|id> <#salon> — déplace UN membre précis vers un salon vocal (voir &voicemove pour tout un salon d'un coup). */
 async function mv(client, message, args) {
-  if (!peutVocal(message.member, "voice.mv")) return;
+  if (!can(message.member, "server.voice.manage")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -256,7 +255,7 @@ async function mv(client, message, args) {
 }
 
 async function bringall(client, message) {
-  if (!peutVocal(message.member, "voice.bringall")) return;
+  if (!can(message.member, "server.voice.moveall")) return;
   const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
   if (botPerm) return reply(message, "error", botPerm);
 
@@ -274,107 +273,6 @@ async function bringall(client, message) {
     }
   }
   return reply(message, "success", `**${count}** membre(s) rassemblé(s) dans ${destination}.`);
-}
-
-// --- Mute/sourdine vocale native (préfixe "=", écosystème VOCAL) — même
-// permission que &voicekick/&mv (server.voice.manage) : une action de
-// modération vocale ponctuelle, sur N'IMPORTE QUEL membre actuellement en
-// vocal, sans rapport avec un quelconque salon "à soi". Distinct de
-// &mute/&unmute (rôle de mute PUNITIF, textuel, avec historique) — ici,
-// mute/sourdine Discord natifs, réversibles, sans trace de sanction.
-function voiceMuteAction(actif) {
-  return async function (client, message, args) {
-    if (!peutVocal(message.member, actif ? "voice.mute" : "voice.unmute")) return;
-    const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MuteMembers, "MuteMembers");
-    if (botPerm) return reply(message, "error", botPerm);
-
-    const targetId = parseTarget(args);
-    const target = await fetchTargetOrReply(message, targetId);
-    if (!target) return;
-    if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-
-    await target.voice.setMute(actif, `${actif ? "Mute" : "Démute"} vocal par ${message.author.tag}`).catch(() => {});
-    return reply(message, "success", `**${target.user.tag}** ${actif ? "muté" : "démuté"} en vocal.`);
-  };
-}
-const voicemute = voiceMuteAction(true);
-const voiceunmute = voiceMuteAction(false);
-
-function voiceDeafenAction(actif) {
-  return async function (client, message, args) {
-    if (!peutVocal(message.member, actif ? "voice.deaf" : "voice.undeaf")) return;
-    const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.DeafenMembers, "DeafenMembers");
-    if (botPerm) return reply(message, "error", botPerm);
-
-    const targetId = parseTarget(args);
-    const target = await fetchTargetOrReply(message, targetId);
-    if (!target) return;
-    if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-
-    await target.voice.setDeaf(actif, `${actif ? "Sourdine" : "Fin de sourdine"} par ${message.author.tag}`).catch(() => {});
-    return reply(message, "success", `**${target.user.tag}** ${actif ? "en sourdine" : "n'est plus en sourdine"} en vocal.`);
-  };
-}
-const voicedeaf = voiceDeafenAction(true);
-const voiceundeaf = voiceDeafenAction(false);
-
-// --- Commandes vocales supplémentaires (préfixe "=", écosystème VOCAL) —
-// find/wakeup/join, même patron/permission que voicekick/mv/mute
-// (server.voice.manage), sur N'IMPORTE QUEL membre en vocal.
-
-/** "=find <@membre>" — indique dans quel salon vocal se trouve un membre (lecture seule). */
-async function voicefind(client, message, args) {
-  if (!peutVocal(message.member, "voice.find")) return;
-  const targetId = parseTarget(args);
-  const target = await fetchTargetOrReply(message, targetId);
-  if (!target) return;
-  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est dans aucun salon vocal.`);
-  return reply(message, "success", `**${target.user.tag}** est dans ${target.voice.channel}.`);
-}
-
-/**
- * "=wakeup <@membre>" — "réveille" un membre en le faisant rebondir vers un
- * autre salon vocal puis revenir au sien (son client se reconnecte). Il faut
- * qu'au moins un autre salon vocal gérable existe ; sinon rien à faire.
- */
-async function voicewakeup(client, message, args) {
-  if (!peutVocal(message.member, "voice.wakeup")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const targetId = parseTarget(args);
-  const target = await fetchTargetOrReply(message, targetId);
-  if (!target) return;
-  const current = target.voice.channel;
-  if (!current) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-
-  const autre = message.guild.channels.cache.find((c) => c.type === ChannelType.GuildVoice && c.id !== current.id && c.manageable);
-  if (!autre) return reply(message, "error", "Il faut au moins un autre salon vocal pour réveiller ce membre.");
-
-  await target.voice.setChannel(autre, `Réveil par ${message.author.tag}`).catch(() => {});
-  await target.voice.setChannel(current, `Réveil par ${message.author.tag}`).catch(() => {});
-  return reply(message, "success", `**${target.user.tag}** réveillé.`);
-}
-
-/**
- * "=join <@membre>" — te déplace, TOI, dans le salon vocal de ce membre
- * (l'inverse de "=mv" qui déplace L'AUTRE). Tu dois déjà être connecté en
- * vocal pour pouvoir être déplacé.
- */
-async function voicejoin(client, message, args) {
-  if (!peutVocal(message.member, "voice.join")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const targetId = parseTarget(args);
-  const target = await fetchTargetOrReply(message, targetId);
-  if (!target) return;
-  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-  if (!message.member.voice.channel) return reply(message, "error", "Tu dois déjà être connecté en vocal pour rejoindre quelqu'un.");
-  if (message.member.voice.channelId === target.voice.channelId) return reply(message, "info", "Tu es déjà dans le même salon.");
-
-  await message.member.voice.setChannel(target.voice.channel, `Rejoint ${target.user.tag}`).catch(() => {});
-  return reply(message, "success", `Tu as rejoint **${target.user.tag}** dans ${target.voice.channel}.`);
 }
 
 // --- &unbanall (confirmation obligatoire, comme &banall) ---
@@ -641,13 +539,6 @@ module.exports = {
   voicekick,
   mv,
   bringall,
-  voicemute,
-  voiceunmute,
-  voicedeaf,
-  voiceundeaf,
-  voicefind,
-  voicewakeup,
-  voicejoin,
   unbanall,
   temprole,
   untemprole,

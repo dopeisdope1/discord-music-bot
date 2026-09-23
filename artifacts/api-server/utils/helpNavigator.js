@@ -17,31 +17,29 @@ const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
 const { COMMANDES: COMMANDES_SECURITE } = require("./protectionHelpCommand");
-const { CATEGORIES: CATEGORIES_VOCAL } = require("./voiceHelpCommand");
 const { emojiDe } = require("./emojiSlots");
 const messageOwner = require("./messageOwner");
 
-// Remplace les 4 "help" en texte pur/carte figée (&help, -help, !!help,
-// =help) par le MÊME moteur : un seul message, navigable via un menu
+// Remplace les 3 "help" en texte pur/carte figée (&help, -help, !!help)
+// par le MÊME moteur : un seul message, navigable via un menu
 // déroulant ("Choisir un palier") + Précédent/Suivant quand un groupe ne
 // tient pas sur une page — jamais de nouveau message posté après le
-// premier. "!!help"/"=help" restaient sur leurs cartes figées (utils/
-// protectionHelpCommand.js, utils/voiceHelpCommand.js) : leurs listes
-// COMMANDES/CATEGORIES restent la source de vérité (le catalogue partagé,
-// utils/commandCatalog.js, ne référence QUE "&"/"-", voir utils/
-// commandRouting.js) — seule la PRÉSENTATION est unifiée ici.
+// premier. "!!help" restait sur sa carte figée (utils/
+// protectionHelpCommand.js) : ses listes COMMANDES restent la source de
+// vérité (le catalogue partagé, utils/commandCatalog.js, ne référence QUE
+// "&"/"-", voir utils/commandRouting.js) — seule la PRÉSENTATION est
+// unifiée ici.
 const CUSTOM_ID = "helpnav";
 
 // Un bucket par préfixe, TOUS sur les mêmes paliers Publiques/Configurables/
 // Sys (utils/helpPanel.js::PALIERS) — "gestion"/"moderation" les tirent du
-// catalogue central, "securite"/"vocal" de leurs listes figées existantes
-// (utils/protectionHelpCommand.js, utils/voiceHelpCommand.js), mais avec la
-// même classification "dangereux -> Sys" (estDangereux).
+// catalogue central, "securite" de sa liste figée existante (utils/
+// protectionHelpCommand.js), mais avec la même classification
+// "dangereux -> Sys" (estDangereux).
 const BUCKETS = {
   gestion: { titre: "Aide", prefixKey: "musicMod", tiersFn: (guildId, member) => buildTiersCatalogue("gestion", guildId, member) },
   moderation: { titre: "Aide — Modération", prefixKey: "moderation", tiersFn: (guildId, member) => buildTiersCatalogue("moderation", guildId, member) },
   securite: { titre: "Aide — Sécurité", prefixKey: "protection", tiersFn: buildTiersSecurite },
-  vocal: { titre: "Aide — Vocal", prefixKey: "owner", tiersFn: buildTiersVocal },
 };
 
 // Budget du texte d'UN palier affiché, en caractères — le reste du message
@@ -150,25 +148,6 @@ function buildTiersSecurite(guildId, member) {
   }).filter((t) => t.count);
 }
 
-/** Paliers non vides du "=", groupés par catégorie (déjà illustrées d'un emoji) — utils/voiceHelpCommand.js reste la source de vérité des commandes. */
-function buildTiersVocal(guildId, member) {
-  const prefix = getPrefixes(guildId).owner;
-  const parPalier = { public: new Map(), configurable: new Map(), sys: new Map() };
-  for (const cat of CATEGORIES_VOCAL) {
-    for (const c of cat.commandes) {
-      if (c.nom.replace(/^=/, "").split(/\s+/)[0] === "help") continue;
-      if (!can(member, c.permission)) continue;
-      const map = parPalier[palierFige(c.permission)];
-      if (!map.has(cat.nom)) map.set(cat.nom, { emoji: emojiDe(guildId, `voc:${cat.nom}`), lignes: [] });
-      map.get(cat.nom).lignes.push(ligneFigee(c.nom, c.description, "=", prefix));
-    }
-  }
-  return PALIERS.map((p) => {
-    const { lines, count } = assemblerGroupes(parPalier[p.cle]);
-    return { key: p.cle, label: p.titre, lines, count };
-  }).filter((t) => t.count);
-}
-
 /**
  * @param {"gestion"|"moderation"|"securite"|"vocal"} bucketKey
  * @param {string} guildId
@@ -260,17 +239,6 @@ async function handleSecuriteHelpTextCommand(client, message) {
   return repondreAvecAide("securite", message);
 }
 
-/** "=help" — voir utils/voiceHelpCommand.js (CATEGORIES, source de vérité). */
-async function handleVocalHelpTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const { owner: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
-  const [cmd] = content.slice(PREFIX.length).trim().split(/\s+/);
-  if ((cmd || "").toLowerCase() !== "help") return;
-  return repondreAvecAide("vocal", message);
-}
-
 async function handleHelpNavInteraction(interaction) {
   const [, action, bucketKey, ...rest] = interaction.customId.split(":");
   if (!BUCKETS[bucketKey]) return;
@@ -294,5 +262,4 @@ module.exports = {
   repondreAvecAide,
   handleHelpNavInteraction,
   handleSecuriteHelpTextCommand,
-  handleVocalHelpTextCommand,
 };

@@ -98,19 +98,6 @@ const PERMISSIONS = [
   // les membres d'un coup, contrairement à &voicekick qui cible une seule
   // personne — même logique que moderation.unmuteall/channels.manageall.
   { key: "server.voice.moveall", category: "server", label: "Déplacer tout un salon vocal d'un coup (&voicemove, &bringall)" },
-  // Octrois individuels attribués par =owner/=add. Ils ne sont pas
-  // accordables à un rôle : les commandes vocales passent par voiceAccess,
-  // qui accepte soit ce droit individuel soit le droit global ci-dessus.
-  { key: "voice.mute", category: "server", label: "Commande vocale =mute", roleGrantable: false },
-  { key: "voice.unmute", category: "server", label: "Commande vocale =unmute", roleGrantable: false },
-  { key: "voice.deaf", category: "server", label: "Commande vocale =deaf", roleGrantable: false },
-  { key: "voice.undeaf", category: "server", label: "Commande vocale =undeaf", roleGrantable: false },
-  { key: "voice.disconnect", category: "server", label: "Commande vocale =disconnect", roleGrantable: false },
-  { key: "voice.mv", category: "server", label: "Commande vocale =mv", roleGrantable: false },
-  { key: "voice.join", category: "server", label: "Commande vocale =join", roleGrantable: false },
-  { key: "voice.find", category: "server", label: "Commande vocale =find", roleGrantable: false },
-  { key: "voice.bringall", category: "server", label: "Commande vocale =bringall", roleGrantable: false },
-  { key: "voice.wakeup", category: "server", label: "Commande vocale =wakeup", roleGrantable: false },
   { key: "server.tickets.manage", category: "server", label: "Configurer les tickets (&ticket setup)" },
   { key: "server.polls.manage", category: "server", label: "Créer des sondages (&poll)" },
   { key: "server.giveaways.manage", category: "server", label: "Lancer/retirer un giveaway (&giveaway)" },
