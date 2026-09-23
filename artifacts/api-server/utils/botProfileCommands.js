@@ -1,4 +1,4 @@
-const { ActivityType } = require("discord.js");
+const { ActivityType, PermissionFlagsBits } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const accessStore = require("./accessStore");
 const store = require("./botProfileStore");
@@ -119,6 +119,25 @@ const handlers = {
     store.setStatus("invisible");
     applyPresence(client);
     return reply(message, "success", "Statut du bot : **Invisible**.");
+  }),
+
+  // "&botrename" — distinct de "set name" (change le NOM GLOBAL du compte,
+  // sur tous les serveurs) et de "&rename" (renomme un ticket) : ici, un
+  // simple SURNOM Discord local à CE serveur (guild.members.me.setNickname),
+  // même mécanisme que Voice Master/Secure.
+  botrename: sysOnly(async (client, message, args) => {
+    const nouveau = args.join(" ").trim();
+    if (!nouveau) return reply(message, "error", "Indique un nom : `botrename <nouveau nom>`.");
+    if (nouveau.length > 32) return reply(message, "error", "Un pseudo Discord fait 32 caractères au maximum.");
+    if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ChangeNickname)) {
+      return reply(message, "error", "Il me manque la permission **Changer de pseudo**.");
+    }
+    try {
+      await message.guild.members.me.setNickname(nouveau);
+    } catch (err) {
+      return reply(message, "error", `Discord a refusé : ${err.message}`);
+    }
+    return reply(message, "success", `Renommé en **${nouveau}** sur ce serveur.`);
   }),
 };
 

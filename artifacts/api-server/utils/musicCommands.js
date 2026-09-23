@@ -378,6 +378,7 @@ const modHandlers = {
   idle: botProfileHandlers.idle,
   dnd: botProfileHandlers.dnd,
   invisible: botProfileHandlers.invisible,
+  botrename: botProfileHandlers.botrename,
 
   // Mute par rôle (distinct du timeout natif), sanctions, tempban/banlist,
   // masquage de masse, derank — voir utils/moderationExtra.js. Pas de

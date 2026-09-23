@@ -1238,6 +1238,12 @@ const CATEGORIES = [
         description: "Permet de modifier d'un coup le profil du bot",
       },
       {
+        name: "botrename <nouveau nom>",
+        prefix: "mod",
+        permission: "sys",
+        description: "Renomme le bot sur CE serveur uniquement (surnom local, distinct de \"set name\" qui change le nom global)",
+      },
+      {
         name: "playto|listen|watch|compet|stream <message>",
         prefix: "mod",
         permission: "sys",
