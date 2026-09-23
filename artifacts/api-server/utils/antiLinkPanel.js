@@ -48,17 +48,15 @@ function buildAntiLinkPanel(guild, member, state = {}) {
   const bypassAll = linkBypass.getBypass(guild.id, "all");
   const bypassInvite = linkBypass.getBypass(guild.id, "invite");
 
+  // Deux sections distinctes (Mode / Bypass) plutôt qu'un seul bloc — refonte
+  // visuelle : Components V2 n'a pas de couleur de container, la hiérarchie
+  // se fait par segmentation en plusieurs TextDisplay/Separator, même
+  // principe que utils/securityPanel.js et utils/personalProtection.js.
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`### Mode\n**Actuel** : \`${MODE_LABELS[modeCle]}\``));
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
-      [
-        `**Mode actuel** : \`${MODE_LABELS[modeCle]}\``,
-        "",
-        "**Bypass (Tous les liens)**",
-        mentionsDe(bypassAll),
-        "",
-        "**Bypass (Liens Discord)**",
-        mentionsDe(bypassInvite),
-      ].join("\n")
+      ["### Bypass", `**Tous les liens** : ${mentionsDe(bypassAll)}`, `**Liens Discord** : ${mentionsDe(bypassInvite)}`].join("\n")
     )
   );
 
