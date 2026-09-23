@@ -7,6 +7,7 @@ const { checkHierarchy, checkBotPermission, report } = require("./moderation/act
 const { deleteMessages } = require("./deleteMessages");
 const historyStore = require("./moderationHistoryStore");
 const roleLimitStore = require("./roleLimitStore");
+const accessStore = require("./accessStore");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
@@ -119,10 +120,17 @@ async function roleMembership(client, message, args, sub) {
   if (me.roles.highest.position <= mentionedRole.position) {
     return reply(message, "error", "Mon rôle est trop bas pour gérer ce rôle — place-le plus haut dans la liste des rôles.");
   }
-  if (message.member.id !== message.guild.ownerId && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    if (message.member.roles.highest.position <= mentionedRole.position) {
-      return reply(message, "error", "Tu ne peux pas gérer un rôle supérieur ou égal au tien.");
-    }
+  // Le rang sys donne déjà un accès total à toutes les commandes
+  // (utils/permissions/engine.js::can) : la hiérarchie de RÔLE DISCORD ne
+  // doit pas le freiner en plus — même correctif que checkHierarchy
+  // (utils/moderation/actions.js), pour la même incohérence.
+  const contourneHierarchieRole =
+    message.member.id === message.guild.ownerId ||
+    message.member.permissions.has(PermissionFlagsBits.Administrator) ||
+    accessStore.isOwner(message.member.id) ||
+    accessStore.isAllowed("sys", message.member.id);
+  if (!contourneHierarchieRole && message.member.roles.highest.position <= mentionedRole.position) {
+    return reply(message, "error", "Tu ne peux pas gérer un rôle supérieur ou égal au tien.");
   }
 
   const already = mentionedMember.roles.cache.has(mentionedRole.id);

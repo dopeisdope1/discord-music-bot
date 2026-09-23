@@ -33,8 +33,14 @@ function botAndRankRefusal(guild, target) {
  * botAndRankRefusal ci-dessus, puis ajoute la vérification qui manquait pour
  * les commandes désormais accordées par rôle — un modérateur ne doit jamais
  * agir sur quelqu'un dont le rôle est supérieur ou égal au sien (section 33
- * du cahier des charges). Le propriétaire du serveur et du bot passent outre
- * cette dernière règle.
+ * du cahier des charges). Le propriétaire du serveur et du bot, ET le rang
+ * sys, passent outre cette dernière règle — le rang sys donne déjà un accès
+ * total à toutes les commandes (utils/permissions/engine.js::can), la
+ * hiérarchie de RÔLE DISCORD n'a donc pas à le freiner en plus (bug corrigé :
+ * un sys sans le rôle Administrateur Discord ni la propriété du serveur se
+ * faisait refuser &addrole/&delrole et les autres commandes ciblées comme un
+ * modérateur ordinaire). Un sys reste protégé comme CIBLE (botAndRankRefusal
+ * ci-dessus, ligne "rang sys" : deux sys ne peuvent pas s'agir l'un l'autre).
  * @param {import('discord.js').Guild} guild
  * @param {import('discord.js').GuildMember} actor qui lance la commande
  * @param {import('discord.js').GuildMember} target
@@ -46,7 +52,7 @@ function checkHierarchy(guild, actor, target) {
   const botRefusal = botAndRankRefusal(guild, target);
   if (botRefusal) return botRefusal;
 
-  if (actor.id === guild.ownerId || accessStore.isOwner(actor.id)) return null;
+  if (actor.id === guild.ownerId || accessStore.isOwner(actor.id) || accessStore.isAllowed("sys", actor.id)) return null;
 
   if (actor.roles.highest.position <= target.roles.highest.position) {
     return "Tu ne peux pas agir sur un membre dont le rôle est supérieur ou égal au tien.";
