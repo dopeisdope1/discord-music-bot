@@ -61,17 +61,16 @@ function commandsForKeys(keys) {
 
 /**
  * Le vrai préfixe d'une commande, tapée telle qu'affichée : toutes ne vivent
- * PAS sur "&" (gestion) — "kick"/"ban" sont sur "-" (modération), "secur" sur
- * "!!" (sécurité). Bug corrigé ici : &role info / &staff affichaient TOUT
- * préfixé "&", y compris des commandes de -modération, ce qui les rendait
- * fausses telles quelles copiées-collées.
+ * PAS sur "&" (gestion) — "kick"/"ban" sont sur "-" (modération). Bug
+ * corrigé ici : &role info / &staff affichaient TOUT préfixé "&", y compris
+ * des commandes de -modération, ce qui les rendait fausses telles quelles
+ * copiées-collées.
  * @param {string} nomCommande identité affichée (identityOf), ex. "kick"
  * @param {ReturnType<typeof getPrefixes>} prefixes
  */
 function prefixeDeCommande(nomCommande, prefixes) {
   const bucket = commandRouting.bucketDe(nomCommande);
   if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
-  if (bucket === commandRouting.BUCKET_SECURITE) return prefixes.protection;
   return prefixes.musicMod;
 }
 
@@ -93,7 +92,6 @@ function commandesAffichables(keys, guildId) {
 const ORDRE_PREFIXES = [
   { bucket: commandRouting.BUCKET_GESTION, cle: "musicMod", label: "Gestion" },
   { bucket: commandRouting.BUCKET_MODERATION, cle: "moderation", label: "Modération" },
-  { bucket: commandRouting.BUCKET_SECURITE, cle: "protection", label: "Sécurité" },
 ];
 
 /**

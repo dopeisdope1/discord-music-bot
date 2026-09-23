@@ -344,7 +344,6 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
       `> **Préfixe modération** : \`${prefixes.moderation}\``,
-      `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
     ].join("\n");
   }
 
@@ -711,7 +710,7 @@ function sectionBody(section, guild, member, state) {
     // de fetch ici, voir le commentaire dans securityScan.js) : un coup
     // d'œil instantané, pas un audit complet — celui-ci reste dans
     // Sécurité > Vue d'ensemble, jamais dupliqué ici.
-    if (can(member, "protection.automod") || can(member, "protection.guard.manage")) {
+    if (can(member, "protection.automod")) {
       const { critical, warnings } = computeSecurityScan(guild);
       lines.push("");
       if (!critical.length && !warnings.length) {
@@ -728,7 +727,6 @@ function sectionBody(section, guild, member, state) {
   return [
     `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
     `> **Préfixe modération** : \`${prefixes.moderation}\``,
-    `> **Préfixe sécurité/protection** : \`${prefixes.protection}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
@@ -1113,8 +1111,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:protection`).setLabel("Préfixe sécurité").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
@@ -1888,7 +1885,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 const PREFIX_FIELDS = {
   musicMod: { label: "Préfixe gestion", max: 3 },
   moderation: { label: "Préfixe modération", max: 3 },
-  protection: { label: "Préfixe sécurité/protection", max: 3 },
 };
 
 /**

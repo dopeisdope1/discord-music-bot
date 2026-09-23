@@ -30,7 +30,6 @@ const { handleBan, handleUnban } = require("./banPanel");
 const serverAdmin = require("./serverAdminCommands");
 const serverExtra = require("./serverExtra");
 const botProfileCommands = require("./botProfileCommands");
-const { automodHandlers } = require("./automodCommands");
 const { configHandlers } = require("./configCommands");
 const permCatalog = require("./permissions/catalog");
 const { autoroleHandlers } = require("./autoroleCommands");
@@ -926,105 +925,6 @@ const FORMS = {
     },
   },
 
-  link_channel_exempt: {
-    label: "Exempter un salon de l'anti-lien",
-    category: "protection",
-    permission: "protection.automod",
-    fields: ["channel"],
-    optionalFields: ["channel"],
-    fieldLabels: { channel: "Salon (optionnel, sinon le salon courant)" },
-    choiceFields: [
-      {
-        key: "action",
-        label: "Action",
-        placeholder: "Choisir allow / deny / reset",
-        noCustom: true,
-        options: [
-          { label: "Exempter (allow)", value: "allow" },
-          { label: "Surveiller à nouveau (deny)", value: "deny" },
-          { label: "Réinitialiser (reset)", value: "reset" },
-        ],
-      },
-    ],
-    ready: (v) => Boolean(v.text?.action),
-    run: async (client, interaction, v) => {
-      const channel = v.channelId ? interaction.guild.channels.cache.get(v.channelId) : null;
-      const msg = fakeMessage(interaction, { channels: channel ? [channel] : [] });
-      await automodHandlers.link(client, msg, [v.text.action]);
-    },
-  },
-
-  spam_channel_exempt: {
-    label: "Exempter un salon de l'anti-spam",
-    category: "protection",
-    permission: "protection.automod",
-    fields: ["channel"],
-    optionalFields: ["channel"],
-    fieldLabels: { channel: "Salon (optionnel, sinon le salon courant)" },
-    choiceFields: [
-      {
-        key: "action",
-        label: "Action",
-        placeholder: "Choisir allow / deny / reset",
-        noCustom: true,
-        options: [
-          { label: "Exempter (allow)", value: "allow" },
-          { label: "Surveiller à nouveau (deny)", value: "deny" },
-          { label: "Réinitialiser (reset)", value: "reset" },
-        ],
-      },
-    ],
-    ready: (v) => Boolean(v.text?.action),
-    run: async (client, interaction, v) => {
-      const channel = v.channelId ? interaction.guild.channels.cache.get(v.channelId) : null;
-      const msg = fakeMessage(interaction, { channels: channel ? [channel] : [] });
-      await automodHandlers.spam(client, msg, [v.text.action]);
-    },
-  },
-
-  antinuke_wluser: {
-    label: "Whitelist anti-nuke : (dé)exempter un membre",
-    category: "protection",
-    permission: "protection.guard.manage",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await serverAdmin.antinuke(client, msg, ["wluser", member.id]);
-    },
-  },
-
-  antinuke_wlrole: {
-    label: "Whitelist anti-nuke : (dé)exempter un rôle",
-    category: "protection",
-    permission: "protection.guard.manage",
-    fields: ["role"],
-    ready: (v) => Boolean(v.roleId),
-    run: async (client, interaction, v) => {
-      const role = interaction.guild.roles.cache.get(v.roleId);
-      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { role });
-      await serverAdmin.antinuke(client, msg, ["wlrole"]);
-    },
-  },
-
-  antinuke_ping: {
-    label: "Régler le rôle pingé par l'anti-nuke",
-    category: "protection",
-    permission: "protection.guard.manage",
-    fields: ["role"],
-    optionalFields: ["role"],
-    fieldLabels: { role: "Rôle à pinguer (aucun = désactivé)" },
-    ready: () => true,
-    run: async (client, interaction, v) => {
-      const role = v.roleId ? interaction.guild.roles.cache.get(v.roleId) : null;
-      const msg = fakeMessage(interaction, { role });
-      await serverAdmin.antinuke(client, msg, role ? ["ping"] : ["ping", "off"]);
-    },
-  },
-
   set_perm_grant: {
     label: "Accorder une permission à un rôle ou un membre",
     category: "server",
@@ -1881,7 +1781,7 @@ const SANS_CARTE_SANS_ARGUMENT = new Set([
   "mute", "unmute", "tempmute", "tempban", "derank", "sanctions",
   "temprole", "untemprole", "cmute", "uncmute", "tempcmute", "warn",
   "warnings", "unwarn", "clear sanctions", "del sanction", "del perm",
-  "set perm", "antinuke wluser",
+  "set perm",
 ]);
 
 const BARE_COMMAND_FORMS = {
@@ -1924,8 +1824,6 @@ const BARE_COMMAND_FORMS = {
   case: "case_view",
   "autorole add": "autorole_add",
   "autorole del": "autorole_del",
-  link: "link_channel_exempt",
-  spam: "spam_channel_exempt",
   // Clés à deux mots : commandes dont le premier mot est un dispatcher
   // partagé (&role/&channel/&clear gèrent plusieurs sous-commandes) —
   // voir utils/musicCommands.js pour la logique de correspondance.
@@ -1945,9 +1843,6 @@ const BARE_COMMAND_FORMS = {
   "set muterole": "set_muterole_grant",
   "autoreact add": "autoreact_add",
   "autoreact del": "autoreact_del",
-  "antinuke wluser": "antinuke_wluser",
-  "antinuke wlrole": "antinuke_wlrole",
-  "antinuke ping": "antinuke_ping",
 };
 
 module.exports = {

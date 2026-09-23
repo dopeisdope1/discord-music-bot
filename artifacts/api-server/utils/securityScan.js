@@ -1,11 +1,6 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
-const guardConfig = require("./guard/config");
-const antiSpam = require("./automod/antiSpam");
-const antiLink = require("./automod/antiLink");
-const antiMention = require("./automod/antiMention");
-const badWords = require("./automod/badWords");
 const { getAllLogChannels } = require("./modLogStore");
 const muteStore = require("./muteStore");
 
@@ -65,27 +60,6 @@ function computeSecurityScan(guild) {
     ok.push("Aucun bot n'a Administrator.");
   }
 
-  // --- Anti-nuke ---
-  const guardCfg = guardConfig.getConfig(guild.id);
-  if (guardCfg.enabled) ok.push("Anti-nuke activé.");
-  else warnings.push("Anti-nuke désactivé — `antinuke on` pour l'activer (voir `&panel` > Protection).");
-
-  // --- AutoMod (anti-spam/anti-lien/anti-mention/mots interdits) ---
-  const automodStates = {
-    "Anti-spam": antiSpam.getConfig(guild.id).enabled,
-    "Anti-lien": antiLink.getConfig(guild.id).enabled,
-    "Anti-mass-mention": antiMention.getConfig(guild.id).enabled,
-    "Mots interdits": badWords.getConfig(guild.id).enabled,
-  };
-  const automodOff = Object.entries(automodStates).filter(([, on]) => !on).map(([name]) => name);
-  if (automodOff.length === Object.keys(automodStates).length) {
-    warnings.push("Tout l'AutoMod est désactivé (anti-spam, anti-lien, anti-mass-mention, mots interdits).");
-  } else if (automodOff.length) {
-    ok.push(`AutoMod partiellement actif — désactivé : ${automodOff.join(", ")}.`);
-  } else {
-    ok.push("AutoMod entièrement actif (anti-spam, anti-lien, anti-mass-mention, mots interdits).");
-  }
-
   // --- Logs ---
   const logChannels = Object.values(getAllLogChannels(guild.id)).filter(Boolean);
   if (!logChannels.length) warnings.push("Aucun salon de logs configuré — `&panel` > Logs pour en créer.");
@@ -102,9 +76,10 @@ function computeSecurityScan(guild) {
 
 /**
  * &security scan — audit en lecture seule (aucune modification), combine
- * des réglages déjà stockés ailleurs (anti-nuke, automod, logs, mute role,
- * permissions des rôles) en un rapport unique. Ne remplace aucun de ces
- * systèmes, se contente de les résumer au même endroit.
+ * des réglages déjà stockés ailleurs (permissions des rôles, logs, mute
+ * role) en un rapport unique. Ne remplace aucun de ces systèmes, se
+ * contente de les résumer au même endroit. L'anti-nuke/AutoMod ont migré
+ * vers le bot Secure — leur audit y vit désormais séparément.
  */
 async function securityScan(client, message) {
   if (!can(message.member, "server.security.scan")) return;

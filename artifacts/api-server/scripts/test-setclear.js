@@ -1,5 +1,5 @@
 /**
- * Vérifie "!!setclear" (utils/setClearCommand.js) : configure PAR SERVEUR les
+ * Vérifie "&setclear" (utils/setClearCommand.js) : configure PAR SERVEUR les
  * mots qui déclenchent le nettoyage automatique ("<mot> clear", voir
  * utils/selfClear.js) et le délai entre deux usages — remplace l'ancien
  * "uo clear" fixé en dur et son quota fixe de 2 usages/25min.
@@ -118,23 +118,23 @@ function fakeModalSubmit({ guildId, userId, noms, cooldown, permissionKey = "ser
 (async () => {
   console.log("Mot-clé et préfixe :");
 
-  await cas('un mot inconnu après "!!" reste silencieux', async () => {
+  await cas('un mot inconnu après "&" reste silencieux', async () => {
     const channel = fakeChannel("c1");
-    await handleSetClearTextCommand(null, fakeMessage({ guildId: "g-mot", authorId: "u1", content: "!!nimportequoi", channel }));
+    await handleSetClearTextCommand(null, fakeMessage({ guildId: "g-mot", authorId: "u1", content: "&nimportequoi", channel }));
     assert.strictEqual(channel._envois.length, 0);
   });
 
-  await cas('le préfixe "&" n\'est pas concerné', async () => {
+  await cas('l\'ancien préfixe "!!" n\'est plus concerné', async () => {
     const channel = fakeChannel("c1");
-    await handleSetClearTextCommand(null, fakeMessage({ guildId: "g-prefixe", authorId: "u1", content: "&setclear", channel }));
+    await handleSetClearTextCommand(null, fakeMessage({ guildId: "g-prefixe", authorId: "u1", content: "!!setclear", channel }));
     assert.strictEqual(channel._envois.length, 0);
   });
 
-  console.log("\n!!setclear — permission et panneau initial :");
+  console.log("\n&setclear — permission et panneau initial :");
 
   await cas("sans server.selfclear.manage ni admin, refusé", async () => {
     const channel = fakeChannel("c1");
-    const msg = fakeMessage({ guildId: "g-non", authorId: "u-sans", content: "!!setclear", channel });
+    const msg = fakeMessage({ guildId: "g-non", authorId: "u-sans", content: "&setclear", channel });
     await handleSetClearTextCommand(null, msg);
     assert.strictEqual(channel._envois.length, 0);
     assert.ok(msg._replies.length > 0, "un message d'erreur doit être renvoyé");
@@ -142,14 +142,14 @@ function fakeModalSubmit({ guildId, userId, noms, cooldown, permissionKey = "ser
 
   await cas("un administrateur Discord peut ouvrir le panneau (sans la clé dédiée)", async () => {
     const channel = fakeChannel("c1");
-    const msg = fakeMessage({ guildId: "g-admin", authorId: "u-admin", content: "!!setclear", channel, isAdmin: true });
+    const msg = fakeMessage({ guildId: "g-admin", authorId: "u-admin", content: "&setclear", channel, isAdmin: true });
     await handleSetClearTextCommand(null, msg);
     assert.strictEqual(channel._envois.length, 1);
   });
 
   await cas("le panneau affiche le déclencheur par défaut (uo) et le délai par défaut (15min)", async () => {
     const channel = fakeChannel("c1");
-    const msg = fakeMessage({ guildId: "g-defaut", authorId: "u-admin", content: "!!setclear", channel, permissionKey: "server.selfclear.manage" });
+    const msg = fakeMessage({ guildId: "g-defaut", authorId: "u-admin", content: "&setclear", channel, permissionKey: "server.selfclear.manage" });
     await handleSetClearTextCommand(null, msg);
     const conteneur = channel._envois[0].payload.components[0].toJSON();
     const texte = texteDu(conteneur);

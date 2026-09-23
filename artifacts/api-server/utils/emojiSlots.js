@@ -6,11 +6,6 @@ const categoryEmojiStore = require("./categoryEmojiStore");
 // utils/helpNavigator.js) — un "slot" par groupe, jamais par commande
 // individuelle (~210 commandes, bien trop pour un menu Discord de 25
 // options ; les groupes, eux, tiennent largement dedans).
-//
-// Groupes "!!" : utils/protectionHelpCommand.js n'a pas d'emoji par groupe
-// (c'est une carte figée simple) — attribués ici, une fois, source unique
-// pour l'affichage ET la personnalisation.
-const EMOJI_GROUPE_SECURITE = { "Sécurité serveur": "🛡️", "Protection personnelle": "🔒", Autres: "🧰" };
 
 // Slots "icon:XXX" — un par clé du registre de design utils/emojis.js
 // (succès/erreur, ban, couronne, ticket...), personnalisables au même titre
@@ -31,7 +26,6 @@ const SLOTS_ICONES = Object.entries(GROUPES_ICONES).flatMap(([groupe, cles]) =>
 
 const SLOTS = [
   ...CATEGORIES.map((c) => ({ key: `cat:${c.key}`, label: `&help — ${c.label}`, defaultEmoji: c.emoji, categorie: "&help" })),
-  ...Object.entries(EMOJI_GROUPE_SECURITE).map(([groupe, emoji]) => ({ key: `sec:${groupe}`, label: `!!help — ${groupe}`, defaultEmoji: emoji, categorie: "!!help" })),
   ...SLOTS_ICONES,
 ];
 
@@ -49,4 +43,4 @@ function iconDe(guildId, emojiKey) {
   return emojiDe(guildId, `icon:${emojiKey}`) || EMOJI[emojiKey] || null;
 }
 
-module.exports = { SLOTS, EMOJI_GROUPE_SECURITE, emojiDe, iconDe };
+module.exports = { SLOTS, emojiDe, iconDe };

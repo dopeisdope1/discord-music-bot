@@ -1,23 +1,24 @@
 const { CATEGORIES } = require("./commandCatalog");
 
-// Routage des mots de commande vers un PRÉFIXE, pour l'architecture 3
-// préfixes : & = gestion, - = modération, !! = sécurité.
+// Routage des mots de commande vers un PRÉFIXE, pour l'architecture 2
+// préfixes : & = gestion, - = modération.
 //
 // Source de vérité : la catégorie de chaque commande dans
 // utils/commandCatalog.js. Un mot qui apparaît dans plusieurs catégories
-// prend la PREMIÈRE (ordre du catalogue = précédence : moderation, securite,
-// puis les catégories de gestion). Bucket final :
+// prend la PREMIÈRE (ordre du catalogue = précédence : moderation, puis les
+// catégories de gestion). Bucket final :
 //   moderation  -> "-"
-//   securite    -> "!!"
-//   tout le reste (serveurroles/communaute/informations/outils/bot, ou mot
-//   absent du catalogue) -> "&" (gestion)
+//   tout le reste (securite/serveurroles/communaute/informations/outils/bot,
+//   ou mot absent du catalogue) -> "&" (gestion) — la catégorie "securite"
+//   du catalogue ne contient plus que des commandes de lecture/config
+//   génériques (allbots, security scan...), la sécurité serveur elle-même
+//   ayant migré vers le bot Secure.
 //
 // OVERRIDES : quelques mots dont la catégorie catalogue est trompeuse pour
 // le routage (multi-usage), ou des alias absents du catalogue mais qui
 // doivent suivre leur commande principale.
 
 const BUCKET_MODERATION = "moderation";
-const BUCKET_SECURITE = "securite";
 const BUCKET_GESTION = "gestion";
 
 const OVERRIDES = {
@@ -47,21 +48,19 @@ for (const cat of CATEGORIES) {
 
 /**
  * Bucket de routage d'un mot de commande.
- * @returns {"moderation"|"securite"|"gestion"}
+ * @returns {"moderation"|"gestion"}
  */
 function bucketDe(word) {
   const w = motDeBase(String(word || ""));
   if (OVERRIDES[w]) return OVERRIDES[w];
   const cat = WORD_CATEGORY[w];
   if (cat === "moderation") return BUCKET_MODERATION;
-  if (cat === "securite") return BUCKET_SECURITE;
-  return BUCKET_GESTION; // gestion, ou mot inconnu (reste sur "&")
+  return BUCKET_GESTION; // gestion, sécurité restante, ou mot inconnu (reste sur "&")
 }
 
 module.exports = {
   bucketDe,
   BUCKET_MODERATION,
-  BUCKET_SECURITE,
   BUCKET_GESTION,
   WORD_CATEGORY,
   OVERRIDES,

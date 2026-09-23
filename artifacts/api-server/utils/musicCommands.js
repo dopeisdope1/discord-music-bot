@@ -14,7 +14,6 @@ const { handleBanAll } = require("./banAll");
 const { handleBan, handleUnban } = require("./banPanel");
 const banInfoCard = require("./banInfoCard");
 const { moderationHandlers } = require("./moderationCommands");
-const { automodHandlers } = require("./automodCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
 const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
@@ -27,7 +26,6 @@ const counters = require("./counters");
 const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
-const { guardHandlers } = require("./guardCommands");
 const { configHandlers } = require("./configCommands");
 const serverAdmin = require("./serverAdminCommands");
 const { backup } = require("./serverBackup");
@@ -259,10 +257,8 @@ const modHandlers = {
   rank: levels.rank,
   leaderboard: levels.leaderboard,
   levels: levels.levelsToggle,
-  whitelist: serverAdmin.whitelist,
   allbots: serverAdmin.allbots,
   dero: serverAdmin.dero,
-  antinuke: serverAdmin.antinuke,
   backup,
   vc: utilityHandlers.vc,
   stats: (client, message, args) => {
@@ -353,12 +349,6 @@ const modHandlers = {
   verify: (client, message, args) => {
     if ((args[0] || "").toLowerCase() === "setup") return setupVerification(client, message, args.slice(1));
   },
-  antispam: automodHandlers.antispam,
-  spam: automodHandlers.spam,
-  antilink: automodHandlers.antilink,
-  link: automodHandlers.link,
-  antimassmention: automodHandlers.antimassmention,
-  badwords: automodHandlers.badwords,
 
   // Profil/présence du bot — voir utils/botProfileCommands.js, rang sys
   // uniquement (comme &owners/&sources/&allbots).
@@ -468,26 +458,6 @@ const modHandlers = {
   serverlog: logHandlers.serverlog,
   botlog: logHandlers.botlog,
   messagelog: logHandlers.messagelog,
-
-  // Antiraid : équivalents texte de &panel > Anti-nuke, même store et même
-  // whitelist — voir utils/guardCommands.js.
-  secur: guardHandlers.secur,
-  punition: guardHandlers.punition,
-  wl: guardHandlers.wl,
-  unwl: guardHandlers.unwl,
-  antibot: guardHandlers.antibot,
-  antiwebhook: guardHandlers.antiwebhook,
-  antiroleadmin: guardHandlers.antiroleadmin,
-  antichannel: guardHandlers.antichannel,
-  antichanneldelete: guardHandlers.antichanneldelete,
-  antirole: guardHandlers.antirole,
-  antiroledelete: guardHandlers.antiroledelete,
-  antikick: guardHandlers.antikick,
-  antiban: guardHandlers.antiban,
-  antiunban: guardHandlers.antiunban,
-  antieveryone: guardHandlers.antieveryone,
-  antijoin: guardHandlers.antijoin,
-  creationlimit: guardHandlers.creationlimit,
 };
 
 /**
@@ -633,7 +603,6 @@ const MOD_SUBCOMMANDS = {
   emoji: ["list", "reset"],
   absence: ["set", "reset"],
   banall: ["message"],
-  antinuke: ["punishment", "wlrole", "wluser", "clearwl", "ping", "creationlimit", "autolockdown"],
   backup: ["list", "delete", "load"],
   set: ["name", "pic", "banner", "muterole", "perm"],
   clear: ["sanctions", "all", "perms", "limit"],
@@ -643,7 +612,6 @@ const MOD_SUBCOMMANDS = {
   giveaway: ["start", "reroll"],
   end: ["giveaway"],
   search: ["wiki"],
-  badwords: ["on", "off", "add", "del", "clear", "list"],
   autoreact: ["list", "add", "del"],
   remove: ["activity"],
   modlog: ["on", "off"],
@@ -654,23 +622,6 @@ const MOD_SUBCOMMANDS = {
   serverlog: ["on", "off"],
   botlog: ["on", "off"],
   messagelog: ["on", "off"],
-  secur: ["on", "off", "max"],
-  antibot: ["on", "off", "max"],
-  antiwebhook: ["on", "off", "max"],
-  antiroleadmin: ["on", "off", "max"],
-  antichannel: ["on", "off", "max"],
-  antichanneldelete: ["on", "off", "max"],
-  antirole: ["on", "off", "max"],
-  antiroledelete: ["on", "off", "max"],
-  antikick: ["on", "off", "max"],
-  antiban: ["on", "off", "max"],
-  antiunban: ["on", "off", "max"],
-  antieveryone: ["on", "off", "max"],
-  antijoin: ["on", "off", "max"],
-  punition: ["all"],
-  antispam: ["on", "off"],
-  spam: ["allow", "deny", "reset"],
-  link: ["allow", "deny", "reset"],
   join: ["settings"],
   leave: ["settings"],
   autorole: ["add", "del", "list"],

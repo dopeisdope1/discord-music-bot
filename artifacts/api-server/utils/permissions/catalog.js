@@ -77,10 +77,9 @@ const PERMISSIONS = [
   { key: "panel.roles.manage", category: "panel", label: "Consulter/gérer les rôles (panel)" },
   { key: "panel.access.manage", category: "panel", label: "Gérer les accès au panel (panel)", ownerOnlyGrant: true },
 
-  // --- Protection ---
-  { key: "protection.automod", category: "protection", label: "Configurer l'anti-spam (panel)" },
-  { key: "protection.whitelist", category: "protection", label: "Gérer la whitelist anti-spam (&whitelist, panel)" },
-  { key: "protection.guard.manage", category: "protection", label: "Configurer l'anti-nuke (&antinuke, panel)" },
+  // --- Protection --- (anti-spam/anti-nuke/anti-lien migrés vers le bot
+  // Secure — seul le rôle de mute générique reste ici, sans rapport)
+  { key: "protection.automod", category: "protection", label: "Configurer le rôle de mute et sa limite de nettoyage (&set muterole, &clear limit)" },
 
   // --- Serveur --- (structure du serveur, distinct de "channels" qui reste
   // limité au salon courant — création/suppression touchent tout le serveur)

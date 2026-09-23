@@ -27,14 +27,9 @@ const { can, peutAccorder } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
 const accessStore = require("./accessStore");
-const automod = require("./automod/antiSpam");
-const guardConfig = require("./guard/config");
-const guardWhitelist = require("./guard/whitelist");
 const deroStore = require("./deroStore");
 const { checkBotPermission, report } = require("./moderation/actions");
-const { parseDuration } = require("./moderationCommands");
 const roleLimitStore = require("./roleLimitStore");
-const { getPrefixes } = require("./prefixStore");
 const { majSure, banniereSurPanel } = require("./componentsV2");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
@@ -322,7 +317,6 @@ async function access(client, message, args, label = "access", ownerStyle = fals
 }
 
 const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
-const CATEGORIES_OWNER_SECURITE = ["protection"];
 
 /**
  * Legacy helper "&owner <@membre|id>" — carte "Owner" filtrée aux catégories
@@ -334,39 +328,6 @@ const CATEGORIES_OWNER_SECURITE = ["protection"];
  */
 async function ownerModeration(client, message, args) {
   return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
-}
-
-/**
- * "!!owner <@membre|id>" — carte "Owner" filtrée à la catégorie SÉCURITÉ du
- * VRAI catalogue (protection.*) : jamais les permissions de modération/
- * salons/serveur qui n'ont rien à faire ici.
- */
-async function handleSecurityOwnerTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const { protection: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
-
-  const [cmd, ...args] = content.slice(PREFIX.length).trim().split(/\s+/);
-  if ((cmd || "").toLowerCase() !== "owner") return; // mot inconnu sur ce préfixe : silence
-
-  return access(client, message, args, "owner", true, CATEGORIES_OWNER_SECURITE, "secowner");
-}
-
-/** &whitelist — exemptés de l'anti-spam (voir aussi &panel > Protection). */
-async function whitelist(client, message) {
-  if (!can(message.member, "protection.whitelist")) return;
-  const items = automod.getWhitelist(message.guild.id).users.map((id) => `<@${id}> (${id})`);
-  await message.reply(
-    buildListCard({
-      idKind: "whitelist",
-      title: "Liste WL (anti-spam)",
-      description: "Ces membres sont exemptés de l'anti-spam/anti-flood.",
-      items,
-      page: 0,
-      canEdit: true,
-    })
-  );
 }
 
 /**
@@ -427,22 +388,19 @@ async function handleServerAdminInteraction(interaction) {
     return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
   }
 
-  // Panneau "Owner" (voir buildOwnerAccessCard) — 3 variantes du MÊME
-  // mécanisme sur 3 paires de customId distinctes, chacune avec son propre
-  // filtre de catégories réelles : "ownercat"/"ownerkey" = "=add" (catalogue
-  // complet), "modownercat"/"modownerkey" = legacy "&owner" (modération),
-  // "secownercat"/"secownerkey" = "!!owner" (sécurité). Les 3 doivent garder
-  // LEUR filtre au clic suivant, d'où la variante encodée dans le customId
-  // lui-même plutôt que dans un état à part. "Consulté par" reflète TOUJOURS
-  // qui clique maintenant, pas qui a tapé la commande au départ — aucun état
-  // à porter dans le customId pour ça.
+  // Panneau "Owner" (voir buildOwnerAccessCard) — 2 variantes du MÊME
+  // mécanisme sur 2 paires de customId distinctes, chacune avec son propre
+  // filtre de catégories réelles : "ownercat"/"ownerkey" = catalogue complet,
+  // "modownercat"/"modownerkey" = legacy "&owner" (modération). Chacune doit
+  // garder SON filtre au clic suivant, d'où la variante encodée dans le
+  // customId lui-même plutôt que dans un état à part. "Consulté par" reflète
+  // TOUJOURS qui clique maintenant, pas qui a tapé la commande au départ —
+  // aucun état à porter dans le customId pour ça.
   const VARIANTES_OWNER = {
     ownercat: { variante: "owner", categories: null },
     ownerkey: { variante: "owner", categories: null },
     modownercat: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
     modownerkey: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
-    secownercat: { variante: "secowner", categories: CATEGORIES_OWNER_SECURITE },
-    secownerkey: { variante: "secowner", categories: CATEGORIES_OWNER_SECURITE },
   };
   if (VARIANTES_OWNER[action]) {
     if (!can(interaction.member, "panel.permissions.manage")) {
@@ -483,15 +441,6 @@ async function handleServerAdminInteraction(interaction) {
       items: () => accessStore.list("sys").map((id) => `<@${id}> (${id})`),
       add: (userId) => accessStore.add("sys", userId),
       del: (userId) => accessStore.remove("sys", userId),
-    },
-    whitelist: {
-      permission: () => can(interaction.member, "protection.whitelist"),
-      canEdit: () => true,
-      title: "Liste WL (anti-spam)",
-      description: "Ces membres sont exemptés de l'anti-spam/anti-flood.",
-      items: () => automod.getWhitelist(interaction.guild.id).users.map((id) => `<@${id}> (${id})`),
-      add: (userId) => automod.addToWhitelist(interaction.guild.id, "users", userId),
-      del: (userId) => automod.removeFromWhitelist(interaction.guild.id, "users", userId),
     },
   };
 
@@ -1062,135 +1011,12 @@ async function applyDeroToNewChannel(channel) {
   }
 }
 
-// --- &antinuke : statut, marche/arrêt, sanction, whitelist par rôle (la
-// whitelist par utilisateur vit dans &panel > Anti-nuke, un UserSelectMenu
-// suffit là où un rôle a besoin d'un RoleSelectMenu à part). ---
-
-async function antinuke(client, message, args) {
-  if (!can(message.member, "protection.guard.manage")) return;
-  const sub = (args[0] || "").toLowerCase();
-  const guildId = message.guild.id;
-
-  if (sub === "on" || sub === "off") {
-    guardConfig.setEnabled(guildId, sub === "on");
-    return reply(message, "success", `Anti-nuke ${sub === "on" ? "activé" : "désactivé"}.`);
-  }
-
-  if (sub === "punishment") {
-    const value = (args[1] || "").toLowerCase();
-    if (!guardConfig.setPunishment(guildId, value)) {
-      return reply(message, "error", "Sanction invalide. Utilise : `timeout`, `kick` ou `ban`.");
-    }
-    return reply(message, "success", `Sanction de l'anti-nuke réglée sur **${value}**.`);
-  }
-
-  if (sub === "wlrole") {
-    const role = message.mentions.roles?.first();
-    if (!role) return reply(message, "error", "Indique un rôle : `antinuke wlrole @rôle`.");
-    const removed = guardWhitelist.remove(guildId, "roles", role.id);
-    if (!removed) guardWhitelist.add(guildId, "roles", role.id);
-    return reply(
-      message,
-      "success",
-      removed ? `**${role.name}** retiré de la whitelist anti-nuke.` : `**${role.name}** ajouté à la whitelist anti-nuke.`
-    );
-  }
-
-  if (sub === "wluser") {
-    const mentioned = message.mentions.users?.first();
-    const rawId = (args[1] || "").replace(/\D/g, "");
-    const userId = mentioned?.id || (rawId.length >= 15 ? rawId : null);
-    if (!userId) return reply(message, "error", "Indique un membre (mention ou ID) : `antinuke wluser @membre`.");
-    const removed = guardWhitelist.remove(guildId, "users", userId);
-    if (!removed) guardWhitelist.add(guildId, "users", userId);
-    return reply(
-      message,
-      "success",
-      removed ? `<@${userId}> retiré de la whitelist anti-nuke.` : `<@${userId}> ajouté à la whitelist anti-nuke.`
-    );
-  }
-
-  if (sub === "clearwl") {
-    const count = guardWhitelist.clearAll(guildId);
-    return reply(
-      message,
-      "success",
-      count ? `Whitelist anti-nuke vidée (${count} entrée(s) retirée(s)).` : "La whitelist anti-nuke était déjà vide."
-    );
-  }
-
-  if (sub === "ping") {
-    if ((args[1] || "").toLowerCase() === "off") {
-      guardConfig.setPingRole(guildId, null);
-      return reply(message, "success", "Ping anti-nuke désactivé.");
-    }
-    const role = message.mentions.roles?.first();
-    if (!role) return reply(message, "error", "Indique un rôle ou `off` : `antinuke ping @rôle` ou `antinuke ping off`.");
-    guardConfig.setPingRole(guildId, role.id);
-    return reply(message, "success", `**${role.name}** sera pingé à chaque déclenchement de l'anti-nuke.`);
-  }
-
-  if (sub === "autolockdown") {
-    const value = (args[1] || "").toLowerCase();
-    if (value !== "on" && value !== "off") {
-      return reply(message, "error", "Utilise : `antinuke autolockdown on` ou `antinuke autolockdown off`.");
-    }
-    guardConfig.setAutoLockdown(guildId, value === "on");
-    return reply(
-      message,
-      "success",
-      value === "on"
-        ? "Verrouillage automatique activé : le serveur entier se verrouillera si l'anti-nuke atteint son plafond de sanctions."
-        : "Verrouillage automatique désactivé."
-    );
-  }
-
-  if (sub === "creationlimit") {
-    if ((args[1] || "").toLowerCase() === "off") {
-      guardConfig.setCreationLimit(guildId, 0);
-      return reply(message, "success", "Anti-Fast désactivé (seuil de création de compte retiré).");
-    }
-    const ms = parseDuration(args[1]);
-    if (!ms) return reply(message, "error", "Indique une durée ou `off` : `antinuke creationlimit 7d` ou `antinuke creationlimit off`.");
-    guardConfig.setCreationLimit(guildId, ms);
-    return reply(message, "success", `Anti-Fast : les comptes créés il y a moins de **${args[1]}** seront expulsés à l'arrivée.`);
-  }
-
-  const config = guardConfig.getConfig(guildId);
-  await message.reply({
-    embeds: [
-      buildStatusEmbed(
-        "info",
-        [
-          `> **Statut** : ${config.enabled ? "activé" : "désactivé"}`,
-          `> **Sanction** : ${config.punishment}`,
-          `> **Ping** : ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "*aucun*"}`,
-          `> **Anti-Fast (âge minimum)** : ${config.antiFastEnabled && config.antiFastMinAgeDays ? `${config.antiFastMinAgeDays}j` : "*désactivé*"}`,
-          "",
-          "`antinuke on|off` — activer/désactiver",
-          "`antinuke punishment timeout|kick|ban` — changer la sanction",
-          "`antinuke wlrole @rôle` / `wluser @membre` — exempter/retirer un rôle ou un membre",
-          "`antinuke clearwl` — vider toute la whitelist",
-          "`antinuke ping @rôle|off` — pingé en plus du log à chaque déclenchement",
-          "`antinuke creationlimit <durée>|off` — alias historique pour configurer Anti-Fast (expulsion des comptes trop récents)",
-          "",
-          "Liste des guards et leurs seuils : `&panel` > Anti-nuke.",
-        ].join("\n"),
-        { title: "Anti-nuke", guildId }
-      ),
-    ],
-  });
-}
-
 module.exports = {
   owners,
   access,
   ownerModeration,
   sysAdd,
   sysRemove,
-  handleSecurityOwnerTextCommand,
-  antinuke,
-  whitelist,
   allbots,
   handleServerAdminInteraction,
   roleAdmin,

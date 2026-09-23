@@ -138,20 +138,19 @@ function interaction(clic, { origine, messages = {}, messageId = "panneau-1" } =
 
   console.log("\nLe garde couvre bien les deux panneaux concernés :");
 
-  await cas("index.js protège `cfg:` (panel), les cartes de commande, le panel de protection perso, \"&p\", !!secur ET !!antilink panel", () => {
+  await cas("index.js protège `cfg:` (panel), les cartes de commande, ET \"&p\"", () => {
     // Vérifié dans la source : c'est un routage, il n'a pas d'autre point
     // d'observation. Les autres panneaux (ban, ban de masse, confirmations)
-    // portent déjà leur propre contrôle d'auteur.
+    // portent déjà leur propre contrôle d'auteur. La protection perso et la
+    // sécurité serveur ("!!panel"/"!!secur"/"!!antilink panel") ont migré
+    // vers le bot Secure.
     const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
     assert.ok(/PANNEAUX_PRIVES/.test(source), "le garde doit exister");
     const bloc = source.slice(source.indexOf("PANNEAUX_PRIVES ="), source.indexOf("];", source.indexOf("PANNEAUX_PRIVES =")));
     for (const prefixe of [
       '"cfg:"',
       "`${commandForms.CARD_ID}:`",
-      "`${personalProtection.CUSTOM_ID}:`",
       "`${palierPanel.CUSTOM_ID}:`",
-      "`${SECUR_CUSTOM_ID}:`",
-      "`${antiLinkPanel.CUSTOM_ID}:`",
     ]) {
       assert.ok(bloc.includes(prefixe), `préfixe manquant dans PANNEAUX_PRIVES : ${prefixe}`);
     }

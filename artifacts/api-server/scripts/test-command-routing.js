@@ -1,9 +1,9 @@
 /**
- * Routage 3 préfixes (utils/commandRouting.js + le dispatch de
- * utils/musicCommands.js / utils/securityAliases.js) : chaque mot de commande
- * est servi par UN seul préfixe selon sa catégorie.
- *   & = gestion, - = modération, !! = sécurité.
- * Déplacement DUR : un mot de modération/sécurité ne répond PLUS sur "&".
+ * Routage 2 préfixes (utils/commandRouting.js + le dispatch de
+ * utils/musicCommands.js) : chaque mot de commande est servi par UN seul
+ * préfixe selon sa catégorie.
+ *   & = gestion, - = modération.
+ * Déplacement DUR : un mot de modération ne répond PLUS sur "&".
  *
  * Lancement : node scripts/test-command-routing.js
  */
@@ -19,9 +19,6 @@ fs.writeFileSync(path.join(process.env.DATA_DIR, "prefixes.json"), JSON.stringif
 const { Collection, PermissionsBitField } = require("discord.js");
 const routing = require("../utils/commandRouting");
 const { handleMusicTextCommand, modHandlers } = require("../utils/musicCommands");
-const { handleSecurityAliasTextCommand } = require("../utils/securityAliases");
-const permStore = require("../utils/permissions/store");
-const guardConfig = require("../utils/guard/config");
 const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;
@@ -53,22 +50,20 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
 }
 
 (async () => {
-  console.log("Les 3 préfixes existent et sont distincts :");
+  console.log("Les 2 préfixes existent et sont distincts :");
 
-  await cas("main/musicMod/moderation/protection = ? & - !!", () => {
+  await cas("main/musicMod/moderation = ? & -", () => {
     const p = getPrefixes("g-x");
     assert.strictEqual(p.musicMod, "&");
     assert.strictEqual(p.moderation, "-");
-    assert.strictEqual(p.protection, "!!");
-    const vals = [p.musicMod, p.moderation, p.protection];
-    assert.strictEqual(new Set(vals).size, 3, "les 3 préfixes doivent être distincts");
+    const vals = [p.musicMod, p.moderation];
+    assert.strictEqual(new Set(vals).size, 2, "les 2 préfixes doivent être distincts");
   });
 
   await cas("les anciennes données de préfixe récupèrent les familles ajoutées", () => {
     const p = getPrefixes("legacy");
     assert.strictEqual(p.musicMod, "~", "la valeur persistée doit rester prioritaire");
     assert.strictEqual(p.moderation, "-", "la modération absente doit reprendre son défaut");
-    assert.strictEqual(p.protection, "!!", "la sécurité absente doit reprendre son défaut");
   });
 
   console.log("\nbucketDe : chaque mot vers sa catégorie :");
@@ -79,14 +74,8 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
     }
   });
 
-  await cas("sécurité : antinuke/antibot/antichannel/badwords/wl/antispam → securite", () => {
-    for (const w of ["antinuke", "antibot", "antichannel", "badwords", "wl", "unwl", "antispam", "antilink", "creationlimit"]) {
-      assert.strictEqual(routing.bucketDe(w), "securite", `${w} devrait être sécurité`);
-    }
-  });
-
-  await cas("gestion : ticket/poll/giveaway/role/panel/backup/set → gestion", () => {
-    for (const w of ["ticket", "poll", "giveaway", "role", "channel", "panel", "backup", "set", "autorole", "verify", "alladmins", "botadmins"]) {
+  await cas("gestion : ticket/poll/giveaway/role/panel/backup/set/allbots → gestion", () => {
+    for (const w of ["ticket", "poll", "giveaway", "role", "channel", "panel", "backup", "set", "autorole", "verify", "alladmins", "botadmins", "allbots"]) {
       assert.strictEqual(routing.bucketDe(w), "gestion", `${w} devrait être gestion`);
     }
   });
@@ -116,34 +105,16 @@ function fakeMessage({ guildId = "g1", authorId = "staff-1", content } = {}) {
     assert.ok(called, "-kick doit atteindre le dispatcher modération");
   });
 
-  console.log('\nDéplacement dur : sécurité RETIRÉE de "&", servie sur "!!" :');
+  console.log('\nSécurité serveur migrée vers le bot Secure : plus aucune trace ici :');
 
-  await cas('"!!antibot off/on" bascule vraiment le guard', async () => {
-    permStore.grantToUser("gsec1", "staff-1", "protection.guard.manage");
-    await handleSecurityAliasTextCommand(null, fakeMessage({ guildId: "gsec1", content: "!!antinuke on" }));
-    await handleSecurityAliasTextCommand(null, fakeMessage({ guildId: "gsec1", content: "!!antibot off" }));
-    assert.ok(!guardConfig.isGuardEnabled("gsec1", "antibot"), "antibot aurait dû être désactivé via !!");
-    await handleSecurityAliasTextCommand(null, fakeMessage({ guildId: "gsec1", content: "!!antibot on" }));
-    assert.ok(guardConfig.isGuardEnabled("gsec1", "antibot"), "antibot aurait dû être réactivé via !!");
-  });
+  await cas('"&antinuke on"/"&wl"/"!!antinuke" ne font plus rien sur ce bot', async () => {
+    const msg1 = fakeMessage({ guildId: "gsec1", content: "&antinuke on" });
+    await handleMusicTextCommand(null, msg1);
+    assert.strictEqual(msg1._replies.length, 0, "&antinuke ne doit plus exister sur le bot principal");
 
-  await cas('"&antibot off" ne fait PLUS rien', async () => {
-    permStore.grantToUser("gsec2", "staff-1", "protection.guard.manage");
-    await handleSecurityAliasTextCommand(null, fakeMessage({ guildId: "gsec2", content: "!!antinuke on" }));
-    await handleMusicTextCommand(null, fakeMessage({ guildId: "gsec2", content: "&antibot off" }));
-    assert.ok(guardConfig.isGuardEnabled("gsec2", "antibot"), "&antibot off ne doit plus rien changer");
-  });
-
-  await cas('"!!antinuke on" active l’anti-nuke', async () => {
-    permStore.grantToUser("gsec3", "staff-1", "protection.guard.manage");
-    await handleSecurityAliasTextCommand(null, fakeMessage({ guildId: "gsec3", content: "!!antinuke on" }));
-    assert.strictEqual(guardConfig.getConfig("gsec3").enabled, true);
-  });
-
-  await cas('"&antinuke on" ne fait PLUS rien', async () => {
-    permStore.grantToUser("gsec4", "staff-1", "protection.guard.manage");
-    await handleMusicTextCommand(null, fakeMessage({ guildId: "gsec4", content: "&antinuke on" }));
-    assert.strictEqual(guardConfig.getConfig("gsec4").enabled, false);
+    const msg2 = fakeMessage({ guildId: "gsec2", content: "!!antinuke on" });
+    await handleMusicTextCommand(null, msg2);
+    assert.strictEqual(msg2._replies.length, 0, "!!antinuke n'a jamais existé sur le préfixe & et le préfixe !! n'existe plus");
   });
 
   await cas('"-panel" (gestion) est muet sur le préfixe modération', async () => {

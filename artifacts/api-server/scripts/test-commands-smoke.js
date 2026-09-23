@@ -151,7 +151,7 @@ function fakeMessage(content) {
 
   await cas("la table de dispatch n'est pas vide et couvre bien tout le préfixe", () => {
     assert.ok(noms.length > 100, `${noms.length} commandes seulement`);
-    for (const attendue of ["help", "panel", "kick", "ban", "calc", "modlog", "antibot", "antispam", "prefix"]) {
+    for (const attendue of ["help", "panel", "kick", "ban", "calc", "modlog", "allbots", "prefix"]) {
       assert.ok(noms.includes(attendue), `${attendue} a disparu de la table`);
     }
   });

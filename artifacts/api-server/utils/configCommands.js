@@ -26,21 +26,15 @@ const PREFIX_TYPES = {
   moderation: "moderation",
   modération: "moderation",
   mod: "moderation",
-  security: "protection",
-  securite: "protection",
-  sécurité: "protection",
-  protection: "protection",
 };
 
 const PREFIX_LABELS = {
   musicMod: "Préfixe des commandes (gestion)",
   moderation: "Préfixe modération",
-  protection: "Préfixe sécurité/protection",
 };
 const PREFIX_HELP_COMMANDS = {
   musicMod: "help",
   moderation: "ban",
-  protection: "help",
 };
 
 /** Clé de permission visée, tolérante à la casse et aux espaces parasites. */
@@ -69,7 +63,7 @@ const handlers = {
           ...Object.keys(PREFIX_LABELS).map((key) => `> **${PREFIX_LABELS[key]}** : \`${prefixes[key]}\``),
           "",
           "`prefix <nouveau>` (gestion, syntaxe historique)",
-          "`prefix music|gestion|moderation|security <nouveau>`",
+          "`prefix music|gestion|moderation <nouveau>`",
         ].join("\n")
       );
     }

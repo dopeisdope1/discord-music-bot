@@ -321,57 +321,6 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(!autoReactStore.getForChannel("c1").includes("👍"));
   });
 
-  await cas("link_channel_exempt exempte le salon choisi de l'anti-lien", async () => {
-    const antiLink = require("../utils/automod/antiLink");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.link_channel_exempt.run(client, interaction, { channelId: "c1", text: { action: "allow" } });
-    assert.ok(antiLink.getAllowedChannels("g1").includes("c1"));
-  });
-
-  await cas("link_channel_exempt sans salon choisi exempte le salon COURANT (comportement inchangé de &link)", async () => {
-    const antiLink = require("../utils/automod/antiLink");
-    antiLink.setChannelAllowed("g1", "c1", false);
-    const interaction = makeInteraction();
-    await commandForms.FORMS.link_channel_exempt.run(client, interaction, { text: { action: "allow" } });
-    assert.ok(antiLink.getAllowedChannels("g1").includes("c1"));
-  });
-
-  await cas("spam_channel_exempt exempte le salon choisi de l'anti-spam", async () => {
-    const antiSpam = require("../utils/automod/antiSpam");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.spam_channel_exempt.run(client, interaction, { channelId: "c1", text: { action: "allow" } });
-    assert.ok(antiSpam.getExemptChannels("g1").includes("c1"));
-  });
-
-  await cas("antinuke_wluser bascule le membre dans la whitelist anti-nuke", async () => {
-    const guardWhitelist = require("../utils/guard/whitelist");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.antinuke_wluser.run(client, interaction, { userId: TARGET_ID });
-    assert.ok(guardWhitelist.getWhitelist("g1").users.includes(TARGET_ID));
-  });
-
-  await cas("antinuke_wlrole bascule le rôle dans la whitelist anti-nuke", async () => {
-    const guardWhitelist = require("../utils/guard/whitelist");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.antinuke_wlrole.run(client, interaction, { roleId: TEST_ROLE_ID });
-    assert.ok(guardWhitelist.getWhitelist("g1").roles.includes(TEST_ROLE_ID));
-  });
-
-  await cas("antinuke_ping règle le rôle pingé quand un rôle est choisi", async () => {
-    const guardConfig = require("../utils/guard/config");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.antinuke_ping.run(client, interaction, { roleId: TEST_ROLE_ID });
-    assert.strictEqual(guardConfig.getConfig("g1").pingRoleId, TEST_ROLE_ID);
-  });
-
-  await cas("antinuke_ping désactive le ping quand aucun rôle n'est choisi (équivaut à &antinuke ping off)", async () => {
-    const guardConfig = require("../utils/guard/config");
-    guardConfig.setPingRole("g1", TEST_ROLE_ID);
-    const interaction = makeInteraction();
-    await commandForms.FORMS.antinuke_ping.run(client, interaction, {});
-    assert.strictEqual(guardConfig.getConfig("g1").pingRoleId, null);
-  });
-
   await cas("set_perm_grant accorde la clé choisie au RÔLE choisi (mentionable = rôle)", async () => {
     const permStore = require("../utils/permissions/store");
     const interaction = makeInteraction();

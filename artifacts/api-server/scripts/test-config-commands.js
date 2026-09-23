@@ -72,17 +72,16 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
     assert.ok(texte(msg).includes("3 caractères"), texte(msg));
   });
 
-  await cas("refuse un préfixe qui chevauche un autre (ex. ! et !!)", async () => {
+  await cas("refuse un préfixe qui chevauche un autre (ex. ~ et ~~)", async () => {
     const msg = makeMessage();
-    await configHandlers.prefix(null, msg, ["!"]);
-    assert.strictEqual(getPrefixes("g1").musicMod, "~", "le préfixe qui chevauche ne doit pas être enregistré");
+    await configHandlers.prefix(null, msg, ["moderation", "~~"]);
+    assert.strictEqual(getPrefixes("g1").moderation, "-", "le préfixe qui chevauche ne doit pas être enregistré");
     assert.ok(texte(msg).includes("chevauchent"), texte(msg));
-    assert.ok(texte(msg).includes("!!"), texte(msg));
   });
 
   await cas("refuse un doublon exact avec une autre famille", async () => {
     const msg = makeMessage();
-    await configHandlers.prefix(null, msg, ["moderation", "!!"]);
+    await configHandlers.prefix(null, msg, ["moderation", "~"]);
     assert.strictEqual(getPrefixes("g1").moderation, "-", "le doublon ne doit pas être enregistré");
     assert.ok(texte(msg).includes("chevauchent"), texte(msg));
   });

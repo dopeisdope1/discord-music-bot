@@ -23,16 +23,9 @@ healthServer.listen(healthPort, "0.0.0.0", () => {
 
 const { Client, GatewayIntentBits, Collection, MessageFlags } = require("discord.js");
 const { handleTextCommand } = require("./utils/musicCommands");
-// Panel de protection PERSONNELLE ("!!panel"), volontairement sur un préfixe
-// séparé de &panel (config serveur) pour ne jamais se mélanger — voir
-// utils/personalProtection.js.
-const personalProtection = require("./utils/personalProtection");
 // Raccourci "&p" vers les paliers de permissions, en dehors de la machine à
 // états de &panel — voir utils/palierPanel.js.
 const palierPanel = require("./utils/palierPanel");
-// "!!antilink panel" — panneau dédié à l'anti-lien (mode + bypass), en dehors
-// de la machine à états de &panel/!!secur — voir utils/antiLinkPanel.js.
-const antiLinkPanel = require("./utils/antiLinkPanel");
 // "&help"/"-help" navigables (menu "Choisir un palier") — voir utils/helpNavigator.js.
 const helpNavigator = require("./utils/helpNavigator");
 // Commandes "liste" paginées (&bmutelist, &zinkillerlist, &banlist, &mutelist) — voir utils/listNavigator.js.
@@ -51,38 +44,23 @@ const emojiPanel = require("./utils/emojiPanel");
 // ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
 const zinkillerStore = require("./utils/zinkillerStore");
 const { report: reportModeration } = require("./utils/moderation/actions");
-// Confessions anonymes ("!!confess") — voir utils/confessions.js.
-const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
 // les messages de son propre auteur, sans permission requise.
 const { handleSelfClear } = require("./utils/selfClear");
-// "!!setclear" — configure les noms/le délai de ces déclencheurs sans préfixe
+// "&setclear" — configure les noms/le délai de ces déclencheurs sans préfixe
 // (voir utils/setClearCommand.js et utils/selfClearStore.js).
 const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEAR_CUSTOM_ID } = require("./utils/setClearCommand");
-// "!!secur" — sécurité serveur + anti-nuke (voir utils/securityPanel.js),
-// scindé de !!panel (strictement personnel, voir utils/personalProtection.js).
-const { handleSecurityTextCommand, handleSecurityInteraction, CUSTOM_ID: SECUR_CUSTOM_ID } = require("./utils/securityPanel");
-// Écosystème sécurité complet sur "!!" (wl/unwl/whitelist/unwhitelist/
-// antinuke/antiraid/antilink/antispam/security/lockdown) — voir
-// utils/securityAliases.js, alias additifs vers les fonctions "&" existantes.
-const { handleSecurityAliasTextCommand } = require("./utils/securityAliases");
 const { handleConfigInteraction } = require("./utils/configPanel");
 const { handleBanInteraction } = require("./utils/banPanel");
 const { handleBanAllInteraction } = require("./utils/banAll");
-const { checkMessage: checkAntiSpam } = require("./utils/automod/antiSpam");
-const { checkMessage: checkAntiLink } = require("./utils/automod/antiLink");
-const { checkMessage: checkAntiScam } = require("./utils/automod/antiScam");
-const { checkMessage: checkAntiMention } = require("./utils/automod/antiMention");
-const { checkMessage: checkBadWords } = require("./utils/automod/badWords");
 const levels = require("./utils/levels");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const {
   handleServerAdminInteraction,
   handleConfirmInteraction,
   applyDeroToNewChannel,
-  handleSecurityOwnerTextCommand,
 } = require("./utils/serverAdminCommands");
 const welcomeStore = require("./utils/welcomeStore");
 const leaveStore = require("./utils/leaveStore");
@@ -99,7 +77,6 @@ const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationE
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
-const { checkAuditEntry, checkEveryoneMention, checkJoinFlood, checkAntiFast } = require("./utils/guard/definitions");
 
 const client = new Client({
   intents: [
@@ -135,9 +112,6 @@ setInterval(() => {
   checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
   checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
   checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
-  // Quarantaine Admin (protection personnelle, "!!panel") — voir
-  // utils/personalProtection.js.
-  personalProtection.checkExpiredQuarantines(client).catch((err) => console.error("[quarantine]", err));
 }, 30_000);
 
 // Écrit sur disque les compteurs de &stats history (voir utils/statsStore.js)
@@ -179,10 +153,7 @@ client.on("interactionCreate", async (interaction) => {
   const PANNEAUX_PRIVES = [
     "cfg:",
     `${commandForms.CARD_ID}:`,
-    `${personalProtection.CUSTOM_ID}:`,
     `${palierPanel.CUSTOM_ID}:`,
-    `${SECUR_CUSTOM_ID}:`,
-    `${antiLinkPanel.CUSTOM_ID}:`,
     `${helpNavigator.CUSTOM_ID}:`,
     `${listNavigator.CUSTOM_ID}:`,
     `${gradeLadderPanel.CUSTOM_ID}:`,
@@ -213,21 +184,9 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Panel de protection personnelle ("!!panel", voir utils/personalProtection.js).
-  if (interaction.customId?.startsWith(`${personalProtection.CUSTOM_ID}:`)) {
-    await personalProtection.handleProtectionInteraction(interaction).catch((err) => console.error("[personalProtection]", err));
-    return;
-  }
-
   // Raccourci "&p" vers les paliers de permissions (voir utils/palierPanel.js).
   if (interaction.customId?.startsWith(`${palierPanel.CUSTOM_ID}:`)) {
     await palierPanel.handlePalierInteraction(interaction).catch((err) => console.error("[palierPanel]", err));
-    return;
-  }
-
-  // "!!antilink panel" (voir utils/antiLinkPanel.js).
-  if (interaction.customId?.startsWith(`${antiLinkPanel.CUSTOM_ID}:`)) {
-    await antiLinkPanel.handleAntiLinkInteraction(interaction).catch((err) => console.error("[antiLinkPanel]", err));
     return;
   }
 
@@ -273,24 +232,9 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // Confessions anonymes ("!!confess", voir utils/confessions.js) — PAS dans
-  // PANNEAUX_PRIVES : la carte publique doit rester cliquable par tout le
-  // monde (c'est son but), et les boutons Approuver/Refuser par n'importe
-  // quel membre du staff, pas seulement celui qui l'a postée.
-  if (interaction.customId?.startsWith(`${CONFESS_CUSTOM_ID}:`)) {
-    await handleConfessInteraction(interaction).catch((err) => console.error("[confessions]", err));
-    return;
-  }
-
-  // "!!setclear" — voir utils/setClearCommand.js.
+  // "&setclear" — voir utils/setClearCommand.js.
   if (interaction.customId?.startsWith(`${SETCLEAR_CUSTOM_ID}:`)) {
     await handleSetClearInteraction(interaction).catch((err) => console.error("[setClearCommand]", err));
-    return;
-  }
-
-  // "!!secur" — voir utils/securityPanel.js.
-  if (interaction.customId?.startsWith(`${SECUR_CUSTOM_ID}:`)) {
-    await handleSecurityInteraction(interaction).catch((err) => console.error("[securityPanel]", err));
     return;
   }
 
@@ -368,48 +312,15 @@ client.on("messageCreate", (message) => {
       .reply({ embeds: [buildStatusEmbed("error", "Une erreur est survenue lors du traitement de la commande.", { guildId: message.guild?.id })] })
       .catch(() => {});
   });
-  // "!!panel" — panel de protection personnelle, préfixe séparé exprès (voir
-  // utils/personalProtection.js). Pas de risque de collision : &panel ne
-  // matche jamais sur "!!".
-  personalProtection.handleProtectionTextCommand(client, message).catch((err) => console.error("[personalProtection]", err));
-  personalProtection.enforcePersonalMentionAlert(message).catch((err) => console.error("[personalProtection]", err));
-  // "!!confess" — confessions anonymes (voir utils/confessions.js), même
-  // préfixe que !!panel ci-dessus, mot différent après ("confess").
-  handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
-  // "!!setclear" — voir utils/setClearCommand.js.
+  // "&setclear" — voir utils/setClearCommand.js.
   handleSetClearTextCommand(client, message).catch((err) => console.error("[setClearCommand]", err));
-  // "!!secur" — voir utils/securityPanel.js.
-  handleSecurityTextCommand(client, message).catch((err) => console.error("[securityPanel]", err));
-  // "!!wl"/"!!unwl"/"!!whitelist"/"!!unwhitelist"/"!!antinuke"/"!!antiraid"/
-  // "!!antilink"/"!!antispam"/"!!security"/"!!lockdown" — voir
-  // utils/securityAliases.js.
-  handleSecurityAliasTextCommand(client, message).catch((err) => console.error("[securityAliases]", err));
-  // "!!help" — voir utils/helpNavigator.js (même moteur navigable que les autres).
-  helpNavigator.handleSecuriteHelpTextCommand(client, message).catch((err) => console.error("[helpNavigator]", err));
-  // "!!owner" — carte "Owner" filtrée à la sécurité (voir
-  // utils/serverAdminCommands.js::handleSecurityOwnerTextCommand). "&owner"
-  // n'a pas besoin d'appel ici : c'est une vraie commande "&" enregistrée
-  // dans le dispatcher de gestion, déjà dispatchée ci-dessus.
-  handleSecurityOwnerTextCommand(client, message).catch((err) => console.error("[serverAdminCommands]", err));
-  // Déclencheurs "<nom> clear" (configurables via !!setclear) — pas de
+  // Déclencheurs "<nom> clear" (configurables via &setclear) — pas de
   // préfixe, ouvert à tout le monde (cooldown par serveur), voir
   // utils/selfClear.js.
   handleSelfClear(client, message).catch((err) => console.error(err));
-  // Anti-spam léger, désactivé par défaut par serveur (voir &panel > Protection
-  // et utils/automod/antiSpam.js) — ne fait rien tant que personne ne l'active.
-  checkAntiSpam(client, message).catch((err) => console.error("[antiSpam]", err));
-  // Anti-lien, anti-mass-mention, mots interdits — même famille d'automod
-  // léger, désactivés par défaut par serveur (voir &panel > Protection).
-  checkAntiLink(client, message).catch((err) => console.error("[antiLink]", err));
-  checkAntiScam(client, message).catch((err) => console.error("[antiScam]", err));
-  checkAntiMention(client, message).catch((err) => console.error("[antiMention]", err));
-  checkBadWords(client, message).catch((err) => console.error("[badWords]", err));
   // Système de niveaux/XP (&rank, &leaderboard, &levels on/off) — désactivé
   // par défaut par serveur, voir utils/levelStore.js/utils/levels.js.
   levels.checkMessage(client, message).catch((err) => console.error("[levels]", err));
-  // Anti-nuke : mention @everyone/@here non autorisée, désactivé par défaut
-  // (voir utils/guard/definitions.js).
-  checkEveryoneMention(client, message).catch((err) => console.error("[guard:antieveryone]", err));
   // Réactions automatiques par salon (&autoreact, voir utils/serverExtra.js).
   applyAutoReact(message).catch((err) => console.error("[autoreact]", err));
 });
@@ -429,12 +340,6 @@ client.on("messageDelete", (message) => {
   if (message.author) {
     logMessageDelete(client, message).catch((err) => console.error("[moderationLog]", err));
   }
-  // Anti-Ping-Fantôme (protection personnelle, "!!panel") — voir
-  // utils/personalProtection.js.
-  personalProtection.enforceGhostPingAlert(message).catch((err) => console.error("[personalProtection]", err));
-  // Anti-Delete Message (protection personnelle, "!!panel") — voir
-  // utils/personalProtection.js.
-  personalProtection.enforceDeleteAlert(message).catch((err) => console.error("[personalProtection]", err));
 });
 
 // ---- Salon de logs "Messages" : édition (voir &panel > Logs) ----
@@ -504,24 +409,6 @@ client.on("channelCreate", (channel) => {
   applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
 });
 
-// Anti-Déplacement Vocal (protection personnelle, "!!panel") : replace un
-// membre déplacé de force vers un autre salon vocal — voir
-// utils/personalProtection.js. Les autres protections qui annulent une
-// action (rôle, pseudo, sourdine, timeout, ban, kick) passent par l'audit
-// log ci-dessous plutôt que par cet événement : c'est le seul cas où
-// l'audit log ne donne pas de cible précise (voir le commentaire dans
-// enforceMoveProtection).
-client.on("voiceStateUpdate", (oldState, newState) => {
-  personalProtection.enforceMoveProtection(oldState, newState).catch((err) => console.error("[personalProtection]", err));
-});
-
-// Mute Bot (protection personnelle, "!!panel") — réapplique le rôle de mute
-// d'une cible désignée si quelqu'un d'autre que le protecteur la démute.
-// Seul écouteur "guildMemberUpdate" du bot (voir utils/personalProtection.js).
-client.on("guildMemberUpdate", (oldMember, newMember) => {
-  personalProtection.enforceMuteBot(oldMember, newMember).catch((err) => console.error("[personalProtection]", err));
-});
-
 // Message de bienvenue (voir &panel > Bienvenue, utils/welcomeStore.js) : un
 // message est tiré au hasard parmi ceux configurés, "{user}" y est remplacé
 // par une mention du nouvel arrivant. Ne fait rien tant qu'aucun salon ou
@@ -548,15 +435,6 @@ client.on("guildMemberAdd", async (member) => {
   if (sent && config.autoDeleteSeconds > 0) {
     setTimeout(() => sent.delete().catch(() => {}), config.autoDeleteSeconds * 1000);
   }
-});
-
-// Anti-nuke : afflux de joins, désactivé par défaut (voir utils/guard/
-// definitions.js). Listener séparé du message de bienvenue ci-dessus,
-// volontairement : ce dernier sort tôt si aucun salon n'est configuré, ce
-// qui n'a aucun rapport avec l'activation de l'anti-nuke.
-client.on("guildMemberAdd", (member) => {
-  checkJoinFlood(client, member).catch((err) => console.error("[guard:antijoin]", err));
-  checkAntiFast(client, member).catch((err) => console.error("[guard:antifast]", err));
 });
 
 // Rôles automatiques à l'arrivée (voir &panel > Membres, utils/autoroleCommands.js).
@@ -586,21 +464,6 @@ client.on("guildUpdate", (_avant, apres) => counters.mettreAJour(apres).catch(()
 client.on("guildAuditLogEntryCreate", (entry, guild) => {
   relayAuditLogEntry(client, guild, entry).catch((err) => {
     console.error("[moderationLog] échec du relais d'une entrée d'audit :", err);
-  });
-  // Anti-nuke (voir utils/guard/), désactivé par défaut — même entrée
-  // d'audit, deux traitements distincts et indépendants : le relais ci-
-  // dessus journalise l'action brute, le moteur de guard réagit si un
-  // seuil est franchi. checkAuditEntry() ne fait rien pour un type
-  // d'événement qu'aucun guard ne suit.
-  checkAuditEntry(client, guild, entry).catch((err) => {
-    console.error("[guard] échec du traitement d'une entrée d'audit :", err);
-  });
-  // Protections personnelles (!!panel, voir utils/personalProtection.js) :
-  // Anti-Retrait-Rôle, Anti-Renommage, Anti-Sourdine-Forcée, Anti-Timeout,
-  // Anti-Bannissement, Alerte-Expulsion — même entrée d'audit, troisième
-  // traitement indépendant.
-  personalProtection.handleAuditLogEntry(client, guild, entry).catch((err) => {
-    console.error("[personalProtection] échec du traitement d'une entrée d'audit :", err);
   });
 });
 

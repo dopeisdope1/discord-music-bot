@@ -16,30 +16,22 @@ const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const commandRouting = require("./commandRouting");
-const { COMMANDES: COMMANDES_SECURITE } = require("./protectionHelpCommand");
 const { emojiDe } = require("./emojiSlots");
 const messageOwner = require("./messageOwner");
 
-// Remplace les 3 "help" en texte pur/carte figée (&help, -help, !!help)
-// par le MÊME moteur : un seul message, navigable via un menu
-// déroulant ("Choisir un palier") + Précédent/Suivant quand un groupe ne
-// tient pas sur une page — jamais de nouveau message posté après le
-// premier. "!!help" restait sur sa carte figée (utils/
-// protectionHelpCommand.js) : ses listes COMMANDES restent la source de
-// vérité (le catalogue partagé, utils/commandCatalog.js, ne référence QUE
-// "&"/"-", voir utils/commandRouting.js) — seule la PRÉSENTATION est
-// unifiée ici.
+// Remplace les "help" en texte pur/carte figée (&help, -help) par le MÊME
+// moteur : un seul message, navigable via un menu déroulant ("Choisir un
+// palier") + Précédent/Suivant quand un groupe ne tient pas sur une page —
+// jamais de nouveau message posté après le premier.
 const CUSTOM_ID = "helpnav";
 
 // Un bucket par préfixe, TOUS sur les mêmes paliers Publiques/Configurables/
 // Sys (utils/helpPanel.js::PALIERS) — "gestion"/"moderation" les tirent du
-// catalogue central, "securite" de sa liste figée existante (utils/
-// protectionHelpCommand.js), mais avec la même classification
-// "dangereux -> Sys" (estDangereux).
+// catalogue central, avec la même classification "dangereux -> Sys"
+// (estDangereux).
 const BUCKETS = {
   gestion: { titre: "Aide", prefixKey: "musicMod", tiersFn: (guildId, member) => buildTiersCatalogue("gestion", guildId, member) },
   moderation: { titre: "Aide — Modération", prefixKey: "moderation", tiersFn: (guildId, member) => buildTiersCatalogue("moderation", guildId, member) },
-  securite: { titre: "Aide — Sécurité", prefixKey: "protection", tiersFn: buildTiersSecurite },
 };
 
 // Budget du texte d'UN palier affiché, en caractères — le reste du message
@@ -120,36 +112,8 @@ function buildTiersCatalogue(bucket, guildId, member) {
   }).filter((tier) => tier.count);
 }
 
-/** Une ligne au même format que formatLine (utils/helpPanel.js), pour les listes figées "!!"/"=". */
-function ligneFigee(nom, description, marqueur, prefix) {
-  return `> \`${nom.replaceAll(marqueur, prefix)}\` (${description.replaceAll(marqueur, prefix)})`;
-}
-
-/** Palier public/configurable/sys d'une commande "!!"/"=" — mêmes règles que le catalogue (utils/helpPanel.js::estDangereux). */
-function palierFige(permission) {
-  if (!permission) return "public";
-  return estDangereux(permission) ? "sys" : "configurable";
-}
-
-/** Paliers non vides du "!!", groupés par thème — utils/protectionHelpCommand.js reste la source de vérité des commandes. */
-function buildTiersSecurite(guildId, member) {
-  const prefix = getPrefixes(guildId).protection;
-  const parPalier = { public: new Map(), configurable: new Map(), sys: new Map() };
-  for (const c of COMMANDES_SECURITE) {
-    if (c.nom.replace(/^!!/, "").split(/\s+/)[0] === "help") continue; // la commande elle-même, jamais listée
-    if (!can(member, c.permission)) continue;
-    const map = parPalier[palierFige(c.permission)];
-    if (!map.has(c.groupe)) map.set(c.groupe, { emoji: emojiDe(guildId, `sec:${c.groupe}`), lignes: [] });
-    map.get(c.groupe).lignes.push(ligneFigee(c.nom, c.description, "!!", prefix));
-  }
-  return PALIERS.map((p) => {
-    const { lines, count } = assemblerGroupes(parPalier[p.cle]);
-    return { key: p.cle, label: p.titre, lines, count };
-  }).filter((t) => t.count);
-}
-
 /**
- * @param {"gestion"|"moderation"|"securite"|"vocal"} bucketKey
+ * @param {"gestion"|"moderation"} bucketKey
  * @param {string} guildId
  * @param {import('discord.js').GuildMember} member
  * @param {{ tier?: string, page?: number }} [state]
@@ -228,17 +192,6 @@ async function repondreAvecAide(bucketKey, message) {
   return messageOwner.repondreEtRetenir(message, buildHelpNavigator(bucketKey, message.guild.id, message.member));
 }
 
-/** "!!help" — voir utils/protectionHelpCommand.js (COMMANDES, source de vérité). */
-async function handleSecuriteHelpTextCommand(client, message) {
-  if (message.author.bot || !message.guild) return;
-  const content = message.content.trim();
-  const { protection: PREFIX } = getPrefixes(message.guild.id);
-  if (!PREFIX || !content.startsWith(PREFIX)) return;
-  const [cmd] = content.slice(PREFIX.length).trim().split(/\s+/);
-  if ((cmd || "").toLowerCase() !== "help") return;
-  return repondreAvecAide("securite", message);
-}
-
 async function handleHelpNavInteraction(interaction) {
   const [, action, bucketKey, ...rest] = interaction.customId.split(":");
   if (!BUCKETS[bucketKey]) return;
@@ -261,5 +214,4 @@ module.exports = {
   buildHelpNavigator,
   repondreAvecAide,
   handleHelpNavInteraction,
-  handleSecuriteHelpTextCommand,
 };

@@ -17,9 +17,11 @@ const selfClearStore = require("./selfClearStore");
 const { can } = require("./permissions/engine");
 const { parseDuration, formatDuration } = require("./moderationCommands");
 
-// "!!setclear" — configure les mots qui déclenchent le nettoyage automatique
+// "&setclear" — configure les mots qui déclenchent le nettoyage automatique
 // ("<mot> clear", voir utils/selfClear.js) et le délai entre deux usages,
-// PAR SERVEUR (voir utils/selfClearStore.js).
+// PAR SERVEUR (voir utils/selfClearStore.js). Vivait sur "!!" avant le
+// départ de tout ce préfixe vers le bot Secure — self-clear n'étant pas de
+// la sécurité, seule sa commande de configuration a changé de préfixe.
 //
 // Volontairement UN SEUL aller-retour plutôt qu'un menu déroulant + une
 // modale par champ + un bouton "Confirmer" séparé : ici "Modifier" ouvre
@@ -60,12 +62,12 @@ function buildSetClearCard(config) {
   return { flags: MessageFlags.IsComponentsV2, components: [conteneur] };
 }
 
-/** "!!setclear" — poste le panneau, la seule commande texte de ce fichier. */
+/** "&setclear" — poste le panneau, la seule commande texte de ce fichier. */
 async function handleSetClearTextCommand(client, message) {
   if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
-  const { protection: PREFIX } = getPrefixes(message.guild.id);
+  const { musicMod: PREFIX } = getPrefixes(message.guild.id);
   const aLePrefixe = Boolean(PREFIX) && content.startsWith(PREFIX);
   const mot = aLePrefixe ? content.slice(PREFIX.length).trim().split(/\s+/)[0] : "";
   if (!aLePrefixe || (mot || "").toLowerCase() !== "setclear") return;
