@@ -1,11 +1,10 @@
 /**
  * Vérifie que TOUTES les commandes "toute la portée du serveur d'un coup"
- * (&unbanall, &hideall/&unhideall, &unmuteall, &voicemove/&bringall) ne sont
- * PLUS débloquées par la même permission que leur équivalent ciblé (&unban,
- * &hide/&unhide, &untimeout/&unmute, &voicekick) — signalé : accorder juste
- * "&ban"/"&unban" à un rôle donnait accès de facto au débannissement de
- * masse (et pareil pour hide/mute/vocal), bien plus dangereux qu'une action
- * ciblée.
+ * (&unbanall, &hideall/&unhideall, &unmuteall) ne sont PLUS débloquées par
+ * la même permission que leur équivalent ciblé (&unban, &hide/&unhide,
+ * &untimeout/&unmute) — signalé : accorder juste "&ban"/"&unban" à un rôle
+ * donnait accès de facto au débannissement de masse (et pareil pour
+ * hide/mute), bien plus dangereux qu'une action ciblée.
  *
  * Lancement : node scripts/test-dangerous-permissions-split.js
  */
@@ -177,41 +176,6 @@ function fakeMessage(member) {
     // répond sa propre erreur, ATTEINTE seulement si le gate de permission
     // a été franchi (sinon 0 réponse, comme le cas ci-dessus).
     assert.strictEqual(msg._replies.length, 1, "moderation.unmuteall doit débloquer la commande");
-  });
-
-  console.log("\n&voicemove/&bringall — plus débloquées par server.voice.manage seul :");
-
-  await cas("un rôle avec UNIQUEMENT server.voice.manage ne débloque PAS &voicemove", async () => {
-    const guild = fakeGuild();
-    const roleId = "role-voice-manage-only";
-    permStore.setRoleGrants("g1", roleId, ["server.voice.manage"]);
-    const member = fakeMemberFor(roleId, guild);
-    const msg = fakeMessage(member);
-    await serverExtra.voicemove(null, msg);
-    assert.strictEqual(msg._replies.length, 0, "aucune réponse : &voicekick seul ne doit pas débloquer &voicemove");
-  });
-
-  await cas("un rôle avec UNIQUEMENT server.voice.manage ne débloque pas non plus &bringall", async () => {
-    const guild = fakeGuild();
-    const roleId = "role-voice-manage-only-2";
-    permStore.setRoleGrants("g1", roleId, ["server.voice.manage"]);
-    const member = fakeMemberFor(roleId, guild);
-    const msg = fakeMessage(member);
-    await serverExtra.bringall(null, msg);
-    assert.strictEqual(msg._replies.length, 0);
-  });
-
-  await cas("un rôle avec server.voice.moveall débloque bien &voicemove/&bringall", async () => {
-    const guild = fakeGuild();
-    const roleId = "role-voice-moveall";
-    permStore.setRoleGrants("g1", roleId, ["server.voice.moveall"]);
-    const member = fakeMemberFor(roleId, guild);
-    const msg1 = fakeMessage(member);
-    await serverExtra.voicemove(null, msg1);
-    assert.strictEqual(msg1._replies.length, 1, "server.voice.moveall doit débloquer &voicemove");
-    const msg2 = fakeMessage(member);
-    await serverExtra.bringall(null, msg2);
-    assert.strictEqual(msg2._replies.length, 1, "server.voice.moveall doit débloquer &bringall");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

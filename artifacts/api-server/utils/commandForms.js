@@ -747,49 +747,6 @@ const FORMS = {
     },
   },
 
-  voicemove_action: {
-    label: "Déplacer tout un salon vocal",
-    category: "voice",
-    permission: "server.voice.moveall",
-    fields: ["channel", "channel2"],
-    ready: (v) => Boolean(v.channelId && v.channelId2),
-    run: async (client, interaction, v) => {
-      const from = interaction.guild.channels.cache.get(v.channelId);
-      const to = interaction.guild.channels.cache.get(v.channelId2);
-      if (!from || !to) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { channels: [from, to] });
-      await serverExtra.voicemove(client, msg);
-    },
-  },
-
-  voicekick_action: {
-    label: "Expulser un membre du vocal",
-    category: "voice",
-    permission: "server.voice.manage",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await serverExtra.voicekick(client, msg, [member.id]);
-    },
-  },
-
-  bringall_action: {
-    label: "Rassembler tout le monde en vocal",
-    category: "voice",
-    permission: "server.voice.moveall",
-    fields: ["channel"],
-    ready: (v) => Boolean(v.channelId),
-    run: async (client, interaction, v) => {
-      const channel = interaction.guild.channels.cache.get(v.channelId);
-      if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { channels: [channel] });
-      await serverExtra.bringall(client, msg);
-    },
-  },
-
   temprole_action: {
     label: "Donner un rôle temporaire",
     category: "voice",
@@ -1301,9 +1258,9 @@ function extractFormValues(form, message, args) {
  * directe de commandes tapées avec tous leurs arguments : "&giveaway start
  * 1h Nitro" ouvrait une carte vide au lieu de lancer le giveaway, faute
  * d'une mention de salon que la syntaxe ne prévoit même pas. Les commandes
- * qui prennent vraiment un salon en argument (bringall, voicemove...) sont
- * déjà correctement gérées par leur VRAI handler texte, qui parse ses
- * propres arguments sans dépendre de ce garde-fou.
+ * qui prennent vraiment un salon en argument sont déjà correctement gérées
+ * par leur VRAI handler texte, qui parse ses propres arguments sans
+ * dépendre de ce garde-fou.
  *
  * Un champ listé dans `form.optionalFields` n'est jamais requis non plus.
  */
@@ -1921,7 +1878,7 @@ async function handleFormCardInteraction(interaction) {
  */
 const SANS_CARTE_SANS_ARGUMENT = new Set([
   "addrole", "delrole", "kick", "ban", "softban", "timeout", "untimeout",
-  "mute", "unmute", "tempmute", "tempban", "derank", "sanctions", "voicekick",
+  "mute", "unmute", "tempmute", "tempban", "derank", "sanctions",
   "temprole", "untemprole", "cmute", "uncmute", "tempcmute", "warn",
   "warnings", "unwarn", "clear sanctions", "del sanction", "del perm",
   "set perm", "antinuke wluser",
@@ -1951,9 +1908,6 @@ const BARE_COMMAND_FORMS = {
   create: "create_emoji",
   massiverole: "massiverole_action",
   unmassiverole: "unmassiverole_action",
-  voicemove: "voicemove_action",
-  voicekick: "voicekick_action",
-  bringall: "bringall_action",
   temprole: "temprole_action",
   untemprole: "untemprole_action",
   end: "giveaway_end",

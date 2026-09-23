@@ -680,8 +680,8 @@ const CATEGORIES = [
     key: "serveurroles",
     label: "Serveur & Rôles",
     emoji: EMOJI.PENCIL,
-    description: "Rôles, salons et vocaux",
-    highlights: ["addrole", "role create", "channel create", "voicekick"],
+    description: "Rôles et salons",
+    highlights: ["addrole", "role create", "channel create", "limitrole"],
     commands: [
       {
         name: "addrole @membre @rôle",
@@ -888,30 +888,6 @@ const CATEGORIES = [
         prefix: "mod",
         permission: "server.channels.manage",
         description: "Publie automatiquement les messages dans les salons d'annonces",
-      },
-      {
-        name: "voicemove [salon] [salon]",
-        prefix: "mod",
-        permission: "server.voice.moveall",
-        description: "Déplace tous les membres d'un salon vocal vers un autre",
-      },
-      {
-        name: "voicekick <membre>",
-        prefix: "mod",
-        permission: "server.voice.manage",
-        description: "Expulse un membre du salon vocal",
-      },
-      {
-        name: "mv <membre> <#salon>",
-        prefix: "mod",
-        permission: "server.voice.manage",
-        description: "Déplace un membre précis vers un salon vocal (voir aussi &voicemove pour tout un salon d'un coup)",
-      },
-      {
-        name: "bringall [salon]",
-        prefix: "mod",
-        permission: "server.voice.moveall",
-        description: "Rassemble tous les membres connectés dans un même salon vocal",
       },
     ],
   },

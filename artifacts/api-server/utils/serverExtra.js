@@ -201,80 +201,6 @@ async function massRole(client, message, { remove }) {
   return reply(message, "success", `${remove ? "Retiré de" : "Ajouté à"} **${count}** membre(s).`);
 }
 
-// --- &voicemove / &voicekick / &bringall ---
-
-async function voicemove(client, message) {
-  if (!can(message.member, "server.voice.moveall")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const channels = [...message.mentions.channels.values()].filter((c) => c.type === ChannelType.GuildVoice);
-  const [from, to] = channels;
-  if (!from || !to) return reply(message, "error", "Indique deux salons vocaux : `voicemove #depuis #vers`.");
-
-  let count = 0;
-  for (const member of from.members.values()) {
-    await member.voice.setChannel(to, `Déplacement de masse par ${message.author.tag}`).catch(() => {});
-    count++;
-  }
-  return reply(message, "success", `**${count}** membre(s) déplacé(s) de ${from} vers ${to}.`);
-}
-
-async function voicekick(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const targetId = parseTarget(args);
-  const target = await fetchTargetOrReply(message, targetId);
-  if (!target) return;
-  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-
-  await target.voice.disconnect(`Expulsion vocale par ${message.author.tag}`).catch(() => {});
-  return reply(message, "success", `**${target.user.tag}** expulsé du vocal.`);
-}
-
-/** &mv <@membre|id> <#salon> — déplace UN membre précis vers un salon vocal (voir &voicemove pour tout un salon d'un coup). */
-async function mv(client, message, args) {
-  if (!can(message.member, "server.voice.manage")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const targetId = parseTarget(args);
-  const target = await fetchTargetOrReply(message, targetId);
-  if (!target) return;
-
-  const destination = message.mentions.channels.first();
-  if (!destination || destination.type !== ChannelType.GuildVoice) {
-    return reply(message, "error", "Indique un salon vocal : `mv @membre #salon`.");
-  }
-  if (!target.voice.channel) return reply(message, "info", `${target.user.tag} n'est pas en vocal.`);
-
-  await target.voice.setChannel(destination, `Déplacement par ${message.author.tag}`).catch(() => {});
-  return reply(message, "success", `**${target.user.tag}** déplacé vers ${destination}.`);
-}
-
-async function bringall(client, message) {
-  if (!can(message.member, "server.voice.moveall")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.MoveMembers, "MoveMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const destination = message.mentions.channels.first() || message.member.voice.channel;
-  if (!destination || destination.type !== ChannelType.GuildVoice) {
-    return reply(message, "error", "Indique un salon vocal ou rejoins-en un : `bringall [#salon]`.");
-  }
-
-  let count = 0;
-  for (const channel of message.guild.channels.cache.filter((c) => c.type === ChannelType.GuildVoice).values()) {
-    if (channel.id === destination.id) continue;
-    for (const member of channel.members.values()) {
-      await member.voice.setChannel(destination, `Rassemblement par ${message.author.tag}`).catch(() => {});
-      count++;
-    }
-  }
-  return reply(message, "success", `**${count}** membre(s) rassemblé(s) dans ${destination}.`);
-}
-
 // --- &unbanall (confirmation obligatoire, comme &banall) ---
 
 async function unbanall(client, message) {
@@ -535,10 +461,6 @@ module.exports = {
   createEmoji,
   massiverole: (client, message) => massRole(client, message, { remove: false }),
   unmassiverole: (client, message) => massRole(client, message, { remove: true }),
-  voicemove,
-  voicekick,
-  mv,
-  bringall,
   unbanall,
   temprole,
   untemprole,
