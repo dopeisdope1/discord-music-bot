@@ -62,9 +62,20 @@ const PERMISSIONS = [
   { key: "logs.manage", category: "logs", label: "Configurer les salons de logs (panel)" },
 
   // --- Panel ---
-  { key: "panel.permissions.manage", category: "panel", label: "Modifier les permissions par rôle (panel)" },
+  // `ownerOnlyGrant: true` : un membre rang sys peut UTILISER cette
+  // permission (le rang sys donne un accès total, inchangé), mais ne peut
+  // PAS l'ACCORDER à un rôle ou à quelqu'un d'autre — seul le propriétaire
+  // du bot le peut. Sans ce garde-fou, n'importe quel rang sys pouvait
+  // distribuer "panel.permissions.manage" à volonté (à lui-même via un
+  // rôle, ou à un tiers), ce qui revenait à pouvoir créer indéfiniment
+  // d'autres comptes avec un contrôle total des permissions du serveur —
+  // une escalade que seul le propriétaire doit pouvoir accorder. Vérifié
+  // par utils/permissions/engine.js::peutAccorder, au moment de l'écriture
+  // (utils/configPanel.js), jamais au moment de l'usage (can() reste
+  // inchangé : le rang sys profite toujours de tout, comme avant).
+  { key: "panel.permissions.manage", category: "panel", label: "Modifier les permissions par rôle (panel)", ownerOnlyGrant: true },
   { key: "panel.roles.manage", category: "panel", label: "Consulter/gérer les rôles (panel)" },
-  { key: "panel.access.manage", category: "panel", label: "Gérer les accès au panel (panel)" },
+  { key: "panel.access.manage", category: "panel", label: "Gérer les accès au panel (panel)", ownerOnlyGrant: true },
 
   // --- Protection ---
   { key: "protection.automod", category: "protection", label: "Configurer l'anti-spam (panel)" },
@@ -139,6 +150,17 @@ function isRoleGrantable(key) {
   return Boolean(perm) && perm.roleGrantable !== false;
 }
 
+/**
+ * Vrai si `key` ne peut être ACCORDÉE (à un rôle ou individuellement) que
+ * par le propriétaire du bot — voir le commentaire sur "panel.permissions.
+ * manage" ci-dessus. N'affecte jamais l'USAGE de la clé (utils/permissions/
+ * engine.js::can reste inchangé) : un rang sys qui la détient déjà continue
+ * de s'en servir normalement, seule sa DISTRIBUTION est restreinte.
+ */
+function isOwnerOnlyGrant(key) {
+  return Boolean(BY_KEY.get(key)?.ownerOnlyGrant);
+}
+
 function label(key) {
   return BY_KEY.get(key)?.label || key;
 }
@@ -157,4 +179,4 @@ function byCategory() {
   }));
 }
 
-module.exports = { PERMISSIONS, isRoleGrantable, label, byCategory, CATEGORY_LABELS };
+module.exports = { PERMISSIONS, isRoleGrantable, isOwnerOnlyGrant, label, byCategory, CATEGORY_LABELS };

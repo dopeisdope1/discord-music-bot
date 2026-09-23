@@ -23,7 +23,7 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { iconDe } = require("./emojiSlots");
 const { carteConfirmationFichier } = require("./actionCard");
 const { THEME_BLEU } = require("./dashboardImage");
-const { can } = require("./permissions/engine");
+const { can, peutAccorder } = require("./permissions/engine");
 const permStore = require("./permissions/store");
 const permCatalog = require("./permissions/catalog");
 const voiceAccess = require("./voiceAccess");
@@ -540,8 +540,17 @@ async function handleServerAdminInteraction(interaction) {
     const category = extra;
     const key = interaction.values[0];
     const granted = permStore.getUserGrants(interaction.guild.id, memberId);
-    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
-    else permStore.grantToUser(interaction.guild.id, memberId, key);
+    if (granted.includes(key)) {
+      permStore.revokeFromUser(interaction.guild.id, memberId, key);
+    } else if (peutAccorder(interaction.member, key)) {
+      // ownerOnlyGrant (ex. panel.permissions.manage) : seul le propriétaire
+      // peut l'ACCORDER — voir utils/permissions/engine.js::peutAccorder.
+      // La révoquer reste toujours permis à quiconque a déjà accès à cette
+      // carte, ci-dessus.
+      permStore.grantToUser(interaction.guild.id, memberId, key);
+    } else {
+      return interaction.reply({ content: "Cette permission est réservée au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+    }
     return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
   }
 
@@ -580,8 +589,13 @@ async function handleServerAdminInteraction(interaction) {
     const category = extra;
     const key = interaction.values[0];
     const granted = permStore.getUserGrants(interaction.guild.id, memberId);
-    if (granted.includes(key)) permStore.revokeFromUser(interaction.guild.id, memberId, key);
-    else permStore.grantToUser(interaction.guild.id, memberId, key);
+    if (granted.includes(key)) {
+      permStore.revokeFromUser(interaction.guild.id, memberId, key);
+    } else if (peutAccorder(interaction.member, key)) {
+      permStore.grantToUser(interaction.guild.id, memberId, key);
+    } else {
+      return interaction.reply({ content: "Cette permission est réservée au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+    }
     return interaction.update(
       buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category, key, categories, variante)
     );

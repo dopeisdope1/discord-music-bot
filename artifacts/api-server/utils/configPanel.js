@@ -29,7 +29,7 @@ const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
 const banReasonsStore = require("./banReasonsStore");
-const { can } = require("./permissions/engine");
+const { can, peutAccorder } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
 const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
@@ -2364,8 +2364,28 @@ async function handleConfigInteraction(interaction, customIdImpose) {
         .find((c) => c.category === extra2)
         ?.permissions.map((p) => p.key) || []
     );
+    // Les clés "ownerOnlyGrant" (ex. panel.permissions.manage) ne peuvent
+    // être accordées QUE par le propriétaire du bot — un rang sys qui coche
+    // cette case voit son choix ignoré pour cette clé précise, le reste de
+    // la catégorie s'applique normalement (voir utils/permissions/engine.js
+    // ::peutAccorder). Silencieux plutôt qu'un refus bloquant : cocher 5
+    // permissions dont une seule est protégée ne doit pas faire échouer les
+    // 4 autres.
+    const cochees = interaction.values.filter((k) => peutAccorder(member, k));
+    const refusees = interaction.values.length - cochees.length;
     const current = permStore.getRoleGrants(guildId, extra).filter((k) => !categoryKeys.has(k));
-    permStore.setRoleGrants(guildId, extra, [...current, ...interaction.values]);
+    permStore.setRoleGrants(guildId, extra, [...current, ...cochees]);
+    if (refusees > 0) {
+      // Bannière au-dessus du panel plutôt qu'une seconde réponse à
+      // l'interaction : interaction.update() (dans goto) EST déjà la réponse
+      // initiale, un interaction.reply() séparé échouerait dessus.
+      return interaction.update(
+        banniereSurPanel(
+          buildConfigPanel(guild, "permissions", member, { permissionsRoleId: extra, permissionsCategory: extra2 }),
+          "⚠️ Certaines permissions cochées sont réservées au propriétaire du bot — les autres ont bien été appliquées."
+        )
+      );
+    }
     return goto("permissions", { permissionsRoleId: extra, permissionsCategory: extra2 });
   }
 

@@ -1,6 +1,6 @@
 const accessStore = require("../accessStore");
 const { getRoleGrants, getUserGrants } = require("./store");
-const { isRoleGrantable } = require("./catalog");
+const { isRoleGrantable, isOwnerOnlyGrant } = require("./catalog");
 
 // Pont de rétrocompatibilité : quiconque avait la portée "salon" (accordée
 // via l'ancien &panel > Modération) garde ses commandes de salon telles
@@ -107,4 +107,23 @@ function can(member, key) {
   return false;
 }
 
-module.exports = { can, hasConfiguredAccess };
+/**
+ * Un membre rang sys (non owner) peut aujourd'hui accorder N'IMPORTE
+ * QUELLE clé à n'importe quel rôle ou membre depuis &panel > Rôles et
+ * permissions — y compris "panel.permissions.manage" elle-même, ce qui
+ * revient à pouvoir se donner (ou donner à un tiers) un contrôle total
+ * des permissions du serveur en boucle. `can()` reste le SEUL juge de ce
+ * qu'un membre peut FAIRE ; celle-ci est le SEUL juge de ce qu'il peut
+ * DISTRIBUER — deux questions différentes, jamais mélangées.
+ *
+ * @param {import('discord.js').GuildMember} accordeur celui qui clique
+ *   "Accorder" dans le panel — PAS la cible qui reçoit la permission.
+ * @param {string} key la clé du catalogue sur le point d'être accordée.
+ * @returns {boolean}
+ */
+function peutAccorder(accordeur, key) {
+  if (!isOwnerOnlyGrant(key)) return true;
+  return Boolean(accordeur) && accessStore.isOwner(accordeur.id);
+}
+
+module.exports = { can, hasConfiguredAccess, peutAccorder };
