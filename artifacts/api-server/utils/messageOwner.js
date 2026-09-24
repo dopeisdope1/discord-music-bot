@@ -35,9 +35,9 @@ function proprietaireDe(messageId) {
   return proprietaires.get(messageId) || null;
 }
 
-/** Envoie une réponse ET en retient le propriétaire. */
+/** Envoie une réponse ET en retient le propriétaire. Pas de ping : c'est une réponse à une commande, pas une mention voulue. */
 async function repondreEtRetenir(message, payload) {
-  const envoye = await message.reply(payload);
+  const envoye = await message.reply({ ...payload, allowedMentions: { repliedUser: false } });
   retenir(envoye?.id, message.author?.id);
   return envoye;
 }
