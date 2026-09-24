@@ -35,17 +35,9 @@ function proprietaireDe(messageId) {
   return proprietaires.get(messageId) || null;
 }
 
-/**
- * Envoie une réponse ET en retient le propriétaire. `replied_user: false`
- * : une réponse en fil (message.reply) ping par défaut son auteur — ce
- * mécanisme n'a rien à voir avec la vérification de propriétaire ci-dessus,
- * qui n'a besoin que du LIEN visuel de la réponse, jamais d'une notification.
- */
+/** Envoie une réponse ET en retient le propriétaire. Pas de ping : c'est une réponse à une commande, pas une mention voulue. */
 async function repondreEtRetenir(message, payload) {
-  const envoye = await message.reply({
-    ...payload,
-    allowedMentions: { ...(payload.allowedMentions || {}), repliedUser: false },
-  });
+  const envoye = await message.reply({ ...payload, allowedMentions: { repliedUser: false } });
   retenir(envoye?.id, message.author?.id);
   return envoye;
 }
