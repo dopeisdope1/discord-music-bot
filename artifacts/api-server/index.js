@@ -78,6 +78,30 @@ const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedMod
 const commandForms = require("./utils/commandForms");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
 
+// Liste FIXE — construite une seule fois au chargement, jamais recréée à
+// chaque clic. Un panneau ne change pas de customId en cours de route.
+const PANNEAUX_PRIVES = [
+  "cfg:",
+  `${commandForms.CARD_ID}:`,
+  `${palierPanel.CUSTOM_ID}:`,
+  `${helpNavigator.CUSTOM_ID}:`,
+  `${listNavigator.CUSTOM_ID}:`,
+  `${gradeLadderPanel.CUSTOM_ID}:`,
+  `${staffCard.CUSTOM_ID}:`,
+  `${gradeCardPanel.CUSTOM_ID}:`,
+  `${banInfoCard.CUSTOM_ID}:`,
+  `${emojiPanel.CUSTOM_ID}:`,
+];
+
+// Mesure de latence sur le chemin critique d'un clic — OFF par défaut, zéro
+// coût en prod (DEBUG_LATENCY non défini). Active-la avec DEBUG_LATENCY=true
+// (voir le patch posé dans interactionCreate, plus bas) pour voir, pour
+// chaque clic : le temps AVANT l'appel Discord (vérif. propriétaire +
+// dispatch + construction du payload — tout ce qui est du code à nous,
+// contrôlable), et la DURÉE de l'appel Discord lui-même (update()/reply()/
+// ... — le temps de traitement de Discord, hors de notre contrôle).
+const DEBUG_LATENCY = process.env.DEBUG_LATENCY === "true";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -150,18 +174,29 @@ client.on("interactionCreate", async (interaction) => {
   // Les autres panneaux (bannissement, ban de masse, confirmations
   // d'administration) portaient déjà cette vérification, chacun avec son
   // jeton ; ces deux-là ne l'avaient pas.
-  const PANNEAUX_PRIVES = [
-    "cfg:",
-    `${commandForms.CARD_ID}:`,
-    `${palierPanel.CUSTOM_ID}:`,
-    `${helpNavigator.CUSTOM_ID}:`,
-    `${listNavigator.CUSTOM_ID}:`,
-    `${gradeLadderPanel.CUSTOM_ID}:`,
-    `${staffCard.CUSTOM_ID}:`,
-    `${gradeCardPanel.CUSTOM_ID}:`,
-    `${banInfoCard.CUSTOM_ID}:`,
-    `${emojiPanel.CUSTOM_ID}:`,
-  ];
+  if (DEBUG_LATENCY && (interaction.isButton() || interaction.isAnySelectMenu())) {
+    const customId = interaction.customId;
+    const debutTraitement = Date.now();
+    // Patché UNE fois par interaction : quel que soit le handler qui répond
+    // (update/reply/editReply/deferUpdate), on capture le temps écoulé AVANT
+    // cet appel (= tout notre code : vérif. propriétaire, dispatch,
+    // construction du payload) et la DURÉE de l'appel réseau lui-même.
+    for (const methode of ["update", "reply", "editReply", "deferUpdate", "deferReply"]) {
+      if (typeof interaction[methode] !== "function") continue;
+      const original = interaction[methode].bind(interaction);
+      interaction[methode] = async (...args) => {
+        const avant = Date.now() - debutTraitement;
+        const t0 = Date.now();
+        const res = await original(...args);
+        const dureeAppel = Date.now() - t0;
+        console.log(
+          `[latence] "${customId}" — avant l'appel Discord (code bot) : ${avant}ms | appel Discord (${methode}) : ${dureeAppel}ms | total depuis le clic : ${Date.now() - interaction.createdTimestamp}ms`
+        );
+        return res;
+      };
+    }
+  }
+
   if (PANNEAUX_PRIVES.some((prefixe) => interaction.customId?.startsWith(prefixe))) {
     const { autorise, proprietaire } = await messageOwner.verifier(interaction);
     if (!autorise) {
