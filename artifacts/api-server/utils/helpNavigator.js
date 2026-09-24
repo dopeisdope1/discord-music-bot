@@ -206,7 +206,10 @@ async function handleHelpNavInteraction(interaction) {
     return;
   }
 
-  return interaction.update(buildHelpNavigator(bucketKey, interaction.guild.id, interaction.member, state));
+  const t0 = Date.now();
+  const payload = buildHelpNavigator(bucketKey, interaction.guild.id, interaction.member, state);
+  console.log(`[perf] buildHelpNavigator calculé en ${Date.now() - t0}ms`);
+  return interaction.update(payload);
 }
 
 module.exports = {
