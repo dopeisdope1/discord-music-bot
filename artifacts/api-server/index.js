@@ -138,6 +138,22 @@ client.snipes = new Collection();
 
 // ---- Interactions : panneaux de gestion, sécurité et communauté ----
 client.on("interactionCreate", async (interaction) => {
+  // MESURE TEMPORAIRE — délai perçu sur les menus/boutons, à retirer après diagnostic.
+  if (interaction.isButton() || interaction.isAnySelectMenu()) {
+    const arrivee = Date.now();
+    const gatewayDelay = arrivee - interaction.createdTimestamp;
+    console.log(`[perf] clic "${interaction.customId}" — reçu ${gatewayDelay}ms après le clic Discord`);
+    interaction.once = interaction.once; // no-op, garde le hook lisible
+    const _origUpdate = interaction.update?.bind(interaction);
+    if (_origUpdate) {
+      interaction.update = async (...args) => {
+        const debut = Date.now();
+        const res = await _origUpdate(...args);
+        console.log(`[perf] update() "${interaction.customId}" traité en ${Date.now() - debut}ms (total depuis clic : ${Date.now() - interaction.createdTimestamp}ms)`);
+        return res;
+      };
+    }
+  }
   // UN PANNEAU APPARTIENT À QUI L'A OUVERT.
   //
   // `&panel` et les cartes de commande sont des messages publics : n'importe
