@@ -147,9 +147,8 @@ const CLES = SECTIONS.map((s) => s.key);
     }
   });
 
-  await cas("l'historique de modération reste consultable — c'est de la lecture, pas une sanction", () => {
-    assert.ok(CLES.includes("history"), "l'historique doit rester accessible");
-  });
+  // L'historique de modération (section "history" du panel) a migré avec
+  // le reste de la modération vers moderation-bot.
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();

@@ -1,9 +1,6 @@
-const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
-const { getPrefixes } = require("./prefixStore");
 const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const commandRouting = require("./commandRouting");
 const { PERMISSIONS } = require("./permissions/catalog");
 
 // Conservé pour compatibilité (utils/permsCommands.js l'importait) — plus
@@ -44,15 +41,14 @@ function palierDe(cmd) {
 }
 
 /**
- * Le vrai préfixe d'une commande. Toutes ne vivent pas sur le même :
- * `prefix: "mod"` = préfixe de gestion (`&`, ou sa valeur configurée),
- * `null` = déclencheur SANS préfixe (ex. `uo clear`) — lui en coller un
- * annoncerait une commande qui n'existe pas.
+ * Le vrai préfixe d'une commande. `prefix: "mod"` = préfixe de gestion (`&`,
+ * ou sa valeur configurée) — seul préfixe restant depuis le départ de la
+ * modération vers son propre bot (voir utils/prefixStore.js). `null` =
+ * déclencheur SANS préfixe (ex. `uo clear`) — lui en coller un annoncerait
+ * une commande qui n'existe pas.
  */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  const bucket = commandRouting.bucketDe(cmd.name);
-  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   return prefixes.musicMod;
 }
 
@@ -97,26 +93,17 @@ function dedupeByIdentity(commands) {
 
 /**
  * Toutes les commandes IMPLÉMENTÉES du catalogue auxquelles `member` a accès,
- * groupées par PALIER de droit, pour UN bucket de préfixe donné (voir
- * utils/commandRouting.js). Les commandes seulement documentées (sans
+ * groupées par PALIER de droit. Les commandes seulement documentées (sans
  * backend) ne sont jamais incluses.
- *
- * Généralisé pour servir "&help" (bucket "gestion") ET "-help" (bucket
- * "modération") depuis le même moteur — même principe que !!help/=help, qui
- * ont chacun leur propre liste figée limitée à leur préfixe : un bucket ne
- * doit jamais montrer les commandes d'un autre, même si le catalogue partagé
- * (utils/commandCatalog.js) les référence toutes.
  * @param {import('discord.js').GuildMember} member
- * @param {string} bucket voir utils/commandRouting.js (BUCKET_GESTION, BUCKET_MODERATION, ...)
  * @returns {Record<"public"|"configurable"|"sys", object[]>}
  */
-function groupByPalier(member, bucket) {
+function groupByPalier(member) {
   const modeDecouverte = !hasConfiguredAccess(member);
   const groups = { public: [], configurable: [], sys: [] };
   for (const category of CATEGORIES) {
     for (const cmd of category.commands) {
       if (!isImplemented(cmd)) continue;
-      if (commandRouting.bucketDe(cmd.name) !== bucket) continue;
       // Un membre encore inconnu du moteur ne reçoit pas l'inventaire des
       // commandes publiques : il ne voit que l'aide qu'il vient de demander.
       if (modeDecouverte && identityOf(cmd) !== "help") continue;
@@ -136,86 +123,4 @@ function formatLine(entry, prefixes) {
   return `> \`${prefix}${entry.cmd.name}\` (${description})`;
 }
 
-// Texte brut Discord : Discord plafonne le texte affichable à 4000
-// caractères, et ce plafond porte sur le TOTAL du message, pas composant par
-// composant — donc plusieurs messages séparés plutôt qu'un mur de texte quand
-// ça déborde (même limite/logique que utils/permsCommands.js::buildTierCard).
-const LIMITE_PAGE = 3800;
-
-function paginerBlocs(blocs) {
-  const pages = [];
-  let courante = "";
-  for (const bloc of blocs) {
-    const candidate = courante ? `${courante}\n\n${bloc}` : bloc;
-    if (candidate.length > LIMITE_PAGE && courante) {
-      pages.push(courante);
-      courante = bloc;
-    } else {
-      courante = candidate;
-    }
-  }
-  if (courante) pages.push(courante);
-  return pages;
-}
-
-/**
- * Découpe les lignes d'UN palier en plusieurs blocs si besoin, chacun déjà
- * sous LIMITE_PAGE — un palier chargé (ex. "Configurables" pour un membre à
- * qui presque tout est accordé) ne doit jamais être TRONQUÉ, seulement
- * réparti sur plusieurs messages, comme le reste de &help.
- */
-function blocsPourPalier(titre, lignes) {
-  const groupes = [];
-  let courant = [];
-  let longueur = titre.length + 10;
-  for (const ligne of lignes) {
-    const ajout = ligne.length + 1;
-    if (courant.length && longueur + ajout > LIMITE_PAGE) {
-      groupes.push(courant);
-      courant = [];
-      longueur = titre.length + 10;
-    }
-    courant.push(ligne);
-    longueur += ajout;
-  }
-  if (courant.length) groupes.push(courant);
-  return groupes.map((lignesDuBloc, i) => `**${titre}${groupes.length > 1 ? ` (${i + 1}/${groupes.length})` : ""}**\n${lignesDuBloc.join("\n")}`);
-}
-
-/**
- * &help — "Page d'aide" : chaque palier de droit en section, ses commandes
- * triées par ordre alphabétique en dessous, une ligne par commande
- * (`> \`préfixe+syntaxe\` (description)`). Filtré sur les droits RÉELS de la
- * personne — même moteur que les commandes et le panel
- * (utils/permissions/engine.js), pas une liste séparée qui pourrait diverger.
- * @param {string} guildId
- * @param {import('discord.js').GuildMember} member
- * @returns {object[]} un ou plusieurs payloads de message (Components V2),
- *   à envoyer dans l'ordre — le premier en réponse, les suivants à la suite.
- */
-function buildHelpPages(guildId, member) {
-  const prefixes = getPrefixes(guildId);
-  const groups = groupByPalier(member, commandRouting.BUCKET_GESTION);
-
-  const blocs = [];
-  for (const palier of PALIERS) {
-    const entries = dedupeByIdentity(groups[palier.cle]).sort((a, b) => identityOf(a.cmd).localeCompare(identityOf(b.cmd)));
-    if (!entries.length) continue;
-    blocs.push(...blocsPourPalier(palier.titre, entries.map((e) => formatLine(e, prefixes))));
-  }
-
-  const intro = "> Permet de voir la liste des commandes en fonction de vos permissions sur le bot";
-  const pages = paginerBlocs([intro, ...blocs]);
-
-  return pages.map((page, i) => {
-    const container = new ContainerBuilder();
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## Page d'aide${pages.length > 1 ? ` (${i + 1}/${pages.length})` : ""}`)
-    );
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(page.trim()));
-    return { flags: MessageFlags.IsComponentsV2, components: [container] };
-  });
-}
-
-module.exports = { buildHelpPages, identityOf, ACCENT_COLOR, groupByPalier, dedupeByIdentity, formatLine, PALIERS, estDangereux };
+module.exports = { identityOf, ACCENT_COLOR, groupByPalier, dedupeByIdentity, formatLine, PALIERS, estDangereux };

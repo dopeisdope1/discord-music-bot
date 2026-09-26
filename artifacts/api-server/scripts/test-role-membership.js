@@ -17,7 +17,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "rolemembership-tes
 process.env.BOT_OWNER_IDS = "staff-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { moderationHandlers } = require("../utils/moderationCommands");
+const moderationHandlers = require("../utils/moderationCommands");
 const serverAdmin = require("../utils/serverAdminCommands");
 
 const MEMBER_ID = "111111111111111111";

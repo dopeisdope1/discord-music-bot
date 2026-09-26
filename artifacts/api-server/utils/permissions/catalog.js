@@ -8,40 +8,10 @@
 // "banall") : le ban de masse reste volontairement un octroi individuel,
 // jamais un effet de bord d'un rôle (voir utils/accessStore.js, NO_SYS_INHERIT).
 const PERMISSIONS = [
-  // --- Modération ---
-  { key: "moderation.clear", category: "moderation", label: "Nettoyer des messages (&clear)" },
-  { key: "moderation.kick", category: "moderation", label: "Expulser un membre (&kick)" },
-  { key: "moderation.ban", category: "moderation", label: "Bannir un membre (&ban)" },
-  { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
-  { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
-  { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout, &mute, &unmute)" },
-  { key: "moderation.warn", category: "moderation", label: "Avertir un membre (&warn, &unwarn)" },
-  // Séparée de moderation.timeout : démuter TOUT LE MONDE d'un coup n'a pas
-  // à suivre automatiquement le droit de (dé)muter une personne précise.
-  { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },
-  { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)", roleGrantable: false },
-  {
-    key: "moderation.zinkiller",
-    category: "moderation",
-    label: "Ban persistant, re-banni automatiquement si débanni ailleurs (&zinkiller, &unzinkiller, &zinkillerlist)",
-  },
-  // Séparée de moderation.unban : signalé — accorder juste "débannir un
-  // membre" laissait accéder au débannissement de MASSE, un risque bien
-  // plus large (peut réadmettre tout un raid d'un coup) qu'un simple
-  // &unban ciblé. Même traitement que son inverse moderation.banall :
-  // jamais octroyable par rôle, seulement propriétaire/octroi individuel.
-  { key: "moderation.unbanall", category: "moderation", label: "Débannissement de masse (&unbanall)", roleGrantable: false },
-
   // --- Salons ---
   { key: "channels.lock", category: "channels", label: "Verrouiller/déverrouiller un salon (&lock, &unlock)" },
   { key: "channels.slowmode", category: "channels", label: "Mode lent (&slowmode)" },
   { key: "channels.manage", category: "channels", label: "Masquer/renouveler un salon, supprimer en lot depuis le panel (&hide, &unhide, &renew)" },
-  // Séparée de channels.manage pour la même raison que moderation.unbanall
-  // ci-dessus : &hide/&unhide touchent UN salon, &hideall/&unhideall
-  // touchent TOUT le serveur d'un coup — ne doivent pas être débloquées
-  // ensemble par la même permission.
-  { key: "channels.manageall", category: "channels", label: "Masquer/réafficher TOUS les salons (&hideall, &unhideall)" },
-  { key: "channels.lockdown", category: "channels", label: "Verrouillage d'urgence (&lockdown, &panic)" },
 
   // --- Membres ---
   { key: "members.nick", category: "members", label: "Modifier un pseudo (&nick, &resetnick)" },
@@ -58,7 +28,7 @@ const PERMISSIONS = [
   // publiques de lecture seule, comme &pic/&banner/&server déjà existantes.
 
   // --- Logs / historique ---
-  { key: "logs.view", category: "logs", label: "Consulter l'historique de modération (&modlogs, panel)" },
+  { key: "logs.view", category: "logs", label: "Consulter les salons de logs configurés (panel)" },
   { key: "logs.manage", category: "logs", label: "Configurer les salons de logs (panel)" },
 
   // --- Panel ---
@@ -95,7 +65,7 @@ const PERMISSIONS = [
   { key: "server.voice.manage", category: "server", label: "Modérer les membres en vocal (&voicekick, &voicemove, &bringall)" },
   // Séparée de server.voice.manage : &voicemove/&bringall déplacent TOUS
   // les membres d'un coup, contrairement à &voicekick qui cible une seule
-  // personne — même logique que moderation.unmuteall/channels.manageall.
+  // personne.
   { key: "server.voice.moveall", category: "server", label: "Déplacer tout un salon vocal d'un coup (&voicemove, &bringall)" },
   { key: "server.tickets.manage", category: "server", label: "Configurer les tickets (&ticket setup)" },
   { key: "server.polls.manage", category: "server", label: "Créer des sondages (&poll)" },

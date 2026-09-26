@@ -7,7 +7,6 @@ const { getAllLogChannels, setLogChannelId } = require("./modLogStore");
 // version qui divergerait au premier ajustement.
 
 const LOG_CHANNEL_NAMES = {
-  moderation: "logs-moderation",
   members: "logs-membres",
   roles: "logs-roles",
   channels: "logs-salons",

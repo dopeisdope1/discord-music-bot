@@ -56,7 +56,7 @@ cas("aucun groupe d'icônes ni catégorie existante ne dépasse 25 options (limi
 
 cas("iconDe() sans personnalisation retombe sur la valeur de utils/emojis.js", () => {
   assert.strictEqual(iconDe(GUILD, "SUCCESS"), EMOJI.SUCCESS);
-  assert.strictEqual(iconDe(GUILD, "BAN"), EMOJI.BAN);
+  assert.strictEqual(iconDe(GUILD, "PENCIL"), EMOJI.PENCIL);
 });
 
 cas("iconDe() reflète une personnalisation posée via categoryEmojiStore", () => {

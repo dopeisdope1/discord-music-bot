@@ -135,15 +135,15 @@ const texteDe = (payload) => JSON.stringify(payload.components);
   });
 
   await cas("choisir une catégorie révèle ses clés, avec leur état accordé/non", async () => {
-    const interaction = fakeInteraction(`srv:accesscat:${TARGET}`, { guildId: "g-key", values: ["moderation"] });
+    const interaction = fakeInteraction(`srv:accesscat:${TARGET}`, { guildId: "g-key", values: ["channels"] });
     permStore.grantToUser("g-key", "staff-1", "panel.permissions.manage");
-    permStore.grantToUser("g-key", TARGET, "moderation.kick");
+    permStore.grantToUser("g-key", TARGET, "channels.lock");
     await serverAdmin.handleServerAdminInteraction(interaction);
     assert.strictEqual(interaction._updates.length, 1);
     const json = interaction._updates[0].components[0].toJSON();
-    const menu = json.components.find((c) => c.type === 1 && c.components[0]?.custom_id === `srv:accesskey:${TARGET}:moderation`);
+    const menu = json.components.find((c) => c.type === 1 && c.components[0]?.custom_id === `srv:accesskey:${TARGET}:channels`);
     assert.ok(menu, "le menu de clés doit apparaître pour la catégorie choisie");
-    const option = menu.components[0].options.find((o) => o.value === "moderation.kick");
+    const option = menu.components[0].options.find((o) => o.value === "channels.lock");
     assert.ok(option?.description?.includes("accordée"), JSON.stringify(option));
   });
 
@@ -193,12 +193,12 @@ const texteDe = (payload) => JSON.stringify(payload.components);
 
   await cas("le résumé regroupe les permissions accordées par catégorie", async () => {
     permStore.grantToUser("g-resume", "staff-1", "panel.permissions.manage");
-    permStore.grantToUser("g-resume", TARGET, "moderation.kick");
-    permStore.grantToUser("g-resume", TARGET, "moderation.ban");
+    permStore.grantToUser("g-resume", TARGET, "channels.lock");
+    permStore.grantToUser("g-resume", TARGET, "channels.manage");
     const msg = fakeMessage({ guildId: "g-resume" });
     await serverAdmin.access(null, msg, msg._args);
     const texte = texteDe(msg._replies[0]);
-    assert.ok(texte.includes("moderation.kick") && texte.includes("moderation.ban"), texte);
+    assert.ok(texte.includes("channels.lock") && texte.includes("channels.manage"), texte);
     assert.ok(texte.includes("**2**"), texte);
   });
 

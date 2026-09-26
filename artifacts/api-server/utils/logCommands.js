@@ -17,7 +17,6 @@ const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed
  * se tape plus court que la version à deux arguments.
  */
 const COMMAND_TO_CATEGORY = {
-  modlog: "moderation",
   memberlog: "members",
   rolelog: "roles",
   channellog: "channels",

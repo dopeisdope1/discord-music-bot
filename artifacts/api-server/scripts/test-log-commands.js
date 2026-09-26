@@ -43,7 +43,7 @@ function makeChannel(id, type = ChannelType.GuildText, writable = true) {
   };
 }
 
-function makeMessage({ args = [], content = "modlog", channels = [], mentionChannel = null, roleId = ROLE, userId = "staff-1" } = {}) {
+function makeMessage({ args = [], content = "memberlog", channels = [], mentionChannel = null, roleId = ROLE, userId = "staff-1" } = {}) {
   const cache = new Collection();
   for (const c of channels) cache.set(c.id, c);
   const courant = channels[0] || makeChannel("c-courant");
@@ -80,7 +80,7 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
   console.log("Activation / désactivation par catégorie :");
 
   await cas("chaque commande vise bien sa propre catégorie du store", () => {
-    assert.deepStrictEqual(COMMAND_TO_CATEGORY.modlog, "moderation");
+    assert.deepStrictEqual(COMMAND_TO_CATEGORY.memberlog, "members");
     assert.deepStrictEqual(COMMAND_TO_CATEGORY.messagelog, "messages");
     assert.deepStrictEqual(COMMAND_TO_CATEGORY.voicelog, "voice");
     // Toutes les catégories du store ont une commande, aucune n'est orpheline.
@@ -90,14 +90,14 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     }
   });
 
-  await cas("`modlog on #salon` enregistre le salon mentionné", async () => {
+  await cas("`memberlog on #salon` enregistre le salon mentionné", async () => {
     const salon = makeChannel("c-logs");
     const msg = makeMessage({ channels: [makeChannel("c-courant"), salon], mentionChannel: salon });
-    await logHandlers.modlog(null, msg, ["on", "<#c-logs>"]);
-    assert.strictEqual(getAllLogChannels("g1").moderation, "c-logs");
+    await logHandlers.memberlog(null, msg, ["on", "<#c-logs>"]);
+    assert.strictEqual(getAllLogChannels("g1").members, "c-logs");
   });
 
-  await cas("`modlog on` sans salon prend le salon courant", async () => {
+  await cas("`voicelog on` sans salon prend le salon courant", async () => {
     const courant = makeChannel("c-ici");
     const msg = makeMessage({ channels: [courant] });
     await logHandlers.voicelog(null, msg, ["on"]);
@@ -107,12 +107,12 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
   await cas("`off` désactive la catégorie sans toucher aux autres", async () => {
     await logHandlers.voicelog(null, makeMessage(), ["off"]);
     assert.strictEqual(getAllLogChannels("g1").voice, null);
-    assert.strictEqual(getAllLogChannels("g1").moderation, "c-logs", "les autres catégories ne bougent pas");
+    assert.strictEqual(getAllLogChannels("g1").members, "c-logs", "les autres catégories ne bougent pas");
   });
 
   await cas("sans argument, la commande affiche l'état au lieu de ne rien faire", async () => {
-    const msg = makeMessage({ content: "modlog" });
-    await logHandlers.modlog(null, msg, []);
+    const msg = makeMessage({ content: "memberlog" });
+    await logHandlers.memberlog(null, msg, []);
     assert.ok(texte(msg).includes("c-logs"), texte(msg));
   });
 
@@ -138,9 +138,9 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     // Un membre ordinaire : ni rôle habilité, ni propriétaire du bot (qui
     // passerait outre toutes les permissions et ne prouverait rien ici).
     const msg = makeMessage({ roleId: null, userId: "membre-lambda" });
-    await logHandlers.modlog(null, msg, ["off"]);
+    await logHandlers.memberlog(null, msg, ["off"]);
     assert.strictEqual(msg._replies.length, 0, "aucune réponse — le préfixe est partagé avec le CrowBot");
-    assert.strictEqual(getAllLogChannels("g1").moderation, "c-logs", "et rien n'a été modifié");
+    assert.strictEqual(getAllLogChannels("g1").members, "c-logs", "et rien n'a été modifié");
   });
 
   console.log("\n&settings — résumé :");
@@ -149,7 +149,7 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     const msg = makeMessage();
     await logHandlers.settings(null, msg);
     const body = texte(msg);
-    assert.ok(body.includes("modlog"), "la commande à taper est rappelée");
+    assert.ok(body.includes("memberlog"), "la commande à taper est rappelée");
     assert.ok(body.includes("<#c-logs>"), "les salons configurés sont affichés");
     assert.ok(body.includes("désactivé"), "les catégories vides aussi");
   });
@@ -157,7 +157,7 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
   console.log("\n&autoconfiglog — même création que le bouton du panel :");
 
   await cas("crée un salon par catégorie manquante et les enregistre", async () => {
-    setLogChannelId("g2", "moderation", null);
+    setLogChannelId("g2", "members", null);
     const crees = [];
     const guild = {
       id: "g2",
@@ -176,12 +176,12 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     msg.guild = guild;
     await logHandlers.autoconfiglog(null, msg);
 
-    // 1 catégorie Discord + 8 salons de logs
-    assert.strictEqual(crees.length, 9, crees.join(", "));
+    // 1 catégorie Discord + 7 salons de logs
+    assert.strictEqual(crees.length, 8, crees.join(", "));
     assert.ok(crees.includes("Logs"), "les salons sont regroupés dans une catégorie");
-    assert.ok(crees.includes("logs-moderation"));
+    assert.ok(crees.includes("logs-membres"));
     const configures = Object.values(getAllLogChannels("g2")).filter(Boolean).length;
-    assert.strictEqual(configures, 8, "les 8 catégories doivent être enregistrées");
+    assert.strictEqual(configures, 7, "les 7 catégories doivent être enregistrées");
   });
 
   await cas("relancée, elle ne recrée rien", async () => {

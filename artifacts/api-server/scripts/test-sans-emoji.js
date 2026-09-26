@@ -21,7 +21,6 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel, SECTIONS } = require("../utils/configPanel");
-const { buildHelpPages } = require("../utils/helpPanel");
 
 let reussis = 0;
 function cas(nom, fn) {
@@ -72,16 +71,14 @@ function emojisDe(panneau) {
     .map((e) => e.name || e.id);
 }
 
-console.log("&help : aucun emoji, texte pur");
+// &help a migré vers un moteur navigable avec emojis intentionnels par
+// catégorie (utils/helpNavigator.js) — buildHelpPages (texte pur, sans
+// emoji) n'a plus aucun appelant réel, retiré de utils/helpPanel.js comme
+// code mort. Le test qu'il portait ("aucune page de &help ne porte d'emoji")
+// vérifiait un design déjà abandonné avant cette session, sans rapport avec
+// la migration modération.
 
-cas("aucune page de &help ne porte d'emoji décoratif", () => {
-  for (const page of buildHelpPages("g1", owner)) {
-    const emojis = emojisDe(page);
-    assert.deepStrictEqual(emojis, [], `emojis restants : ${emojis.join(" ")}`);
-  }
-});
-
-console.log("\n&panel : aucun emoji, sur AUCUNE rubrique");
+console.log("&panel : aucun emoji, sur AUCUNE rubrique");
 
 cas("toutes les rubriques du panel sont nettoyées, pas seulement l'accueil", () => {
   // Balayer les 27 rubriques et pas un échantillon : les emojis étaient

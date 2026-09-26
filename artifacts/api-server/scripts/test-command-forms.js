@@ -130,17 +130,9 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
 (async () => {
   console.log("Exécution réelle depuis le panel :");
 
-  await cas("kick_member expulse réellement la cible", async () => {
-    const interaction = makeInteraction();
-    await commandForms.FORMS.kick_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "spam" } });
-    assert.strictEqual(interaction._targetMember._kicked, "spam");
-  });
+  
 
-  await cas("timeout_member applique la bonne durée", async () => {
-    const interaction = makeInteraction();
-    await commandForms.FORMS.timeout_member.run(client, interaction, { userId: TARGET_ID, text: { duration: "10m", reason: "test" } });
-    assert.strictEqual(interaction._targetMember._timedOut.ms, 10 * 60 * 1000);
-  });
+  
 
   await cas("giveaway_start poste dans le salon choisi", async () => {
     const interaction = makeInteraction();
@@ -172,33 +164,11 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.strictEqual(interaction.guild._createdRole?.name, "Testeur");
   });
 
-  await cas("ban_member réutilise le VRAI &ban et bannit DIRECTEMENT — la confirmation a été retirée", async () => {
-    // Comportement demandé explicitement, le risque ayant été exposé : plus de
-    // panneau « Confirmer le bannissement ». Ce qui protège encore : le droit
-    // exigé, la hiérarchie des rôles vérifiée juste avant, et l'entrée
-    // d'historique — vérifiés par les cas voisins.
-    const interaction = makeInteraction();
-    const followUps = [];
-    interaction.followUp = async (p) => {
-      followUps.push(p);
-      return {};
-    };
-    await commandForms.FORMS.ban_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "raid" } });
-    assert.ok(interaction._targetMember._banned, "&ban doit désormais bannir sans étape de confirmation");
-    assert.strictEqual(interaction._targetMember._banned.reason, "raid", "la raison doit être transmise à Discord");
-  });
+  
 
-  await cas("softban_member bannit avec deleteMessageSeconds (purge) puis prévoit le débannissement", async () => {
-    const interaction = makeInteraction();
-    await commandForms.FORMS.softban_member.run(client, interaction, { userId: TARGET_ID, text: {} });
-    assert.strictEqual(interaction._targetMember._banned?.deleteMessageSeconds, 86400);
-  });
+  
 
-  await cas("unban_id débannit l'identifiant fourni", async () => {
-    const interaction = makeInteraction();
-    await commandForms.FORMS.unban_id.run(client, interaction, { text: { id: TARGET_ID } });
-    assert.strictEqual(interaction.guild._unbanned, TARGET_ID);
-  });
+  
 
   await cas("addrole_member ajoute bien le rôle choisi", async () => {
     const interaction = makeInteraction();
@@ -260,35 +230,13 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.strictEqual(interaction._channel._rateLimit, 30);
   });
 
-  await cas("mute_member ajoute le rôle de mute configuré", async () => {
-    const muteStore = require("../utils/muteStore");
-    muteStore.setMuteRoleId("g1", TEST_ROLE_ID);
-    const interaction = makeInteraction();
-    await commandForms.FORMS.mute_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "spam" } });
-    assert.ok(interaction._targetMember.roles._added?.some((r) => r === TEST_ROLE_ID));
-  });
+  
 
-  await cas("derank_member retire tous les rôles retirables de la cible", async () => {
-    const interaction = makeInteraction();
-    interaction._targetMember.roles.cache.set(TEST_ROLE_ID, { id: TEST_ROLE_ID, position: 2 });
-    await commandForms.FORMS.derank_member.run(client, interaction, { userId: TARGET_ID });
-    assert.ok(interaction._targetMember.roles._removed?.length > 0);
-  });
+  
 
   console.log("\nGénéralisation des sélecteurs natifs à des commandes existantes :");
 
-  await cas("del_sanction_member supprime bien la sanction visée par son numéro", async () => {
-    const historyStore = require("../utils/moderationHistoryStore");
-    historyStore.deleteAllForGuild("g1");
-    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "ban" });
-    // Numéro de case PERMANENT (attribué par utils/caseCounterStore.js) —
-    // jamais "1" en dur : d'autres cas de ce fichier ont déjà pu faire
-    // avancer le compteur de "g1" avant celui-ci.
-    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
-    const interaction = makeInteraction();
-    await commandForms.FORMS.del_sanction_member.run(client, interaction, { userId: TARGET_ID, text: { index: caseNumber } });
-    assert.strictEqual(historyStore.search("g1", { targetId: TARGET_ID }).length, 0);
-  });
+  
 
   await cas("role_admin_grant réutilise le VRAI &role admin, donc demande confirmation (jamais immédiat)", async () => {
     const { PermissionsBitField } = require("discord.js");
@@ -305,12 +253,7 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(followUps.length > 0, "une confirmation aurait dû être demandée");
   });
 
-  await cas("set_muterole_grant enregistre le rôle de mute choisi", async () => {
-    const muteStore = require("../utils/muteStore");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.set_muterole_grant.run(client, interaction, { roleId: TEST_ROLE_ID });
-    assert.strictEqual(muteStore.getMuteRoleId("g1"), TEST_ROLE_ID);
-  });
+  
 
   await cas("autoreact_add puis autoreact_del sur le même salon/émoji", async () => {
     const autoReactStore = require("../utils/autoReactStore");
@@ -327,9 +270,9 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     await commandForms.FORMS.set_perm_grant.run(client, interaction, {
       mentionableId: TEST_ROLE_ID,
       mentionableType: "role",
-      text: { category: "moderation", key: "moderation.kick" },
+      text: { category: "channels", key: "channels.lock" },
     });
-    assert.ok(permStore.getRoleGrants("g1", TEST_ROLE_ID).includes("moderation.kick"));
+    assert.ok(permStore.getRoleGrants("g1", TEST_ROLE_ID).includes("channels.lock"));
   });
 
   await cas("set_perm_grant accorde la clé choisie au MEMBRE choisi (mentionable = membre)", async () => {
@@ -338,21 +281,21 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     await commandForms.FORMS.set_perm_grant.run(client, interaction, {
       mentionableId: TARGET_ID,
       mentionableType: "user",
-      text: { category: "moderation", key: "moderation.kick" },
+      text: { category: "channels", key: "channels.lock" },
     });
-    assert.ok(permStore.getUserGrants("g1", TARGET_ID).includes("moderation.kick"));
+    assert.ok(permStore.getUserGrants("g1", TARGET_ID).includes("channels.lock"));
   });
 
   await cas("del_perm_grant retire la clé du membre choisi", async () => {
     const permStore = require("../utils/permissions/store");
-    permStore.grantToUser("g1", TARGET_ID, "moderation.kick");
+    permStore.grantToUser("g1", TARGET_ID, "channels.lock");
     const interaction = makeInteraction();
     await commandForms.FORMS.del_perm_grant.run(client, interaction, {
       mentionableId: TARGET_ID,
       mentionableType: "user",
-      text: { category: "moderation", key: "moderation.kick" },
+      text: { category: "channels", key: "channels.lock" },
     });
-    assert.ok(!permStore.getUserGrants("g1", TARGET_ID).includes("moderation.kick"));
+    assert.ok(!permStore.getUserGrants("g1", TARGET_ID).includes("channels.lock"));
   });
 
   await cas("la carte set_perm_grant n'affiche le sélecteur de clé qu'une fois une catégorie choisie", () => {
@@ -373,7 +316,7 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     const { Collection } = require("discord.js");
     const role = { id: TEST_ROLE_ID, name: "Testeur" };
     const interaction = {
-      customId: `${commandForms.CARD_ID}:mentionable:kick_member`,
+      customId: `${commandForms.CARD_ID}:mentionable:addrole_member`,
       user: { id: "staff-1" },
       member: { id: "staff-1", guild: { id: "g1" }, permissions: new (require("discord.js").PermissionsBitField)(require("discord.js").PermissionsBitField.All) },
       guild: { id: "g1", roles: { cache: new Collection([[TEST_ROLE_ID, role]]) }, channels: { cache: new Collection() } },
@@ -383,13 +326,13 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
       users: new Collection(),
       update: async () => {},
     };
-    // kick_member n'a pas de champ "mentionable" mais handleFormCardInteraction
+    // addrole_member n'a pas de champ "mentionable" mais handleFormCardInteraction
     // ne valide que l'action générique de sélection avant de router — on vise
     // ici uniquement la résolution rôle/membre, pas le formulaire réel.
     await commandForms.handleFormCardInteraction(interaction);
-    assert.strictEqual(commandForms.getFormState("staff-1", "kick_member")?.mentionableType, "role");
-    assert.strictEqual(commandForms.getFormState("staff-1", "kick_member")?.mentionableId, TEST_ROLE_ID);
-    commandForms.clearFormState("staff-1", "kick_member");
+    assert.strictEqual(commandForms.getFormState("staff-1", "addrole_member")?.mentionableType, "role");
+    assert.strictEqual(commandForms.getFormState("staff-1", "addrole_member")?.mentionableId, TEST_ROLE_ID);
+    commandForms.clearFormState("staff-1", "addrole_member");
   });
 
   console.log("\nCommandes volontairement NON interceptées (raccourci zéro-argument déjà utile, voir le commentaire dans commandForms.js) :");
@@ -408,53 +351,8 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
 
   console.log("\n&warn/&warnings/&unwarn/&case — cartes natives :");
 
-  await cas("warn_member enregistre l'avertissement avec la raison saisie", async () => {
-    const historyStore = require("../utils/moderationHistoryStore");
-    historyStore.deleteAllForGuild("g1");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.warn_member.run(client, interaction, { userId: TARGET_ID, text: { reason: "comportement toxique" } });
-    const entries = historyStore.search("g1", { targetId: TARGET_ID, action: "warn" });
-    assert.strictEqual(entries.length, 1);
-    assert.strictEqual(entries[0].reason, "comportement toxique");
-  });
+  
 
-  await cas("warnings_view répond \"membre introuvable\" plutôt que de planter sur un ID invalide", async () => {
-    const interaction = makeInteraction();
-    interaction.guild.members.fetch = async () => null;
-    const followUps = [];
-    interaction.followUp = async (p) => {
-      followUps.push(p);
-      return {};
-    };
-    await commandForms.FORMS.warnings_view.run(client, interaction, { userId: "999999999999999999" });
-    assert.ok(followUps.some((p) => p.content?.includes("introuvable")));
-  });
-
-  await cas("unwarn_member retire bien l'avertissement visé par son numéro de case", async () => {
-    const historyStore = require("../utils/moderationHistoryStore");
-    historyStore.deleteAllForGuild("g1");
-    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "warn", reason: "à retirer" });
-    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
-    const interaction = makeInteraction();
-    await commandForms.FORMS.unwarn_member.run(client, interaction, { userId: TARGET_ID, text: { caseNumber } });
-    assert.strictEqual(historyStore.search("g1", { targetId: TARGET_ID, action: "warn" }).length, 0);
-  });
-
-  await cas("case_view affiche le détail de la case demandée (fonctionne pour n'importe quel type de sanction)", async () => {
-    const historyStore = require("../utils/moderationHistoryStore");
-    historyStore.deleteAllForGuild("g1");
-    historyStore.record({ guildId: "g1", targetId: TARGET_ID, action: "kick", reason: "raid" });
-    const caseNumber = String(historyStore.search("g1", { targetId: TARGET_ID })[0].caseNumber);
-    const interaction = makeInteraction();
-    const followUps = [];
-    interaction.followUp = async (p) => {
-      followUps.push(p);
-      return {};
-    };
-    await commandForms.FORMS.case_view.run(client, interaction, { text: { number: caseNumber } });
-    const texte = followUps[0]?.embeds?.[0]?.data?.description || "";
-    assert.ok(texte.includes(`Case #${caseNumber}`) && texte.includes("kick") && texte.includes("raid"));
-  });
 
   console.log("\n&autorole add/del — cartes natives :");
 

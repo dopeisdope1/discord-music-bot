@@ -17,7 +17,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const { utilityHandlers } = require("../utils/utilityCommands");
-const { moderationHandlers } = require("../utils/moderationCommands");
+const moderationHandlers = require("../utils/moderationCommands");
 const serverAdmin = require("../utils/serverAdminCommands");
 const { applyAutoroles } = require("../utils/autoroleCommands");
 const autoroleStore = require("../utils/autoroleStore");
@@ -113,7 +113,7 @@ const embedText = (reply) =>
 
   await cas("un membre avec des rôles accordés voit les VRAIES commandes débloquées", async () => {
     const guild = { id: "g2" };
-    permStore.setRoleGrants("g2", "role-mod", ["moderation.kick"]);
+    permStore.setRoleGrants("g2", "role-mod", ["channels.lock"]);
     const target = {
       id: "u-mod",
       user: { tag: "mod#0001" },
@@ -122,7 +122,7 @@ const embedText = (reply) =>
     const msg = fakeMessage({ guild, mentions: { members: new Collection([[target.id, target]]) } });
     await utilityHandlers.staffCheck(null, msg, []);
     const texte = embedText(msg._replies[0]);
-    assert.ok(texte.includes("kick"), texte);
+    assert.ok(texte.includes("lock"), texte);
   });
 
   await cas("un membre sans aucune permission accordée le dit clairement", async () => {

@@ -1,6 +1,5 @@
 const accessStore = require("../accessStore");
 const { postModerationEntry } = require("../moderationLog");
-const historyStore = require("../moderationHistoryStore");
 
 /**
  * Motifs de refus indépendants de qui lance l'action ET de la permission
@@ -83,11 +82,17 @@ function checkBotPermission(guild, flag, flagName) {
 
 /**
  * Journalise une action de modération effectuée par CE bot : salon de logs
- * (utils/moderationLog.js::postModerationEntry) + historique consultable
- * (utils/moderationHistoryStore.js). Point d'écriture UNIQUE pour toute
- * commande de modération de ce bot — le modérateur enregistré est toujours
- * la vraie personne qui a tapé la commande (jamais le compte du bot, voir
- * l'explication dans utils/moderationLog.js).
+ * (utils/moderationLog.js::postModerationEntry). Point d'écriture pour toute
+ * action encore présente sur ce bot (rôles, salons, grades...) — le
+ * modérateur enregistré est toujours la vraie personne qui a tapé la
+ * commande (jamais le compte du bot, voir l'explication dans
+ * utils/moderationLog.js).
+ *
+ * Plus d'écriture dans un historique consultable séparé (utils/
+ * moderationHistoryStore.js) : cet historique est parti avec le reste de la
+ * modération vers moderation-bot, qui journalise ses propres actions
+ * lui-même. `action`/`targetTag`/`extra` restent acceptés en entrée pour ne
+ * pas casser les appelants existants, mais ne sont plus utilisés ici.
  *
  * `fields` ne porte que ce qui est spécifique à l'action (ex: "Cible",
  * "Durée") — Auteur et Raison sont ajoutés automatiquement par
@@ -96,18 +101,13 @@ function checkBotPermission(guild, flag, flagName) {
  * @param {object} params
  * @param {string} params.guildId
  * @param {"moderation"|"members"|"server"} params.category
- * @param {string} params.title ex: "Expulsion", "Timeout"
+ * @param {string} params.title ex: "Rôle ajouté", "Salon créé"
  * @param {{label: string, value: string}[]} params.fields
- * @param {string} params.action ex: "ban", "kick", "timeout", "clear"...
- * @param {string} params.targetId
- * @param {string|null} [params.targetTag]
  * @param {import('discord.js').User} params.moderator
  * @param {string|null} [params.reason]
- * @param {string|null} [params.channelId]
- * @param {object|null} [params.extra]
  */
 async function report(client, params) {
-  const { guildId, category, title, fields, action, targetId, targetTag, moderator, reason, channelId, extra } = params;
+  const { guildId, category, title, fields, moderator, reason } = params;
 
   await postModerationEntry(client, guildId, category, {
     title,
@@ -115,19 +115,6 @@ async function report(client, params) {
     moderatorId: moderator.id,
     moderatorTag: moderator.tag,
     reason,
-  });
-
-  historyStore.record({
-    guildId,
-    action,
-    targetId,
-    targetTag: targetTag || null,
-    moderatorId: moderator.id,
-    moderatorTag: moderator.tag,
-    reason: reason || null,
-    channelId: channelId || null,
-    source: "bot",
-    extra: extra || null,
   });
 }
 

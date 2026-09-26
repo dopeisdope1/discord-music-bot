@@ -13,7 +13,6 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { formatDuration, parseDuration } = require("./moderationCommands");
-const { requestConfirmation } = require("./serverAdminCommands");
 const { preparerEmoji } = require("./emojiMedia");
 const tempRoleStore = require("./tempRoleStore");
 const autoReactStore = require("./autoReactStore");
@@ -201,47 +200,8 @@ async function massRole(client, message, { remove }) {
   return reply(message, "success", `${remove ? "Retiré de" : "Ajouté à"} **${count}** membre(s).`);
 }
 
-// --- &unbanall (confirmation obligatoire, comme &banall) ---
-
-async function unbanall(client, message) {
-  if (!can(message.member, "moderation.unbanall")) return;
-  const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.BanMembers, "BanMembers");
-  if (botPerm) return reply(message, "error", botPerm);
-
-  const bans = await message.guild.bans.fetch().catch(() => null);
-  if (!bans || !bans.size) return reply(message, "info", "Personne n'est banni.");
-
-  return requestConfirmation(message, {
-    title: "Confirmer le débannissement de masse",
-    body: `**${bans.size}** membre(s) actuellement banni(s) seront débannis. Cette action ne peut pas être annulée automatiquement.`,
-    confirmLabel: "Débannir tout le monde",
-    permission: "moderation.unbanall",
-    execute: async (interaction, terminer) => {
-      const currentBans = await interaction.guild.bans.fetch().catch(() => null);
-      let count = 0;
-      for (const ban of currentBans?.values() || []) {
-        await interaction.guild.members.unban(ban.user.id, `Débannissement de masse par ${interaction.user.tag}`).catch(() => {});
-        count++;
-      }
-      await report(interaction.client, {
-        guildId: interaction.guild.id,
-        category: "server",
-        title: "Débannissement de masse",
-        fields: [{ label: "Membres débannis", value: String(count) }],
-        action: "unbanall",
-        targetId: null,
-        targetTag: null,
-        moderator: interaction.user,
-        channelId: interaction.channel?.id || null,
-        extra: { count },
-      });
-      // terminer() gère déjà la conversion Components V2 (voir
-      // utils/serverAdminCommands.js::construireTerminaison) — plus besoin de
-      // s'en soucier ici.
-      return terminer("Terminé", `**${count}** membre(s) débanni(s).`);
-    },
-  });
-}
+// &unbanall a migré vers moderation-bot avec le reste de la modération
+// (voir utils/unbanAll.js sur ce bot-là).
 
 // --- &temprole / &untemprole ---
 
@@ -461,7 +421,6 @@ module.exports = {
   createEmoji,
   massiverole: (client, message) => massRole(client, message, { remove: false }),
   unmassiverole: (client, message) => massRole(client, message, { remove: true }),
-  unbanall,
   temprole,
   untemprole,
   checkExpiredTempRoles,

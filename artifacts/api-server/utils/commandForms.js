@@ -23,10 +23,8 @@ const { iconDe } = require("./emojiSlots");
 const { startGiveaway, rerollGiveaway, endGiveaway, MAX_WINNERS } = require("./giveaways");
 const { createPoll } = require("./polls");
 const { setupTickets } = require("./tickets");
-const { moderationHandlers } = require("./moderationCommands");
-const moderationExtra = require("./moderationExtra");
+const moderationHandlers = require("./moderationCommands");
 const { channelHandlers } = require("./channelCommands");
-const { handleBan, handleUnban } = require("./banPanel");
 const serverAdmin = require("./serverAdminCommands");
 const serverExtra = require("./serverExtra");
 const botProfileCommands = require("./botProfileCommands");
@@ -194,42 +192,6 @@ const FORMS = {
     },
   },
 
-  kick_member: {
-    label: "Expulser un membre",
-    category: "moderation",
-    permission: "moderation.kick",
-    emojiKey: "KICK",
-    fields: ["user"],
-    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationHandlers.kick(client, msg, v.text?.reason ? [v.text.reason] : []);
-    },
-  },
-
-  timeout_member: {
-    label: "Timeout un membre",
-    category: "moderation",
-    permission: "moderation.timeout",
-    emojiKey: "MUTE",
-    fields: ["user"],
-    textFields: [
-      { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
-      { key: "reason", label: "Raison (optionnel)", max: 200, required: false },
-    ],
-    ready: (v) => Boolean(v.userId && v.text?.duration),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      const args = [v.text.duration, ...(v.text.reason ? [v.text.reason] : [])];
-      await moderationHandlers.timeout(client, msg, args);
-    },
-  },
-
   role_create: {
     label: "Créer un rôle",
     category: "server",
@@ -241,52 +203,6 @@ const FORMS = {
     run: async (client, interaction, v) => {
       const msg = fakeMessage(interaction, {});
       await serverAdmin.roleAdmin(client, msg, ["create", ...v.text.name.split(/\s+/)]);
-    },
-  },
-
-  ban_member: {
-    label: "Bannir un membre",
-    category: "moderation",
-    permission: "moderation.ban",
-    emojiKey: "BAN",
-    fields: ["user"],
-    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await handleBan(client, msg, v.text?.reason ? [v.text.reason] : []);
-    },
-  },
-
-  softban_member: {
-    label: "Softban un membre",
-    category: "moderation",
-    permission: "moderation.softban",
-    emojiKey: "BAN",
-    fields: ["user"],
-    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationHandlers.softban(client, msg, v.text?.reason ? [v.text.reason] : []);
-    },
-  },
-
-  unban_id: {
-    label: "Débannir (par ID)",
-    category: "moderation",
-    permission: "moderation.unban",
-    emojiKey: "CHECK",
-    fields: [],
-    textFields: [{ key: "id", label: "Identifiant Discord du membre banni", max: 25 }],
-    ready: (v) => Boolean(v.text?.id),
-    run: async (client, interaction, v) => {
-      const msg = fakeMessage(interaction, {});
-      await handleUnban(client, msg, [v.text.id]);
     },
   },
 
@@ -362,196 +278,6 @@ const FORMS = {
       if (!channel) return interaction.followUp({ content: "Salon introuvable.", flags: MessageFlags.Ephemeral });
       const msg = fakeMessage(interaction, { channel });
       await moderationHandlers.slowmode(client, msg, [v.text.duration]);
-    },
-  },
-
-  mute_member: {
-    label: "Mute un membre",
-    category: "moderation",
-    permission: "moderation.timeout",
-    emojiKey: "MUTE",
-    fields: ["user"],
-    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      // utils/moderationExtra.js lit la cible directement depuis args[0]
-      // (mention ou ID littéral), pas depuis message.mentions — voir sa
-      // propre parseTarget(), volontairement plus stricte (fix &clear).
-      await moderationExtra.mute(client, msg, [member.id, ...(v.text?.reason ? [v.text.reason] : [])]);
-    },
-  },
-
-  derank_member: {
-    label: "Derank un membre (retire tous ses rôles)",
-    category: "moderation",
-    permission: "members.role",
-    emojiKey: "DELETE",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.derank(client, msg, [member.id]);
-    },
-  },
-
-  untimeout_member: {
-    label: "Lever un timeout",
-    category: "moderation",
-    permission: "moderation.timeout",
-    emojiKey: "UNMUTE",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationHandlers.untimeout(client, msg, []);
-    },
-  },
-
-  unmute_member: {
-    label: "Lever un mute",
-    category: "moderation",
-    permission: "moderation.timeout",
-    emojiKey: "UNMUTE",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.unmute(client, msg, [member.id]);
-    },
-  },
-
-  tempmute_member: {
-    label: "Tempmute un membre",
-    category: "moderation",
-    permission: "moderation.timeout",
-    emojiKey: "MUTE",
-    fields: ["user"],
-    textFields: [
-      { key: "duration", label: "Durée (ex : 10m, 1h, 1d)", max: 20 },
-      { key: "reason", label: "Raison (optionnel)", max: 200, required: false },
-    ],
-    ready: (v) => Boolean(v.userId && v.text?.duration),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.tempmute(client, msg, [member.id, v.text.duration, ...(v.text.reason ? [v.text.reason] : [])]);
-    },
-  },
-
-  tempban_member: {
-    label: "Tempban un membre",
-    category: "moderation",
-    permission: "moderation.ban",
-    emojiKey: "BAN",
-    fields: ["user"],
-    textFields: [
-      { key: "duration", label: "Durée (ex : 1d, 12h, 1w)", max: 20 },
-      { key: "reason", label: "Raison (optionnel)", max: 200, required: false },
-    ],
-    ready: (v) => Boolean(v.userId && v.text?.duration),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.tempban(client, msg, [member.id, v.text.duration, ...(v.text.reason ? [v.text.reason] : [])]);
-    },
-  },
-
-  mutelist_view: {
-    label: "Voir la liste des membres mute",
-    category: "moderation",
-    permission: "moderation.timeout",
-    fields: [],
-    ready: () => true,
-    run: async (client, interaction) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.mutelist(client, msg);
-    },
-  },
-
-  unmuteall_action: {
-    label: "Démute tout le monde",
-    category: "moderation",
-    permission: "moderation.unmuteall",
-    fields: [],
-    ready: () => true,
-    run: async (client, interaction) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.unmuteall(client, msg);
-    },
-  },
-
-  banlist_view: {
-    label: "Voir la liste des bannis",
-    category: "moderation",
-    permission: "moderation.unban",
-    fields: [],
-    ready: () => true,
-    run: async (client, interaction) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.banlist(client, msg);
-    },
-  },
-
-  sanctions_view: {
-    label: "Voir les sanctions d'un membre",
-    category: "moderation",
-    permission: "logs.view",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.sanctions(client, msg, [member.id]);
-    },
-  },
-
-  clear_sanctions_member: {
-    label: "Supprimer les sanctions d'un membre",
-    category: "moderation",
-    permission: "logs.manage",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.clearSanctions(client, msg, [member.id]);
-    },
-  },
-
-  hideall_action: {
-    label: "Masquer tous les salons",
-    category: "moderation",
-    permission: "channels.manageall",
-    fields: [],
-    ready: () => true,
-    run: async (client, interaction) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.hideall(client, msg);
-    },
-  },
-
-  unhideall_action: {
-    label: "Réafficher tous les salons",
-    category: "moderation",
-    permission: "channels.manageall",
-    fields: [],
-    ready: () => true,
-    run: async (client, interaction) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.unhideall(client, msg);
     },
   },
 
@@ -852,21 +578,6 @@ const FORMS = {
   // implémenté, voir utils/implementedCommands.js) : aucune carte n'est
   // ajoutée pour des commandes qui ne répondraient de toute façon rien.
 
-  del_sanction_member: {
-    label: "Supprimer une sanction précise",
-    category: "moderation",
-    permission: "logs.manage",
-    fields: ["user"],
-    textFields: [{ key: "index", label: "Numéro de la sanction (voir &sanctions)", max: 5 }],
-    ready: (v) => Boolean(v.userId && v.text?.index),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.delSanction(client, msg, [member.id, v.text.index]);
-    },
-  },
-
   role_admin_grant: {
     label: "Donner/retirer Administrateur à un rôle",
     category: "server",
@@ -878,20 +589,6 @@ const FORMS = {
       if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
       const msg = fakeMessage(interaction, { role });
       await serverAdmin.roleAdmin(client, msg, ["admin"]);
-    },
-  },
-
-  set_muterole_grant: {
-    label: "Régler le rôle de mute",
-    category: "protection",
-    permission: "protection.automod",
-    fields: ["role"],
-    ready: (v) => Boolean(v.roleId),
-    run: async (client, interaction, v) => {
-      const role = interaction.guild.roles.cache.get(v.roleId);
-      if (!role) return interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { role });
-      await moderationExtra.setMuteRole(client, msg, []);
     },
   },
 
@@ -956,65 +653,6 @@ const FORMS = {
       const msg = await resolveMentionableMessage(interaction, v);
       if (!msg) return;
       await configHandlers.setPerm(client, msg, [v.text.key]);
-    },
-  },
-
-  warn_member: {
-    label: "Avertir un membre",
-    category: "moderation",
-    permission: "moderation.warn",
-    emojiKey: "INFO",
-    fields: ["user"],
-    textFields: [{ key: "reason", label: "Raison (optionnel)", max: 200, required: false }],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.warn(client, msg, [member.id, ...(v.text?.reason ? [v.text.reason] : [])]);
-    },
-  },
-
-  warnings_view: {
-    label: "Voir les avertissements d'un membre",
-    category: "moderation",
-    permission: "logs.view",
-    fields: ["user"],
-    ready: (v) => Boolean(v.userId),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.warnings(client, msg, [member.id]);
-    },
-  },
-
-  unwarn_member: {
-    label: "Retirer un avertissement",
-    category: "moderation",
-    permission: "logs.manage",
-    emojiKey: "CROSS",
-    fields: ["user"],
-    textFields: [{ key: "caseNumber", label: "Numéro de case (voir &warnings)", max: 10 }],
-    ready: (v) => Boolean(v.userId && v.text?.caseNumber),
-    run: async (client, interaction, v) => {
-      const member = await interaction.guild.members.fetch(v.userId).catch(() => null);
-      if (!member) return interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-      const msg = fakeMessage(interaction, { user: member });
-      await moderationExtra.unwarn(client, msg, [member.id, v.text.caseNumber]);
-    },
-  },
-
-  case_view: {
-    label: "Voir le détail d'une case",
-    category: "moderation",
-    permission: "logs.view",
-    fields: [],
-    textFields: [{ key: "number", label: "Numéro de case", max: 10 }],
-    ready: (v) => Boolean(v.text?.number),
-    run: async (client, interaction, v) => {
-      const msg = fakeMessage(interaction, {});
-      await moderationExtra.caseView(client, msg, [v.text.number]);
     },
   },
 
@@ -1777,32 +1415,16 @@ async function handleFormCardInteraction(interaction) {
  * pas de retour à un message d'erreur sec.
  */
 const SANS_CARTE_SANS_ARGUMENT = new Set([
-  "addrole", "delrole", "kick", "ban", "softban", "timeout", "untimeout",
-  "mute", "unmute", "tempmute", "tempban", "derank", "sanctions",
-  "temprole", "untemprole", "cmute", "uncmute", "tempcmute", "warn",
-  "warnings", "unwarn", "clear sanctions", "del sanction", "del perm",
-  "set perm",
+  "addrole", "delrole", "temprole", "untemprole", "del perm", "set perm",
 ]);
 
 const BARE_COMMAND_FORMS = {
   giveaway: "giveaway_start",
   addrole: "addrole_member",
   delrole: "delrole_member",
-  kick: "kick_member",
-  ban: "ban_member",
-  softban: "softban_member",
-  unban: "unban_id",
-  timeout: "timeout_member",
-  untimeout: "untimeout_member",
-  mute: "mute_member",
-  unmute: "unmute_member",
-  tempmute: "tempmute_member",
-  tempban: "tempban_member",
-  derank: "derank_member",
   poll: "poll_create",
   slowmode: "slowmode_channel",
   ticket: "ticket_setup",
-  sanctions: "sanctions_view",
   dero: "dero_role",
   choose: "choose_random",
   create: "create_emoji",
@@ -1811,17 +1433,6 @@ const BARE_COMMAND_FORMS = {
   temprole: "temprole_action",
   untemprole: "untemprole_action",
   end: "giveaway_end",
-  // &cmute/&uncmute/&tempcmute sont des ALIAS texte de &mute/&unmute/&tempmute
-  // (dispatchés séparément dans utils/musicCommands.js) — la table ci-dessus
-  // est indexée sur le mot RÉELLEMENT tapé, donc chaque alias a besoin de sa
-  // propre entrée vers la même carte que son équivalent non-"c".
-  cmute: "mute_member",
-  uncmute: "unmute_member",
-  tempcmute: "tempmute_member",
-  warn: "warn_member",
-  warnings: "warnings_view",
-  unwarn: "unwarn_member",
-  case: "case_view",
   "autorole add": "autorole_add",
   "autorole del": "autorole_del",
   // Clés à deux mots : commandes dont le premier mot est un dispatcher
@@ -1835,12 +1446,9 @@ const BARE_COMMAND_FORMS = {
   "channel delete": "channel_delete",
   "channel rename": "channel_rename",
   "channel topic": "channel_topic",
-  "clear sanctions": "clear_sanctions_member",
   "giveaway reroll": "giveaway_reroll",
-  "del sanction": "del_sanction_member",
   "del perm": "del_perm_grant",
   "set perm": "set_perm_grant",
-  "set muterole": "set_muterole_grant",
   "autoreact add": "autoreact_add",
   "autoreact del": "autoreact_del",
 };

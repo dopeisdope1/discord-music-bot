@@ -13,9 +13,14 @@ const DATA_FILE = path.join(DATA_DIR, "modLog.json");
 // partager le même. Étendu (rôles/salons/vocal séparés de "serveur", qui
 // ne garde que les réglages généraux) pour suivre les nouvelles commandes/
 // permissions ajoutées au fil du bot — sans sur-découper non plus.
-const CATEGORIES = ["moderation", "members", "roles", "channels", "voice", "server", "bots", "messages"];
+//
+// "moderation" n'en fait plus partie depuis le départ de la modération vers
+// son propre bot (moderation-bot, qui gère désormais ses propres logs de
+// modération via son propre utils/modLogStore.js réduit — potentiellement
+// le MÊME fichier modLog.json si PERMISSIONS_FILE-like est partagé, mais
+// filtré à sa seule clé "moderation" côté ce bot-là, jamais lue/écrite ici).
+const CATEGORIES = ["members", "roles", "channels", "voice", "server", "bots", "messages"];
 const CATEGORY_LABELS = {
-  moderation: "Modération",
   members: "Membres",
   roles: "Rôles",
   channels: "Salons",
@@ -49,7 +54,9 @@ function save() {
 /**
  * Normalise l'entrée d'un serveur, en reprenant l'ancien format à salon
  * unique ({ channelId }, avant l'introduction des catégories) comme salon
- * "moderation" par défaut — rétrocompatible sans migration manuelle.
+ * "members" par défaut — rétrocompatible sans migration manuelle. Retombait
+ * sur "moderation" avant le départ de la modération vers son propre bot ;
+ * cette catégorie n'existe plus ici, "members" est la première restante.
  */
 function guildEntry(guildId) {
   const data = load();
@@ -58,13 +65,13 @@ function guildEntry(guildId) {
   if (raw.channelId && !raw.categories) {
     // Ancien format : une seule clé channelId. Converti en mémoire, pas
     // réécrit tant que rien n'est modifié (évite un save() au simple chargement).
-    return { moderation: raw.channelId };
+    return { members: raw.channelId };
   }
   return raw.categories || {};
 }
 
 /** @returns {string|null} salon configuré pour une catégorie, ou null. */
-function getLogChannelId(guildId, category = "moderation") {
+function getLogChannelId(guildId, category = "members") {
   return guildEntry(guildId)[category] || null;
 }
 

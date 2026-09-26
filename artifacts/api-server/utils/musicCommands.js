@@ -1,6 +1,5 @@
 const { buildStatusEmbed } = require("./statusEmbed");
 const { getPrefixes } = require("./prefixStore");
-const commandRouting = require("./commandRouting");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
 const { channelHandlers } = require("./channelCommands");
@@ -10,12 +9,8 @@ const emojiPanel = require("./emojiPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
-const { handleBanAll } = require("./banAll");
-const { handleBan, handleUnban } = require("./banPanel");
-const banInfoCard = require("./banInfoCard");
-const { moderationHandlers } = require("./moderationCommands");
+const moderationCommands = require("./moderationCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
-const moderationExtra = require("./moderationExtra");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
 const familyHelp = require("./familyHelp");
@@ -39,7 +34,6 @@ const statusDiagnostic = require("./statusDiagnostic");
 const { securityScan } = require("./securityScan");
 const levels = require("./levels");
 const rankLadder = require("./rankLadderCommands");
-const zinkillerCommands = require("./zinkillerCommands");
 const gradeMuteCommands = require("./gradeMuteCommands");
 
 // Commandes dont la reponse est une IMAGE dessinee (utils/dashboardImage.js).
@@ -113,7 +107,7 @@ const modHandlers = {
   // le menu "Choisir un palier" (utils/helpNavigator.js) — jamais plusieurs
   // messages postés d'affilée, même avec 150+ commandes configurables.
   async help(client, message) {
-    return helpNavigator.repondreAvecAide("gestion", message);
+    return helpNavigator.repondreAvecAide(message);
   },
 
   // Commandes publiques d'affichage : aucune autorisation requise, elles ne
@@ -137,28 +131,9 @@ const modHandlers = {
   // s'affichent que pour qui a le droit de s'en servir.
   p: palierPanel.handlePalierTextCommand,
 
-  // Ces commandes vérifient leurs propres droits à l'intérieur (moteur de
-  // permissions central, voir utils/permissions/engine.js) : banall inclut
-  // le propriétaire du serveur, ce que requireScope ne sait pas exprimer, et
-  // toutes restent muettes pour les non-autorisés plutôt que de répondre à
-  // la place du CrowBot sur ce préfixe partagé.
-  banall: handleBanAll,
-  ban: handleBan,
-  unban: handleUnban,
-  baninfo: async (client, message, args) => {
-    if (!can(message.member, "moderation.ban")) return;
-    const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
-    const idArg = args[0]?.match(/^\d{15,25}$/);
-    const targetId = mention?.[1] || idArg?.[0];
-    const erreur = (texte) => message.reply({ embeds: [buildStatusEmbed("error", texte, { guildId: message.guild.id })] });
-    if (!targetId) return erreur("Indique un membre (mention ou identifiant) : `baninfo @membre`.");
-    const target = await message.guild.members.fetch(targetId).catch(() => null);
-    if (!target) return erreur("Ce membre n'est pas sur le serveur.");
-    return banInfoCard.repondreAvecBanInfo(message, target);
-  },
-  zinkiller: zinkillerCommands.zinkiller,
-  unzinkiller: zinkillerCommands.unzinkiller,
-  zinkillerlist: zinkillerCommands.zinkillerlist,
+  // Mute gradé — voir utils/gradeMuteCommands.js. Reste sur ce bot (couplé à
+  // l'échelle de grades, utils/rankLadderCommands.js) : décision actée lors
+  // du départ du reste de la modération vers son propre bot.
   bmute: gradeMuteCommands.bmute,
   bunmute: gradeMuteCommands.bunmute,
   bmutelist: gradeMuteCommands.bmutelist,
@@ -170,15 +145,9 @@ const modHandlers = {
   lock: requirePermission("channels.lock", channelHandlers.lock),
   unlock: requirePermission("channels.lock", channelHandlers.unlock),
 
-  // Nouvelles commandes de modération (refonte permissions/rôles/logs/panel) —
-  // chacune vérifie sa propre clé de permission via utils/permissions/engine.js.
-  kick: moderationHandlers.kick,
-  softban: moderationHandlers.softban,
-  timeout: moderationHandlers.timeout,
-  untimeout: moderationHandlers.untimeout,
-  slowmode: moderationHandlers.slowmode,
-  nick: moderationHandlers.nick,
-  resetnick: moderationHandlers.resetnick,
+  slowmode: moderationCommands.slowmode,
+  nick: moderationCommands.nick,
+  resetnick: moderationCommands.resetnick,
   // "role create/delete/rename/color/admin" gère le rôle lui-même (voir
   // utils/serverAdminCommands.js) ; l'appartenance d'un membre à un rôle se
   // fait via "&addrole"/"&delrole" (utils/moderationCommands.js), distincts.
@@ -191,8 +160,8 @@ const modHandlers = {
     if (serverAdmin.ROLE_ADMIN_SUBCOMMANDS.has(sub)) return serverAdmin.roleAdmin(client, message, args);
     return utilityHandlers.roleInfo(client, message, args);
   },
-  addrole: moderationHandlers.addrole,
-  delrole: moderationHandlers.delrole,
+  addrole: moderationCommands.addrole,
+  delrole: moderationCommands.delrole,
   limitrole: serverAdmin.limitRole,
   promote: rankLadder.promote,
   demote: rankLadder.demote,
@@ -221,23 +190,15 @@ const modHandlers = {
     // directement (staffCheck lit la mention, jamais les mots de `args`).
     return utilityHandlers.staffCheck(client, message, sub === "check" ? args.slice(1) : args);
   },
-  modlogs: moderationHandlers.modlogs,
-  // "clear sanctions"/"clear all sanctions" gèrent l'historique d'un membre
-  // (utils/moderationExtra.js) ; tout le reste (y compris un mot-clé non
-  // reconnu, ex "clear owners") reste le nettoyage de messages habituel —
-  // jamais l'inverse, pour ne pas re-ouvrir la collision corrigée sur &clear.
+  // "clear perms"/"clear limit" restent ici (config de gestion) ; le
+  // nettoyage de messages lui-même ("clear @membre", sans sous-commande
+  // reconnue) et "clear sanctions"/"clear all sanctions" ont migré avec le
+  // reste de la modération vers moderation-bot.
   clear: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
-    if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
-    if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
     if (sub === "perms") return configHandlers.clearPerms(client, message, args.slice(1));
     if (sub === "limit") return configHandlers.clearLimit(client, message, args.slice(1));
-    return moderationHandlers.clear(client, message, args);
   },
-  purge: moderationHandlers.purge,
-  lockdown: moderationHandlers.lockdown,
-  panic: moderationHandlers.panic,
-  unlockdown: moderationHandlers.unlockdown,
 
   // Administration du serveur (rôles/salons créés de zéro, owners, whitelist,
   // liste des bots, dero automatique) — voir utils/serverAdminCommands.js.
@@ -316,7 +277,7 @@ const modHandlers = {
   },
 
   // Publiques, sans vérification de droits — même famille que pic/banner/server.
-  userinfo: moderationHandlers.userinfo,
+  userinfo: moderationCommands.userinfo,
   // Commandes personnalisees du serveur (utils/customCommands.js).
   addcmd: customCommands.customCommandHandlers.addcmd,
   delcmd: customCommands.customCommandHandlers.delcmd,
@@ -352,11 +313,10 @@ const modHandlers = {
 
   // Profil/présence du bot — voir utils/botProfileCommands.js, rang sys
   // uniquement (comme &owners/&sources/&allbots).
-  // "set muterole" gère le rôle de mute (utils/moderationExtra.js) ; le
-  // reste (name/pic/banner) reste le profil du bot (utils/botProfileCommands.js).
+  // "set muterole" a migré avec le reste de la modération vers
+  // moderation-bot ; le reste (name/pic/banner/perm) reste ici.
   set: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
-    if (sub === "muterole") return moderationExtra.setMuteRole(client, message, args.slice(1));
     if (sub === "perm") return configHandlers.setPerm(client, message, args.slice(1));
     return botProfileHandlers.set(client, message, args);
   },
@@ -380,34 +340,10 @@ const modHandlers = {
   invisible: botProfileHandlers.invisible,
   botrename: botProfileHandlers.botrename,
 
-  // Mute par rôle (distinct du timeout natif), sanctions, tempban/banlist,
-  // masquage de masse, derank — voir utils/moderationExtra.js. Pas de
-  // système de warns (exclusion permanente, voir le fichier).
-  muterole: moderationExtra.muterole,
-  mute: moderationExtra.mute,
-  tempmute: moderationExtra.tempmute,
-  unmute: moderationExtra.unmute,
-  cmute: moderationExtra.cmute,
-  tempcmute: moderationExtra.tempcmute,
-  uncmute: moderationExtra.uncmute,
-  mutelist: moderationExtra.mutelist,
-  unmuteall: moderationExtra.unmuteall,
-  sanctions: moderationExtra.sanctions,
-  baninfo: moderationExtra.baninfo,
-  warn: moderationExtra.warn,
-  warnings: moderationExtra.warnings,
-  unwarn: moderationExtra.unwarn,
-  case: moderationExtra.caseView,
   del: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
-    if (sub === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));
     if (sub === "perm") return configHandlers.delPerm(client, message, args.slice(1));
   },
-  tempban: moderationExtra.tempban,
-  banlist: moderationExtra.banlist,
-  hideall: moderationExtra.hideall,
-  unhideall: moderationExtra.unhideall,
-  derank: moderationExtra.derank,
 
   // Extensions "Gestion du serveur" — voir utils/serverExtra.js.
   choose: serverExtra.choose,
@@ -415,7 +351,6 @@ const modHandlers = {
   create: serverExtra.createEmoji,
   massiverole: serverExtra.massiverole,
   unmassiverole: serverExtra.unmassiverole,
-  unbanall: serverExtra.unbanall,
   temprole: serverExtra.temprole,
   untemprole: serverExtra.untemprole,
   sync: serverExtra.sync,
@@ -451,7 +386,6 @@ const modHandlers = {
   // automatique — voir utils/logCommands.js.
   settings: logHandlers.settings,
   autoconfiglog: logHandlers.autoconfiglog,
-  modlog: logHandlers.modlog,
   memberlog: logHandlers.memberlog,
   rolelog: logHandlers.rolelog,
   channellog: logHandlers.channellog,
@@ -469,35 +403,14 @@ async function handleTextCommand(client, message) {
 
   const content = message.content.trim();
   const { musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
-  const { moderation: MODERATION_PREFIX } = getPrefixes(message.guild.id);
-
-  // Le préfixe "-" est réservé à la modération. Il partage les mêmes
-  // handlers que "&", mais jamais le même espace de commande : un mot de
-  // gestion tapé sur "-" reste silencieux.
-  if (MODERATION_PREFIX && content.startsWith(MODERATION_PREFIX)) {
-    const [moderationCmd, ...moderationArgs] = content.slice(MODERATION_PREFIX.length).trim().split(/\s+/);
-    const cmdLower = (moderationCmd || "").toLowerCase();
-    // "-help" est un cas à part, comme "!!help"/"=help" : le mot "help"
-    // n'est volontairement pas dans le catalogue partagé (utils/
-    // commandCatalog.js), sous peine de fausser commandRouting.bucketDe pour
-    // TOUS les préfixes qui l'utilisent (voir utils/helpNavigator.js).
-    if (cmdLower === "help") return helpNavigator.repondreAvecAide("moderation", message);
-    if (commandRouting.bucketDe(cmdLower) !== commandRouting.BUCKET_MODERATION) return;
-    const handler = modHandlers[cmdLower];
-    if (handler) return handler(client, message, moderationArgs);
-    return;
-  }
 
   // Préfixe "&" : partagé avec le CrowBot du serveur. On ne traite que les
-  // commandes explicitement déclarées dans modHandlers et dont le bucket est
-  // la gestion. Les commandes de modération/sécurité ont leurs préfixes
-  // dédiés et ne doivent plus répondre ici.
+  // commandes explicitement déclarées dans modHandlers. La modération/
+  // sécurité/vocal ont leurs propres bots et préfixes dédiés et ne doivent
+  // jamais répondre ici.
   if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
     const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
     const cmdLower = (modCmd || "").toLowerCase();
-    if (commandRouting.bucketDe(cmdLower) !== commandRouting.BUCKET_GESTION) {
-      return;
-    }
 
     // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
     // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),
@@ -603,11 +516,10 @@ const MOD_SUBCOMMANDS = {
   gradeladder: ["add", "remove", "list"],
   emoji: ["list", "reset"],
   absence: ["set", "reset"],
-  banall: ["message"],
   backup: ["list", "delete", "load"],
-  set: ["name", "pic", "banner", "muterole", "perm"],
-  clear: ["sanctions", "all", "perms", "limit"],
-  del: ["sanction", "perm"],
+  set: ["name", "pic", "banner", "perm"],
+  clear: ["perms", "limit"],
+  del: ["perm"],
   ticket: ["setup", "settings"],
   compteur: ["create", "list", "delete"],
   giveaway: ["start", "reroll"],
@@ -615,7 +527,6 @@ const MOD_SUBCOMMANDS = {
   search: ["wiki"],
   autoreact: ["list", "add", "del"],
   remove: ["activity"],
-  modlog: ["on", "off"],
   memberlog: ["on", "off"],
   rolelog: ["on", "off"],
   channellog: ["on", "off"],

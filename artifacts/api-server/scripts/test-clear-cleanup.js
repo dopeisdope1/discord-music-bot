@@ -1,6 +1,6 @@
 /**
  * Vérifie que le ménage ne laisse pas ses propres traces :
- *  - &clear supprime aussi le message de commande (utils/moderationCommands.js) ;
+ * - ` *  - &clear supprime aussi le message de commande (utils/moderationCommands.js) ;clear` a migré avec le reste de la modération vers moderation-bot.
  *  - `uo clear` supprime les messages de la personne ET tous ceux du bot
  *    (utils/selfClear.js), le déclencheur lui-même compris.
  *
@@ -19,10 +19,9 @@ const path = require("path");
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "clearcleanup-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
-const { Collection, PermissionsBitField } = require("discord.js");
-const permStore = require("../utils/permissions/store");
+const { Collection } = require("discord.js");
 const { collectOwnConversation, handleSelfClear } = require("../utils/selfClear");
-const { moderationHandlers } = require("../utils/moderationCommands");
+
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -120,123 +119,6 @@ const msg = (id, authorId, referenceId = null) => ({
     assert.ok(!supprimes.includes("r1"), "la réponse du bot devait rester");
     assert.ok(!supprimes.includes("carte"), "une carte du bot devait rester");
     assert.ok(!supprimes.includes("autre"), "le message d'un autre membre devait rester");
-  });
-
-  console.log("\n&clear — la commande elle-même :");
-
-  permStore.setRoleGrants("g1", "role-mod", ["moderation.clear"]);
-
-  await cas("le message de commande est supprimé après le nettoyage", async () => {
-    let commandeSupprimee = false;
-    const cibles = [msg("c1", CIBLE), msg("c2", CIBLE)];
-    const channel = {
-      id: "c1",
-      messages: { fetch: async () => new Collection(cibles.map((m) => [m.id, m])) },
-      bulkDelete: async (liste) => new Collection(liste.map((m) => [m.id, m])),
-      send: async () => ({ delete: async () => {} }),
-    };
-    const commande = {
-      content: `&clear <@${CIBLE}>`,
-      author: { id: MOD, tag: "mod#0001" },
-      member: {
-        id: MOD,
-        guild: { id: "g1" },
-        roles: { cache: new Collection([["role-mod", { id: "role-mod" }]]) },
-        permissions: new PermissionsBitField(),
-      },
-      guild: {
-        id: "g1",
-        members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) } },
-      },
-      channel,
-      mentions: { users: new Collection(), members: new Collection() },
-      reply: async () => ({}),
-      delete: async () => {
-        commandeSupprimee = true;
-      },
-    };
-    await moderationHandlers.clear({ user: { id: BOT } }, commande, [`<@${CIBLE}>`]);
-    assert.ok(commandeSupprimee, "&clear doit effacer sa propre invocation");
-  });
-
-  await cas("une suppression déjà faite ne fait pas planter la commande", async () => {
-    // Cas réel : on nettoie ses PROPRES messages, donc l'invocation est déjà
-    // partie avec le lot quand on essaie de la supprimer.
-    const cibles = [msg("x1", MOD)];
-    const channel = {
-      id: "c1",
-      messages: { fetch: async () => new Collection(cibles.map((m) => [m.id, m])) },
-      bulkDelete: async (liste) => new Collection(liste.map((m) => [m.id, m])),
-      send: async () => ({ delete: async () => {} }),
-    };
-    const commande = {
-      content: `&clear <@${MOD}>`,
-      author: { id: MOD, tag: "mod#0001" },
-      member: {
-        id: MOD,
-        guild: { id: "g1" },
-        roles: { cache: new Collection([["role-mod", { id: "role-mod" }]]) },
-        permissions: new PermissionsBitField(),
-      },
-      guild: { id: "g1", members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) } } },
-      channel,
-      mentions: { users: new Collection(), members: new Collection() },
-      reply: async () => ({}),
-      delete: async () => {
-        throw new Error("Unknown Message");
-      },
-    };
-    await moderationHandlers.clear({ user: { id: BOT } }, commande, [`<@${MOD}>`]);
-  });
-
-  console.log("\n&clear sans cible — le CrowBot garde la parole :");
-
-  const clearSansCible = async (args) => {
-    const reponses = [];
-    const commande = {
-      content: `&clear ${args.join(" ")}`,
-      author: { id: MOD, tag: "mod#0001" },
-      member: {
-        id: MOD,
-        guild: { id: "g1" },
-        roles: { cache: new Collection([["role-mod", { id: "role-mod" }]]) },
-        permissions: new PermissionsBitField(),
-      },
-      guild: { id: "g1", members: { me: { permissions: new PermissionsBitField(PermissionsBitField.All) } } },
-      channel: {
-        id: "c1",
-        messages: { fetch: async () => new Collection() },
-        bulkDelete: async () => new Collection(),
-        send: async () => ({ delete: async () => {} }),
-      },
-      mentions: { users: new Collection(), members: new Collection() },
-      reply: async (p) => {
-        reponses.push(p);
-        return {};
-      },
-      delete: async () => {},
-    };
-    await moderationHandlers.clear({ user: { id: BOT } }, commande, args);
-    return reponses;
-  };
-
-  await cas("`&clear` seul ne répond rien", async () => {
-    assert.deepStrictEqual(await clearSansCible([]), []);
-  });
-
-  await cas("`&clear 50` ne répond rien — c'est la syntaxe du CrowBot", async () => {
-    // Le préfixe "&" est partagé : expliquer la syntaxe reviendrait à couper
-    // la parole à l'autre bot sur sa propre commande.
-    assert.deepStrictEqual(await clearSansCible(["50"]), []);
-  });
-
-  await cas("`&clear mot` ne répond rien non plus", async () => {
-    assert.deepStrictEqual(await clearSansCible(["nimportequoi"]), []);
-  });
-
-  await cas("mais `&clear <@id>` agit bien", async () => {
-    const reponses = await clearSansCible([`<@${CIBLE}>`]);
-    assert.strictEqual(reponses.length, 1, "une cible valide doit produire une réponse");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

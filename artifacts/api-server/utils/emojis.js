@@ -13,11 +13,8 @@ const EMOJI = {
   CHECK: "<:CheckMark:1546335757399097444>",
   CROSS: "<:crossemoji:1546336622835146773>",
 
-  // Modération
-  BAN: "<:Hammer:1546334520188473354>",
-  KICK: "<:hammer:1546334634453893211>",
-  MUTE: "<:server_mute:1546334792088551455>",
-  UNMUTE: "<:self_mute:1546334739475079301>",
+  // BAN/KICK/MUTE/UNMUTE sont parties avec le reste de la modération vers
+  // moderation-bot (plus aucun consommateur ici).
   DELETE: "<:r_IconDelete:1546337639806799922>",
   PENCIL: "<:Pencil:1546336095803805820>",
 

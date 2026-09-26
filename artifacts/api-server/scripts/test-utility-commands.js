@@ -473,31 +473,18 @@ const embedTitle = (payload) =>
       ["u2", { id: "u2", user: { tag: "bob#0002" } }],
     ]);
     const g = fakeGuild({ roles: [role] });
-    permStore.setRoleGrants(g.id, role.id, ["moderation.kick", "moderation.ban"]);
+    permStore.setRoleGrants(g.id, role.id, ["channels.lock", "channels.manage"]);
     const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
     await utilityHandlers.roleInfo(null, msg, []);
     const texte = embedText(msg._replies[0]);
     assert.ok(texte.includes("alice#0001") && texte.includes("bob#0002"), texte);
-    assert.ok(texte.includes("kick") && texte.includes("ban"), texte);
+    assert.ok(texte.includes("lock") && texte.includes("hide"), texte);
     assert.ok(texte.includes("Membres ayant ce rôle (2)"), texte);
   });
 
-  await cas("&role affiche chaque commande avec son VRAI préfixe, pas toujours \"&\"", async () => {
-    // "kick"/"ban" vivent sur le préfixe de modération ("-"), pas sur "&" —
-    // bug corrigé : toutes les commandes débloquées apparaissaient sous "&",
-    // y compris celles d'un autre préfixe.
-    const role = fakeRole("role-info-prefixe", "Modo");
-    const g = fakeGuild({ roles: [role] });
-    permStore.setRoleGrants(g.id, role.id, ["moderation.kick", "moderation.ban"]);
-    const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
-    await utilityHandlers.roleInfo(null, msg, []);
-    // Le texte alternatif de l'image (files[0].description) n'a pas de
-    // markdown (le canvas ne dessine pas de backticks) — on vérifie donc le
-    // PRÉFIXE lui-même, présent ou non, plutôt que le rendu \`-kick\` exact.
-    const texte = embedText(msg._replies[0]);
-    assert.ok(texte.includes("-kick") && texte.includes("-ban"), texte);
-    assert.ok(!texte.includes("&kick") && !texte.includes("&ban"), texte);
-  });
+  // Le test de non-régression du préfixe multi-familles ("-kick" jamais
+  // sous "&") n'a plus de sujet : un seul préfixe reste sur ce bot depuis
+  // le départ de la modération vers son propre bot (moderation-bot).
 
   await cas("&role sur un rôle sans permission accordée le dit clairement (aucune commande)", async () => {
     const role = fakeRole("role-info-vide", "Vide");

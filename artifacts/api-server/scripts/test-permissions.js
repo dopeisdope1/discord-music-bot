@@ -55,12 +55,12 @@ console.log("Moteur de permissions :");
 
 cas("aucune permission par défaut", () => {
   const guild = fakeGuild();
-  assert.strictEqual(can(fakeMember({ id: "u1", guild }), "moderation.clear"), false);
+  assert.strictEqual(can(fakeMember({ id: "u1", guild }), "channels.lock"), false);
 });
 
 cas("le propriétaire du bot a toujours accès", () => {
   const guild = fakeGuild();
-  assert.strictEqual(can(fakeMember({ id: "owner-1", guild }), "moderation.ban"), true);
+  assert.strictEqual(can(fakeMember({ id: "owner-1", guild }), "channels.manageall"), true);
 });
 
 cas("hasConfiguredAccess distingue zéro accès, octroi individuel, rôle configuré et owner", () => {
@@ -77,25 +77,25 @@ cas("le rang sys a accès à tout, sauf banall", () => {
   accessStore.add("sys", "u-sys");
   const guild = fakeGuild();
   const member = fakeMember({ id: "u-sys", guild });
-  assert.strictEqual(can(member, "moderation.ban"), true);
+  assert.strictEqual(can(member, "channels.manageall"), true);
   assert.strictEqual(can(member, "moderation.banall"), false, "banall ne s'hérite jamais du rang sys");
 });
 
 cas("un rôle avec une permission accordée donne accès, et rien d'autre", () => {
   const guild = fakeGuild();
-  permStore.setRoleGrants(GUILD_ID, "role-clear", ["moderation.clear"]);
+  permStore.setRoleGrants(GUILD_ID, "role-clear", ["channels.lock"]);
   const member = fakeMember({ id: "u2", guild, roleIds: ["role-clear"] });
-  assert.strictEqual(can(member, "moderation.clear"), true);
-  assert.strictEqual(can(member, "moderation.ban"), false);
+  assert.strictEqual(can(member, "channels.lock"), true);
+  assert.strictEqual(can(member, "channels.manageall"), false);
 });
 
 cas("retirer le rôle retire l'accès immédiatement (pas de recalcul à faire)", () => {
   const guild = fakeGuild();
-  permStore.setRoleGrants(GUILD_ID, "role-clear-2", ["moderation.clear"]);
+  permStore.setRoleGrants(GUILD_ID, "role-clear-2", ["channels.lock"]);
   const withRole = fakeMember({ id: "u3", guild, roleIds: ["role-clear-2"] });
-  assert.strictEqual(can(withRole, "moderation.clear"), true);
+  assert.strictEqual(can(withRole, "channels.lock"), true);
   const withoutRole = fakeMember({ id: "u3", guild, roleIds: [] });
-  assert.strictEqual(can(withoutRole, "moderation.clear"), false);
+  assert.strictEqual(can(withoutRole, "channels.lock"), false);
 });
 
 cas("moderation.banall n'est jamais octroyable par rôle", () => {
@@ -129,14 +129,14 @@ cas("le pont legacy garde l'ancienne portée salon valide pour channels.lock", (
   const guild = fakeGuild();
   const member = fakeMember({ id: "u5", guild });
   assert.strictEqual(can(member, "channels.lock"), true);
-  assert.strictEqual(can(member, "moderation.clear"), false, "le pont ne couvre PAS moderation.clear — pouvoir différent");
+  assert.strictEqual(can(member, "channels.slowmode"), false, "le pont ne couvre PAS channels.slowmode — pouvoir différent");
 });
 
 console.log("\nNettoyage des accès obsolètes :");
 
 cas("un membre absent de tous les serveurs perd ses octrois individuels", () => {
   const guild = fakeGuild([]);
-  permStore.grantToUser(GUILD_ID, "gone-1", "moderation.ban");
+  permStore.grantToUser(GUILD_ID, "gone-1", "channels.manageall");
   const changes = revokeIfGone(fakeClient([guild]), GUILD_ID, "gone-1");
   assert.ok(changes.length > 0);
   assert.deepStrictEqual(permStore.getUserGrants(GUILD_ID, "gone-1"), []);
@@ -145,19 +145,19 @@ cas("un membre absent de tous les serveurs perd ses octrois individuels", () => 
 cas("un membre encore présent sur un autre serveur du bot n'est PAS révoqué", () => {
   const guildA = fakeGuild([]);
   const guildB = fakeGuild(["still-here"], "guild-2");
-  permStore.grantToUser(GUILD_ID, "still-here", "moderation.ban");
+  permStore.grantToUser(GUILD_ID, "still-here", "channels.manageall");
   const changes = revokeIfGone(fakeClient([guildA, guildB]), GUILD_ID, "still-here");
   assert.deepStrictEqual(changes, []);
-  assert.deepStrictEqual(permStore.getUserGrants(GUILD_ID, "still-here"), ["moderation.ban"]);
+  assert.deepStrictEqual(permStore.getUserGrants(GUILD_ID, "still-here"), ["channels.manageall"]);
 });
 
 cas("un retour recalcule l'accès sur les rôles actuels, sans rien à restaurer", () => {
   const guild = fakeGuild();
-  permStore.setRoleGrants(GUILD_ID, "role-clear-3", ["moderation.clear"]);
+  permStore.setRoleGrants(GUILD_ID, "role-clear-3", ["channels.lock"]);
   const left = fakeMember({ id: "u6", guild, roleIds: [] }); // parti, a perdu ses rôles
-  assert.strictEqual(can(left, "moderation.clear"), false);
+  assert.strictEqual(can(left, "channels.lock"), false);
   const backWithRole = fakeMember({ id: "u6", guild, roleIds: ["role-clear-3"] }); // revenu, réattribué
-  assert.strictEqual(can(backWithRole, "moderation.clear"), true);
+  assert.strictEqual(can(backWithRole, "channels.lock"), true);
 });
 
 cas("sweepGuild révoque tous les absents d'un coup, épargne les présents", () => {
@@ -173,7 +173,7 @@ cas("pruneDeletedRoles retire les octrois des rôles qui n'existent plus, garde 
   const roleVivant = { id: "role-vivant" };
   const guild = { id: "guild-prune", roles: { cache: new Collection([[roleVivant.id, roleVivant]]) } };
   permStore.setRoleGrants("guild-prune", "role-vivant", ["moderation.kick"]);
-  permStore.setRoleGrants("guild-prune", "role-mort", ["moderation.ban"]);
+  permStore.setRoleGrants("guild-prune", "role-mort", ["channels.manageall"]);
   permStore.setRoleExclusive("guild-prune", "role-mort-2", true);
 
   const removed = pruneDeletedRoles(guild);

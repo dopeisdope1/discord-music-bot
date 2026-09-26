@@ -13,8 +13,7 @@ const categoryEmojiStore = require("./categoryEmojiStore");
 // `categorie` sert UNIQUEMENT à l'affichage groupé du panel (utils/
 // emojiPanel.js), jamais à la résolution (`icon:${clé}` reste la clé réelle).
 const GROUPES_ICONES = {
-  "Icônes — Statuts": ["SUCCESS", "ERROR", "INFO", "CHECK", "CROSS"],
-  "Icônes — Modération": ["BAN", "KICK", "MUTE", "UNMUTE", "DELETE", "PENCIL"],
+  "Icônes — Statuts": ["SUCCESS", "ERROR", "INFO", "CHECK", "CROSS", "DELETE", "PENCIL"],
   "Icônes — Rangs": ["OWNER", "CROWN", "STAFF", "STAFF_AWAY"],
   "Icônes — Serveur": ["TICKET", "LOCK", "MAIL", "RULES", "MEMBERS", "ONLINE", "VOICE", "SCREENSHARE"],
   "Icônes — Divers": ["DISCORD", "ARROW", "ARROW_GREEN", "BOING"],

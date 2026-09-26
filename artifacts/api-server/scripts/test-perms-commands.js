@@ -69,9 +69,9 @@ function texteEnvoye(msg) {
   console.log("Regroupement par ensemble de permissions identique :");
 
   await cas("deux rôles avec les mêmes clés partagent le même palier", () => {
-    permStore.setRoleGrants("g1", "role-A", ["moderation.kick"]);
-    permStore.setRoleGrants("g1", "role-B", ["moderation.kick"]);
-    permStore.setRoleGrants("g1", "role-C", ["moderation.kick", "moderation.ban", "members.role"]);
+    permStore.setRoleGrants("g1", "role-A", ["channels.lock"]);
+    permStore.setRoleGrants("g1", "role-B", ["channels.lock"]);
+    permStore.setRoleGrants("g1", "role-C", ["channels.lock", "channels.manage", "members.role"]);
 
     const tiers = computeTiers("g1");
     assert.strictEqual(tiers.length, 2);
@@ -90,7 +90,7 @@ function texteEnvoye(msg) {
     const msg = fakeMessage("g1");
     await perms(null, msg);
     const texte = texteEnvoye(msg);
-    assert.ok(texte.includes("kick"));
+    assert.ok(texte.includes("lock"));
     assert.ok(texte.includes("Permission 1"));
     assert.ok(texte.includes("Permission 2"));
   });
@@ -121,9 +121,9 @@ function texteEnvoye(msg) {
     const textePerms = texteEnvoye(msgPerms);
     assert.ok(textePerms.includes("Exclusives"), textePerms);
     // &perms montre des COMMANDES dans la section exclusive elle aussi (pas
-    // une mention de rôle, réservée à &helpall) — role-C débloque "ban".
+    // une mention de rôle, réservée à &helpall) — role-C débloque "hide".
     const exclusivesPerms = textePerms.slice(textePerms.indexOf("Exclusives"));
-    assert.ok(exclusivesPerms.includes("ban"), textePerms);
+    assert.ok(exclusivesPerms.includes("hide"), textePerms);
 
     const msgHelpall = fakeMessage("g1");
     await helpall(null, msgHelpall);
@@ -154,14 +154,14 @@ function texteEnvoye(msg) {
   });
 
   await cas("un serveur SANS permission accordée mais avec un rôle exclusif affiche quand même la carte", async () => {
-    permStore.setRoleGrants("g-vide-exclusif", "role-solo", ["moderation.kick"]);
+    permStore.setRoleGrants("g-vide-exclusif", "role-solo", ["channels.lock"]);
     permStore.setRoleExclusive("g-vide-exclusif", "role-solo", true);
     const msg = fakeMessage("g-vide-exclusif");
     await perms(null, msg);
     assert.ok(!msg._replies[0].embeds, "ce n'est plus le message \"Aucune permission\"");
     const texte = texteEnvoye(msg);
     assert.ok(texte.includes("Exclusives"));
-    assert.ok(texte.includes("kick"), texte);
+    assert.ok(texte.includes("lock"), texte);
   });
 
   await cas("retirer l'exclusivité fait disparaître la section", async () => {
@@ -235,15 +235,15 @@ function texteEnvoye(msg) {
   console.log("\nTexte figé (utils/rolePresets.js::setPermsDisplay) — reproduction exacte d'une référence fournie :");
 
   await cas("&perms montre le texte figé TEL QUEL, pas les vraies commandes débloquées par les clés", async () => {
-    permStore.setRoleGrants("g5", "role-figé", ["moderation.kick"]);
+    permStore.setRoleGrants("g5", "role-figé", ["channels.lock"]);
     permStore.setPermsDisplay("g5", "role-figé", "absence reset, absence set, snipe");
     const msg = fakeMessage("g5");
     await perms(null, msg);
     const texte = texteEnvoye(msg);
     assert.ok(texte.includes("absence reset, absence set, snipe"), texte);
-    // "kick" est la VRAIE commande débloquée par la clé accordée — elle ne
+    // "lock" est la VRAIE commande débloquée par la clé accordée — elle ne
     // doit PAS apparaître, le texte figé prend toute la place sur cette ligne.
-    assert.ok(!texte.includes("kick"), texte);
+    assert.ok(!texte.includes("lock"), texte);
   });
 
   await cas("&helpall n'est PAS affecté par le texte figé (il montre des rôles, pas des commandes)", async () => {
@@ -254,11 +254,11 @@ function texteEnvoye(msg) {
   });
 
   await cas("sans texte figé, &perms retombe sur les vraies commandes débloquées (comportement inchangé)", async () => {
-    permStore.setRoleGrants("g6", "role-normal", ["moderation.kick"]);
+    permStore.setRoleGrants("g6", "role-normal", ["channels.lock"]);
     const msg = fakeMessage("g6");
     await perms(null, msg);
     const texte = texteEnvoye(msg);
-    assert.ok(texte.includes("kick"), texte);
+    assert.ok(texte.includes("lock"), texte);
   });
 
   await cas("&perms/&helpall RÉPONDENT avec les VRAIS 13 paliers cumulatifs de utils/rolePresets.js, sans exception", async () => {

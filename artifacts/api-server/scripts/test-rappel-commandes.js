@@ -9,7 +9,7 @@
  *
  * Le garde-fou principal de ce fichier : le rappel doit rester SILENCIEUX
  * pour les commandes qui fonctionnent très bien sans argument. Sinon `&stats`
- * ou `&banlist` répondraient un mode d'emploi au lieu de faire leur travail —
+ * ou `&allbots` répondraient un mode d'emploi au lieu de faire leur travail —
  * une régression bien pire que le silence qu'on corrige.
  *
  * Lancement : node scripts/test-rappel-commandes.js
@@ -68,11 +68,11 @@ const nomsDe = (carte) =>
     assert.ok(buildFamilyCard("giveaway", owner, "g1"), "une carte doit être produite");
   });
 
-  await cas("&ban rappelle sa syntaxe ET les commandes voisines qu'on cherchait peut-être", () => {
-    const { variantes, proches } = famillesDe("ban", owner);
-    assert.deepStrictEqual(variantes.map((c) => c.name), ["ban <@membre|id> [raison]"], JSON.stringify(variantes.map((c) => c.name)));
+  await cas("&role rappelle ses variantes ET les commandes voisines qu'on cherchait peut-être", () => {
+    const { variantes, proches } = famillesDe("role", owner);
+    assert.ok(variantes.length > 1, JSON.stringify(variantes.map((c) => c.name)));
     const nomsProches = proches.map((c) => c.name);
-    for (const attendu of ["unban", "softban", "banall", "tempban", "banlist"]) {
+    for (const attendu of ["addrole", "delrole", "limitrole"]) {
       assert.ok(nomsProches.some((n) => n.startsWith(attendu)), `"${attendu}" manque : ${nomsProches.join(" | ")}`);
     }
   });
@@ -86,8 +86,8 @@ const nomsDe = (carte) =>
 
   console.log("\nLe rappel ne parasite JAMAIS une commande qui marche :");
 
-  await cas("&stats et &banlist tournent sans argument — aucun rappel ne doit s'interposer", () => {
-    for (const mot of ["stats", "banlist", "server", "userinfo", "perms"]) {
+  await cas("&stats et &allbots tournent sans argument — aucun rappel ne doit s'interposer", () => {
+    for (const mot of ["stats", "allbots", "server", "userinfo", "perms"]) {
       assert.strictEqual(buildFamilyCard(mot, owner, "g1"), null, `${mot} ne doit PAS être intercepté`);
     }
   });
@@ -121,12 +121,14 @@ const nomsDe = (carte) =>
   });
 
   await cas("le droit accordé fait apparaître la commande, et elle seule", () => {
-    permStore.setRoleGrants("g1", ROLE_SIMPLE, ["moderation.ban"]);
-    const { variantes, proches } = famillesDe("ban", simple);
-    assert.deepStrictEqual(variantes.map((c) => c.name), ["ban <@membre|id> [raison]"], JSON.stringify(variantes.map((c) => c.name)));
-    // `&kick` n'a pas été accordé : il ne doit apparaître nulle part.
+    permStore.setRoleGrants("g1", ROLE_SIMPLE, ["channels.lock"]);
+    const { variantes, proches } = famillesDe("lock", simple);
+    assert.deepStrictEqual(variantes.map((c) => c.name), ["lock [#salon]"], JSON.stringify(variantes.map((c) => c.name)));
+    // `&unlock` (channels.lock aussi, mais pas de même mot de tête) et
+    // `&addrole` (autre droit) n'ont pas été accordés au sens de cette
+    // famille : ils ne doivent apparaître nulle part ici.
     const tout = [...variantes, ...proches].map((c) => c.name).join(" ");
-    assert.ok(!tout.includes("kick"), tout);
+    assert.ok(!tout.includes("addrole"), tout);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

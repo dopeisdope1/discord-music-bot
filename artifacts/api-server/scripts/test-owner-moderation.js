@@ -116,11 +116,11 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
   await cas("une permission de sécurité (protection.*) déjà accordée n'apparaît PAS dans le résumé", async () => {
     permStore.grantToUser("g4", "staff-4", "panel.permissions.manage");
     permStore.grantToUser("g4", TARGET, "protection.automod");
-    permStore.grantToUser("g4", TARGET, "moderation.kick");
+    permStore.grantToUser("g4", TARGET, "moderation.mutebot");
     const msg = fakeMessage({ guildId: "g4", authorId: "staff-4" });
     await serverAdmin.ownerModeration(null, msg, [`<@${TARGET}>`]);
     const texte = JSON.stringify(msg._replies[0].components);
-    assert.ok(texte.includes("Accès attribués — 1"), texte); // seule moderation.kick compte
+    assert.ok(texte.includes("Accès attribués — 1"), texte); // seule moderation.mutebot compte
     assert.ok(!texte.includes("protection.automod"), texte);
   });
 
@@ -148,10 +148,10 @@ function fakeInteraction(customId, { userId = "staff-1", guildId = "g1", values 
     const interaction = fakeInteraction(`srv:modownerkey:${TARGET}:moderation`, {
       userId: "staff-7",
       guildId: "g7",
-      values: ["moderation.warn"],
+      values: ["moderation.mutebot"],
     });
     await serverAdmin.handleServerAdminInteraction(interaction);
-    assert.ok(permStore.getUserGrants("g7", TARGET).includes("moderation.warn"));
+    assert.ok(permStore.getUserGrants("g7", TARGET).includes("moderation.mutebot"));
     const texte = JSON.stringify(interaction._updates[0].components);
     assert.ok(texte.includes("Accès attribués — 1"), texte);
   });

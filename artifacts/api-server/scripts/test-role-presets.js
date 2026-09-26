@@ -121,7 +121,7 @@ function extractConfirmToken(reply) {
     assert.ok(gerant, "le rôle \"Gérant gestion\" (🏅) doit exister");
     assert.strictEqual(permStore.isRoleExclusive("g1", gerant.id), true);
     assert.strictEqual(permStore.getExclusiveLabel("g1", gerant.id), "Gérant gestion");
-    assert.ok(permStore.getRoleGrants("g1", gerant.id).includes("moderation.ban"));
+    assert.ok(permStore.getRoleGrants("g1", gerant.id).includes("members.role"));
 
     // Le rôle géré du bot ("PROTECT") reçoit les mêmes clés que le palier 13
     // (le plus haut) : demande explicite, pour qu'il se retrouve groupé AVEC

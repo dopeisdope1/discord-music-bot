@@ -51,22 +51,20 @@ const TIERS = [
   },
   {
     names: ["Perm V", "🎤"],
-    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout"],
+    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view" ],
     display: "absence reset, absence set, find, pic, sanctions, snipe, tempmute, user",
   },
   {
     names: ["(GAP/GS)", "✗", "🚩"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage"
     ],
     display: "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, snipe, tempmute, user",
   },
   {
     names: ["Célestial", "🐋", "🦅"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view"
     ],
     display:
       "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
@@ -74,8 +72,7 @@ const TIERS = [
   {
     names: ["🎗️", "🌹", "🦋"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage"
     ],
     display:
       "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
@@ -83,8 +80,7 @@ const TIERS = [
   {
     names: ["Kina", "⛪", "🎣"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage"
     ],
     display:
       "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
@@ -92,9 +88,8 @@ const TIERS = [
   {
     names: ["Crown", "Top"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage"
     ],
     display:
       "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
@@ -102,34 +97,28 @@ const TIERS = [
   {
     names: ["Ordre", "Maître", "BOT=BOT"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "moderation.ban", "moderation.unban",
-    ],
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "server.tickets.manage" ],
     display:
       "absence reset, absence set, addrole, ban, baninfo, banlist, banner, blrank add, blrank list, blrank remove, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
   },
   {
     names: ["—", "=", "≡", "♂"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
-    ],
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "server.tickets.manage", "panel.roles.manage" ],
     display:
       "absence reset, absence set, addrole, ban, baninfo, banlist, banner, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, mv, nick, pic, rank, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, user, vc",
   },
   {
     names: ["者", "Couronne", "SECURE"],
     keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "moderation.timeout",
-      "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "moderation.ban", "moderation.unban", "moderation.clear",
-      "moderation.warn", "logs.manage", "server.channels.manage", "channels.manage", "channels.lock", "server.voice.moveall",
+      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
+      "server.giveaways.manage", "server.tickets.manage", "panel.roles.manage", "logs.manage", "server.channels.manage", "channels.manage", "channels.lock", "server.voice.moveall"
     ],
     display:
       "absence reset, absence set, addrole, avert, avertissements, ban, baninfo, banlist, banner, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, create, derank, embed, find, hide, lock, mv, nick, pic, rank, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, unhide, unlock, user, vc, voicemove",
-  },
+  }
 ];
 
 // "Hors hiérarchie" : chacun garde son propre NOM affiché (au lieu d'un bloc
@@ -140,9 +129,8 @@ const EXCLUSIVE = [
     name: "♂",
     label: "Syndicat",
     keys: [
-      "members.role", "moderation.warn", "logs.manage", "moderation.ban", "moderation.unban",
-      "server.members.list", "moderation.timeout", "server.voice.manage", "members.nick", "logs.view",
-      "server.info.view", "server.stats.view",
+      "members.role", "logs.manage", "server.members.list", "server.voice.manage", "members.nick", "logs.view",
+      "server.info.view", "server.stats.view"
     ],
     display:
       "addrole, avert, avertissements, ban, baninfo, banlist, blrank add, blrank list, blrank remove, derank, find, mutelist, mv, nick, pic, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur pic, snipe, tempmute, unban, unmute, user, vc",
@@ -151,13 +139,13 @@ const EXCLUSIVE = [
     name: "🏅",
     label: "Gérant gestion",
     keys: [
-      "members.role", "moderation.ban", "moderation.unban", "moderation.clear", "server.members.list",
-      "server.voice.manage", "members.nick", "server.info.view", "server.stats.view",
+      "members.role", "server.members.list",
+      "server.voice.manage", "members.nick", "server.info.view", "server.stats.view"
     ],
     display:
       "addrole, ban, baninfo, banlist, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, limitrole, mv, nick, pic, rank, removerole, rolemembers, serveur banner, serveur pic, snipe, staff check, user, vc",
   },
-  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"], display: "addrole, derank" },
+  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"], display: "addrole, derank" }
 ];
 
 const TOTAL_ROLES = TIERS.reduce((n, t) => n + t.names.length, 0) + EXCLUSIVE.length;

@@ -36,14 +36,8 @@ const gradeLadderPanel = require("./utils/gradeLadderPanel");
 const staffCard = require("./utils/staffCard");
 // "&grade <@membre>" — panneau de grade par membre — voir utils/gradeCardPanel.js.
 const gradeCardPanel = require("./utils/gradeCardPanel");
-// "&baninfo <@membre>" — carte raison/durée avant de bannir — voir utils/banInfoCard.js.
-const banInfoCard = require("./utils/banInfoCard");
 // "&emoji" — personnalise l'emoji de chaque groupe de l'aide — voir utils/emojiPanel.js.
 const emojiPanel = require("./utils/emojiPanel");
-// Ban persistant ("&zinkiller") — re-banni automatiquement si débanni
-// ailleurs que par "&unzinkiller" (voir l'écouteur guildBanRemove plus bas).
-const zinkillerStore = require("./utils/zinkillerStore");
-const { report: reportModeration } = require("./utils/moderation/actions");
 const { buildStatusEmbed } = require("./utils/statusEmbed");
 // Déclencheurs sans préfixe "uo clear" & consorts, distincts de &clear (voir
 // utils/selfClear.js et utils/moderationCommands.js) : celui-ci n'efface que
@@ -53,8 +47,6 @@ const { handleSelfClear } = require("./utils/selfClear");
 // (voir utils/setClearCommand.js et utils/selfClearStore.js).
 const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEAR_CUSTOM_ID } = require("./utils/setClearCommand");
 const { handleConfigInteraction } = require("./utils/configPanel");
-const { handleBanInteraction } = require("./utils/banPanel");
-const { handleBanAllInteraction } = require("./utils/banAll");
 const levels = require("./utils/levels");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const {
@@ -73,7 +65,6 @@ const { handleTicketButton } = require("./utils/tickets");
 const { handlePollButton } = require("./utils/polls");
 const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveaways");
 const { applyPresence } = require("./utils/botProfileCommands");
-const { checkExpiredMutes, checkExpiredTempbans } = require("./utils/moderationExtra");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
@@ -89,7 +80,6 @@ const PANNEAUX_PRIVES = [
   `${gradeLadderPanel.CUSTOM_ID}:`,
   `${staffCard.CUSTOM_ID}:`,
   `${gradeCardPanel.CUSTOM_ID}:`,
-  `${banInfoCard.CUSTOM_ID}:`,
   `${emojiPanel.CUSTOM_ID}:`,
 ];
 
@@ -130,11 +120,10 @@ setInterval(() => {
   checkExpiredGiveaways(client).catch((err) => console.error("[giveaways]", err));
 }, 30_000);
 
-// Lève les mutes/bans temporaires arrivés à échéance (&tempmute/&tempban,
-// voir utils/moderationExtra.js) — même fréquence que les giveaways.
+// Lève les rôles temporaires arrivés à échéance (&temprole, voir
+// utils/serverExtra.js) — même fréquence que les giveaways. Les mutes/bans
+// temporaires ont migré avec le reste de la modération vers moderation-bot.
 setInterval(() => {
-  checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
-  checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
   checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
 }, 30_000);
 
@@ -255,12 +244,6 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
-  // "&baninfo" — carte raison/durée avant de bannir (voir utils/banInfoCard.js).
-  if (interaction.customId?.startsWith(`${banInfoCard.CUSTOM_ID}:`)) {
-    await banInfoCard.handleBanInfoInteraction(interaction).catch((err) => console.error("[banInfoCard]", err));
-    return;
-  }
-
   // "&emoji" — personnalise l'emoji de chaque groupe de l'aide (voir utils/emojiPanel.js).
   if (interaction.customId?.startsWith(`${emojiPanel.CUSTOM_ID}:`)) {
     await emojiPanel.handleEmojiInteraction(interaction).catch((err) => console.error("[emojiPanel]", err));
@@ -288,20 +271,6 @@ client.on("interactionCreate", async (interaction) => {
   // formulaire est tapée sans arguments (voir utils/commandForms.js).
   if (interaction.customId?.startsWith(`${commandForms.CARD_ID}:`)) {
     await commandForms.handleFormCardInteraction(interaction).catch((err) => console.error("[commandForms]", err));
-    return;
-  }
-
-  // Panneau de bannissement de "zinki assasini" (voir utils/banPanel.js).
-  if (interaction.customId?.startsWith("ban:")) {
-    await handleBanInteraction(interaction).catch((err) => console.error("[banPanel]", err));
-    return;
-  }
-
-  // Ban de masse (voir utils/banAll.js). Aucune ambiguïté avec le bloc
-  // ci-dessus : le deux-points fait partie du préfixe, donc "banall:" ne
-  // commence pas par "ban:".
-  if (interaction.customId?.startsWith("banall:")) {
-    await handleBanAllInteraction(interaction).catch((err) => console.error("[banAll]", err));
     return;
   }
 
@@ -502,31 +471,8 @@ client.on("guildAuditLogEntryCreate", (entry, guild) => {
   });
 });
 
-// Ban persistant ("&zinkiller", voir utils/zinkillerStore.js) : si la
-// personne est débannie autrement que par "&unzinkiller" (Discord natif, un
-// autre bot...), le store porte encore son entrée à ce stade — "&unzinkiller"
-// la retire AVANT de débannir, donc son propre débannissement ne redéclenche
-// jamais ce re-ban.
-client.on("guildBanRemove", async (ban) => {
-  const guild = ban.guild;
-  if (!zinkillerStore.isZinkilled(guild.id, ban.user.id)) return;
-  try {
-    await guild.members.ban(ban.user.id, { reason: "Ban persistant (&zinkiller) — re-banni automatiquement" });
-    console.log(`[zinkiller] ${ban.user.tag} re-banni automatiquement sur "${guild.name}".`);
-    await reportModeration(client, {
-      guildId: guild.id,
-      category: "moderation",
-      title: "Zinkiller — re-ban automatique",
-      fields: [{ label: "Cible", value: `<@${ban.user.id}> (${ban.user.id})` }],
-      action: "zinkiller-reban",
-      targetId: ban.user.id,
-      targetTag: ban.user.tag,
-      moderator: client.user,
-    });
-  } catch (err) {
-    console.error(`[zinkiller] échec du re-ban de ${ban.user.tag} :`, err.message);
-  }
-});
+// Le ban persistant ("&zinkiller") a migré avec le reste de la modération
+// vers moderation-bot, qui porte désormais son propre écouteur guildBanRemove.
 
 // Dernier rempart. Sous Node, une promesse rejetée sans preneur arrête le
 // process entier : une erreur réseau isolée sur une requête Discord ou un

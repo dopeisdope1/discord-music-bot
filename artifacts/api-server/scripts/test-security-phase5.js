@@ -71,7 +71,7 @@ function makeSecurityMessage(guild) {
 
   await cas("un serveur \"propre\" (logs + rôle de mute configurés) ne remonte aucun problème critique ni avertissement", async () => {
     const guildId = "gsec1";
-    setLogChannelId(guildId, "moderation", "c1");
+    setLogChannelId(guildId, "members", "c1");
     muteStore.setMuteRoleId(guildId, "role-mute");
     const guild = makeGuild(guildId, {});
     guild.roles.cache.set("role-mute", makeRole("role-mute"));

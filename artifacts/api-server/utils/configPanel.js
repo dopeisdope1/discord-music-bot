@@ -28,7 +28,6 @@ const { rendreEnCache, resumer, enTexte, texteAlternatif, THEME_BLEU } = require
 const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
-const banReasonsStore = require("./banReasonsStore");
 const { can, peutAccorder } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
@@ -40,7 +39,6 @@ const { checkBotPermission } = require("./moderation/actions");
 const { getAllLogChannels, setLogChannelId, CATEGORY_LABELS: LOG_CATEGORY_LABELS } = require("./modLogStore");
 const statsStore = require("./statsStore");
 const { LOG_CHANNEL_NAMES, createLogChannelsAutomatically, deleteLogChannelsAutomatically } = require("./logChannels");
-const historyStore = require("./moderationHistoryStore");
 const leaveStore = require("./leaveStore");
 const autoroleStore = require("./autoroleStore");
 const verificationStore = require("./verificationStore");
@@ -107,7 +105,6 @@ const SECTIONS = [
     description: "Salon de logs par catégorie (modération/membres/serveur/bots)",
     visible: (member) => can(member, "logs.view") || can(member, "logs.manage"),
   },
-  { key: "history", label: "Historique", description: "Rechercher dans l'historique de modération", permission: "logs.view" },
   { key: "stats", label: "Statistiques", description: "Compteurs serveur et activité des 7 derniers jours", permission: "server.stats.view" },
   { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire", permission: "sys" },
   { key: "welcome", label: "Bienvenue", description: "Message de bienvenue à l'arrivée d'un membre", permission: "server.welcome.manage" },
@@ -252,7 +249,6 @@ const FAMILIES = [
   { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", sections: ["giveaways"] },
   { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", sections: ["polls"] },
   { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", sections: ["embedBuilder"] },
-  { key: "historique", label: "Historique", description: "Rechercher dans l'historique de modération", sections: ["history"] },
   { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", sections: ["stats"] },
   { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire", sections: ["diagnostics"] },
   { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", sections: ["backups"] },
@@ -341,21 +337,14 @@ function sectionBody(section, guild, member, state) {
   const owners = accessStore.ownerIds();
 
   if (section === "prefixes") {
-    return [
-      `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
-      `> **Préfixe modération** : \`${prefixes.moderation}\``,
-    ].join("\n");
+    return [`> **Préfixe gestion** : \`${prefixes.musicMod}\``].join("\n");
   }
 
   if (section === "moderation") {
-    const raisons = banReasonsStore.list(guildId);
     return [
       // La dispense « accès legacy aux salons » a été retirée sur demande :
       // il ne reste que celle qui sert vraiment, le quota de `uo clear`.
       `> **Dispensés du quota de \`uo clear\`** : ${mentions(accessStore.list("clear"))}`,
-      "",
-      `**Raisons de ban prédéfinies (${raisons.length})** — proposées par \`&baninfo\` :`,
-      raisons.length ? raisons.map((r) => `> ${r.label}`).join("\n") : "> *Aucune — \"Raison personnalisée\" reste toujours disponible.*",
     ].join("\n");
   }
 
@@ -513,18 +502,6 @@ function sectionBody(section, guild, member, state) {
     return [
       `> **Uptime** : ${formatUptime(info.uptimeMs)} · **latence** : ${info.ping}ms · **mémoire** : ${info.memoryRssMB} Mo`,
       `> **Serveurs** : ${info.guildCount} · **Node.js** : ${info.nodeVersion} · **discord.js** : v${info.discordjsVersion}`,
-    ].join("\n");
-  }
-
-  if (section === "history") {
-    const recent = historyStore.search(guildId, { limit: 5 });
-    const lines = recent.map((e) => {
-      const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:R>`;
-      return `> \`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}`;
-    });
-    return [
-      "**5 dernières actions :**",
-      lines.length ? lines.join("\n") : "*Aucune entrée pour l'instant.*",
     ].join("\n");
   }
 
@@ -726,7 +703,6 @@ function sectionBody(section, guild, member, state) {
 
   return [
     `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
-    `> **Préfixe modération** : \`${prefixes.moderation}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
     `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
@@ -972,7 +948,7 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
   return sectionDashboard.enSpec(corps ?? sectionBody(meta.key, guild, member, state), {
     titre: meta.label,
     couleur: FAMILY_COLORS[familyOf(meta.key).key] || TEINTE_NEUTRE,
-    sousTitre: `${member.displayName || member.user?.username || meta.label} · Gestion : ${getPrefixes(guild.id).musicMod} · Modération : ${getPrefixes(guild.id).moderation}`,
+    sousTitre: `${member.displayName || member.user?.username || meta.label} · Gestion : ${getPrefixes(guild.id).musicMod}`,
     guild,
     // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle
     // des lignes (deux colonnes seulement si rien n'y serait tronqué).
@@ -1049,7 +1025,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 
   const enteteLignes = [
     "## 「 PANEL DE CONFIGURATION 」",
-    `> <@${member.id}> · Gestion : \`${getPrefixes(guild.id).musicMod}\` · Modération : \`${getPrefixes(guild.id).moderation}\``,
+    `> <@${member.id}> · Gestion : \`${getPrefixes(guild.id).musicMod}\``,
   ];
   // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
   // "### Accueil" juste au-dessus n'apporterait rien. Le statut et les
@@ -1110,30 +1086,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${ID}:prefix:moderation`).setLabel("Préfixe modération").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary)
       )
     );
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
-    if (can(member, "moderation.ban")) {
-      const raisons = banReasonsStore.list(guild.id);
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:banreasonadd`).setLabel("Ajouter une raison").setStyle(ButtonStyle.Success)
-        )
-      );
-      if (raisons.length) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId(`${ID}:banreasondel`)
-              .setPlaceholder("Supprimer une raison")
-              .addOptions(raisons.slice(0, 25).map((r) => new StringSelectMenuOptionBuilder().setLabel(r.label.slice(0, 100)).setValue(r.id)))
-          )
-        );
-      }
-    }
   } else if (meta.key === "permissions") {
     const peutModifier = can(member, "panel.permissions.manage");
     // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
@@ -1520,43 +1477,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         )
       );
     }
-  } else if (meta.key === "history") {
-    if (!state.historySearchOpen) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:history:search`).setLabel("Rechercher").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    } else {
-      const targetId = state.historySearchTarget || null;
-      const moderatorId = state.historySearchModerator || null;
-      const targetSelect = new UserSelectMenuBuilder()
-        .setCustomId(`${ID}:historytarget:${moderatorId || "_"}`)
-        .setPlaceholder("Filtrer par cible")
-        .setMinValues(0)
-        .setMaxValues(1);
-      if (targetId) targetSelect.setDefaultUsers([targetId]);
-      const moderatorSelect = new UserSelectMenuBuilder()
-        .setCustomId(`${ID}:historymoderator:${targetId || "_"}`)
-        .setPlaceholder("Filtrer par modérateur")
-        .setMinValues(0)
-        .setMaxValues(1);
-      if (moderatorId) moderatorSelect.setDefaultUsers([moderatorId]);
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(targetSelect));
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(moderatorSelect));
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:historytextopen:${targetId || "_"}:${moderatorId || "_"}`)
-            .setLabel("Filtrer par type/ID...")
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId(`${ID}:historyrun:${targetId || "_"}:${moderatorId || "_"}`)
-            .setLabel("Rechercher")
-            .setStyle(ButtonStyle.Success)
-        )
-      );
-    }
   } else if (meta.key === "channels") {
     const choisis = selectionSalons(guild.id, member.id).filter((id) => guild.channels.cache.has(id));
     container.addActionRowComponents(
@@ -1884,30 +1804,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
 
 const PREFIX_FIELDS = {
   musicMod: { label: "Préfixe gestion", max: 3 },
-  moderation: { label: "Préfixe modération", max: 3 },
 };
-
-/**
- * Résultats de recherche d'historique, formatés pour une réponse éphémère
- * (pas de mutation du panneau partagé : c'est une consultation personnelle).
- */
-function formatHistoryResults(results) {
-  if (!results.length) return "Aucune entrée ne correspond à cette recherche.";
-  return results
-    .map((e) => {
-      const when = `<t:${Math.floor(new Date(e.createdAt).getTime() / 1000)}:f>`;
-      return [
-        `\`${e.action}\` — ${when}`,
-        e.targetTag ? `Cible : **${e.targetTag}** (${e.targetId})` : null,
-        `Modérateur : ${e.moderatorTag || e.moderatorId}`,
-        e.reason ? `Raison : ${e.reason}` : null,
-        `ID : \`${e.id}\``,
-      ]
-        .filter(Boolean)
-        .join("\n");
-    })
-    .join("\n\n");
-}
 
 /**
  * Traite toutes les interactions du panneau (identifiants en "cfg:"). Les
@@ -1968,29 +1865,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "subnav") {
     return goto(interaction.values[0]);
-  }
-
-  if (action === "banreasonadd") {
-    if (!can(member, "moderation.ban")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) {
-      const label = interaction.fields.getTextInputValue("label").trim();
-      if (!label) return interaction.reply({ content: "Raison vide, rien n'a été ajouté.", flags: MessageFlags.Ephemeral });
-      banReasonsStore.add(guildId, label);
-      return goto("moderation", {});
-    }
-    const modal = new ModalBuilder().setCustomId(`${ID}:banreasonadd`).setTitle("Ajouter une raison de ban");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("label").setLabel("Raison").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "banreasondel") {
-    if (!can(member, "moderation.ban")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    banReasonsStore.remove(guildId, interaction.values[0]);
-    return goto("moderation", {});
   }
 
   if (action === "permrole") {
@@ -2438,72 +2312,9 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   // plus de boutons Warn/Timeout/Kick/Ban ni d'ajout de rôle ici. Le panel
   // sert à la sécurité, aux outils et à la gestion du serveur ; sanctionner
   // ou donner un rôle se fait par commande, avec une mention ou un
-  // identifiant. L'historique reste consultable sous Monitoring — c'est de la
-  // consultation, pas une action sur un membre.
-
-  // Recherche d'historique : cible/modérateur se choisissent désormais via
-  // UserSelectMenu natif (chips + avatars) au lieu d'un ID/mention tapé à la
-  // main — un Modal Discord ne pouvant pas contenir de select menu, le
-  // bouton "Rechercher" ouvre maintenant une carte dans le panel lui-même
-  // plutôt qu'un Modal direct. Le type d'événement/l'ID précis restent du
-  // texte libre (aucun équivalent natif) via un Modal réduit, ouvert depuis
-  // cette carte et qui porte cible/modérateur dans son propre customId pour
-  // ne pas les perdre.
-  if (action === "history" && extra === "search") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("history", { historySearchOpen: true });
-  }
-
-  if (action === "historytarget" || action === "historymoderator") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const other = extra !== "_" ? extra : null;
-    const chosen = interaction.values[0] || null;
-    return goto("history", {
-      historySearchOpen: true,
-      historySearchTarget: action === "historytarget" ? chosen : other,
-      historySearchModerator: action === "historymoderator" ? chosen : other,
-    });
-  }
-
-  if (action === "historytextopen") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const modal = new ModalBuilder().setCustomId(`${ID}:historytextsubmit:${extra}:${extra2}`).setTitle("Filtrer par type/ID");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("action")
-          .setLabel("Type (ban, kick, timeout, clear...)")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("id").setLabel("ID d'entrée précis").setStyle(TextInputStyle.Short).setRequired(false)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "historytextsubmit") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return handleHistorySearchModal(interaction, {
-      targetId: extra !== "_" ? extra : null,
-      moderatorId: extra2 !== "_" ? extra2 : null,
-    });
-  }
-
-  if (action === "historyrun") {
-    if (!can(member, "logs.view")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const targetId = extra !== "_" ? extra : null;
-    const moderatorId = extra2 !== "_" ? extra2 : null;
-    const results = historyStore.search(guildId, { targetId: targetId || undefined, moderatorId: moderatorId || undefined, limit: 10 });
-    await interaction.update(
-      buildConfigPanel(guild, "history", member, { historySearchOpen: true, historySearchTarget: targetId, historySearchModerator: moderatorId })
-    );
-    const resultContainer = new ContainerBuilder().addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## Résultats de recherche\n${formatHistoryResults(results).slice(0, 3800)}`)
-    );
-    return interaction.followUp({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
-  }
+  // identifiant. L'historique de modération (rubrique "Historique") a lui
+  // aussi été retiré du panel : il vit désormais sur le bot de modération
+  // séparé (moderation-bot).
 
   // --- Rubrique "Salons" : suppression groupée ---
   if (action === "channelsdelpick" || action === "channelsdelclear" || action === "channelsdelgo") {
@@ -2781,32 +2592,5 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   }
 }
 
-/**
- * Traite la soumission du Modal réduit (type d'événement + ID précis, voir
- * index.js) — cible/modérateur viennent de la carte (UserSelectMenu natif),
- * portés dans le customId du Modal, pas retapés ici.
- * @param {{ targetId: string|null, moderatorId: string|null }} [carried]
- */
-async function handleHistorySearchModal(interaction, carried = {}) {
-  if (!can(interaction.member, "logs.view")) {
-    return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-  }
-  const actionRaw = interaction.fields.getTextInputValue("action").trim();
-  const idRaw = interaction.fields.getTextInputValue("id").trim();
-
-  const results = historyStore.search(interaction.guild.id, {
-    targetId: carried.targetId || undefined,
-    moderatorId: carried.moderatorId || undefined,
-    action: actionRaw || undefined,
-    id: idRaw || undefined,
-    limit: 10,
-  });
-
-  const resultContainer = new ContainerBuilder().addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## Résultats de recherche\n${formatHistoryResults(results).slice(0, 3800)}`)
-  );
-  return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [resultContainer] });
-}
-
 module.exports = {
-  buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, hasAnyPanelAccess, ID, SECTIONS };
+  buildConfigPanel, buildSectionSpec, handleConfigInteraction, hasAnyPanelAccess, ID, SECTIONS };

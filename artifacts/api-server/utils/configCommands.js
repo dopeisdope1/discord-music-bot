@@ -23,18 +23,13 @@ const PREFIX_TYPES = {
   commands: "musicMod",
   commandes: "musicMod",
   musicmod: "musicMod",
-  moderation: "moderation",
-  modération: "moderation",
-  mod: "moderation",
 };
 
 const PREFIX_LABELS = {
   musicMod: "Préfixe des commandes (gestion)",
-  moderation: "Préfixe modération",
 };
 const PREFIX_HELP_COMMANDS = {
   musicMod: "help",
-  moderation: "ban",
 };
 
 /** Clé de permission visée, tolérante à la casse et aux espaces parasites. */
@@ -63,7 +58,7 @@ const handlers = {
           ...Object.keys(PREFIX_LABELS).map((key) => `> **${PREFIX_LABELS[key]}** : \`${prefixes[key]}\``),
           "",
           "`prefix <nouveau>` (gestion, syntaxe historique)",
-          "`prefix music|gestion|moderation <nouveau>`",
+          "`prefix music|gestion <nouveau>`",
         ].join("\n")
       );
     }
@@ -102,7 +97,7 @@ const handlers = {
 
     const role = message.mentions.roles?.first();
     const membre = message.mentions.users?.first();
-    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre : `set perm moderation.kick @rôle`.");
+    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre : `set perm channels.lock @rôle`.");
 
     if (role) {
       const actuelles = permStore.getRoleGrants(message.guild.id, role.id);
@@ -120,7 +115,7 @@ const handlers = {
     if (!can(message.member, "panel.permissions.manage")) return;
 
     const key = resolvePermissionKey(args[0]);
-    if (!key) return reply(message, "error", "Indique la clé à retirer : `del perm moderation.kick @rôle`.");
+    if (!key) return reply(message, "error", "Indique la clé à retirer : `del perm channels.lock @rôle`.");
 
     const role = message.mentions.roles?.first();
     const membre = message.mentions.users?.first();

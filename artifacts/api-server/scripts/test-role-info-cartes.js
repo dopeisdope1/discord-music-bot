@@ -94,16 +94,12 @@ const CLES_NOMBREUSES = [
     assert.ok(!alt.includes("autre(s)"), "plus de message '+N autre(s)' — toutes les commandes doivent être listées");
   });
 
-  await cas("chaque commande listée porte son vrai préfixe (non-régression du fix précédent)", async () => {
-    const message = fakeMessage(guild, role);
-    await utilityHandlers.roleInfo(null, message, []);
-    const alt = message._reply.files[0].description || "";
-    // Au moins une commande de modération réelle avec le préfixe "-", jamais "&".
-    assert.ok(alt.includes("-kick") || alt.includes("-ban"), `préfixe modération manquant : ${alt.slice(0, 300)}`);
-    assert.ok(!alt.includes("&kick") && !alt.includes("&ban"), "kick/ban ne doivent jamais apparaître sous le préfixe de gestion");
-  });
+  // Le test de non-régression du préfixe multi-familles ("-kick" jamais
+  // sous "&") n'a plus de sujet : un seul préfixe/groupe reste sur ce bot
+  // depuis le départ de la modération vers moderation-bot — voir le cas
+  // suivant, qui couvre déjà "toutes les commandes du (seul) groupe".
 
-  await cas("toutes les commandes des deux groupes (gestion + modération) sont présentes dans le texte alternatif", async () => {
+  await cas("toutes les commandes du groupe sont présentes dans le texte alternatif", async () => {
     const message = fakeMessage(guild, role);
     await utilityHandlers.roleInfo(null, message, []);
     const alt = message._reply.files[0].description || "";

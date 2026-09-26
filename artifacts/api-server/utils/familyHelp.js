@@ -10,7 +10,6 @@ const { getPrefixes } = require("./prefixStore");
 const { can } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const commandRouting = require("./commandRouting");
 const { rendreEnCache, resumer, enTexte } = require("./dashboardImage");
 const { identityOf } = require("./helpPanel");
 
@@ -41,11 +40,9 @@ function commandesAccessibles(member) {
   return accessibles;
 }
 
-/** Le vrai préfixe d'une commande — toutes ne vivent pas sur le même. */
+/** Le vrai préfixe d'une commande — un seul reste depuis le départ de la modération. */
 function prefixePour(cmd, prefixes) {
   if (!cmd.prefix) return "";
-  const bucket = commandRouting.bucketDe(cmd.name);
-  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   return prefixes.musicMod;
 }
 
@@ -143,9 +140,7 @@ function buildFamilyCard(mot, member, guildId, { sansImage = false } = {}) {
 
   const spec = {
     titre: `${prefixe}${mot}`,
-    sousTitre:
-      `Gestion : ${prefixes.musicMod} · Modération : ${prefixes.moderation} · ` +
-      `[ ] facultatif, < > obligatoire`,
+    sousTitre: `Gestion : ${prefixes.musicMod} · [ ] facultatif, < > obligatoire`,
     cartes,
     // Une seule colonne : ces cartes ont peu de lignes mais des syntaxes
     // longues, que deux demi-colonnes tronqueraient en plein milieu.

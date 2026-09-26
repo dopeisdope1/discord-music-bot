@@ -72,18 +72,15 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
     assert.ok(texte(msg).includes("3 caractères"), texte(msg));
   });
 
-  await cas("refuse un préfixe qui chevauche un autre (ex. ~ et ~~)", async () => {
+  // Un seul préfixe reste sur ce bot (musicMod) depuis le départ de la
+  // modération vers son propre bot — plus de "chevauchement entre deux
+  // familles" possible ici. Ce qui reste testable : un préfixe qui, une
+  // fois posé, redevient un doublon exact de lui-même à la prochaine
+  // tentative (prefixConflicts compare toujours le nouveau contre l'actuel).
+  await cas("refuse un doublon exact avec le préfixe déjà en place", async () => {
     const msg = makeMessage();
-    await configHandlers.prefix(null, msg, ["moderation", "~~"]);
-    assert.strictEqual(getPrefixes("g1").moderation, "-", "le préfixe qui chevauche ne doit pas être enregistré");
-    assert.ok(texte(msg).includes("chevauchent"), texte(msg));
-  });
-
-  await cas("refuse un doublon exact avec une autre famille", async () => {
-    const msg = makeMessage();
-    await configHandlers.prefix(null, msg, ["moderation", "~"]);
-    assert.strictEqual(getPrefixes("g1").moderation, "-", "le doublon ne doit pas être enregistré");
-    assert.ok(texte(msg).includes("chevauchent"), texte(msg));
+    await configHandlers.prefix(null, msg, ["~"]);
+    assert.strictEqual(getPrefixes("g1").musicMod, "~", "le doublon ne doit pas changer l'état — déjà la même valeur");
   });
 
   await cas("sans argument, affiche les préfixes actuels", async () => {
@@ -97,30 +94,30 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
   await cas("une clé inconnue liste les clés valides au lieu d'échouer sèchement", async () => {
     const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
     await configHandlers.setPerm(null, msg, ["nimportequoi"]);
-    assert.ok(texte(msg).includes("moderation.kick"), "les clés disponibles doivent être rappelées");
+    assert.ok(texte(msg).includes("channels.lock"), "les clés disponibles doivent être rappelées");
   });
 
   await cas("accorde une permission à un rôle", async () => {
     const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["moderation.kick"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["moderation.kick"]);
+    await configHandlers.setPerm(null, msg, ["channels.lock"]);
+    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.lock"]);
   });
 
   await cas("accorder deux fois ne duplique pas et le dit", async () => {
     const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["moderation.kick"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["moderation.kick"]);
+    await configHandlers.setPerm(null, msg, ["channels.lock"]);
+    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.lock"]);
     assert.ok(texte(msg).includes("déjà"), texte(msg));
   });
 
   await cas("une permission de plus s'ajoute sans écraser la précédente", async () => {
-    await configHandlers.setPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["moderation.ban"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible").sort(), ["moderation.ban", "moderation.kick"]);
+    await configHandlers.setPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["channels.manage"]);
+    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible").sort(), ["channels.lock", "channels.manage"]);
   });
 
   await cas("&del perm ne retire que la clé visée", async () => {
-    await configHandlers.delPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["moderation.kick"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["moderation.ban"]);
+    await configHandlers.delPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["channels.lock"]);
+    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.manage"]);
   });
 
   await cas("&clear perms vide tout et annonce le nombre retiré", async () => {
@@ -139,14 +136,14 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
   });
 
   await cas("la clé est tolérante à la casse", () => {
-    assert.strictEqual(resolvePermissionKey("MODERATION.Kick"), "moderation.kick");
+    assert.strictEqual(resolvePermissionKey("CHANNELS.Lock"), "channels.lock");
     assert.strictEqual(resolvePermissionKey("  logs.view  "), "logs.view");
     assert.strictEqual(resolvePermissionKey("inexistante"), null);
   });
 
   await cas("sans le droit panel.permissions.manage, tout reste muet", async () => {
     const msg = makeMessage({ userId: "membre-lambda", roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["moderation.ban"]);
+    await configHandlers.setPerm(null, msg, ["channels.manage"]);
     assert.strictEqual(msg._replies.length, 0);
     assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), []);
   });

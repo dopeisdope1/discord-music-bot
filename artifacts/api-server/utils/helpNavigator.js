@@ -15,24 +15,19 @@ const { dedupeByIdentity, formatLine, PALIERS, identityOf, estDangereux } = requ
 const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const commandRouting = require("./commandRouting");
 const { emojiDe } = require("./emojiSlots");
 const messageOwner = require("./messageOwner");
 
-// Remplace les "help" en texte pur/carte figée (&help, -help) par le MÊME
-// moteur : un seul message, navigable via un menu déroulant ("Choisir un
-// palier") + Précédent/Suivant quand un groupe ne tient pas sur une page —
-// jamais de nouveau message posté après le premier.
+// Remplace le "help" en texte pur/carte figée (&help) par un moteur navigable
+// : un seul message, un menu déroulant ("Choisir un palier") + Précédent/
+// Suivant quand un groupe ne tient pas sur une page — jamais de nouveau
+// message posté après le premier.
 const CUSTOM_ID = "helpnav";
 
-// Un bucket par préfixe, TOUS sur les mêmes paliers Publiques/Configurables/
-// Sys (utils/helpPanel.js::PALIERS) — "gestion"/"moderation" les tirent du
-// catalogue central, avec la même classification "dangereux -> Sys"
-// (estDangereux).
-const BUCKETS = {
-  gestion: { titre: "Aide", prefixKey: "musicMod", tiersFn: (guildId, member) => buildTiersCatalogue("gestion", guildId, member) },
-  moderation: { titre: "Aide — Modération", prefixKey: "moderation", tiersFn: (guildId, member) => buildTiersCatalogue("moderation", guildId, member) },
-};
+// Seul préfixe restant depuis le départ de la modération vers son propre
+// bot (voir utils/prefixStore.js) — plus de bucket à distinguer.
+const TITRE = "Aide";
+const PREFIX_KEY = "musicMod";
 
 // Budget du texte d'UN palier affiché, en caractères — le reste du message
 // (titre, compteurs d'accueil, pied de page) tient large dans la marge par
@@ -80,8 +75,8 @@ function assemblerGroupes(lignesParGroupe) {
   return { lines, count };
 }
 
-/** Paliers de droit (public/configurable/sys) non vides, groupés par catégorie du catalogue central — pour "&help"/"-help". */
-function buildTiersCatalogue(bucket, guildId, member) {
+/** Paliers de droit (public/configurable/sys) non vides, groupés par catégorie du catalogue central — pour "&help". */
+function buildTiersCatalogue(guildId, member) {
   const prefixes = getPrefixes(guildId);
   const modeDecouverte = !hasConfiguredAccess(member);
   // palier -> Map<libellé de catégorie, { emoji, cmds: [] }>
@@ -90,7 +85,6 @@ function buildTiersCatalogue(bucket, guildId, member) {
   for (const categorie of CATEGORIES) {
     for (const cmd of categorie.commands) {
       if (!isImplemented(cmd)) continue;
-      if (commandRouting.bucketDe(cmd.name) !== bucket) continue;
       if (modeDecouverte && identityOf(cmd) !== "help") continue;
       if (!can(member, cmd.permission)) continue;
 
@@ -113,22 +107,20 @@ function buildTiersCatalogue(bucket, guildId, member) {
 }
 
 /**
- * @param {"gestion"|"moderation"} bucketKey
  * @param {string} guildId
  * @param {import('discord.js').GuildMember} member
  * @param {{ tier?: string, page?: number }} [state]
  */
-function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
-  const bucket = BUCKETS[bucketKey];
+function buildHelpNavigator(guildId, member, state = {}) {
   const prefixes = getPrefixes(guildId);
-  const prefix = prefixes[bucket.prefixKey];
-  const tiers = bucket.tiersFn(guildId, member);
+  const prefix = prefixes[PREFIX_KEY];
+  const tiers = buildTiersCatalogue(guildId, member);
 
   const tierKey = state.tier && tiers.some((t) => t.key === state.tier) ? state.tier : "accueil";
   const container = new ContainerBuilder();
 
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## ${bucket.titre}\nVoici les commandes disponibles, filtrées selon tes permissions.`)
+    new TextDisplayBuilder().setContent(`## ${TITRE}\nVoici les commandes disponibles, filtrées selon tes permissions.`)
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
@@ -163,7 +155,7 @@ function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
   ];
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId(`${CUSTOM_ID}:select:${bucketKey}`).setPlaceholder("Choisir un palier").addOptions(options)
+      new StringSelectMenuBuilder().setCustomId(`${CUSTOM_ID}:select`).setPlaceholder("Choisir un palier").addOptions(options)
     )
   );
 
@@ -171,12 +163,12 @@ function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`${CUSTOM_ID}:page:${bucketKey}:${tierKey}:${page - 1}`)
+          .setCustomId(`${CUSTOM_ID}:page:${tierKey}:${page - 1}`)
           .setLabel("Précédent")
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(page === 0),
         new ButtonBuilder()
-          .setCustomId(`${CUSTOM_ID}:page:${bucketKey}:${tierKey}:${page + 1}`)
+          .setCustomId(`${CUSTOM_ID}:page:${tierKey}:${page + 1}`)
           .setLabel("Suivant")
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(page === pageCount - 1)
@@ -188,13 +180,12 @@ function buildHelpNavigator(bucketKey, guildId, member, state = {}) {
 }
 
 /** Poste l'aide navigable et en retient le propriétaire (voir utils/messageOwner.js). */
-async function repondreAvecAide(bucketKey, message) {
-  return messageOwner.repondreEtRetenir(message, buildHelpNavigator(bucketKey, message.guild.id, message.member));
+async function repondreAvecAide(message) {
+  return messageOwner.repondreEtRetenir(message, buildHelpNavigator(message.guild.id, message.member));
 }
 
 async function handleHelpNavInteraction(interaction) {
-  const [, action, bucketKey, ...rest] = interaction.customId.split(":");
-  if (!BUCKETS[bucketKey]) return;
+  const [, action, ...rest] = interaction.customId.split(":");
 
   let state;
   if (action === "select") {
@@ -206,7 +197,7 @@ async function handleHelpNavInteraction(interaction) {
     return;
   }
 
-  return interaction.update(buildHelpNavigator(bucketKey, interaction.guild.id, interaction.member, state));
+  return interaction.update(buildHelpNavigator(interaction.guild.id, interaction.member, state));
 }
 
 module.exports = {

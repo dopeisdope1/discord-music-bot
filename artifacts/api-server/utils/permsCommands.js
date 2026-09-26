@@ -6,7 +6,6 @@ const permCatalog = require("./permissions/catalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
-const commandRouting = require("./commandRouting");
 const { getPrefixes } = require("./prefixStore");
 
 // &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
@@ -60,26 +59,19 @@ function commandsForKeys(keys) {
 }
 
 /**
- * Le vrai préfixe d'une commande, tapée telle qu'affichée : toutes ne vivent
- * PAS sur "&" (gestion) — "kick"/"ban" sont sur "-" (modération). Bug
- * corrigé ici : &role info / &staff affichaient TOUT préfixé "&", y compris
- * des commandes de -modération, ce qui les rendait fausses telles quelles
- * copiées-collées.
+ * Le vrai préfixe d'une commande, tapée telle qu'affichée. Un seul préfixe
+ * reste sur ce bot depuis le départ de la modération vers son propre bot
+ * (voir utils/prefixStore.js) — plus de bucket à distinguer.
  * @param {string} nomCommande identité affichée (identityOf), ex. "kick"
  * @param {ReturnType<typeof getPrefixes>} prefixes
  */
 function prefixeDeCommande(nomCommande, prefixes) {
-  const bucket = commandRouting.bucketDe(nomCommande);
-  if (bucket === commandRouting.BUCKET_MODERATION) return prefixes.moderation;
   return prefixes.musicMod;
 }
 
 /**
  * Les commandes débloquées par ces clés, PRÉFIXÉES CORRECTEMENT chacune
- * (voir prefixeDeCommande) — ex. ["`-kick`", "`&role`"] plutôt qu'un unique
- * préfixe appliqué à toutes. Utilisé par &role info et &staff (utils/
- * utilityCommands.js, utils/staffCard.js), qui listaient jusque-là tout sous
- * "&" même pour des commandes d'un autre préfixe.
+ * (voir prefixeDeCommande).
  * @returns {string[]} chaque commande déjà entourée de ses backticks
  */
 function commandesAffichables(keys, guildId) {
@@ -87,36 +79,18 @@ function commandesAffichables(keys, guildId) {
   return commandsForKeys(keys).map((nom) => `\`${prefixeDeCommande(nom, prefixes)}${nom}\``);
 }
 
-// Ordre d'affichage stable des groupes de préfixe — celui dans lequel les
-// buckets sont déjà présentés ailleurs (gestion en premier, comme &help).
-const ORDRE_PREFIXES = [
-  { bucket: commandRouting.BUCKET_GESTION, cle: "musicMod", label: "Gestion" },
-  { bucket: commandRouting.BUCKET_MODERATION, cle: "moderation", label: "Modération" },
-];
-
 /**
- * Les commandes débloquées, REGROUPÉES par préfixe réel — un groupe par
- * préfixe effectivement représenté, dans l'ordre gestion/modération/
- * sécurité/vocal. Pensé pour une présentation en plusieurs petites listes
- * (une carte par groupe) plutôt qu'une seule ligne de N commandes, qui
- * devient illisible ou se fait tronquer au-delà d'une vingtaine (&role info).
- * @returns {{label: string, prefixe: string, commandes: string[]}[]} `commandes`
- *   SANS backtick ni préfixe collé (juste le nom) — à l'appelant de les
- *   présenter comme il veut (une par ligne, grille...).
+ * Les commandes débloquées, dans un unique groupe "Gestion" — conservé au
+ * format `{label, prefixe, commandes}[]` pour ne pas casser les appelants
+ * (&role info, &staff) qui itèrent sur un tableau de groupes, même si un seul
+ * groupe subsiste depuis le départ de la modération.
+ * @returns {{label: string, prefixe: string, commandes: string[]}[]}
  */
 function commandesParPrefixe(keys, guildId) {
   const prefixes = getPrefixes(guildId);
-  const parBucket = new Map();
-  for (const nom of commandsForKeys(keys)) {
-    const bucket = commandRouting.bucketDe(nom);
-    if (!parBucket.has(bucket)) parBucket.set(bucket, []);
-    parBucket.get(bucket).push(nom);
-  }
-  return ORDRE_PREFIXES.filter((g) => parBucket.has(g.bucket)).map((g) => ({
-    label: g.label,
-    prefixe: prefixes[g.cle],
-    commandes: parBucket.get(g.bucket).sort(),
-  }));
+  const commandes = commandsForKeys(keys).sort();
+  if (!commandes.length) return [];
+  return [{ label: "Gestion", prefixe: prefixes.musicMod, commandes }];
 }
 
 // Calculés à l'APPEL, pas au chargement du module : `isImplemented` fait un

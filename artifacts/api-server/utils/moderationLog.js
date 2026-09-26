@@ -9,7 +9,6 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
-const historyStore = require("./moderationHistoryStore");
 
 // Toute action qui compte comme "modération" au sens large : ce que fait ce
 // bot (&ban/&unban/&banall/&kick/...), ce que fait le CrowBot du serveur, et
@@ -37,54 +36,27 @@ const historyStore = require("./moderationHistoryStore");
 // purement "sécurité serveur" (salon/rôle/webhook créés...) reste dans le
 // salon de logs sans polluer l'historique de modération.
 const HANDLERS = {
-  [AuditLogEvent.MemberBanAdd]: {
-    category: "moderation",
-    describe: (e) => ({ title: "Bannissement", fields: [targetField(e)] }),
-    history: (e) => ({ action: "ban", targetId: e.targetId, targetTag: e.target?.tag || null }),
-  },
-  [AuditLogEvent.MemberBanRemove]: {
-    category: "moderation",
-    describe: (e) => ({ title: "Débannissement", fields: [targetField(e)] }),
-    history: (e) => ({ action: "unban", targetId: e.targetId, targetTag: e.target?.tag || null }),
-  },
-  [AuditLogEvent.MemberKick]: {
-    category: "moderation",
-    describe: (e) => ({ title: "Expulsion", fields: [targetField(e)] }),
-    history: (e) => ({ action: "kick", targetId: e.targetId, targetTag: e.target?.tag || null }),
-  },
+  // MemberBanAdd/MemberBanRemove/MemberKick, et la partie "timeout" de
+  // MemberUpdate, sont partis avec la modération (moderation-bot, qui
+  // journalise ces actions lui-même via son propre utils/moderationLog.js
+  // quand c'est LUI qui les exécute — voir utils/moderation/actions.js pour
+  // pourquoi les actions de CE bot ne passent jamais par le relais d'audit-
+  // log, qui reste utile pour CrowBot/un humain agissant directement).
   [AuditLogEvent.MemberUpdate]: {
-    category: "moderation",
-    // Un MemberUpdate couvre aussi les surnoms et la sourdine vocale : seuls
-    // le timeout et le changement de pseudo nous intéressent ici.
+    category: "members",
+    // Un MemberUpdate couvre aussi le timeout et la sourdine vocale : seul
+    // le changement de pseudo (gestion, reste sur ce bot) nous intéresse ici.
     describe: (e) => {
-      const timeout = e.changes.find((c) => c.key === "communication_disabled_until");
-      if (timeout) {
-        if (timeout.new) {
-          const until = Math.floor(new Date(timeout.new).getTime() / 1000);
-          return { title: "Timeout", fields: [targetField(e), { label: "Jusqu'à", value: `<t:${until}:f>` }] };
-        }
-        return { title: "Fin de timeout", fields: [targetField(e)] };
-      }
       const nick = e.changes.find((c) => c.key === "nick");
       if (nick) {
         return { title: "Pseudo modifié", fields: [targetField(e), { label: "Nouveau pseudo", value: nick.new || "*retiré*" }] };
       }
       return null;
     },
-    history: (e) => {
-      const timeout = e.changes.find((c) => c.key === "communication_disabled_until");
-      if (timeout) {
-        return {
-          action: timeout.new ? "timeout" : "untimeout",
-          targetId: e.targetId,
-          targetTag: e.target?.tag || null,
-          extra: timeout.new ? { until: timeout.new } : null,
-        };
-      }
-      const nick = e.changes.find((c) => c.key === "nick");
-      if (nick) return { action: "nick", targetId: e.targetId, targetTag: e.target?.tag || null, extra: { to: nick.new || null } };
-      return null;
-    },
+    // Pas de `history` ici : l'historique de modération est parti avec le
+    // reste de la modération vers moderation-bot. Le pseudo modifié reste
+    // visible dans le salon de logs "Membres" (postModerationEntry
+    // ci-dessus), ce qui suffit pour une action de gestion aussi bénigne.
   },
   [AuditLogEvent.MemberRoleUpdate]: {
     category: "members",
@@ -97,17 +69,8 @@ const HANDLERS = {
       if (fields.length === 1) return null;
       return { title: "Modification des rôles", fields };
     },
-    history: (e) => {
-      const added = e.changes.find((c) => c.key === "$add")?.new || [];
-      const removed = e.changes.find((c) => c.key === "$remove")?.new || [];
-      if (!added.length && !removed.length) return null;
-      return {
-        action: "role",
-        targetId: e.targetId,
-        targetTag: e.target?.tag || null,
-        extra: { added: added.map((r) => r.id), removed: removed.map((r) => r.id) },
-      };
-    },
+    // Pas de `history` ici : voir le commentaire équivalent sur
+    // MemberUpdate ci-dessus — le salon de logs "Membres" suffit.
   },
   [AuditLogEvent.ChannelCreate]: {
     category: "channels",
@@ -134,11 +97,8 @@ const HANDLERS = {
       if (fields.length === 1) return null; // rien d'intéressant pour la modération (position, permissions...)
       return { title: "Salon mis à jour", fields };
     },
-    history: (e) => {
-      const slowmode = e.changes.find((c) => c.key === "rate_limit_per_user");
-      if (!slowmode) return null;
-      return { action: "slowmode", targetId: e.targetId, targetTag: null, extra: { seconds: Number(slowmode.new || 0) } };
-    },
+    // Pas de `history` ici : voir le commentaire équivalent sur
+    // MemberUpdate ci-dessus — le salon de logs "Salons" suffit.
   },
   [AuditLogEvent.ChannelOverwriteCreate]: {
     category: "channels",
@@ -219,19 +179,8 @@ const HANDLERS = {
     category: "channels",
     describe: (e) => ({ title: "Webhook créé", fields: [targetField(e)] }),
   },
-  [AuditLogEvent.MessageBulkDelete]: {
-    category: "moderation",
-    describe: (e) => ({
-      title: "Suppression de messages",
-      fields: [
-        { label: "Salon", value: channelLabel(e) },
-        { label: "Nombre", value: String(e.extra?.count ?? "?") },
-      ],
-    }),
-    // Pas d'écriture d'historique ici : &clear (utils/moderation/actions.js)
-    // enregistre déjà une entrée plus riche (avec la cible) au moment de
-    // l'action — un doublon générique n'ajouterait rien.
-  },
+  // MessageBulkDelete (suppressions massives, dont -clear) est parti avec
+  // la modération vers moderation-bot.
   [AuditLogEvent.BotAdd]: {
     category: "bots",
     describe: (e) => ({ title: "Bot ajouté", fields: [targetField(e, "Bot")] }),
@@ -294,11 +243,6 @@ function roleDetailFields(role) {
     { label: "Affiché séparément", value: boolLabel(role.hoist) },
     { label: "Position", value: String(role.position ?? "?") },
   ];
-}
-
-function channelLabel(entry) {
-  const c = entry.extra?.channel;
-  return c?.id ? `<#${c.id}> (${c.id})` : "un salon";
 }
 
 function overwriteDescribe(entry, verb) {
@@ -413,25 +357,6 @@ async function relayAuditLogEntry(client, guild, entry) {
     moderatorTag: entry.executor?.tag || null,
     reason: entry.reason || null,
   });
-
-  if (handler.history) {
-    let record;
-    try {
-      record = handler.history(entry);
-    } catch (err) {
-      console.error("[moderationLog] échec d'enregistrement d'historique :", err);
-      return;
-    }
-    if (!record) return;
-    historyStore.record({
-      guildId: guild.id,
-      moderatorId: entry.executorId || "unknown",
-      moderatorTag: entry.executor?.tag || null,
-      reason: entry.reason || null,
-      source: "audit-log",
-      ...record,
-    });
-  }
 }
 
 /**

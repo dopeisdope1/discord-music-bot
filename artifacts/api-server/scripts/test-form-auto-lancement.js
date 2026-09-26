@@ -119,15 +119,8 @@ const boutonsDe = (formKey) =>
 
   console.log("\nPlus aucune confirmation, y compris sur les actions irréversibles :");
 
-  await cas("ban part dès que la cible est choisie — la confirmation a été retirée sur demande", async () => {
-    // Ce qui protège encore : le droit exigé par la commande, la hiérarchie
-    // des rôles revérifiée juste avant d'agir, et l'entrée d'historique.
-    commandForms.clearFormState("staff-1", "ban_member");
-    const i = choix("user", "ban_member", [CIBLE_ID]);
-    await commandForms.handleFormCardInteraction(i);
-    assert.strictEqual(i.aEteDefer, true, "le bannissement doit partir sans étape supplémentaire");
-    assert.strictEqual(i.misAJour.length, 0, "il ne doit pas se contenter de réafficher la carte");
-  });
+  // "ban_member" (auto-lancement dès la cible choisie, sans confirmation) a
+  // migré avec le reste de la modération vers moderation-bot.
 
   await cas("plus aucun bouton \"Confirmer\" nulle part", () => {
     for (const cle of Object.keys(commandForms.FORMS)) {

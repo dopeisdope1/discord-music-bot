@@ -21,7 +21,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 const { Collection, PermissionsBitField } = require("discord.js");
 const accessStore = require("../utils/accessStore");
 const { checkHierarchy } = require("../utils/moderation/actions");
-const { moderationHandlers } = require("../utils/moderationCommands");
+const moderationHandlers = require("../utils/moderationCommands");
 const permStore = require("../utils/permissions/store");
 const roleLimitStore = require("../utils/roleLimitStore");
 

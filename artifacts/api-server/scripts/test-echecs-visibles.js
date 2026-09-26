@@ -40,24 +40,11 @@ const source = (relatif) => fs.readFileSync(path.join(__dirname, "..", relatif),
 
 console.log("Aucune action de modération n'échoue plus en silence :");
 
-cas("&unmuteall ne compte QUE les démutes réellement appliquées", () => {
-  // Le compteur s'incrémentait hors du try : un rôle non retirable comptait
-  // quand même pour un démute.
-  const code = source("utils/moderationExtra.js");
-  const bloc = code.slice(code.indexOf("async function unmuteall"), code.indexOf("async function unmuteall") + 1400);
-  assert.ok(/try \{[\s\S]*roles\.remove[\s\S]*count\+\+/.test(bloc), "count++ doit être DANS le try, après le retrait");
-  assert.ok(/echecs\.push/.test(bloc), "les échecs doivent être collectés");
-  assert.ok(!/roles\.remove\([^)]*\)\.catch\(\(\) => \{\}\)/.test(bloc), "plus de .catch vide sur le retrait");
-});
-
-cas("la fin d'un mute temporaire n'est pas ANNONCÉE si le rôle n'a pas pu être retiré", () => {
-  // Sinon l'historique enregistre un démute qui n'a jamais eu lieu, et la
-  // personne reste muette sans que rien ne l'indique.
-  const code = source("utils/moderationExtra.js");
-  const i = code.indexOf('"Fin du mute temporaire"');
-  const bloc = code.slice(i - 400, i + 400);
-  assert.ok(/catch \(err\)[\s\S]*continue;/.test(bloc), "un échec doit interrompre AVANT le rapport");
-});
+// &unmuteall et la fin d'un mute temporaire ont migré avec le reste de la
+// modération vers moderation-bot (utils/moderationExtra.js n'existe plus
+// ici) — ces deux cas testaient ce fichier, retirés avec lui. La même
+// correction (count++ dans le try, échec = pas d'annonce) est préservée
+// telle quelle côté moderation-bot.
 
 cas("l'anti-nuke journalise un re-bannissement impossible", () => {
   // C'est une DÉFENSE qui n'a pas eu lieu : la personne débannie en rafale

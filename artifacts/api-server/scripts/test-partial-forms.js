@@ -112,22 +112,8 @@ async function cas(nom, fn) {
     assert.strictEqual(mentionedMember.roles._added, ROLE_ID);
   });
 
-  await cas('"&kick @membre" (raison optionnelle absente) exécute directement, pas de carte', async () => {
-    const guild = makeGuild();
-    const mentionedMember = {
-      id: TARGET_ID,
-      user: { id: TARGET_ID, tag: "cible#0001" },
-      roles: { cache: new Collection(), highest: { position: 1 } },
-      kick: async function (r) {
-        this._kicked = r;
-      },
-    };
-    guild.members.fetch = async (id) => (id === TARGET_ID ? mentionedMember : null);
-    const msg = makeMessage(guild, `&kick <@${TARGET_ID}>`, { mentionedMember });
-    await handleMusicTextCommand({}, msg);
-    assert.strictEqual(isCard(msg), false);
-    assert.ok(mentionedMember._kicked !== undefined);
-  });
+  // "&kick @membre" (raison optionnelle absente, exécution directe) a migré
+  // avec le reste de la modération vers moderation-bot.
 
   console.log("\nChamps \"salon\" implicites (jamais une mention dans la syntaxe réelle) :");
 

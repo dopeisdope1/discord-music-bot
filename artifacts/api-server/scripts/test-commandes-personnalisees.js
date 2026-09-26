@@ -123,11 +123,11 @@ const texteDe = (payload) =>
 
   console.log("\nImpossible de masquer une vraie commande du bot :");
 
-  await cas("`ban` est refusé — sinon &ban cesserait de bannir, sans le moindre signal", () => {
-    const resultat = store.set(GUILD, "ban", "coucou", "staff-1", MOD_COMMAND_NAMES);
+  await cas("`addrole` est refusé — sinon &addrole cesserait de fonctionner, sans le moindre signal", () => {
+    const resultat = store.set(GUILD, "addrole", "coucou", "staff-1", MOD_COMMAND_NAMES);
     assert.strictEqual(resultat.ok, false);
     assert.ok(/commande du bot/.test(resultat.motif), resultat.motif);
-    assert.strictEqual(store.get(GUILD, "ban"), null);
+    assert.strictEqual(store.get(GUILD, "addrole"), null);
   });
 
   await cas("AUCUNE commande réelle ne peut être enregistrée, pas seulement `ban`", () => {
