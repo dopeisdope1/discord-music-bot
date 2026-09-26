@@ -9,6 +9,7 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 const { getLogChannelId } = require("./modLogStore");
+const logStore = require("./logStore");
 
 // Toute action qui compte comme "modération" au sens large : ce que fait ce
 // bot (&ban/&unban/&banall/&kick/...), ce que fait le CrowBot du serveur, et
@@ -275,6 +276,9 @@ async function postModerationEntry(
   category,
   { title, fields, moderatorId = null, moderatorTag = null, reason = null, pingRoleId = null }
 ) {
+  // Désactivé : zinki n'envoie plus ses events de modération au panel,
+  // le bot "modération" dédié couvre déjà ça (demande explicite du propriétaire).
+  //   logStore.record(guildId, { type: "event", level: "info", message: title, metadata: { category, fields, moderatorId, moderatorTag, reason } });
   const channelId = getLogChannelId(guildId, category);
   if (!channelId) return;
 

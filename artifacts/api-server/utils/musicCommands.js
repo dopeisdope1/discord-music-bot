@@ -1,4 +1,5 @@
 const { buildStatusEmbed } = require("./statusEmbed");
+const commandsStore = require("./commandsStore");
 const { getPrefixes } = require("./prefixStore");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
@@ -403,7 +404,6 @@ async function handleTextCommand(client, message) {
 
   const content = message.content.trim();
   const { musicMod: MOD_PREFIX } = getPrefixes(message.guild.id);
-
   // Préfixe "&" : partagé avec le CrowBot du serveur. On ne traite que les
   // commandes explicitement déclarées dans modHandlers. La modération/
   // sécurité/vocal ont leurs propres bots et préfixes dédiés et ne doivent
@@ -485,7 +485,7 @@ async function handleTextCommand(client, message) {
     }
 
     const handler = modHandlers[cmdLower];
-    if (handler) return handler(client, message, modArgs);
+    if (handler && commandsStore.isEnabledForGuild(cmdLower, message.guild.id)) return handler(client, message, modArgs);
 
     // DERNIER recours, une fois toutes les vraies commandes écartées : le mot
     // est peut-être une commande personnalisée de ce serveur

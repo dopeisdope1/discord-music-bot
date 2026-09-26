@@ -507,6 +507,169 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 // connecter ne sert à rien, autant sortir pour que l'hébergeur le relance
 // plutôt que de laisser tourner un process muet (le filet ci-dessus, sans ce
 // catch, transformerait un jeton invalide en bot silencieux et immortel).
+const commandCatalog = require("./utils/commandCatalog");
+const commandsStore = require("./utils/commandsStore");
+const prefixStoreZinki = require("./utils/prefixStore");
+const messageStore = {
+  key: "welcome",
+  get(guildId) {
+    const cfg = welcomeStore.getConfig(guildId);
+    return {
+      key: "welcome",
+      guildId,
+      title: null,
+      description: cfg.messages.join("\n---\n"),
+      color: null,
+      imageUrl: null,
+      thumbnailUrl: null,
+      footer: null,
+      buttons: [],
+      updatedAt: null,
+    };
+  },
+  set(guildId, patch) {
+    if (typeof patch.description === "string") {
+      const current = welcomeStore.getConfig(guildId).messages;
+      for (let i = current.length - 1; i >= 0; i--) welcomeStore.removeMessage(guildId, i);
+      const parts = patch.description.split("\n---\n").map((s) => s.trim()).filter(Boolean);
+      for (const p of parts) welcomeStore.addMessage(guildId, p);
+    }
+    return messageStore.get(guildId);
+  },
+};
+function buildPanelCommands() {
+  const seen = new Set();
+  const out = [];
+  for (const cat of commandCatalog.CATEGORIES) {
+    for (const cmd of cat.commands) {
+      const base = cmd.name.split(/\s+/)[0].replace(/[^a-z0-9_-]/gi, "").toLowerCase();
+      if (!base || seen.has(base)) continue;
+      seen.add(base);
+      out.push({ name: base, category: cat.label, description: (cmd.description || "").slice(0, 200) });
+    }
+  }
+  return out;
+}
+
+const logStore = require("./utils/logStore");
+const statsStoreZinki = require("./utils/statsStore");
+const levelStoreForSystems = require("./utils/levelStore");
+const welcomeStoreForSystems = require("./utils/welcomeStore");
+const autoroleStoreForSystems = require("./utils/autoroleStore");
+const ticketStoreForSystems = require("./utils/ticketStore");
+const verificationStoreForSystems = require("./utils/verificationStore");
+
+const ZINKI_SYSTEMS = [
+  {
+    key: "levels",
+    label: "Niveaux (XP)",
+    description: "Système de niveaux et d'XP par message (&rank, &leaderboard).",
+    icon: "trending-up",
+    category: "Engagement",
+    getState(guildId) {
+      const cfg = levelStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.enabled, config: {}, updatedAt: null };
+    },
+    setState(guildId, patch) {
+      if (typeof patch.enabled === "boolean") levelStoreForSystems.setEnabled(guildId, patch.enabled);
+      const cfg = levelStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.enabled, config: {}, updatedAt: null };
+    },
+  },
+  {
+    key: "welcome",
+    label: "Message de bienvenue",
+    description: "Message envoyé automatiquement quand un membre rejoint le serveur.",
+    icon: "hand",
+    category: "Engagement",
+    getState(guildId) {
+      const cfg = welcomeStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.channelId, config: { channelId: cfg.channelId || null, autoDeleteSeconds: cfg.autoDeleteSeconds ?? null }, updatedAt: null };
+    },
+    setState(guildId, patch) {
+      const config = patch.config || {};
+      if (patch.enabled === false) welcomeStoreForSystems.setChannel(guildId, null);
+      else if (config.channelId) welcomeStoreForSystems.setChannel(guildId, config.channelId);
+      if (typeof config.autoDeleteSeconds === "number") welcomeStoreForSystems.setAutoDelete(guildId, config.autoDeleteSeconds);
+      const cfg = welcomeStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.channelId, config: { channelId: cfg.channelId || null, autoDeleteSeconds: cfg.autoDeleteSeconds ?? null }, updatedAt: null };
+    },
+  },
+  {
+    key: "autorole",
+    label: "Rôle automatique",
+    description: "Rôles attribués automatiquement à l'arrivée d'un membre.",
+    icon: "user-plus",
+    category: "Engagement",
+    getState(guildId) {
+      const roleIds = autoroleStoreForSystems.getRoleIds(guildId) || [];
+      return { enabled: roleIds.length > 0, config: { roleIds }, updatedAt: null };
+    },
+    setState(guildId, patch) {
+      const config = patch.config || {};
+      if (Array.isArray(config.roleIds)) autoroleStoreForSystems.setRoleIds(guildId, config.roleIds);
+      else if (patch.enabled === false) autoroleStoreForSystems.setRoleIds(guildId, []);
+      const roleIds = autoroleStoreForSystems.getRoleIds(guildId) || [];
+      return { enabled: roleIds.length > 0, config: { roleIds }, updatedAt: null };
+    },
+  },
+  {
+    key: "tickets",
+    label: "Tickets",
+    description: "Système de tickets d'assistance (salon privé par ticket).",
+    icon: "ticket",
+    category: "Support",
+    getState(guildId) {
+      const cfg = ticketStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.staffRoleId, config: cfg, updatedAt: null };
+    },
+    setState(guildId, patch) {
+      const config = patch.config || {};
+      if (patch.enabled === false) ticketStoreForSystems.setConfig(guildId, { staffRoleId: null });
+      else ticketStoreForSystems.setConfig(guildId, config);
+      const cfg = ticketStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!cfg.staffRoleId, config: cfg, updatedAt: null };
+    },
+  },
+  {
+    key: "verification",
+    label: "Vérification",
+    description: "Rôle + salon de vérification pour les nouveaux membres.",
+    icon: "shield-check",
+    category: "Sécurité",
+    getState(guildId) {
+      const cfg = verificationStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!(cfg.roleId && cfg.channelId), config: cfg, updatedAt: null };
+    },
+    setState(guildId, patch) {
+      const config = patch.config || {};
+      if (config.roleId !== undefined) verificationStoreForSystems.setRole(guildId, config.roleId);
+      if (config.channelId !== undefined) verificationStoreForSystems.setChannel(guildId, config.channelId);
+      if (patch.enabled === false) verificationStoreForSystems.setRole(guildId, null);
+      const cfg = verificationStoreForSystems.getConfig(guildId) || {};
+      return { enabled: !!(cfg.roleId && cfg.channelId), config: cfg, updatedAt: null };
+    },
+  },
+];
+
+const ZINKI_STATS_METRICS = [
+  { metric: "messages", title: "Messages" },
+  { metric: "joins", title: "Member joins" },
+  { metric: "leaves", title: "Member leaves" },
+];
+require("./utils/apiServer")(client, {
+  port: process.env.PANEL_API_PORT || 4000,
+  apiKey: process.env.PANEL_API_KEY,
+  botName: "zinki",
+  commands: buildPanelCommands(),
+  commandsStore,
+  getPrefix: (id) => prefixStoreZinki.getPrefixes(id).musicMod,
+  setPrefix: (id, value) => prefixStoreZinki.setPrefix(id, "musicMod", value),
+  messageStore,
+  logStore,
+  statsStore: statsStoreZinki,
+  statsMetrics: ZINKI_STATS_METRICS, systems: ZINKI_SYSTEMS,
+});
 client.login(process.env.DISCORD_TOKEN).catch((err) => {
   console.error("[bot] connexion à Discord impossible :", err.message);
   process.exit(1);
