@@ -82,9 +82,9 @@ const PERMISSIONS = [
   { key: "server.tools.use", category: "server", label: "Utiliser les outils annexes (&choose, &wiki, &search wiki)" },
   { key: "server.customcommands.manage", category: "server", label: "Créer/supprimer des commandes personnalisées (&addcmd, &delcmd)" },
   { key: "server.security.scan", category: "server", label: "Lancer un audit de sécurité (&security scan)" },
-  { key: "server.confessions.manage", category: "server", label: "Gérer les confessions anonymes en attente (!!confess)" },
-  { key: "server.confessions.setup", category: "server", label: "Configurer le panneau public de confessions (!!confess setup)" },
-  { key: "server.confessions.validation", category: "server", label: "Configurer le salon de validation des confessions (!!confess validation)" },
+  { key: "server.confessions.manage", category: "server", label: "Gérer les confessions anonymes en attente (&confess)" },
+  { key: "server.confessions.setup", category: "server", label: "Configurer le panneau public de confessions (&confess setup)" },
+  { key: "server.confessions.validation", category: "server", label: "Configurer le salon de validation des confessions (&confess validation)" },
   { key: "server.selfclear.manage", category: "server", label: "Configurer les noms et le délai du nettoyage automatique (!!setclear)" },
 ];
 

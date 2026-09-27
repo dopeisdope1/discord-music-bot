@@ -28,7 +28,7 @@ GlobalFonts.registerFromPath(path.join(FONTS, "Rajdhani-Medium.ttf"), "AmpRegula
 // PAS avoir le rendu technique/anguleux de Chakra Petch (voir
 // utils/confessCard.js, demande explicite avec capture de référence à
 // l'appui : "je veux que l'écriture soit normal pas en carré bizarre").
-GlobalFonts.registerFromPath(path.join(FONTS, "Nunito-ExtraBold.woff2"), "NunitoBold");
+GlobalFonts.registerFromPath(path.join(FONTS, "Nunito-ExtraBold.ttf"), "NunitoBold");
 
 // Chakra Petch dessine l'esperluette comme un « 8 » barré. Le préfixe du bot
 // ÉTANT « & », tout ce que l'image annonçait se lisait « 8kick », « 8ban »,

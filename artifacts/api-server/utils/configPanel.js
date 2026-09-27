@@ -33,6 +33,8 @@ const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
 const commandsStore = require("./commandsStore");
 const commandRules = require("./commandRules");
+const confessStore = require("./confessStore");
+const { buildConfessCard } = require("./confessions");
 const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
@@ -114,6 +116,12 @@ const SECTIONS = [
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés automatiquement à l'arrivée", permission: "members.autorole.manage" },
   { key: "verification", label: "Vérification", description: "Rôle et salon du bouton \"Se vérifier\"", permission: "members.verification.manage" },
   { key: "tickets", label: "Tickets", description: "Rôle staff des tickets (voir &ticket setup)", permission: "server.tickets.manage" },
+  {
+    key: "confessions",
+    label: "Confessions",
+    description: "Salon public et salon de validation des confessions anonymes",
+    visible: (member) => can(member, "server.confessions.setup") || can(member, "server.confessions.validation") || can(member, "server.confessions.manage"),
+  },
   { key: "channels", label: "Salons", description: "Sélectionner plusieurs salons et les supprimer d'un coup", permission: "channels.manage" },
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
   { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
@@ -254,6 +262,7 @@ const FAMILIES = [
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
   { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
   { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", sections: ["tickets"] },
+  { key: "confessions", label: "Confessions", description: "Salon public et salon de validation", sections: ["confessions"] },
   { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", sections: ["giveaways"] },
   { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", sections: ["polls"] },
   { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", sections: ["embedBuilder"] },
@@ -704,6 +713,14 @@ function sectionBody(section, guild, member, state) {
       `> **Membres interdits** : ${liste(rule.deniedUsers, mentionUser)}`,
       `> **Salons autorisés** : ${liste(rule.allowedChannels, mentionChannel)}`,
       `> **Salons interdits** : ${liste(rule.deniedChannels, mentionChannel)}`,
+    ].join("\n");
+  }
+
+  if (section === "confessions") {
+    const cfg = confessStore.getConfig(guildId) || {};
+    return [
+      `> **Salon public** : ${cfg.channelId ? `<#${cfg.channelId}>` : "*non configuré*"}`,
+      `> **Salon de validation** : ${cfg.validationChannelId ? `<#${cfg.validationChannelId}>` : "*non configuré*"}`,
     ].join("\n");
   }
 
@@ -1713,6 +1730,21 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setStyle(ButtonStyle.Secondary)
       )
     );
+  } else if (meta.key === "confessions") {
+    if (can(member, "server.confessions.setup")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder().setCustomId(`${ID}:confesschannel`).setPlaceholder("Salon public des confessions")
+        )
+      );
+    }
+    if (can(member, "server.confessions.validation")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder().setCustomId(`${ID}:confessvalidation`).setPlaceholder("Salon de validation (staff)")
+        )
+      );
+    }
   } else if (meta.key === "giveaways") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1963,6 +1995,20 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "subnav") {
     return goto(interaction.values[0]);
+  }
+
+  if (action === "confesschannel") {
+    if (!can(member, "server.confessions.setup")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    confessStore.setChannel(guildId, interaction.values[0]);
+    const salon = guild.channels.cache.get(interaction.values[0]);
+    if (salon?.isTextBased?.()) await salon.send(buildConfessCard()).catch(() => {});
+    return goto("confessions", {});
+  }
+
+  if (action === "confessvalidation") {
+    if (!can(member, "server.confessions.validation")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    confessStore.setValidationChannel(guildId, interaction.values[0]);
+    return goto("confessions", {});
   }
 
   if (action === "cmdselect") {

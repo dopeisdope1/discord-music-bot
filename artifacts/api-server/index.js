@@ -68,6 +68,9 @@ const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
+// "&confess" — confessions anonymes avec validation avant publication (voir
+// utils/confessions.js), configurable depuis &panel > Confessions.
+const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
 
 // Liste FIXE — construite une seule fois au chargement, jamais recréée à
 // chaque clic. Un panneau ne change pas de customId en cours de route.
@@ -82,6 +85,10 @@ const PANNEAUX_PRIVES = [
   `${gradeCardPanel.CUSTOM_ID}:`,
   `${emojiPanel.CUSTOM_ID}:`,
 ];
+
+// Confessions : PAS dans PANNEAUX_PRIVES — carte publique cliquable par tout
+// le monde, et Accepter/Refuser par n'importe quel membre du staff autorisé
+// (voir utils/confessions.js::estAutorise), pas par le seul auteur.
 
 // Mesure de latence sur le chemin critique d'un clic — OFF par défaut, zéro
 // coût en prod (DEBUG_LATENCY non défini). Active-la avec DEBUG_LATENCY=true
@@ -303,6 +310,12 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
 
+  // "&confess" — confessions anonymes (voir utils/confessions.js).
+  if (interaction.customId?.startsWith(`${CONFESS_CUSTOM_ID}:`)) {
+    await handleConfessInteraction(interaction).catch((err) => console.error("[confessions]", err));
+    return;
+  }
+
 });
 
 // ---- Commandes textuelles préfixées ----
@@ -327,6 +340,8 @@ client.on("messageCreate", (message) => {
   levels.checkMessage(client, message).catch((err) => console.error("[levels]", err));
   // Réactions automatiques par salon (&autoreact, voir utils/serverExtra.js).
   applyAutoReact(message).catch((err) => console.error("[autoreact]", err));
+  // "&confess"/"&confess setup"/"&confess validation" — voir utils/confessions.js.
+  handleConfessTextCommand(client, message).catch((err) => console.error("[confessions]", err));
 });
 
 // ---- Mémorise le dernier message supprimé de chaque salon (voir &snipe) ----
