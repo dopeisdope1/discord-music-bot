@@ -31,6 +31,8 @@ const accessStore = require("./accessStore");
 const { can, peutAccorder } = require("./permissions/engine");
 const permCatalog = require("./permissions/catalog");
 const permStore = require("./permissions/store");
+const commandsStore = require("./commandsStore");
+const commandRules = require("./commandRules");
 const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
@@ -121,6 +123,12 @@ const SECTIONS = [
   { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
+  {
+    key: "commands",
+    label: "Gestion des commandes",
+    description: "Activer/désactiver, rôles/membres/salons autorisés-interdits, par commande",
+    permission: "panel.permissions.manage",
+  },
 ];
 
 function sectionVisible(section, member, isOwner) {
@@ -258,6 +266,7 @@ const FAMILIES = [
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
   { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", sections: ["moderation"] },
+  { key: "commandes", label: "Gestion des commandes", description: "Activer/désactiver, accès par rôle/membre/salon, par commande", sections: ["commands"] },
 ];
 
 
@@ -324,6 +333,15 @@ function permissionRows() {
     `**${group.label}**`,
     ...group.permissions.map((p) => `> \`${p.key}\` — ${p.label}`),
   ]);
+}
+
+// Lazy require : musicCommands.js importe configPanel.js (buildConfigPanel,
+// hasAnyPanelAccess) — un require() en tête de fichier ici créerait une
+// dépendance circulaire qui casse ces deux exports au chargement (observé :
+// "Accessing non-existent property... inside circular dependency"). Appelée
+// seulement au clic/affichage, une fois les deux modules déjà initialisés.
+function allModCommandNames() {
+  return require("./musicCommands").MOD_COMMAND_NAMES;
 }
 
 // Le corps d'une rubrique dit UNIQUEMENT ce qui est configuré en ce moment —
@@ -665,6 +683,27 @@ function sectionBody(section, guild, member, state) {
       // Exception assumée à la règle "pas de prose" : c'est le seul écran du
       // panel dont un mauvais clic bannit le serveur entier.
       "> ⚠️ *`banall` bannit tout le serveur d'un coup. Le propriétaire y a toujours droit sans figurer ici.*",
+    ].join("\n");
+  }
+
+  if (section === "commands") {
+    const cmdName = state.commandsSelected;
+    if (!cmdName) return "> Choisis une commande ci-dessous pour voir/modifier sa configuration.";
+    const enabled = commandsStore.isEnabledForGuild(cmdName, guildId);
+    const rule = commandRules.getRule(guildId, cmdName);
+    const mentionUser = (id) => `<@${id}>`;
+    const mentionRole = (id) => `<@&${id}>`;
+    const mentionChannel = (id) => `<#${id}>`;
+    const liste = (ids, fn) => (ids.length ? ids.map(fn).join(", ") : "*aucun*");
+    return [
+      `> **Commande** : \`${cmdName}\``,
+      `> **État** : ${enabled ? "🟢 Activée" : "🔴 Désactivée"}`,
+      `> **Rôles autorisés** : ${liste(rule.allowedRoles, mentionRole)}`,
+      `> **Rôles interdits** : ${liste(rule.deniedRoles, mentionRole)}`,
+      `> **Membres autorisés** : ${liste(rule.allowedUsers, mentionUser)}`,
+      `> **Membres interdits** : ${liste(rule.deniedUsers, mentionUser)}`,
+      `> **Salons autorisés** : ${liste(rule.allowedChannels, mentionChannel)}`,
+      `> **Salons interdits** : ${liste(rule.deniedChannels, mentionChannel)}`,
     ].join("\n");
   }
 
@@ -1064,7 +1103,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // actions rapides juste en dessous (renommer/ajouter/supprimer) s'y
   // réfèrent directement, mieux servies par le vrai texte Discord (mentions
   // résolues) que par une image à régénérer à chaque clic.
-  const texteForce = meta.key === "roletiers";
+  const texteForce = meta.key === "roletiers" || meta.key === "commands";
   const specRubrique = texteForce ? null : buildSectionSpec(guild, meta.key, member, state, corps);
   const pngRubrique = sansImage || texteForce ? null : rendreEnCache(specRubrique);
   if (pngRubrique) {
@@ -1789,6 +1828,65 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
       )
     );
+  } else if (meta.key === "commands") {
+    // 5 ActionRow max par message Discord (nav+subnav déjà posées plus haut =
+    // 2) — un sous-écran "aspect" (rôles autorisés/interdits, membres
+    // autorisés/interdits, salons autorisés/interdits) plutôt que tout
+    // afficher d'un coup. Même patron que =panel/!!config.
+    const noms = allModCommandNames();
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:cmdselect`)
+          .setPlaceholder("Choisir une commande")
+          .addOptions(
+            noms.slice(0, 25).map((n) => new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.commandsSelected))
+          )
+      )
+    );
+    const cmdName = state.commandsSelected;
+    if (cmdName) {
+      const enabled = commandsStore.isEnabledForGuild(cmdName, guild.id);
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`${ID}:cmdtoggle:${cmdName}`)
+            .setLabel(enabled ? "Désactiver" : "Activer")
+            .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${ID}:cmdreset:${cmdName}`).setLabel("Réinitialiser").setStyle(ButtonStyle.Secondary)
+        )
+      );
+      const ASPECTS = [
+        { key: "allowRole", label: "Rôles autorisés" },
+        { key: "denyRole", label: "Rôles interdits" },
+        { key: "allowUser", label: "Membres autorisés" },
+        { key: "denyUser", label: "Membres interdits" },
+        { key: "allowChannel", label: "Salons autorisés" },
+        { key: "denyChannel", label: "Salons interdits" },
+      ];
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:cmdaspect:${cmdName}`)
+            .setPlaceholder("Choisir ce qu'on modifie")
+            .addOptions(ASPECTS.map((a) => new StringSelectMenuOptionBuilder().setLabel(a.label).setValue(a.key).setDefault(a.key === state.commandsAspect)))
+        )
+      );
+      const aspect = state.commandsAspect;
+      if (aspect === "allowRole") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmdallowrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle autorisé")));
+      } else if (aspect === "denyRole") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmddenyrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle interdit")));
+      } else if (aspect === "allowUser") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmdallowuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre autorisé")));
+      } else if (aspect === "denyUser") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmddenyuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre interdit")));
+      } else if (aspect === "allowChannel") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmdallowchannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon autorisé")));
+      } else if (aspect === "denyChannel") {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmddenychannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon interdit")));
+      }
+    }
   }
 
   // Dernière étape du rendu : les boutons d'action deviennent un seul menu.
@@ -1865,6 +1963,64 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "subnav") {
     return goto(interaction.values[0]);
+  }
+
+  if (action === "cmdselect") {
+    return goto("commands", { commandsSelected: interaction.values[0] });
+  }
+
+  if (action === "cmdaspect") {
+    return goto("commands", { commandsSelected: extra, commandsAspect: interaction.values[0] });
+  }
+
+  if (action === "cmdtoggle") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    const enabled = commandsStore.isEnabledForGuild(extra, guildId);
+    commandsStore.setGuildEnabled(guildId, extra, !enabled);
+    return goto("commands", { commandsSelected: extra });
+  }
+
+  if (action === "cmdreset") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.resetRule(guildId, extra);
+    commandsStore.setGuildEnabled(guildId, extra, true);
+    return goto("commands", { commandsSelected: extra });
+  }
+
+  if (action === "cmdallowrole") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleAllowedRole(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "allowRole" });
+  }
+
+  if (action === "cmddenyrole") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleDeniedRole(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "denyRole" });
+  }
+
+  if (action === "cmdallowuser") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleAllowedUser(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "allowUser" });
+  }
+
+  if (action === "cmddenyuser") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleDeniedUser(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "denyUser" });
+  }
+
+  if (action === "cmdallowchannel") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleAllowedChannel(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "allowChannel" });
+  }
+
+  if (action === "cmddenychannel") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.toggleDeniedChannel(guildId, extra, interaction.values[0]);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "denyChannel" });
   }
 
   if (action === "permrole") {

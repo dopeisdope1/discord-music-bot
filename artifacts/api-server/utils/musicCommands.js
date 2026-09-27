@@ -1,5 +1,6 @@
 const { buildStatusEmbed } = require("./statusEmbed");
 const commandsStore = require("./commandsStore");
+const commandRules = require("./commandRules");
 const { getPrefixes } = require("./prefixStore");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
@@ -485,7 +486,13 @@ async function handleTextCommand(client, message) {
     }
 
     const handler = modHandlers[cmdLower];
-    if (handler && commandsStore.isEnabledForGuild(cmdLower, message.guild.id)) return handler(client, message, modArgs);
+    // Filtre &panel > "Gestion des commandes" (utils/commandRules.js) —
+    // additionnel au moteur de permissions existant (can()), jamais un
+    // remplacement. Owner/rang sys gardent toujours un accès total.
+    const bypassRules = accessStore.isOwner(message.author.id) || accessStore.isSys(message.author.id);
+    const rulesAllow =
+      bypassRules || commandRules.evaluate(message.guild.id, cmdLower, message.member, message.channel?.id, true).allowed;
+    if (handler && commandsStore.isEnabledForGuild(cmdLower, message.guild.id) && rulesAllow) return handler(client, message, modArgs);
 
     // DERNIER recours, une fois toutes les vraies commandes écartées : le mot
     // est peut-être une commande personnalisée de ce serveur
