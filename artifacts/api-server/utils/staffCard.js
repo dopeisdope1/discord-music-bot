@@ -13,6 +13,7 @@ const rankLadder = require("./rankLadderCommands");
 const permStore = require("./permissions/store");
 const { commandesParPrefixe } = require("./permsCommands");
 const messageOwner = require("./messageOwner");
+const { iconDe } = require("./emojiSlots");
 
 // "&staff [@membre]" — carte "Staff · Owner/Sys" (demande explicite, calquée
 // sur la présentation d'un autre bot) : statut Owner/Sys + grade (échelle
@@ -52,8 +53,8 @@ function buildStaffCard(guild, target, viewerId) {
         `**Pseudo** : ${target.user?.tag || target.user?.username || target.id}`,
         `**Grade** : ${gradeDe(guild, target)}`,
         "",
-        `**Owner** : ${owner ? "✅" : "❌"}`,
-        `**Sys** : ${sys ? "✅" : "❌"}`,
+        `**Owner** : ${owner ? iconDe(guild.id, "CHECK") : iconDe(guild.id, "CROSS")}`,
+        `**Sys** : ${sys ? iconDe(guild.id, "CHECK") : iconDe(guild.id, "CROSS")}`,
       ].join("\n")
     )
   );
