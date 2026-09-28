@@ -19,6 +19,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 //   deniedUsers: [userId],
 //   allowedChannels: [channelId], // vide = tous les salons autorisés
 //   deniedChannels: [channelId],
+//   cooldownSeconds: number|null,  // délai minimum entre deux usages PAR MEMBRE — null/0 = aucun
 //   updatedAt: ISOString|null,
 // }
 //
@@ -64,6 +65,7 @@ const EMPTY_RULE = () => ({
   deniedUsers: [],
   allowedChannels: [],
   deniedChannels: [],
+  cooldownSeconds: null,
   updatedAt: null,
 });
 
@@ -82,6 +84,7 @@ function ruleEntry(guildId, commandName) {
   for (const key of ["allowedRoles", "deniedRoles", "allowedUsers", "deniedUsers", "allowedChannels", "deniedChannels"]) {
     if (!Array.isArray(rule[key])) rule[key] = [];
   }
+  if (rule.cooldownSeconds === undefined) rule.cooldownSeconds = null;
   return rule;
 }
 
@@ -93,13 +96,14 @@ function getRule(guildId, commandName) {
 /** @returns {boolean} true si AU MOINS un champ de la règle est renseigné — sert à ne lister au panel que les commandes réellement configurées. */
 function hasRule(guildId, commandName) {
   const r = ruleEntry(guildId, commandName);
-  return (
+  return Boolean(
     r.allowedRoles.length ||
-    r.deniedRoles.length ||
-    r.allowedUsers.length ||
-    r.deniedUsers.length ||
-    r.allowedChannels.length ||
-    r.deniedChannels.length
+      r.deniedRoles.length ||
+      r.allowedUsers.length ||
+      r.deniedUsers.length ||
+      r.allowedChannels.length ||
+      r.deniedChannels.length ||
+      r.cooldownSeconds
   );
 }
 
@@ -125,6 +129,15 @@ const toggleDeniedUser = (g, c, userId) => toggleList(g, c, "deniedUsers", userI
 const toggleAllowedChannel = (g, c, channelId) => toggleList(g, c, "allowedChannels", channelId);
 const toggleDeniedChannel = (g, c, channelId) => toggleList(g, c, "deniedChannels", channelId);
 
+/** @param {number|null} seconds null/0 = pas de cooldown. */
+function setCooldown(guildId, commandName, seconds) {
+  const rule = ruleEntry(guildId, commandName);
+  rule.cooldownSeconds = seconds && seconds > 0 ? Math.floor(seconds) : null;
+  rule.updatedAt = new Date().toISOString();
+  save();
+  return rule.cooldownSeconds;
+}
+
 /** Efface toute la configuration d'une commande pour ce serveur — "réinitialiser". */
 function resetRule(guildId, commandName) {
   const guild = guildEntry(guildId);
@@ -132,6 +145,27 @@ function resetRule(guildId, commandName) {
   delete guild[commandName];
   save();
   return existed;
+}
+
+// Dernier usage PAR (serveur, commande, membre) — en mémoire seulement,
+// jamais persisté sur disque (même esprit que utils/rateLimiter.js) :
+// perdre ces horodatages à un redémarrage n'est pas un problème, la
+// DURÉE configurée (elle) est bien sauvegardée dans la règle ci-dessus.
+const derniereUtilisation = new Map();
+const cleCooldown = (guildId, commandName, userId) => `${guildId}:${commandName}:${userId}`;
+
+/** @returns {{allowed: boolean, retryAfterMs?: number}} */
+function checkCooldown(guildId, commandName, userId) {
+  const rule = ruleEntry(guildId, commandName);
+  if (!rule.cooldownSeconds) return { allowed: true };
+  const derniere = derniereUtilisation.get(cleCooldown(guildId, commandName, userId));
+  if (!derniere) return { allowed: true };
+  const resteMs = rule.cooldownSeconds * 1000 - (Date.now() - derniere);
+  return resteMs > 0 ? { allowed: false, retryAfterMs: resteMs } : { allowed: true };
+}
+
+function recordUsage(guildId, commandName, userId) {
+  derniereUtilisation.set(cleCooldown(guildId, commandName, userId), Date.now());
 }
 
 /**
@@ -197,6 +231,12 @@ function evaluate(guildId, commandName, member, channelId, baseAllowed) {
   const channel = resolveChannel(guildId, commandName, channelId);
   if (channel.decision === "deny") return { allowed: false, reason: channel.reason };
 
+  const cooldown = checkCooldown(guildId, commandName, member.id);
+  if (!cooldown.allowed) {
+    return { allowed: false, reason: `cooldown, réessaie dans ${Math.ceil(cooldown.retryAfterMs / 1000)}s`, retryAfterMs: cooldown.retryAfterMs };
+  }
+  recordUsage(guildId, commandName, member.id);
+
   return { allowed: true, reason };
 }
 
@@ -210,6 +250,8 @@ module.exports = {
   toggleDeniedUser,
   toggleAllowedChannel,
   toggleDeniedChannel,
+  setCooldown,
+  checkCooldown,
   resetRule,
   resolveRoleOrUser,
   resolveChannel,
