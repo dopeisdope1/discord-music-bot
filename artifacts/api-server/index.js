@@ -528,6 +528,8 @@ const commandRules = require("./utils/commandRules");
 const prefixStoreZinki = require("./utils/prefixStore");
 const messageStore = {
   key: "welcome",
+  label: "Message de bienvenue",
+  description: "Le message envoyé automatiquement quand un membre rejoint le serveur.",
   get(guildId) {
     const cfg = welcomeStore.getConfig(guildId);
     return {
