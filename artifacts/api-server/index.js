@@ -524,6 +524,7 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 // catch, transformerait un jeton invalide en bot silencieux et immortel).
 const commandCatalog = require("./utils/commandCatalog");
 const commandsStore = require("./utils/commandsStore");
+const commandRules = require("./utils/commandRules");
 const prefixStoreZinki = require("./utils/prefixStore");
 const messageStore = {
   key: "welcome",
@@ -678,6 +679,7 @@ require("./utils/apiServer")(client, {
   botName: "zinki",
   commands: buildPanelCommands(),
   commandsStore,
+  commandRules,
   getPrefix: (id) => prefixStoreZinki.getPrefixes(id).musicMod,
   setPrefix: (id, value) => prefixStoreZinki.setPrefix(id, "musicMod", value),
   messageStore,

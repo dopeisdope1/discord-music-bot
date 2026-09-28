@@ -1,6 +1,9 @@
 const http = require("http");
 
-function startApiServer(client, { port, apiKey, botName, commands, commandsStore, getPrefix, setPrefix, messageStore, logStore, statsStore, statsMetrics, systems }) {
+function startApiServer(
+  client,
+  { port, apiKey, botName, commands, commandsStore, commandRules, getPrefix, setPrefix, messageStore, logStore, statsStore, statsMetrics, systems }
+) {
   if (!apiKey) {
     console.warn(`[panel-api] PANEL_API_KEY non defini - API desactivee.`);
     return;
@@ -37,6 +40,7 @@ function startApiServer(client, { port, apiKey, botName, commands, commandsStore
       const caps = ["status", "guilds"];
       if (getPrefix) caps.push("guildConfig");
       if (commands.length && commandsStore) caps.push("commands");
+      if (commandRules) caps.push("commandRules", "roles", "channels");
       if (messageStore) caps.push("messages");
       if (logStore) caps.push("logs");
       if (statsStore) caps.push("statistics");
@@ -66,6 +70,30 @@ function startApiServer(client, { port, apiKey, botName, commands, commandsStore
         addedAt: g.joinedAt ? g.joinedAt.toISOString() : null,
       }));
       return send(res, 200, guilds);
+    }
+
+    const rolesMatch = url.pathname.match(/^\/guilds\/([^/]+)\/roles$/);
+    if (rolesMatch && req.method === "GET") {
+      const guild = client.guilds.cache.get(decodeURIComponent(rolesMatch[1]));
+      if (!guild) return send(res, 404, { error: "guild_not_found" });
+      const roles = await guild.roles.fetch().catch(() => guild.roles.cache);
+      const list = [...roles.values()]
+        .filter((r) => r.id !== guild.id) // @everyone exclu — jamais une cible utile pour "rôle autorisé/interdit"
+        .sort((a, b) => b.position - a.position)
+        .map((r) => ({ id: r.id, name: r.name, color: r.hexColor, position: r.position, managed: r.managed, memberCount: r.members.size }));
+      return send(res, 200, list);
+    }
+
+    const channelsMatch = url.pathname.match(/^\/guilds\/([^/]+)\/channels$/);
+    if (channelsMatch && req.method === "GET") {
+      const guild = client.guilds.cache.get(decodeURIComponent(channelsMatch[1]));
+      if (!guild) return send(res, 404, { error: "guild_not_found" });
+      const channels = await guild.channels.fetch().catch(() => guild.channels.cache);
+      const list = [...channels.values()]
+        .filter((c) => c && c.isTextBased?.())
+        .sort((a, b) => (a.rawPosition ?? 0) - (b.rawPosition ?? 0))
+        .map((c) => ({ id: c.id, name: c.name, type: c.type, parentId: c.parentId || null }));
+      return send(res, 200, list);
     }
 
     const configMatch = url.pathname.match(/^\/guilds\/([^/]+)\/config$/);
@@ -104,6 +132,45 @@ function startApiServer(client, { port, apiKey, botName, commands, commandsStore
       if (body.guildId) commandsStore.setGuildEnabled(body.guildId, name, !!body.enabled);
       else commandsStore.setGlobalEnabled(name, !!body.enabled);
       return send(res, 204, null);
+    }
+
+    // "Permissions & règles" — proxy fin vers utils/commandRules.js, le
+    // MÊME store que le panel Discord existant (&panel/!!config/=panel >
+    // "Gestion des commandes") : jamais un deuxième système, jamais une
+    // deuxième base. Chaque action ici appelle exactement la fonction que le
+    // panel Discord appelle déjà pour le même effet.
+    const rulesMatch = url.pathname.match(/^\/commands\/([^/]+)\/rules$/);
+    if (rulesMatch && commandRules) {
+      const name = decodeURIComponent(rulesMatch[1]);
+      const guildId = url.searchParams.get("guildId");
+      if (!guildId) return send(res, 400, { error: "guildId_required" });
+
+      if (req.method === "GET") {
+        return send(res, 200, commandRules.getRule(guildId, name));
+      }
+
+      if (req.method === "PATCH") {
+        const body = await readBody(req);
+        const TOGGLE_ACTIONS = {
+          toggleAllowedRole: commandRules.toggleAllowedRole,
+          toggleDeniedRole: commandRules.toggleDeniedRole,
+          toggleAllowedUser: commandRules.toggleAllowedUser,
+          toggleDeniedUser: commandRules.toggleDeniedUser,
+          toggleAllowedChannel: commandRules.toggleAllowedChannel,
+          toggleDeniedChannel: commandRules.toggleDeniedChannel,
+        };
+        const toggleFn = body.action && TOGGLE_ACTIONS[body.action];
+        if (toggleFn && typeof body.id === "string" && body.id) {
+          toggleFn(guildId, name, body.id);
+        } else if (body.action === "setCooldown") {
+          commandRules.setCooldown(guildId, name, typeof body.seconds === "number" ? body.seconds : null);
+        } else if (body.action === "reset") {
+          commandRules.resetRule(guildId, name);
+        } else {
+          return send(res, 400, { error: "unknown_action" });
+        }
+        return send(res, 200, commandRules.getRule(guildId, name));
+      }
     }
 
     const msgMatch = url.pathname.match(/^\/messages\/([^/]+)$/);
