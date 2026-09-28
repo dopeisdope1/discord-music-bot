@@ -818,7 +818,7 @@ const CATEGORIES = [
     label: "Bot & Accès",
     emoji: EMOJI.DISCORD,
     description: "Réglages du bot, accès, rang sys",
-    highlights: ["panel", "prefix", "status", "perms"],
+    highlights: ["panel", "prefix", "status"],
     commands: [
       {
         name: "status",
@@ -833,18 +833,6 @@ const CATEGORIES = [
         prefix: "mod",
         permission: null,
         description: "Donne un lien d'invitation vers le serveur de support du bot",
-      },
-      {
-        name: "perms",
-        prefix: "mod",
-        permission: "panel.permissions.manage",
-        description: "Affiche les paliers de permissions accordés (rôles ayant les mêmes droits) et les commandes qu'ils débloquent",
-      },
-      {
-        name: "helpall",
-        prefix: "mod",
-        permission: "panel.permissions.manage",
-        description: "Affiche les paliers de permissions accordés et les rôles associés à chacun",
       },
       {
         name: "autodelete <moderation/snipe> <commande/reply> <on/off/durée>",

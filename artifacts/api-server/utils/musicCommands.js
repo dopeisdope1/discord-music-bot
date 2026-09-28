@@ -20,7 +20,6 @@ const customCommands = require("./customCommands");
 const messageOwner = require("./messageOwner");
 const { createRateLimiter } = require("./rateLimiter");
 const counters = require("./counters");
-const permsCommands = require("./permsCommands");
 const { utilityHandlers } = require("./utilityCommands");
 const { logHandlers } = require("./logCommands");
 const { configHandlers } = require("./configCommands");
@@ -358,10 +357,6 @@ const modHandlers = {
   sync: serverExtra.sync,
   cleanup: serverExtra.cleanup,
   autoreact: serverExtra.autoreact,
-
-  // Vue d'ensemble des permissions par palier — voir utils/permsCommands.js.
-  perms: permsCommands.perms,
-  helpall: permsCommands.helpall,
 
   // Utilitaires en lecture seule (listes de membres, fiches, calculatrice,
   // Wikipédia) — voir utils/utilityCommands.js. Aucune permission requise,
