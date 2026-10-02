@@ -424,6 +424,10 @@ client.on("guildMemberRemove", async (member) => {
 // Dero automatique (voir &dero, utils/serverAdminCommands.js) : applique les
 // permissions configurées aux rôles concernés sur chaque nouveau salon créé,
 // sans action manuelle. Ne fait rien si aucun rôle n'est configuré.
+client.on("channelDelete", (channel) => {
+  antiChannelDelete.handleChannelDelete(channel).catch((err) => console.error("[antiChannelDelete]", err));
+});
+
 client.on("channelCreate", (channel) => {
   applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
 });
@@ -577,7 +581,10 @@ const autoroleStoreForSystems = require("./utils/autoroleStore");
 const ticketStoreForSystems = require("./utils/ticketStore");
 const verificationStoreForSystems = require("./utils/verificationStore");
 
+const antiChannelDelete = require("./utils/antiChannelDelete");
+
 const ZINKI_SYSTEMS = [
+  antiChannelDelete.system,
   {
     key: "levels",
     label: "Niveaux (XP)",
