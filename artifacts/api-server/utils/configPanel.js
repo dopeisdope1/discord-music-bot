@@ -362,7 +362,29 @@ function sectionBody(section, guild, member, state) {
   // Salons bloqués. `state.permView` choisit lequel est affiché ("levels" par
   // défaut) — voir buildConfigPanel pour les composants de chaque vue.
   if (section === "permissions") {
-    const view = state.permView || "levels";
+    // Pas de vue par défaut : l'écran d'ACCUEIL de la rubrique montre les 4
+    // blocs empilés (titre + description + bouton), exactement comme le
+    // screen de référence — pas un sélecteur qui bascule entre eux. Chaque
+    // bouton ouvre la vue détail correspondante (state.permView), qui garde
+    // ici le même contenu qu'avant ; seule la page d'accueil change.
+    const view = state.permView || null;
+
+    if (!view) {
+      const nbBloques = blockedChannelsStore.list(guildId).filter((id) => guild.channels.cache.has(id)).length;
+      return [
+        "**Permissions**",
+        "Vous pouvez configurer les permissions (1-9)",
+        "",
+        "**Cooldowns**",
+        `Page ${(state.permCmdListPage || 0) + 1}/${Math.max(1, Math.ceil(allModCommandNames().length / CMDS_PAR_PAGE))}`,
+        "",
+        "**Permissions supplémentaires**",
+        "Donnez un accès direct à certaines commandes",
+        "",
+        "**Salons bloqués**",
+        nbBloques ? `${nbBloques} salon(s) bloqué(s)` : "Aucun salon bloqué",
+      ].join("\n");
+    }
 
     if (view === "levels") {
       const niveau = state.permLevel;
@@ -945,26 +967,45 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
-    // Les 4 blocs demandés (capture de référence) : Permissions (niveaux
-    // 1-9), Cooldowns, Permissions supplémentaires (accès direct à une
-    // commande), Salons bloqués — une seule section, 4 VUES internes
-    // (state.permView), chacune avec son propre sélecteur "Choisir une
-    // configuration" / "Choisir une commande" / etc. et sa pagination ◀/▶
-    // façon "Page 3/3" du screen. Remplace entièrement l'ancien parcours
-    // rôle→catégorie→clés et l'ancienne liste de paliers.
-    const view = state.permView || "levels";
+    // Les 4 blocs demandés (capture de référence "elyra") : Permissions
+    // (niveaux 1-9), Cooldowns, Permissions supplémentaires (accès direct à
+    // une commande), Salons bloqués — TOUS affichés d'un coup sur l'écran
+    // d'accueil de la rubrique, chacun avec son propre bouton ("Choisir une
+    // permission"/"Choisir une commande"/"Choisir une configuration"/
+    // "Configurer les salons bloqués"). Un clic ouvre la vue détail
+    // correspondante (state.permView) ; "◀ Retour" y ramène à cet accueil.
+    const view = state.permView || null;
 
+    if (!view) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:permview:levels`).setLabel("Choisir une permission").setStyle(ButtonStyle.Secondary)
+        )
+      );
+      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:permview:cooldowns`).setLabel("Choisir une commande").setStyle(ButtonStyle.Secondary)
+        )
+      );
+      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:permview:extra`).setLabel("Choisir une configuration").setStyle(ButtonStyle.Secondary)
+        )
+      );
+      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:permview:blocked`).setLabel("Configurer les salons bloqués").setStyle(ButtonStyle.Secondary)
+        )
+      );
+    } else {
+    // Vue détail : un bouton "◀ Retour" ramène systématiquement à l'accueil
+    // des 4 blocs, placé avant les contrôles propres à la vue.
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:permview`)
-          .setPlaceholder("Choisir une configuration")
-          .addOptions(
-            new StringSelectMenuOptionBuilder().setLabel("Permissions (niveaux 1-9)").setValue("levels").setDefault(view === "levels"),
-            new StringSelectMenuOptionBuilder().setLabel("Cooldowns").setValue("cooldowns").setDefault(view === "cooldowns"),
-            new StringSelectMenuOptionBuilder().setLabel("Permissions supplémentaires").setValue("extra").setDefault(view === "extra"),
-            new StringSelectMenuOptionBuilder().setLabel("Salons bloqués").setValue("blocked").setDefault(view === "blocked")
-          )
+        new ButtonBuilder().setCustomId(`${ID}:permview:`).setLabel("◀ Retour").setStyle(ButtonStyle.Secondary)
       )
     );
 
@@ -1092,6 +1133,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           new ChannelSelectMenuBuilder().setCustomId(`${ID}:blockedchanneltoggle`).setPlaceholder("Configurer les salons bloqués")
         )
       );
+    }
     }
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
@@ -1595,11 +1637,13 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("permissions", { permView: "cooldowns", permCmdName: extra });
   }
 
-  // Sélecteur de vue — "Choisir une configuration" (les 4 blocs : niveaux,
-  // cooldowns, permissions supplémentaires, salons bloqués).
+  // Bouton d'un des 4 blocs de l'accueil "Permissions" (ou "◀ Retour", extra
+  // vide) — ouvre/ferme la vue détail correspondante. Boutons, pas un menu :
+  // les 4 blocs sont tous affichés en même temps sur l'accueil, comme le
+  // screen de référence.
   if (action === "permview") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permView: interaction.values[0] });
+    return goto("permissions", { permView: extra || null });
   }
 
   // Vue "Permissions" : choisir un niveau (1-9).
