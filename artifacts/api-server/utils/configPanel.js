@@ -1598,7 +1598,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("secondes")
-          .setLabel("Secondes entre deux usages par membre (0 = aucun)")
+          .setLabel("Secondes entre 2 usages (0 = aucun)")
           .setStyle(TextInputStyle.Short)
           .setMaxLength(6)
           .setRequired(false)
