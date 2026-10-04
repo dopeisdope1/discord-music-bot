@@ -52,3 +52,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Données runtime du bot (jamais dans un depot public)
+data/

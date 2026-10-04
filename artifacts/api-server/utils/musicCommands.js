@@ -1,6 +1,7 @@
 const { buildStatusEmbed } = require("./statusEmbed");
 const commandsStore = require("./commandsStore");
 const commandRules = require("./commandRules");
+const blockedChannelsStore = require("./permissions/blockedChannelsStore");
 const { getPrefixes } = require("./prefixStore");
 const accessStore = require("./accessStore");
 const { can } = require("./permissions/engine");
@@ -490,6 +491,17 @@ async function handleTextCommand(client, message) {
   if (MOD_PREFIX && content.startsWith(MOD_PREFIX)) {
     const [modCmd, ...modArgs] = content.slice(MOD_PREFIX.length).trim().split(/\s+/);
     const cmdLower = (modCmd || "").toLowerCase();
+
+    // "Salons bloqués" (&panel > Permissions) : AUCUNE commande ne répond
+    // dans ce salon, peu importe le niveau — sauf owner/rang sys, toujours
+    // inconditionnels. Vérifié avant tout le reste, le plus tôt possible.
+    if (
+      blockedChannelsStore.isBlocked(message.guild.id, message.channel.id) &&
+      !accessStore.isOwner(message.author.id) &&
+      !accessStore.isSys(message.author.id)
+    ) {
+      return;
+    }
 
     // Tapée SANS argument (ou juste avec le mot de sous-commande pour un
     // dispatcher partagé comme &role/&channel/&clear, ex: "role create"),

@@ -31,11 +31,11 @@ const accessStore = require("./accessStore");
 const { can, peutGererNiveaux } = require("./permissions/engine");
 const levelStore = require("./permissions/levelStore");
 const { LEVEL_MIN, LEVEL_MAX, keysForLevel } = require("./permissions/levelCatalog");
-const commandsStore = require("./commandsStore");
 const commandRules = require("./commandRules");
 const confessStore = require("./confessStore");
 const { buildConfessCard } = require("./confessions");
-const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
+const { commandsForKeys } = require("./permsCommands");
+const blockedChannelsStore = require("./permissions/blockedChannelsStore");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
@@ -48,7 +48,6 @@ const autoroleStore = require("./autoroleStore");
 const verificationStore = require("./verificationStore");
 const welcomeStore = require("./welcomeStore");
 const ticketStore = require("./ticketStore");
-const { roleAdmin } = require("./serverAdminCommands");
 const { computeSecurityScan } = require("./securityScan");
 const { computeStatus, formatUptime } = require("./statusDiagnostic");
 const { FORMS, setFormState, buildFormCard } = require("./commandForms");
@@ -91,16 +90,8 @@ const SECTIONS = [
   { key: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage", permission: "sys" },
   {
     key: "permissions",
-    label: "Rôles et permissions",
-    description: "Informations d'un rôle et permissions du bot qu'il accorde",
-    // Consultable avec l'un OU l'autre droit ; seul panel.permissions.manage
-    // fait apparaître les menus qui modifient.
-    visible: (member) => can(member, "panel.permissions.manage") || can(member, "panel.roles.manage"),
-  },
-  {
-    key: "roletiers",
-    label: "Rôles (paliers)",
-    description: "Tous les paliers de permissions et leurs rôles d'un coup (comme &perms + &helpall réunis)",
+    label: "Permissions",
+    description: "Niveaux (1-9), cooldowns par commande, accès direct, salons bloqués",
     permission: "panel.permissions.manage",
   },
   {
@@ -131,12 +122,6 @@ const SECTIONS = [
   { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", ownerOnly: true },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", ownerOnly: true },
-  {
-    key: "commands",
-    label: "Gestion des commandes",
-    description: "Activer/désactiver, rôles/membres/salons autorisés-interdits, par commande",
-    permission: "panel.permissions.manage",
-  },
 ];
 
 function sectionVisible(section, member, isOwner) {
@@ -236,6 +221,11 @@ function definirSelectionSalons(guildId, userId, ids) {
 // milliers de pixels de haut, où plus rien ne se lit. Le compte exact reste
 // affiché juste au-dessus, et &perms donne la liste complète.
 const MAX_COMMANDES_AFFICHEES = 27;
+// Pagination façon capture de référence ("Page 3/3", flèches ◀/▶) pour les
+// vues "Permissions" > niveau (ses commandes) et > choix de commande
+// (cooldown/accès direct) — un menu déroulant Discord plafonne à 25 options,
+// une commande par ligne de texte occupe bien moins.
+const CMDS_PAR_PAGE = 10;
 const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
 // Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Permissions,
@@ -258,7 +248,7 @@ const FAMILIES = [
   { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
   { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
   { key: "salons", label: "Salons", description: "Supprimer plusieurs salons d'un coup", sections: ["channels"] },
-  { key: "permissions", label: "Permissions", description: "Ce qu'un rôle débloque comme commandes", sections: ["permissions", "roletiers"] },
+  { key: "permissions", label: "Permissions", description: "Niveaux, cooldowns, accès direct, salons bloqués", sections: ["permissions"] },
   { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
   { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
   { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", sections: ["tickets"] },
@@ -275,7 +265,6 @@ const FAMILIES = [
   { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
   { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
   { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", sections: ["moderation"] },
-  { key: "commandes", label: "Gestion des commandes", description: "Activer/désactiver, accès par rôle/membre/salon, par commande", sections: ["commands"] },
 ];
 
 
@@ -368,99 +357,71 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
-  // "Permissions" et "Rôles" étaient deux rubriques qui commençaient toutes
-  // deux par "choisis un rôle" — au point que la seconde avait un bouton pour
-  // sauter vers la première. Fusionnées : un seul sélecteur de rôle, puis
-  // TOUT ce qui concerne ce rôle, ses informations comme ses permissions.
+  // "Permissions" — 4 blocs : Permissions (niveaux 1-9), Cooldowns (par
+  // commande), Permissions supplémentaires (accès direct à une commande),
+  // Salons bloqués. `state.permView` choisit lequel est affiché ("levels" par
+  // défaut) — voir buildConfigPanel pour les composants de chaque vue.
   if (section === "permissions") {
-    const roleId = state.permissionsRoleId;
-    if (!roleId) return "> *Choisis un rôle dans le menu ci-dessous.*";
-    const role = guild.roles.cache.get(roleId);
-    if (!role) return "> *Ce rôle n'existe plus sur le serveur.*";
+    const view = state.permView || "levels";
 
-    // Seules les permissions Discord qui donnent un vrai pouvoir : lister les
-    // 40 autres noierait celles qui comptent.
-    const notables = role.permissions
-      .toArray()
-      .filter((perm) =>
-        ["Administrator", "BanMembers", "KickMembers", "ModerateMembers", "ManageRoles", "ManageChannels", "ManageGuild", "ManageMessages"].includes(perm)
-      );
-    const niveau = levelStore.getRoleLevel(guildId, roleId);
-    const granted = niveau ? keysForLevel(niveau) : [];
+    if (view === "levels") {
+      const niveau = state.permLevel;
+      if (!niveau) return "> *Choisis une permission (niveau) dans le menu ci-dessous.*";
+      const roleIds = levelStore.listRoleLevels(guildId).filter(([, lvl]) => lvl === niveau).map(([id]) => id);
+      const rolesValides = roleIds.filter((id) => guild.roles.cache.has(id));
+      const granted = keysForLevel(niveau);
+      const commands = commandsForKeys(granted);
+      const prefixeCommandes = getPrefixes(guildId).musicMod;
 
-    const lines = [
-      `> **Rôle** : ${role.toString()} — \`${role.id}\``,
-      `> **Membres** : ${role.members.size} · **position** : ${role.position}/${guild.roles.cache.size} · **couleur** : ${role.hexColor}`,
-      `> **Permissions Discord notables** : ${notables.length ? notables.join(", ") : "*aucune*"}`,
-      `> **Niveau de permission** : ${niveau ? `${niveau}/9` : "*aucun*"}`,
-    ];
-
-    // Les commandes débloquées sont affichées d'office : le niveau seul ne
-    // dit pas CE que le rôle peut faire.
-    //
-    // UNE LIGNE PAR COMMANDE, et non plus toutes collées en une seule ligne de
-    // virgules : c'est ce qui les fait atterrir dans la carte « Commandes
-    // débloquées » du tableau de bord (utils/sectionDashboard.js range chaque
-    // ligne citée comme une entrée, et ouvre une carte « (suite) » au-delà de
-    // neuf). Collées, elles formaient une phrase unique rejetée en bas d'écran
-    // et tronquée par le moteur de rendu.
-    const prefixeCommandes = getPrefixes(guildId).musicMod;
-    const commands = commandsForKeys(granted);
-    lines.push("", `**Commandes débloquées (${commands.length})** :`);
-    if (!commands.length) {
-      lines.push("> *aucune*");
-    } else {
-      for (const c of commands.slice(0, MAX_COMMANDES_AFFICHEES)) lines.push(`> \`${prefixeCommandes}${c}\``);
-      const reste = commands.length - MAX_COMMANDES_AFFICHEES;
-      if (reste > 0) lines.push(`> +${reste} autre${reste > 1 ? "s" : ""}`);
-    }
-    // Une clé débloquée à ce niveau peut donner accès à une rubrique du panel
-    // plutôt qu'à une commande tapée — sans cette section, "0 commande"
-    // donnait l'impression fausse que rien n'était accordé du tout.
-    const autres = nonCommandGrants(granted);
-    if (autres.length) {
-      lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
-      for (const l of autres.slice(0, MAX_COMMANDES_AFFICHEES)) lines.push(`> ${l}`);
-      const resteAutres = autres.length - MAX_COMMANDES_AFFICHEES;
-      if (resteAutres > 0) lines.push(`> +${resteAutres} autre${resteAutres > 1 ? "s" : ""}`);
+      const lines = [
+        `> **Niveau ${niveau}**`,
+        `> **Rôles d'accès** : ${rolesValides.length ? rolesValides.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}`,
+        "",
+        `**Commandes (${commands.length})** — page ${(state.permCmdPage || 0) + 1}/${Math.max(1, Math.ceil(commands.length / CMDS_PAR_PAGE))}`,
+      ];
+      const page = Math.max(0, state.permCmdPage || 0);
+      const pageCommands = commands.slice(page * CMDS_PAR_PAGE, (page + 1) * CMDS_PAR_PAGE);
+      if (!pageCommands.length) lines.push("> *aucune*");
+      else for (const c of pageCommands) lines.push(`> \`${prefixeCommandes}${c}\``);
+      return lines.join("\n");
     }
 
-    // Les membres du rôle, eux aussi dans l'image plutôt que dans un message
-    // éphémère qu'il fallait ouvrir à côté.
-    if (state.permissionsShowMembers) {
-      // `role.members` est une Collection sur un vrai rôle, mais l'objet reçu
-      // peut être partiel selon l'appelant : on ne suppose pas sa forme.
-      const tous = typeof role.members?.values === "function" ? [...role.members.values()] : [];
-      const membres = tous.slice(0, 30);
-      const reste = (role.members?.size || 0) - membres.length;
-      lines.push("", `**Membres ayant ce rôle (${role.members.size})** :`);
-      lines.push(
-        membres.length
-          ? membres.map((m) => m.user?.username || m.id).join(", ") + (reste > 0 ? `, +${reste}` : "")
-          : "*personne*"
-      );
+    if (view === "cooldowns") {
+      const cmdName = state.permCmdName;
+      if (!cmdName) {
+        return `> *Choisis une commande dans le menu ci-dessous — page ${(state.permCmdListPage || 0) + 1}.*`;
+      }
+      const rule = commandRules.getRule(guildId, cmdName);
+      return [
+        `> **Commande** : \`${cmdName}\``,
+        `> **Cooldown actuel** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s entre deux usages par membre` : "*aucun*"}`,
+      ].join("\n");
     }
 
-    return lines.join("\n");
-  }
-
-  // Même contenu que &helpall (utils/permsCommands.js), mais dans le panel :
-  // une ligne compacte par palier, rôle(s) puis le rappel des actions
-  // disponibles juste à côté — demande explicite ("cote a coter des
-  // paliers"). En texte plutôt qu'en image (voir buildConfigPanel) : les
-  // vraies actions (renommer/ajouter/supprimer) vivent juste en dessous, via
-  // "Choisir un palier à gérer".
-  if (section === "roletiers") {
-    const lignes = lignesPaliers(guild);
-    if (!lignes.length) {
-      return "> *Aucune permission n'est encore accordée à un rôle (voir la rubrique Rôles et permissions).*";
+    if (view === "extra") {
+      const cmdName = state.permCmdName;
+      if (!cmdName) {
+        return `> *Choisis une commande dans le menu ci-dessous — page ${(state.permCmdListPage || 0) + 1}. Donne un accès direct à CETTE commande, sans toucher au niveau.*`;
+      }
+      const rule = commandRules.getRule(guildId, cmdName);
+      const mentionUser = (id) => `<@${id}>`;
+      const mentionRole = (id) => `<@&${id}>`;
+      return [
+        `> **Commande** : \`${cmdName}\``,
+        `> **Rôles autorisés** : ${rule.allowedRoles.length ? rule.allowedRoles.map(mentionRole).join(", ") : "*aucun*"}`,
+        `> **Membres autorisés** : ${rule.allowedUsers.length ? rule.allowedUsers.map(mentionUser).join(", ") : "*aucun*"}`,
+      ].join("\n");
     }
-    // Les paliers ne sont plus DANS ce texte : chacun est une ligne AVEC SES
-    // BOUTONS dans le bloc de composants (demande explicite, capture d'écran à
-    // l'appui). Les répéter ici les afficherait deux fois.
-    const gere = findManagedTier(guild, state.tierManageKey);
-    if (gere) return `> *Palier en cours de gestion : **${gere.label}** — utilise les menus ci-dessous.*`;
-    return "> *Chaque palier a ses propres boutons. « Ajouter » ouvre un sélecteur de rôle sous la liste.*";
+
+    if (view === "blocked") {
+      const blocked = blockedChannelsStore.list(guildId).filter((id) => guild.channels.cache.has(id));
+      return [
+        `> **Salons bloqués (${blocked.length})** — aucune commande n'y répond, sauf owner/rang sys.`,
+        blocked.length ? blocked.map((id) => `<#${id}>`).join(", ") : "> *aucun*",
+      ].join("\n");
+    }
+
+    return "";
   }
 
   if (section === "logs") {
@@ -676,28 +637,6 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
-  if (section === "commands") {
-    const cmdName = state.commandsSelected;
-    if (!cmdName) return "> Choisis une commande ci-dessous pour voir/modifier sa configuration.";
-    const enabled = commandsStore.isEnabledForGuild(cmdName, guildId);
-    const rule = commandRules.getRule(guildId, cmdName);
-    const mentionUser = (id) => `<@${id}>`;
-    const mentionRole = (id) => `<@&${id}>`;
-    const mentionChannel = (id) => `<#${id}>`;
-    const liste = (ids, fn) => (ids.length ? ids.map(fn).join(", ") : "*aucun*");
-    return [
-      `> **Commande** : \`${cmdName}\``,
-      `> **État** : ${enabled ? "🟢 Activée" : "🔴 Désactivée"}`,
-      `> **Rôles autorisés** : ${liste(rule.allowedRoles, mentionRole)}`,
-      `> **Rôles interdits** : ${liste(rule.deniedRoles, mentionRole)}`,
-      `> **Membres autorisés** : ${liste(rule.allowedUsers, mentionUser)}`,
-      `> **Membres interdits** : ${liste(rule.deniedUsers, mentionUser)}`,
-      `> **Salons autorisés** : ${liste(rule.allowedChannels, mentionChannel)}`,
-      `> **Salons interdits** : ${liste(rule.deniedChannels, mentionChannel)}`,
-      `> **Cooldown** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s entre deux usages par membre` : "*aucun*"}`,
-    ].join("\n");
-  }
-
   if (section === "confessions") {
     const cfg = confessStore.getConfig(guildId) || {};
     return [
@@ -810,69 +749,6 @@ function messageFromInteraction(interaction, retour) {
       return majSure(interaction, banniereSurPanel(construirePanel(interaction), texte));
     },
   };
-}
-
-/**
- * Retrouve le palier actuellement sélectionné pour la gestion rapide (rubrique
- * "Rôles (paliers)", state.tierManageKey) — recalculé à chaque rendu, comme
- * le reste des paliers (utils/permsCommands.js::computeTiers). `null` si rien
- * n'est sélectionné ou si le palier a disparu entre deux clics (dernier rôle
- * du palier supprimé/renommé entre-temps, par exemple).
- * @returns {{ key: string, label: string, niveau: number, roleIds: string[] } | null}
- */
-/**
- * Libellé affiché d'un niveau : « Niveau 4 ». Une seule définition, partagée
- * par le corps de la rubrique, le menu de gestion et les placeholders.
- */
-function tierLabel(guildId, tier) {
-  return `Niveau ${tier.index}`;
-}
-
-function findManagedTier(guild, tierManageKey) {
-  if (!tierManageKey) return null;
-  const guildId = guild.id;
-
-  if (tierManageKey.startsWith("t-")) {
-    const index = Number(tierManageKey.slice(2));
-    const tier = computeTiers(guildId).find((t) => t.index === index);
-    if (!tier) return null;
-    return {
-      key: tierManageKey,
-      label: tierLabel(guildId, tier),
-      niveau: tier.index,
-      roleIds: tier.roleIds.filter((id) => guild.roles.cache.has(id)),
-    };
-  }
-
-  return null;
-}
-
-/** Options du sélecteur "Choisir un palier à gérer" — mêmes paliers que le corps de la rubrique. */
-/**
- * Les LIGNES de la rubrique "Rôles (paliers)" : les paliers numérotés, puis
- * les groupes hors hiérarchie. Une seule énumération, utilisée par l'affichage,
- * par les boutons de chaque ligne ET par le menu de gestion — trois listes
- * séparées se seraient contredites au premier changement de permissions.
- * Les clés (`t-<numéro>`, `e-<étiquette>`) sont celles que findManagedTier
- * sait résoudre.
- * @returns {{cle: string, libelle: string, roleIds: string[]}[]}
- */
-function lignesPaliers(guild) {
-  const guildId = guild.id;
-  return computeTiers(guildId).map((t) => ({
-    cle: `t-${t.index}`,
-    libelle: tierLabel(guildId, t),
-    roleIds: t.roleIds.filter((id) => guild.roles.cache.has(id)),
-  }));
-}
-
-function tierManageOptions(guild) {
-  return lignesPaliers(guild).map((l) =>
-    new StringSelectMenuOptionBuilder()
-      .setLabel(l.libelle.slice(0, 100))
-      .setValue(l.cle)
-      .setDescription(`${l.roleIds.length} rôle(s)`)
-  );
 }
 
 /** Menus d'ajout/retrait pour une portée legacy (accessStore). */
@@ -1041,7 +917,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // actions rapides juste en dessous (renommer/ajouter/supprimer) s'y
   // réfèrent directement, mieux servies par le vrai texte Discord (mentions
   // résolues) que par une image à régénérer à chaque clic.
-  const texteForce = meta.key === "roletiers" || meta.key === "commands";
+  const texteForce = meta.key === "permissions";
   const specRubrique = texteForce ? null : buildSectionSpec(guild, meta.key, member, state, corps);
   const pngRubrique = sansImage || texteForce ? null : rendreEnCache(specRubrique);
   if (pngRubrique) {
@@ -1069,267 +945,151 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
-    const peutModifier = peutGererNiveaux(member);
-    // Un seul sélecteur de rôle puis un seul sélecteur de NIVEAU (1-9) —
-    // remplace l'ancien parcours en 3 étapes (rôle → catégorie → clés) du
-    // système par clé. Le sélecteur de rôle DISPARAÎT une fois un rôle
-    // choisi : il ne sert plus à rien à ce moment-là. Pour en changer,
-    // l'action "Choisir un autre rôle" plus bas. Assigner un niveau est une
-    // action d'escalade potentielle, réservée au propriétaire du bot
-    // (peutGererNiveaux) — jamais déléguée au rang sys lui-même.
-    const roleChoisi = state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId);
-    if (!roleChoisi) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new RoleSelectMenuBuilder().setCustomId(`${ID}:permrole`).setPlaceholder("Choisir un rôle à configurer")
-        )
-      );
-    }
-    if (can(member, "server.roles.manage")) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success)
-        )
-      );
-    }
-    if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
-      const boutons = [
-        new ButtonBuilder().setCustomId(`${ID}:permrolereset`).setLabel("Choisir un autre rôle").setStyle(ButtonStyle.Secondary),
-      ];
-      if (can(member, "server.members.list")) {
-        boutons.push(
-          state.permissionsShowMembers
-            ? new ButtonBuilder()
-                .setCustomId(`${ID}:rolemembershide:${state.permissionsRoleId}`)
-                .setLabel("Masquer les membres")
-                .setStyle(ButtonStyle.Secondary)
-            : new ButtonBuilder()
-                .setCustomId(`${ID}:rolemembers:${state.permissionsRoleId}`)
-                .setLabel("Voir les membres")
-                .setStyle(ButtonStyle.Secondary)
-        );
-      }
-      if (can(member, "server.roles.manage")) {
-        boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:renamerole:${state.permissionsRoleId}`).setLabel("Renommer").setStyle(ButtonStyle.Secondary)
-        );
-        boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`).setLabel("Supprimer ce rôle").setStyle(ButtonStyle.Danger)
-        );
-      }
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
+    // Les 4 blocs demandés (capture de référence) : Permissions (niveaux
+    // 1-9), Cooldowns, Permissions supplémentaires (accès direct à une
+    // commande), Salons bloqués — une seule section, 4 VUES internes
+    // (state.permView), chacune avec son propre sélecteur "Choisir une
+    // configuration" / "Choisir une commande" / etc. et sa pagination ◀/▶
+    // façon "Page 3/3" du screen. Remplace entièrement l'ancien parcours
+    // rôle→catégorie→clés et l'ancienne liste de paliers.
+    const view = state.permView || "levels";
 
-      if (peutModifier) {
-        const niveauActuel = levelStore.getRoleLevel(guild.id, state.permissionsRoleId);
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId(`${ID}:permlevel:${state.permissionsRoleId}`)
-              .setPlaceholder("Choisir un niveau (1-9)")
-              .addOptions(
-                Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
-                  new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveauActuel)
-                )
-              )
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:permview`)
+          .setPlaceholder("Choisir une configuration")
+          .addOptions(
+            new StringSelectMenuOptionBuilder().setLabel("Permissions (niveaux 1-9)").setValue("levels").setDefault(view === "levels"),
+            new StringSelectMenuOptionBuilder().setLabel("Cooldowns").setValue("cooldowns").setDefault(view === "cooldowns"),
+            new StringSelectMenuOptionBuilder().setLabel("Permissions supplémentaires").setValue("extra").setDefault(view === "extra"),
+            new StringSelectMenuOptionBuilder().setLabel("Salons bloqués").setValue("blocked").setDefault(view === "blocked")
           )
-        );
-        if (niveauActuel) {
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`${ID}:permlevelclear:${state.permissionsRoleId}`).setLabel("Retirer le niveau").setStyle(ButtonStyle.Danger)
-            )
-          );
-        }
-      }
-    }
-  } else if (meta.key === "roletiers") {
-    // UNE LIGNE PAR PALIER, AVEC SES BOUTONS — la mise en page demandée.
-    // Discord plafonne un message à 40 composants, et chaque ligne en coûte 5
-    // (le texte, sa rangée, ses trois boutons) : d'où la pagination, mesurée
-    // plutôt que devinée. Un palier à plusieurs rôles n'affiche qu'un bouton
-    // « Choisir un rôle » : « Supprimer » y désignerait sinon un rôle au
-    // hasard parmi plusieurs.
-    const lignes = lignesPaliers(guild);
-    // QUATRE par page, mesuré et non deviné : à cinq, la page atteignait
-    // 44 composants et Discord (plafond 40) aurait refusé le message. Le
-    // budget doit tenir même quand un palier est en gestion, ce qui ajoute
-    // deux sélecteurs plus bas.
-    const PAR_PAGE = 4;
-    // Un palier ouvert REMPLACE la liste : ses contrôles (ajouter un rôle,
-    // choisir lequel viser, renommer) coûtent une dizaine de composants, et les
-    // empiler SOUS la liste faisait dépasser le plafond de 40 — Discord aurait
-    // refusé le message. Une vue de détail est aussi plus claire qu'une liste
-    // surmontée de menus qui s'y réfèrent.
-    const ouvert = findManagedTier(guild, state.tierManageKey);
-    const pages = Math.max(1, Math.ceil(lignes.length / PAR_PAGE));
-    const page = Math.min(Math.max(0, Number(state.palierPage) || 0), pages - 1);
-    const peutGerer = can(member, "panel.permissions.manage");
-    const peutRoles = can(member, "server.roles.manage");
+      )
+    );
 
-    const aAfficher = ouvert ? lignes.filter((l) => l.cle === ouvert.key) : lignes.slice(page * PAR_PAGE, (page + 1) * PAR_PAGE);
-    for (const ligne of aAfficher) {
-      const roles = ligne.roleIds.length ? ligne.roleIds.map((id) => `<@&${id}>`).join(", ") : "*aucun rôle*";
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${ligne.libelle}** : ${roles}`));
-      // Le palier OUVERT n'affiche pas ses propres boutons de ligne : le bloc
-      // de détail plus bas les recrée déjà (Renommer/Supprimer sur le même
-      // rôle) — les deux à la fois donnait un custom id en double, que
-      // Discord refuse (l'interaction restait alors sans réponse : "L'application
-      // n'a pas répondu").
-      if (!peutGerer || (ouvert && ligne.cle === ouvert.key)) continue;
-
-      const boutons = [];
-      if (ligne.roleIds.length === 1 && peutRoles) {
-        // Un seul rôle : les boutons agissent directement dessus, en
-        // réutilisant les actions existantes (mêmes droits, même confirmation
-        // de suppression) — aucune logique dupliquée.
-        // "Gérer" (et non "Ajouter", trompeur : il ouvre la vue détail
-        // complète du palier — Renommer/Supprimer/Ajouter un rôle/Déplacer
-        // vers un autre palier — pas seulement l'ajout).
-        boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:roledelete:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${ID}:renamerole:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
-        );
-      } else {
-        // Bug corrigé ici : les deux boutons partageaient le MÊME customId
-        // ("paladd") — Discord refusait le message entier (custom id
-        // dupliqué). Les deux ouvrent bien le même palier (voir "paladd"/
-        // "palopen" dans handleConfigInteraction), mais chaque composant d'un
-        // même message doit avoir un identifiant distinct.
-        boutons.push(
-          new ButtonBuilder().setCustomId(`${ID}:paladd:${ligne.cle}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`${ID}:palopen:${ligne.cle}`)
-            .setLabel(ligne.roleIds.length ? "Choisir un rôle" : "Aucun rôle")
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(!ligne.roleIds.length)
-        );
-      }
-      container.addActionRowComponents(new ActionRowBuilder().addComponents(boutons));
-    }
-
-    if (ouvert) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:palpage:${page}`).setLabel("◀ Retour à la liste").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    } else if (pages > 1) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:palpage:${page - 1}`)
-            .setLabel("◀ Précédent")
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(page === 0),
-          new ButtonBuilder()
-            .setCustomId(`${ID}:palpage:${page + 1}`)
-            .setLabel(`Page ${page + 1}/${pages}`)
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(page >= pages - 1)
-        )
-      );
-    }
-    // Vue d'ensemble façon &perms/&helpall (mêmes paliers, calculés par
-    // utils/permsCommands.js::computeTiers — rien de nouveau à stocker),
-    // mais DANS le panel et avec un raccourci direct vers le renommage,
-    // plutôt que deux commandes texte à lire côte à côte puis retourner
-    // choisir le rôle à la main dans "Rôles et permissions".
-    // Plus de sélecteur "Choisir un rôle à renommer" ni de "Choisir un palier
-    // à gérer" : chaque ligne porte maintenant ses propres boutons, ces deux
-    // menus faisaient doublon — et leur budget manquait pour afficher les
-    // lignes elles-mêmes.
-    // Un rôle supprimé (à la main, ou via "Supprimer les rôles" ci-dessous)
-    // laisse son octroi traîner dans permissions.json : ça fait apparaître
-    // un palier fantôme au numéro faussé (voir utils/permissions/
-    // cleanup.js::pruneDeletedRoles). Accessible à qui gère les permissions,
-    // pas seulement au rang sys — c'est un rangement, pas une action lourde.
-    if (can(member, "panel.permissions.manage")) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    }
-    // Gestion rapide d'UN palier précis (demande explicite) : renommer un de
-    // ses rôles, en ajouter un autre dans le MÊME palier (copie ses clés
-    // accordées), ou en supprimer un — sans sortir de cette rubrique.
-    // Renommer/Supprimer réutilisent TELS QUELS "renamerole"/"roledelete"
-    // (même permission server.roles.manage, même confirmation de suppression
-    // — voir plus bas dans handleConfigInteraction) : aucune logique dupliquée.
-    if (can(member, "panel.permissions.manage")) {
-      const gere = ouvert;
-      if (gere) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new RoleSelectMenuBuilder().setCustomId(`${ID}:tieraddrole:${gere.key}`).setPlaceholder(`Ajouter un rôle à ${gere.label}`.slice(0, 150))
-          )
-        );
-        // Un niveau n'a qu'un seul rôle la plupart du temps (voir
-        // utils/rolePresets.js) : pas besoin d'un sélecteur supplémentaire
-        // dans ce cas, les boutons Renommer/Supprimer visent directement ce
-        // rôle-là. Avec plusieurs rôles sur le même niveau, on en choisit un.
-        const rolePreChoisi = state.tierManageRoleId && gere.roleIds.includes(state.tierManageRoleId) ? state.tierManageRoleId : null;
-        if (gere.roleIds.length > 1 && !rolePreChoisi) {
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`${ID}:tierrolepick:${gere.key}`)
-                .setPlaceholder(`Choisir un rôle de ${gere.label} à renommer/supprimer`.slice(0, 150))
-                .addOptions(
-                  gere.roleIds.slice(0, 25).map((id) => {
-                    const role = guild.roles.cache.get(id);
-                    return new StringSelectMenuOptionBuilder().setLabel((role?.name || id).slice(0, 100)).setValue(id);
-                  })
-                )
-            )
-          );
-        }
-        const roleActif = gere.roleIds.length === 1 ? gere.roleIds[0] : rolePreChoisi;
-        if (roleActif && can(member, "server.roles.manage")) {
-          const nom = (guild.roles.cache.get(roleActif)?.name || roleActif).slice(0, 60);
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`${ID}:renamerole:${roleActif}`).setLabel(`Renommer "${nom}"`).setStyle(ButtonStyle.Secondary),
-              new ButtonBuilder().setCustomId(`${ID}:roledelete:${roleActif}`).setLabel(`Supprimer "${nom}"`).setStyle(ButtonStyle.Danger)
-            )
-          );
-        }
-        // "Déplacer vers..." : change le NIVEAU de ce rôle — demande
-        // explicite, calquée sur le geste natif de réorganisation des
-        // salons. Action d'escalade potentielle, réservée au propriétaire du
-        // bot (peutGererNiveaux), pas à server.roles.manage (qui protège
-        // seulement renommer/supprimer le rôle Discord).
-        if (roleActif && peutGererNiveaux(member)) {
-          const autresNiveaux = [];
-          for (let n = LEVEL_MIN; n <= LEVEL_MAX; n++) {
-            if (n !== gere.niveau) autresNiveaux.push(n);
-          }
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`${ID}:tiermove:${roleActif}`)
-                .setPlaceholder("Déplacer ce rôle vers un autre niveau")
-                .addOptions(autresNiveaux.map((n) => new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n))))
-            )
-          );
-        }
-      }
-    }
-    // Provisionnement en masse (utils/rolePresets.js) : la hiérarchie de
-    // rôles vue sur les deux screens fournis, avec les permissions déjà
-    // réglées — demande explicite, rang sys (ça touche TOUS les rôles du
-    // serveur, effet largement plus grand qu'une action de modération).
-    if (can(member, "sys")) {
+    if (view === "levels") {
+      const peutModifier = peutGererNiveaux(member);
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:rolepresets`)
-            .setPlaceholder("Provisionnement en masse")
+            .setCustomId(`${ID}:permlevel`)
+            .setPlaceholder("Choisir une permission (niveau)")
             .addOptions(
-              new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
-              new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
+              Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
+                new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === state.permLevel)
+              )
             )
+        )
+      );
+
+      const niveau = state.permLevel;
+      if (niveau) {
+        // Rôles d'accès : ajouter/retirer un rôle à CE niveau — réutilise le
+        // même store que l'ancien système de paliers (levelStore), juste
+        // adressé par niveau plutôt que par rôle déjà choisi.
+        if (peutModifier) {
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new RoleSelectMenuBuilder().setCustomId(`${ID}:permlevelrole:${niveau}`).setPlaceholder(`Ajouter/retirer un rôle d'accès au niveau ${niveau}`)
+            )
+          );
+        }
+
+        // Pagination des commandes débloquées à ce niveau — "Page X/Y" ◀/▶,
+        // même mise en page que le screen de référence.
+        const granted = keysForLevel(niveau);
+        const commandes = commandsForKeys(granted);
+        const pages = Math.max(1, Math.ceil(commandes.length / CMDS_PAR_PAGE));
+        const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
+        if (pages > 1) {
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("◀ Précédent").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+              new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel(`Page ${page + 1}/${pages}`).setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1)
+            )
+          );
+        }
+      }
+
+      // Provisionnement en masse (utils/rolePresets.js) — demande explicite,
+      // rang sys (touche TOUS les rôles du serveur).
+      if (can(member, "sys")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${ID}:rolepresets`)
+              .setPlaceholder("Provisionnement en masse")
+              .addOptions(
+                new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
+                new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
+              )
+          )
+        );
+      }
+      if (can(member, "panel.permissions.manage")) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
+          )
+        );
+      }
+    } else if (view === "cooldowns" || view === "extra") {
+      // Les deux vues partagent le même sélecteur paginé de commande
+      // ("Choisir une commande") — seul ce qui s'affiche une fois choisie
+      // diffère (cooldown vs accès direct rôles/membres).
+      const noms = allModCommandNames();
+      const pages = Math.max(1, Math.ceil(noms.length / CMDS_PAR_PAGE));
+      const listPage = Math.min(Math.max(0, Number(state.permCmdListPage) || 0), pages - 1);
+      const pageNoms = noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE);
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:permcmdname`)
+            .setPlaceholder(`Choisir une commande — page ${listPage + 1}/${pages}`)
+            .addOptions(
+              pageNoms.map((n) => new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdName))
+            )
+        )
+      );
+      if (pages > 1) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage - 1}`).setLabel("◀ Précédent").setStyle(ButtonStyle.Secondary).setDisabled(listPage === 0),
+            new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage + 1}`).setLabel(`Page ${listPage + 1}/${pages}`).setStyle(ButtonStyle.Secondary).setDisabled(listPage >= pages - 1)
+          )
+        );
+      }
+
+      const cmdName = state.permCmdName;
+      if (cmdName && view === "cooldowns") {
+        const rule = commandRules.getRule(guild.id, cmdName);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${ID}:cmdcooldownbtn:${cmdName}`)
+              .setLabel(rule.cooldownSeconds ? `Cooldown : ${rule.cooldownSeconds}s — modifier` : "Définir un cooldown")
+              .setStyle(ButtonStyle.Secondary),
+            ...(rule.cooldownSeconds
+              ? [new ButtonBuilder().setCustomId(`${ID}:cmdcooldownclear:${cmdName}`).setLabel("Retirer le cooldown").setStyle(ButtonStyle.Danger)]
+              : [])
+          )
+        );
+      } else if (cmdName && view === "extra") {
+        // Accès direct à CETTE commande, sans toucher au niveau — rôles et
+        // membres autorisés (les variantes "deny"/salon restent gérées par
+        // les niveaux, pas par cette vue, conformément au screen).
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmdallowrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle autorisé"))
+        );
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmdallowuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre autorisé"))
+        );
+      }
+    } else if (view === "blocked") {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ChannelSelectMenuBuilder().setCustomId(`${ID}:blockedchanneltoggle`).setPlaceholder("Configurer les salons bloqués")
         )
       );
     }
@@ -1698,79 +1458,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
       )
     );
-  } else if (meta.key === "commands") {
-    // 5 ActionRow max par message Discord (nav+subnav déjà posées plus haut =
-    // 2) — un sous-écran "aspect" (rôles autorisés/interdits, membres
-    // autorisés/interdits, salons autorisés/interdits) plutôt que tout
-    // afficher d'un coup. Même patron que =panel/!!config.
-    const noms = allModCommandNames();
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:cmdselect`)
-          .setPlaceholder("Choisir une commande")
-          .addOptions(
-            noms.slice(0, 25).map((n) => new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.commandsSelected))
-          )
-      )
-    );
-    const cmdName = state.commandsSelected;
-    if (cmdName) {
-      const enabled = commandsStore.isEnabledForGuild(cmdName, guild.id);
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:cmdtoggle:${cmdName}`)
-            .setLabel(enabled ? "Désactiver" : "Activer")
-            .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${ID}:cmdreset:${cmdName}`).setLabel("Réinitialiser").setStyle(ButtonStyle.Secondary)
-        )
-      );
-      const ASPECTS = [
-        { key: "allowRole", label: "Rôles autorisés" },
-        { key: "denyRole", label: "Rôles interdits" },
-        { key: "allowUser", label: "Membres autorisés" },
-        { key: "denyUser", label: "Membres interdits" },
-        { key: "allowChannel", label: "Salons autorisés" },
-        { key: "denyChannel", label: "Salons interdits" },
-        { key: "cooldown", label: "Cooldown" },
-      ];
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:cmdaspect:${cmdName}`)
-            .setPlaceholder("Choisir ce qu'on modifie")
-            .addOptions(ASPECTS.map((a) => new StringSelectMenuOptionBuilder().setLabel(a.label).setValue(a.key).setDefault(a.key === state.commandsAspect)))
-        )
-      );
-      const aspect = state.commandsAspect;
-      if (aspect === "allowRole") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmdallowrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle autorisé")));
-      } else if (aspect === "denyRole") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmddenyrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle interdit")));
-      } else if (aspect === "allowUser") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmdallowuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre autorisé")));
-      } else if (aspect === "denyUser") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmddenyuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre interdit")));
-      } else if (aspect === "allowChannel") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmdallowchannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon autorisé")));
-      } else if (aspect === "denyChannel") {
-        container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmddenychannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon interdit")));
-      } else if (aspect === "cooldown") {
-        const rule = commandRules.getRule(guild.id, cmdName);
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`${ID}:cmdcooldownbtn:${cmdName}`)
-              .setLabel(rule.cooldownSeconds ? `Cooldown : ${rule.cooldownSeconds}s — modifier` : "Définir un cooldown")
-              .setStyle(ButtonStyle.Secondary),
-            ...(rule.cooldownSeconds
-              ? [new ButtonBuilder().setCustomId(`${ID}:cmdcooldownclear:${cmdName}`).setLabel("Retirer le cooldown").setStyle(ButtonStyle.Danger)]
-              : [])
-          )
-        );
-      }
-    }
   }
 
   // Dernière étape du rendu : les boutons d'action deviennent un seul menu.
@@ -1779,7 +1466,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // menu unique ne sait pas rendre — il les fondrait tous ensemble et on ne
   // saurait plus quel palier chaque action vise. C'est l'exception assumée à
   // la règle « les actions passent dans un menu déroulant ».
-  if (meta.key !== "roletiers") regrouperBoutonsEnMenu(container);
+  if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
@@ -1863,62 +1550,16 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("confessions", {});
   }
 
-  if (action === "cmdselect") {
-    return goto("commands", { commandsSelected: interaction.values[0] });
-  }
-
-  if (action === "cmdaspect") {
-    return goto("commands", { commandsSelected: extra, commandsAspect: interaction.values[0] });
-  }
-
-  if (action === "cmdtoggle") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const enabled = commandsStore.isEnabledForGuild(extra, guildId);
-    commandsStore.setGuildEnabled(guildId, extra, !enabled);
-    return goto("commands", { commandsSelected: extra });
-  }
-
-  if (action === "cmdreset") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    commandRules.resetRule(guildId, extra);
-    commandsStore.setGuildEnabled(guildId, extra, true);
-    return goto("commands", { commandsSelected: extra });
-  }
-
   if (action === "cmdallowrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.toggleAllowedRole(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "allowRole" });
-  }
-
-  if (action === "cmddenyrole") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    commandRules.toggleDeniedRole(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "denyRole" });
+    return goto("permissions", { permView: "extra", permCmdName: extra });
   }
 
   if (action === "cmdallowuser") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.toggleAllowedUser(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "allowUser" });
-  }
-
-  if (action === "cmddenyuser") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    commandRules.toggleDeniedUser(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "denyUser" });
-  }
-
-  if (action === "cmdallowchannel") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    commandRules.toggleAllowedChannel(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "allowChannel" });
-  }
-
-  if (action === "cmddenychannel") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    commandRules.toggleDeniedChannel(guildId, extra, interaction.values[0]);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "denyChannel" });
+    return goto("permissions", { permView: "extra", permCmdName: extra });
   }
 
   if (action === "cmdcooldownbtn") {
@@ -1930,7 +1571,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
         return interaction.reply({ content: "Indique un nombre de secondes valide (0 ou vide pour retirer le cooldown).", flags: MessageFlags.Ephemeral });
       }
       commandRules.setCooldown(guildId, extra, secondes);
-      return goto("commands", { commandsSelected: extra, commandsAspect: "cooldown" });
+      return goto("permissions", { permView: "cooldowns", permCmdName: extra });
     }
     const rule = commandRules.getRule(guildId, extra);
     const modal = new ModalBuilder().setCustomId(`${ID}:cmdcooldownbtn:${extra}`).setTitle("Cooldown de la commande");
@@ -1951,21 +1592,60 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "cmdcooldownclear") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.setCooldown(guildId, extra, null);
-    return goto("commands", { commandsSelected: extra, commandsAspect: "cooldown" });
+    return goto("permissions", { permView: "cooldowns", permCmdName: extra });
   }
 
-  if (action === "permrole") {
+  // Sélecteur de vue — "Choisir une configuration" (les 4 blocs : niveaux,
+  // cooldowns, permissions supplémentaires, salons bloqués).
+  if (action === "permview") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permissionsRoleId: interaction.values[0] });
+    return goto("permissions", { permView: interaction.values[0] });
   }
 
-  // Choisi depuis la vue d'ensemble des paliers (rubrique "Rôles (paliers)") :
-  // saute direct dans "Rôles et permissions", où vivent déjà la fiche
-  // complète du rôle ET le bouton "Renommer" — pas une deuxième modale à
-  // maintenir en parallèle pour la même action.
-  if (action === "tierrenamepick") {
+  // Vue "Permissions" : choisir un niveau (1-9).
+  if (action === "permlevel") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permissionsRoleId: interaction.values[0] });
+    return goto("permissions", { permView: "levels", permLevel: parseInt(interaction.values[0], 10) });
+  }
+
+  // Rôle d'accès ajouté/retiré à CE niveau — action d'escalade potentielle,
+  // réservée au propriétaire du bot (jamais déléguée au rang sys).
+  if (action === "permlevelrole") {
+    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+    const niveau = parseInt(extra, 10);
+    if (!Number.isInteger(niveau) || niveau < LEVEL_MIN || niveau > LEVEL_MAX) {
+      return interaction.reply({ content: "Niveau invalide.", flags: MessageFlags.Ephemeral });
+    }
+    const roleId = interaction.values[0];
+    const niveauActuel = levelStore.getRoleLevel(guildId, roleId);
+    levelStore.setRoleLevel(guildId, roleId, niveauActuel === niveau ? null : niveau);
+    return goto("permissions", { permView: "levels", permLevel: niveau });
+  }
+
+  // Pagination des commandes débloquées à ce niveau.
+  if (action === "permcmdpage") {
+    return goto("permissions", { permView: "levels", permLevel: state.permLevel, permCmdPage: Number(extra) || 0 });
+  }
+
+  // Pagination du sélecteur de commande (vues "Cooldowns"/"Permissions
+  // supplémentaires").
+  if (action === "permcmdlistpage") {
+    return goto("permissions", { permView: state.permView, permCmdListPage: Number(extra) || 0 });
+  }
+
+  // Commande choisie dans le sélecteur paginé des vues "Cooldowns"/
+  // "Permissions supplémentaires".
+  if (action === "permcmdname") {
+    return goto("permissions", { permView: state.permView, permCmdName: interaction.values[0] });
+  }
+
+  // Vue "Salons bloqués" : toggle direct sur le(s) salon(s) choisi(s) — même
+  // store que le check en tête de dispatch (musicCommands.js), bypass
+  // owner/rang sys inconditionnel.
+  if (action === "blockedchanneltoggle") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    for (const channelId of interaction.values) blockedChannelsStore.toggle(guildId, channelId);
+    return goto("permissions", { permView: "blocked" });
   }
 
   if (action === "pruneroles") {
@@ -1974,95 +1654,22 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     const texte = removed.length
       ? `**${removed.length}** octroi(s) de rôle supprimé retiré(s).`
       : "Rien à nettoyer, tous les rôles avec des permissions accordées existent encore.";
-    // Retour sur "roletiers" (où vit le bouton), pas une carte isolée sans
+    // Retour sur "permissions" (où vit le bouton), pas une carte isolée sans
     // retour possible — même correctif que rolecreate/renamerole/roledelete.
-    const panel = buildConfigPanel(guild, "roletiers", member, {}, {});
+    const panel = buildConfigPanel(guild, "permissions", member, { permView: "levels" }, {});
     return interaction.update(banniereSurPanel(panel, texte));
   }
 
-  // Gestion rapide d'un palier (rubrique "Rôles (paliers)") : choisir le
-  // palier à gérer, puis — si plusieurs rôles y sont regroupés — lequel
-  // renommer/supprimer. Reste dans "roletiers" (ne saute pas vers
-  // "permissions", contrairement à tierrenamepick ci-dessus) : le but est de
-  // tout faire sans quitter cette vue d'ensemble.
-  if (action === "tierselect") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("roletiers", { tierManageKey: interaction.values[0] });
-  }
-
-  if (action === "tierrolepick") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("roletiers", { tierManageKey: extra, tierManageRoleId: interaction.values[0] });
-  }
-
-  // Bouton d'une LIGNE de la rubrique : met ce palier en gestion, ce qui fait
-  // apparaître juste en dessous le sélecteur "Ajouter un rôle" et, si le
-  // palier compte plusieurs rôles, celui qui choisit lequel viser.
-  // "palopen" = "Choisir un rôle" (palier à plusieurs rôles ou sans rôle) :
-  // même effet que "paladd", juste un identifiant distinct — deux composants
-  // d'un même message ne peuvent pas partager le même customId.
-  if (action === "paladd" || action === "palopen") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("roletiers", { tierManageKey: extra2 ? `${extra}:${extra2}` : extra });
-  }
-
-  if (action === "palpage") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("roletiers", { palierPage: Number(extra) || 0 });
-  }
-
-  // "Ajouter un rôle à ce niveau" : assigne le NIVEAU du palier géré au rôle
-  // choisi. Action d'escalade potentielle, réservée au propriétaire du bot.
-  if (action === "tieraddrole") {
-    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
-    const gere = findManagedTier(guild, extra);
-    if (!gere) return interaction.reply({ content: "Ce niveau n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
-    const roleId = interaction.values[0];
-    levelStore.setRoleLevel(guildId, roleId, gere.niveau);
-    return goto("roletiers", { tierManageKey: gere.key, tierManageRoleId: roleId });
-  }
-
-  // "Déplacer vers un autre niveau" : change le niveau de ce rôle, lancée
-  // depuis le rôle plutôt que depuis le niveau — extra = l'ID du rôle déplacé,
-  // interaction.values[0] = le niveau cible choisi dans le menu.
-  if (action === "tiermove") {
-    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
-    const roleId = extra;
-    if (!guild.roles.cache.has(roleId)) {
-      return interaction.reply({ content: "Ce rôle n'existe plus.", flags: MessageFlags.Ephemeral });
-    }
-    const niveauCible = parseInt(interaction.values[0], 10);
-    if (!Number.isInteger(niveauCible) || niveauCible < LEVEL_MIN || niveauCible > LEVEL_MAX) {
-      return interaction.reply({ content: "Niveau invalide.", flags: MessageFlags.Ephemeral });
-    }
-    levelStore.setRoleLevel(guildId, roleId, niveauCible);
-    return goto("roletiers", { tierManageKey: `t-${niveauCible}`, tierManageRoleId: roleId });
-  }
-
   // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans
-  // la rubrique "Rôles (paliers)". Passe par messageFromInteraction comme le
-  // reste des commandes admin du panel : la confirmation ET son exécution
+  // la vue "Permissions". Passe par messageFromInteraction comme le reste
+  // des commandes admin du panel : la confirmation ET son exécution
   // remplacent le panel en place, jamais un second message à côté.
   if (action === "rolepresets") {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const choix = interaction.values[0];
-    if (choix === "create") return rolePresets.createPresetRoles(interaction.client, messageFromInteraction(interaction, { section: "roletiers" }));
-    if (choix === "deleteall") return rolePresets.deleteAllRoles(interaction.client, messageFromInteraction(interaction, { section: "roletiers" }));
+    if (choix === "create") return rolePresets.createPresetRoles(interaction.client, messageFromInteraction(interaction, { section: "permissions" }));
+    if (choix === "deleteall") return rolePresets.deleteAllRoles(interaction.client, messageFromInteraction(interaction, { section: "permissions" }));
     return;
-  }
-
-  // Revenir au sélecteur de rôle : il disparaît une fois un rôle choisi, donc
-  // il faut un moyen d'en changer sans quitter la rubrique.
-  if (action === "permrolereset") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", {});
-  }
-
-  // Les membres du rôle s'affichent DANS l'image du panneau, plus dans un
-  // message éphémère ouvert à côté.
-  if (action === "rolemembers" || action === "rolemembershide") {
-    if (!can(member, "server.members.list")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permissionsRoleId: extra, permissionsShowMembers: action === "rolemembers" });
   }
 
   // Giveaways : démarrer réutilise la carte de formulaire existante
@@ -2170,86 +1777,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       )
     );
     return interaction.showModal(modal);
-  }
-
-  // Création/suppression de rôle depuis le panel : réutilise TEL QUEL
-  // utils/serverAdminCommands.js::roleAdmin (même vérif de droits, même
-  // journal, même confirmation avant suppression) via un objet "message"
-  // minimal — pas de logique dupliquée entre &role create/delete et ces
-  // boutons.
-  if (action === "rolecreate") {
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) {
-      const name = interaction.fields.getTextInputValue("name").trim();
-      if (!name) return interaction.reply({ content: "Nom vide, aucun rôle créé.", flags: MessageFlags.Ephemeral });
-      await roleAdmin(interaction.client, messageFromInteraction(interaction, { section: "permissions" }), ["create", name]);
-      return;
-    }
-    const modal = new ModalBuilder().setCustomId(`${ID}:rolecreate`).setTitle("Créer un rôle");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("name").setLabel("Nom du rôle").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "renamerole") {
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) {
-      const name = interaction.fields.getTextInputValue("name").trim();
-      if (!name) return interaction.reply({ content: "Nom vide, rôle inchangé.", flags: MessageFlags.Ephemeral });
-      // roleAdmin résout la cible via un ID brut dans les args (mentions.roles
-      // reste toujours vide sur messageFromInteraction) — voir "roledelete"
-      // juste en dessous, même mécanique.
-      await roleAdmin(
-        interaction.client,
-        messageFromInteraction(interaction, { section: "permissions", state: { permissionsRoleId: extra } }),
-        ["rename", extra, ...name.split(/\s+/)]
-      );
-      return;
-    }
-    const role = guild.roles.cache.get(extra);
-    if (!role) return interaction.reply({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-    const modal = new ModalBuilder().setCustomId(`${ID}:renamerole:${extra}`).setTitle("Renommer le rôle");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("name").setLabel("Nouveau nom").setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(role.name)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "roledelete") {
-    if (!can(member, "server.roles.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    await roleAdmin(interaction.client, messageFromInteraction(interaction, { section: "permissions" }), ["delete", extra]);
-    return;
-  }
-
-  // Assigner/retirer un NIVEAU (1-9) à un rôle — remplace l'ancien parcours
-  // catégorie/clés. Action d'escalade potentielle, réservée au propriétaire
-  // du bot (peutGererNiveaux) — jamais déléguée au rang sys lui-même.
-  if (action === "permlevel") {
-    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
-    levelStore.setRoleLevel(guildId, extra, parseInt(interaction.values[0], 10));
-    return goto("permissions", { permissionsRoleId: extra });
-  }
-
-  if (action === "permlevelclear") {
-    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
-    levelStore.setRoleLevel(guildId, extra, null);
-    return goto("permissions", { permissionsRoleId: extra });
-  }
-
-  // "roleinfo" et "jumpperm" appartenaient à la rubrique "Rôles", fusionnée
-  // dans "Rôles et permissions" : une carte restée ouverte peut encore les
-  // envoyer, on la redirige plutôt que de la laisser sans effet.
-  if (action === "roleinfo") {
-    return goto("permissions", { permissionsRoleId: interaction.values[0] });
-  }
-
-  if (action === "jumpperm") {
-    return goto("permissions", { permissionsRoleId: extra });
   }
 
   if (action === "logcat") {
