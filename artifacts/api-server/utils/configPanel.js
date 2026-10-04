@@ -36,6 +36,7 @@ const confessStore = require("./confessStore");
 const { buildConfessCard } = require("./confessions");
 const { commandsForKeys } = require("./permsCommands");
 const blockedChannelsStore = require("./permissions/blockedChannelsStore");
+const { addCards, addBackButton, addPager } = require("./panelCards");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
@@ -447,22 +448,27 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "logs") {
+    // Navigation hiérarchique : accueil = une sous-carte par catégorie de
+    // logs, chacune ouvrant sa config de salon (state.logsCategory).
     const channels = getAllLogChannels(guildId);
     const manage = can(member, "logs.manage");
-    const lines = Object.entries(channels).map(
-      ([cat, chId]) => `> **${LOG_CATEGORY_LABELS[cat]}** : ${chId ? `<#${chId}>` : "*aucun — désactivé*"}`
-    );
-    const catLabel = state.logsCategory ? LOG_CATEGORY_LABELS[state.logsCategory] : null;
+
+    if (!state.logsCategory) {
+      const lignes = Object.entries(LOG_CATEGORY_LABELS).flatMap(([cat, label]) => [
+        `**${label}**`,
+        channels[cat] ? `<#${channels[cat]}>` : "*aucun — désactivé*",
+        "",
+      ]);
+      lignes.pop();
+      if (!manage) lignes.push("", "*Lecture seule — le droit `logs.manage` est requis pour modifier.*");
+      return lignes.join("\n");
+    }
+
+    const catLabel = LOG_CATEGORY_LABELS[state.logsCategory];
     return [
-      ...lines,
-      // Seules exceptions à la règle "pas de prose" : dire qu'on est en lecture
-      // seule, et nommer la catégorie en cours d'édition. Sans elles, les
-      // contrôles affichés en dessous n'ont pas de sens.
-      manage ? null : "> *Lecture seule — le droit `logs.manage` est requis pour modifier.*",
-      manage && catLabel ? `> *Catégorie en cours : **${catLabel}** — choisis son salon ci-dessous.*` : null,
-    ]
-      .filter((l) => l !== null)
-      .join("\n");
+      `> **Catégorie** : ${catLabel}`,
+      `> **Salon** : ${channels[state.logsCategory] ? `<#${channels[state.logsCategory]}>` : "*aucun — désactivé*"}`,
+    ].join("\n");
   }
 
   if (section === "stats") {
@@ -1137,19 +1143,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     }
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:logcat`)
-            .setPlaceholder("Configurer un salon manuellement — choisir une catégorie")
-            .addOptions(
-              Object.entries(LOG_CATEGORY_LABELS).map(([key, label]) =>
-                new StringSelectMenuOptionBuilder().setLabel(label).setValue(key).setDefault(state.logsCategory === key)
-              )
-            )
-        )
-      );
-      if (state.logsCategory && LOG_CATEGORY_LABELS[state.logsCategory]) {
+      if (!state.logsCategory) {
+        addCards(
+          container,
+          Object.entries(LOG_CATEGORY_LABELS).map(([key, label]) => ({
+            title: label,
+            customId: `${ID}:logcatview:${key}`,
+            label: "Configurer le salon",
+          }))
+        );
+        container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:logauto`).setLabel("Créer les salons automatiquement").setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`${ID}:logdelete`).setLabel("Supprimer les salons de logs").setStyle(ButtonStyle.Danger)
+          )
+        );
+      } else {
+        addBackButton(container, `${ID}:logcatview:`);
         const channels = getAllLogChannels(guild.id);
         const select = new ChannelSelectMenuBuilder()
           .setCustomId(`${ID}:logchannel:${state.logsCategory}`)
@@ -1160,18 +1171,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         if (channels[state.logsCategory]) select.setDefaultChannels(channels[state.logsCategory]);
         container.addActionRowComponents(new ActionRowBuilder().addComponents(select));
       }
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:logauto`)
-            .setLabel("Créer les salons automatiquement")
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`${ID}:logdelete`)
-            .setLabel("Supprimer les salons de logs")
-            .setStyle(ButtonStyle.Danger)
-        )
-      );
     }
   } else if (meta.key === "channels") {
     const choisis = selectionSalons(guild.id, member.id).filter((id) => guild.channels.cache.has(id));
@@ -1508,7 +1507,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // menu unique ne sait pas rendre — il les fondrait tous ensemble et on ne
   // saurait plus quel palier chaque action vise. C'est l'exception assumée à
   // la règle « les actions passent dans un menu déroulant ».
-  if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
+  if (meta.key !== "permissions" && meta.key !== "logs") regrouperBoutonsEnMenu(container);
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
@@ -1823,9 +1822,9 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return interaction.showModal(modal);
   }
 
-  if (action === "logcat") {
+  if (action === "logcatview") {
     if (!can(member, "logs.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("logs", { logsCategory: interaction.values[0] });
+    return goto("logs", { logsCategory: extra || null });
   }
 
   if (action === "logchannel") {
