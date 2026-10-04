@@ -10,33 +10,26 @@ const {
 } = require("discord.js");
 const ladderStore = require("./rankLadderStore");
 const accessStore = require("./accessStore");
-const permStore = require("./permissions/store");
-const { PERMISSIONS, CATEGORY_LABELS, label: labelDe } = require("./permissions/catalog");
+const levelStore = require("./permissions/levelStore");
 const messageOwner = require("./messageOwner");
 
 // "&gradeladder"/"&gradeladder list" — panel enrichi (compteur de membres +
-// badges d'accès par grade, sélecteur pour ouvrir la fiche d'un grade),
-// demande explicite calquée sur la présentation d'un autre bot ("Gestion des
-// grades"), remplie UNIQUEMENT avec les vraies données de CE bot :
+// badge de NIVEAU de permission par grade, sélecteur pour ouvrir la fiche
+// d'un grade), demande explicite calquée sur la présentation d'un autre bot
+// ("Gestion des grades"), remplie UNIQUEMENT avec les vraies données de CE
+// bot :
 //   - "Développeurs" = propriétaires du bot (BOT_OWNER_IDS) + rang sys
 //     (utils/accessStore.js), le seul équivalent réel qu'on ait à un rang
 //     "accès complet, hors hiérarchie" ;
 //   - chaque grade = un rôle de l'échelle (utils/rankLadderStore.js), niveau
-//     #1 = le plus haut (comme &promote/&demote) ;
-//   - "Accès" d'un grade = les CATÉGORIES de permissions (utils/
-//     permissions/catalog.js) que son rôle a reçues via &panel > Rôles et
-//     permissions (utils/permissions/store.js::getRoleGrants) — jamais une
-//     notion séparée, sinon panel et &gradeladder pourraient se contredire.
+//     #1 = le plus haut (comme &promote/&demote) — à NE PAS confondre avec
+//     le NIVEAU DE PERMISSION (1-9, utils/permissions/levelStore.js), un
+//     concept différent : un grade d'échelle est une position hiérarchique
+//     de promotion, un niveau de permission est ce que le rôle débloque ;
+//   - "Accès" d'un grade = le NIVEAU DE PERMISSION assigné à son rôle via
+//     &panel > Niveaux — jamais une notion séparée, sinon panel et
+//     &gradeladder pourraient se contredire.
 const CUSTOM_ID = "gradeladder";
-
-const CATEGORIE_PAR_CLE = new Map(PERMISSIONS.map((p) => [p.key, p.category]));
-
-/** Catégories distinctes accordées au rôle, triées comme CATEGORY_LABELS. */
-function categoriesDuRole(guildId, roleId) {
-  const cles = permStore.getRoleGrants(guildId, roleId);
-  const categories = new Set(cles.map((k) => CATEGORIE_PAR_CLE.get(k)).filter(Boolean));
-  return Object.keys(CATEGORY_LABELS).filter((c) => categories.has(c));
-}
 
 /** Un grade par rôle de l'échelle, du PLUS HAUT (niveau #1) au plus bas — même sens visuel que &promote. */
 function grades(guild) {
@@ -48,7 +41,7 @@ function grades(guild) {
       role,
       niveau: i + 1,
       membres: role?.members?.size ?? 0,
-      categories: role ? categoriesDuRole(guild.id, roleId) : [],
+      niveauPermission: role ? levelStore.getRoleLevel(guild.id, roleId) : null,
     };
   });
 }
@@ -60,7 +53,7 @@ function developpeurs(guild) {
 
 function ligneGrade(g) {
   const nom = g.role ? `${g.role}` : `*rôle supprimé (${g.roleId})*`;
-  const acces = g.categories.length ? g.categories.map((c) => CATEGORY_LABELS[c]).join(" · ") : "aucune";
+  const acces = g.niveauPermission ? `niveau de permission ${g.niveauPermission}/9` : "aucun niveau de permission";
   return `**${nom}** · niveau \`#${g.niveau}\` · **${g.membres}** membre(s)\n**Accès :** ${acces}`;
 }
 
@@ -110,11 +103,8 @@ function vueFiche(guild, roleId) {
   );
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
-  const cles = g.role ? permStore.getRoleGrants(guild.id, roleId) : [];
-  const permsTexte = cles.length ? cles.map((c) => `> \`${c}\` — ${labelDe(c)}`).join("\n") : "*Aucune permission accordée à ce rôle.*";
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`**${g.membres} membre(s)**\n\n**Permissions accordées à ce rôle**\n${permsTexte}`)
-  );
+  const permsTexte = g.niveauPermission ? `**Niveau de permission** : ${g.niveauPermission}/9` : "*Aucun niveau de permission assigné à ce rôle.*";
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${g.membres} membre(s)**\n\n${permsTexte}`));
 
   if (g.role?.members && g.membres) {
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));

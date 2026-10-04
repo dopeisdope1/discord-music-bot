@@ -28,14 +28,14 @@ const { rendreEnCache, resumer, enTexte, texteAlternatif, THEME_BLEU } = require
 const sectionDashboard = require("./sectionDashboard");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
 const accessStore = require("./accessStore");
-const { can, peutAccorder } = require("./permissions/engine");
-const permCatalog = require("./permissions/catalog");
-const permStore = require("./permissions/store");
+const { can, peutGererNiveaux } = require("./permissions/engine");
+const levelStore = require("./permissions/levelStore");
+const { LEVEL_MIN, LEVEL_MAX, keysForLevel } = require("./permissions/levelCatalog");
 const commandsStore = require("./commandsStore");
 const commandRules = require("./commandRules");
 const confessStore = require("./confessStore");
 const { buildConfessCard } = require("./confessions");
-const { commandsForKeys, nonCommandGrants, computeTiers, tierSignature } = require("./permsCommands");
+const { commandsForKeys, nonCommandGrants, computeTiers } = require("./permsCommands");
 const rolePresets = require("./rolePresets");
 const { sweepGuild, pruneDeletedRoles } = require("./permissions/cleanup");
 const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
@@ -337,13 +337,6 @@ function buildSubNav(current, member, isOwner) {
     );
 }
 
-function permissionRows() {
-  return permCatalog.byCategory().flatMap((group) => [
-    `**${group.label}**`,
-    ...group.permissions.map((p) => `> \`${p.key}\` — ${p.label}`),
-  ]);
-}
-
 // Lazy require : musicCommands.js importe configPanel.js (buildConfigPanel,
 // hasAnyPanelAccess) — un require() en tête de fichier ici créerait une
 // dépendance circulaire qui casse ces deux exports au chargement (observé :
@@ -392,30 +385,18 @@ function sectionBody(section, guild, member, state) {
       .filter((perm) =>
         ["Administrator", "BanMembers", "KickMembers", "ModerateMembers", "ManageRoles", "ManageChannels", "ManageGuild", "ManageMessages"].includes(perm)
       );
-    const granted = permStore.getRoleGrants(guildId, roleId);
-    // Le catalogue complet n'est pas recopié : le menu déroulant plus bas les
-    // liste déjà toutes, en cochant celles qui sont accordées.
-    const parCategorie = permCatalog
-      .byCategory()
-      .map((group) => {
-        const n = group.permissions.filter((perm) => granted.includes(perm.key)).length;
-        return n ? `> **${group.label}** : ${n}` : null;
-      })
-      .filter(Boolean);
+    const niveau = levelStore.getRoleLevel(guildId, roleId);
+    const granted = niveau ? keysForLevel(niveau) : [];
 
     const lines = [
       `> **Rôle** : ${role.toString()} — \`${role.id}\``,
       `> **Membres** : ${role.members.size} · **position** : ${role.position}/${guild.roles.cache.size} · **couleur** : ${role.hexColor}`,
-      `> **Exclusif** : ${permStore.isRoleExclusive(guildId, roleId) ? "oui" : "non"}`,
       `> **Permissions Discord notables** : ${notables.length ? notables.join(", ") : "*aucune*"}`,
-      `> **Permissions du bot accordées** : ${granted.length}`,
-      ...parCategorie,
+      `> **Niveau de permission** : ${niveau ? `${niveau}/9` : "*aucun*"}`,
     ];
 
-    // Les commandes débloquées sont affichées d'office : un compte par
-    // catégorie ne dit pas CE que le rôle peut faire. L'ancien bouton "Voir
-    // les commandes débloquées" renvoyait la liste dans un message éphémère,
-    // à côté du panneau au lieu d'être dedans.
+    // Les commandes débloquées sont affichées d'office : le niveau seul ne
+    // dit pas CE que le rôle peut faire.
     //
     // UNE LIGNE PAR COMMANDE, et non plus toutes collées en une seule ligne de
     // virgules : c'est ce qui les fait atterrir dans la carte « Commandes
@@ -433,9 +414,9 @@ function sectionBody(section, guild, member, state) {
       const reste = commands.length - MAX_COMMANDES_AFFICHEES;
       if (reste > 0) lines.push(`> +${reste} autre${reste > 1 ? "s" : ""}`);
     }
-    // Une clé accordée peut donner accès à une rubrique du panel plutôt
-    // qu'à une commande tapée — sans cette section, "0 commande" donnait
-    // l'impression fausse que rien n'était accordé du tout.
+    // Une clé débloquée à ce niveau peut donner accès à une rubrique du panel
+    // plutôt qu'à une commande tapée — sans cette section, "0 commande"
+    // donnait l'impression fausse que rien n'était accordé du tout.
     const autres = nonCommandGrants(granted);
     if (autres.length) {
       lines.push("", `**Accès sans commande dédiée (${autres.length})** :`);
@@ -581,7 +562,7 @@ function sectionBody(section, guild, member, state) {
     const rows = [];
     for (const userId of accessStore.list("sys")) rows.push([userId, "rang sys"]);
     for (const userId of accessStore.list("banall")) rows.push([userId, "ban de masse"]);
-    for (const [userId, keys] of permStore.listUserGrants(guildId)) rows.push([userId, `octroi individuel (${keys.length})`]);
+    for (const [userId, level] of levelStore.listUserLevels(guildId)) rows.push([userId, `niveau individuel (${level}/9)`]);
 
     const seen = new Set();
     const lines = rows
@@ -713,6 +694,7 @@ function sectionBody(section, guild, member, state) {
       `> **Membres interdits** : ${liste(rule.deniedUsers, mentionUser)}`,
       `> **Salons autorisés** : ${liste(rule.allowedChannels, mentionChannel)}`,
       `> **Salons interdits** : ${liste(rule.deniedChannels, mentionChannel)}`,
+      `> **Cooldown** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s entre deux usages par membre` : "*aucun*"}`,
     ].join("\n");
   }
 
@@ -761,7 +743,7 @@ function sectionBody(section, guild, member, state) {
     `> **Préfixe gestion** : \`${prefixes.musicMod}\``,
     `> **Propriétaire(s)** : ${mentions(owners)}`,
     `> **Rang sys** : ${mentions(accessStore.list("sys"))}`,
-    `> **Rôles avec des permissions accordées** : ${permStore.listRoleGrants(guildId).length}`,
+    `> **Rôles avec un niveau assigné** : ${levelStore.listRoleLevels(guildId).length}`,
   ].join("\n");
 }
 
@@ -836,18 +818,14 @@ function messageFromInteraction(interaction, retour) {
  * le reste des paliers (utils/permsCommands.js::computeTiers). `null` si rien
  * n'est sélectionné ou si le palier a disparu entre deux clics (dernier rôle
  * du palier supprimé/renommé entre-temps, par exemple).
- * @returns {{ key: string, label: string, keys: string[], roleIds: string[], exclusiveLabel: string|null } | null}
+ * @returns {{ key: string, label: string, niveau: number, roleIds: string[] } | null}
  */
 /**
- * Libellé affiché d'un palier numéroté : « Permission 4 », ou
- * « Permission 4 — Modération » s'il a été nommé depuis le panel. Une seule
- * définition, partagée par le corps de la rubrique, le menu de gestion et les
- * placeholders — trois formulations différentes du même palier se
- * contrediraient à l'écran.
+ * Libellé affiché d'un niveau : « Niveau 4 ». Une seule définition, partagée
+ * par le corps de la rubrique, le menu de gestion et les placeholders.
  */
 function tierLabel(guildId, tier) {
-  const nom = permStore.getTierName(guildId, tierSignature(tier.keys));
-  return nom ? `Permission ${tier.index} — ${nom}` : `Permission ${tier.index}`;
+  return `Niveau ${tier.index}`;
 }
 
 function findManagedTier(guild, tierManageKey) {
@@ -861,30 +839,8 @@ function findManagedTier(guild, tierManageKey) {
     return {
       key: tierManageKey,
       label: tierLabel(guildId, tier),
-      signature: tierSignature(tier.keys),
-      keys: tier.keys,
+      niveau: tier.index,
       roleIds: tier.roleIds.filter((id) => guild.roles.cache.has(id)),
-      exclusiveLabel: null,
-    };
-  }
-
-  if (tierManageKey.startsWith("e-")) {
-    const label = tierManageKey.slice(2);
-    const enGroupe = permStore
-      .listExclusiveRoles(guildId)
-      .filter((id) => guild.roles.cache.has(id))
-      .filter((id) => (permStore.getExclusiveLabel(guildId, id) || "__sans_label__") === label);
-    if (!enGroupe.length) return null;
-    // Les rôles "exclusifs" ne partagent pas forcément le même ensemble de
-    // clés (le label n'est qu'un regroupement cosmétique, pas une garantie
-    // de permissions identiques) — "Ajouter un rôle" reprend celles du
-    // premier rôle du groupe comme base la plus raisonnable.
-    return {
-      key: tierManageKey,
-      label: label === "__sans_label__" ? "Exclusives" : label,
-      keys: permStore.getRoleGrants(guildId, enGroupe[0]),
-      roleIds: enGroupe,
-      exclusiveLabel: label === "__sans_label__" ? null : label,
     };
   }
 
@@ -903,31 +859,11 @@ function findManagedTier(guild, tierManageKey) {
  */
 function lignesPaliers(guild) {
   const guildId = guild.id;
-  const lignes = computeTiers(guildId).map((t) => ({
+  return computeTiers(guildId).map((t) => ({
     cle: `t-${t.index}`,
     libelle: tierLabel(guildId, t),
     roleIds: t.roleIds.filter((id) => guild.roles.cache.has(id)),
   }));
-
-  // Un rôle exclusif avec une étiquette propre (posée par utils/rolePresets.js,
-  // ex. "Syndicat") a sa propre ligne — même regroupement que
-  // utils/permsCommands.js::buildTierCard, pour que le panel et &helpall se
-  // lisent pareil.
-  const parLabel = new Map();
-  for (const id of permStore.listExclusiveRoles(guildId)) {
-    if (!guild.roles.cache.has(id)) continue;
-    const label = permStore.getExclusiveLabel(guildId, id) || "__sans_label__";
-    if (!parLabel.has(label)) parLabel.set(label, []);
-    parLabel.get(label).push(id);
-  }
-  for (const [label, ids] of parLabel) {
-    lignes.push({
-      cle: `e-${label}`,
-      libelle: label === "__sans_label__" ? "Exclusives (hors hiérarchie)" : `${label} (hors hiérarchie)`,
-      roleIds: ids,
-    });
-  }
-  return lignes;
 }
 
 function tierManageOptions(guild) {
@@ -976,21 +912,6 @@ function accessRows(scope, label) {
 // Statistiques, et la détection de sécurité vit là où elle a toujours vécu —
 // utils/securityScan.js, exposée par Sécurité > Vue d'ensemble et par
 // `&security scan`, qui la donne en entier.
-
-/**
- * "🔎 Chercher une commande" (rubrique "Rôles et permissions") : trouve la
- * catégorie du CATALOGUE DE PERMISSIONS (utils/permissions/catalog.js) dont
- * une clé correspond au terme tapé — sur son libellé (qui cite déjà la
- * commande entre parenthèses, ex: "Bannir un membre (&ban)") ou sur la clé
- * elle-même. `null` si rien ne correspond.
- * @param {string} terme
- * @returns {string|null}
- */
-function trouverCategoriePourTerme(terme) {
-  const t = terme.toLowerCase();
-  const trouve = permCatalog.PERMISSIONS.find((p) => p.label.toLowerCase().includes(t) || p.key.toLowerCase().includes(t));
-  return trouve?.category || null;
-}
 
 /**
  * Ce qui est réellement DESSINÉ sur la rubrique `section` : la même donnée que
@@ -1148,14 +1069,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
-    const peutModifier = can(member, "panel.permissions.manage");
-    // Trois étapes (rôle → catégorie → clés) plutôt qu'un unique menu avec
-    // toutes les clés : Discord plafonne un menu à 25 options, et le
-    // catalogue (utils/permissions/catalog.js) a vocation à grandir —
-    // chaque catégorie reste largement sous la limite, indéfiniment.
-    // Le sélecteur de rôle DISPARAÎT une fois un rôle choisi : il ne sert
-    // plus à rien à ce moment-là et poussait les vrais réglages hors de
-    // l'écran. Pour en changer, l'action "Choisir un autre rôle" plus bas.
+    const peutModifier = peutGererNiveaux(member);
+    // Un seul sélecteur de rôle puis un seul sélecteur de NIVEAU (1-9) —
+    // remplace l'ancien parcours en 3 étapes (rôle → catégorie → clés) du
+    // système par clé. Le sélecteur de rôle DISPARAÎT une fois un rôle
+    // choisi : il ne sert plus à rien à ce moment-là. Pour en changer,
+    // l'action "Choisir un autre rôle" plus bas. Assigner un niveau est une
+    // action d'escalade potentielle, réservée au propriétaire du bot
+    // (peutGererNiveaux) — jamais déléguée au rang sys lui-même.
     const roleChoisi = state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId);
     if (!roleChoisi) {
       container.addActionRowComponents(
@@ -1164,7 +1085,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         )
       );
     }
-    if (peutModifier) {
+    if (can(member, "server.roles.manage")) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${ID}:rolecreate`).setLabel("Créer un rôle").setStyle(ButtonStyle.Success)
@@ -1172,18 +1093,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       );
     }
     if (state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
-      // Bascules encodées dans le customId lui-même (pas d'état côté
-      // serveur entre deux interactions) : le libellé/l'action reflètent ce
-      // que CE rendu affiche déjà, donc un clic fait toujours l'inverse.
-      const exclusif = permStore.isRoleExclusive(guild.id, state.permissionsRoleId);
-      // Les commandes débloquées sont maintenant TOUJOURS dans l'image : plus
-      // de bascule "Voir / Masquer". Ne reste que de quoi changer de rôle.
       const boutons = [
-        new ButtonBuilder()
-          .setCustomId(`${ID}:permrolereset`)
-          .setLabel("Choisir un autre rôle")
-          .setStyle(ButtonStyle.Secondary)
-          ,
+        new ButtonBuilder().setCustomId(`${ID}:permrolereset`).setLabel("Choisir un autre rôle").setStyle(ButtonStyle.Secondary),
       ];
       if (can(member, "server.members.list")) {
         boutons.push(
@@ -1198,85 +1109,34 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
                 .setStyle(ButtonStyle.Secondary)
         );
       }
-      if (peutModifier) {
+      if (can(member, "server.roles.manage")) {
         boutons.push(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:renamerole:${state.permissionsRoleId}`)
-            .setLabel("Renommer")
-            .setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`${ID}:renamerole:${state.permissionsRoleId}`).setLabel("Renommer").setStyle(ButtonStyle.Secondary)
         );
         boutons.push(
-          exclusif
-            ? new ButtonBuilder()
-                .setCustomId(`${ID}:roleexclusiveoff:${state.permissionsRoleId}`)
-                .setLabel("Retirer de l'exclusif")
-                .setStyle(ButtonStyle.Secondary)
-            : new ButtonBuilder()
-                .setCustomId(`${ID}:roleexclusive:${state.permissionsRoleId}`)
-                .setLabel("Ajouter à l'exclusif")
-                .setStyle(ButtonStyle.Secondary)
-        );
-        boutons.push(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`)
-            .setLabel("Supprimer ce rôle")
-            .setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId(`${ID}:roledelete:${state.permissionsRoleId}`).setLabel("Supprimer ce rôle").setStyle(ButtonStyle.Danger)
         );
       }
       container.addActionRowComponents(new ActionRowBuilder().addComponents(...boutons));
-    }
-    if (peutModifier && state.permissionsRoleId && guild.roles.cache.has(state.permissionsRoleId)) {
-      const categories = permCatalog.byCategory();
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:permcat:${state.permissionsRoleId}`)
-            .setPlaceholder("Choisir une catégorie de permissions")
-            .addOptions(
-              categories.map((c) =>
-                new StringSelectMenuOptionBuilder().setLabel(c.label).setValue(c.category).setDefault(state.permissionsCategory === c.category)
+
+      if (peutModifier) {
+        const niveauActuel = levelStore.getRoleLevel(guild.id, state.permissionsRoleId);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${ID}:permlevel:${state.permissionsRoleId}`)
+              .setPlaceholder("Choisir un niveau (1-9)")
+              .addOptions(
+                Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
+                  new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveauActuel)
+                )
               )
-            )
-        )
-      );
-      // Demande explicite : plutôt que de parcourir les catégories une par
-      // une pour trouver où vit une commande précise, taper son nom
-      // ("ban") ouvre directement la catégorie qui la contient (ici
-      // "Modération"), où "clear"/"kick"/... sont juste à côté.
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`${ID}:permsearchbtn:${state.permissionsRoleId}`)
-            .setLabel("🔎 Chercher une commande")
-            .setStyle(ButtonStyle.Secondary)
-        )
-      );
-      if (state.permissionsSearchError) {
-        container.addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(`> *Aucune commande ne correspond à "${state.permissionsSearchError}".*`)
+          )
         );
-      }
-      const activeCategory = categories.find((c) => c.category === state.permissionsCategory);
-      if (activeCategory) {
-        const granted = permStore.getRoleGrants(guild.id, state.permissionsRoleId);
-        const options = activeCategory.permissions
-          .filter((p) => p.roleGrantable !== false)
-          .map((p) =>
-            new StringSelectMenuOptionBuilder()
-              .setLabel(p.label.slice(0, 100))
-              .setDescription(p.key)
-              .setValue(p.key)
-              .setDefault(granted.includes(p.key))
-          );
-        if (options.length) {
+        if (niveauActuel) {
           container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`${ID}:permkeys:${state.permissionsRoleId}:${activeCategory.category}`)
-                .setPlaceholder(`Permissions "${activeCategory.label}" accordées à ce rôle`)
-                .setMinValues(0)
-                .setMaxValues(options.length)
-                .addOptions(options)
+              new ButtonBuilder().setCustomId(`${ID}:permlevelclear:${state.permissionsRoleId}`).setLabel("Retirer le niveau").setStyle(ButtonStyle.Danger)
             )
           );
         }
@@ -1405,26 +1265,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             new RoleSelectMenuBuilder().setCustomId(`${ID}:tieraddrole:${gere.key}`).setPlaceholder(`Ajouter un rôle à ${gere.label}`.slice(0, 150))
           )
         );
-        // Un palier n'a qu'un seul rôle la plupart du temps (voir
+        // Un niveau n'a qu'un seul rôle la plupart du temps (voir
         // utils/rolePresets.js) : pas besoin d'un sélecteur supplémentaire
         // dans ce cas, les boutons Renommer/Supprimer visent directement ce
-        // rôle-là. Avec plusieurs rôles sur le même palier, on en choisit un.
-        // Nommer le PALIER — distinct de « Renommer » plus bas, qui renomme un
-        // ROLE Discord. Un palier n'a pas de nom en propre par défaut : il est
-        // désigné par son numéro, qui ne dit pas à quoi il sert. Réservé aux
-        // paliers numérotés : un groupe hors hiérarchie porte déjà son
-        // étiquette (utils/permissions/store.js::exclusiveLabels).
-        if (gere.signature) {
-          const nomActuel = permStore.getTierName(guild.id, gere.signature);
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`${ID}:tiername:${gere.key}`)
-                .setLabel(nomActuel ? `Renommer le palier "${nomActuel}"`.slice(0, 80) : "Nommer ce palier")
-                .setStyle(ButtonStyle.Primary)
-            )
-          );
-        }
+        // rôle-là. Avec plusieurs rôles sur le même niveau, on en choisit un.
         const rolePreChoisi = state.tierManageRoleId && gere.roleIds.includes(state.tierManageRoleId) ? state.tierManageRoleId : null;
         if (gere.roleIds.length > 1 && !rolePreChoisi) {
           container.addActionRowComponents(
@@ -1451,30 +1295,24 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             )
           );
         }
-        // "Déplacer vers..." : équivalent d'un glisser-déposer d'un rôle d'un
-        // palier à l'autre — demande explicite, calquée sur le geste natif de
-        // réorganisation des salons. Change ses PERMISSIONS (mêmes clés que le
-        // palier cible), jamais le rôle Discord lui-même — donc réservée à
-        // panel.permissions.manage, comme "Ajouter un rôle", pas à
-        // server.roles.manage (qui protège renommer/supprimer le rôle).
-        // Les paliers NUMÉROTÉS uniquement : un groupe exclusif n'a pas de
-        // signature de clés à copier (voir findManagedTier).
-        if (roleActif) {
-          const autresPaliers = computeTiers(guild.id).filter((t) => !gere.signature || tierSignature(t.keys) !== gere.signature);
-          if (autresPaliers.length) {
-            container.addActionRowComponents(
-              new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                  .setCustomId(`${ID}:tiermove:${roleActif}`)
-                  .setPlaceholder("Déplacer ce rôle vers un autre palier")
-                  .addOptions(
-                    autresPaliers
-                      .slice(0, 25)
-                      .map((t) => new StringSelectMenuOptionBuilder().setLabel(tierLabel(guild.id, t).slice(0, 100)).setValue(`t-${t.index}`))
-                  )
-              )
-            );
+        // "Déplacer vers..." : change le NIVEAU de ce rôle — demande
+        // explicite, calquée sur le geste natif de réorganisation des
+        // salons. Action d'escalade potentielle, réservée au propriétaire du
+        // bot (peutGererNiveaux), pas à server.roles.manage (qui protège
+        // seulement renommer/supprimer le rôle Discord).
+        if (roleActif && peutGererNiveaux(member)) {
+          const autresNiveaux = [];
+          for (let n = LEVEL_MIN; n <= LEVEL_MAX; n++) {
+            if (n !== gere.niveau) autresNiveaux.push(n);
           }
+          container.addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`${ID}:tiermove:${roleActif}`)
+                .setPlaceholder("Déplacer ce rôle vers un autre niveau")
+                .addOptions(autresNiveaux.map((n) => new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n))))
+            )
+          );
         }
       }
     }
@@ -1895,6 +1733,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         { key: "denyUser", label: "Membres interdits" },
         { key: "allowChannel", label: "Salons autorisés" },
         { key: "denyChannel", label: "Salons interdits" },
+        { key: "cooldown", label: "Cooldown" },
       ];
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
@@ -1917,6 +1756,19 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmdallowchannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon autorisé")));
       } else if (aspect === "denyChannel") {
         container.addActionRowComponents(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId(`${ID}:cmddenychannel:${cmdName}`).setPlaceholder("Ajouter/retirer un salon interdit")));
+      } else if (aspect === "cooldown") {
+        const rule = commandRules.getRule(guild.id, cmdName);
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`${ID}:cmdcooldownbtn:${cmdName}`)
+              .setLabel(rule.cooldownSeconds ? `Cooldown : ${rule.cooldownSeconds}s — modifier` : "Définir un cooldown")
+              .setStyle(ButtonStyle.Secondary),
+            ...(rule.cooldownSeconds
+              ? [new ButtonBuilder().setCustomId(`${ID}:cmdcooldownclear:${cmdName}`).setLabel("Retirer le cooldown").setStyle(ButtonStyle.Danger)]
+              : [])
+          )
+        );
       }
     }
   }
@@ -2069,6 +1921,39 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("commands", { commandsSelected: extra, commandsAspect: "denyChannel" });
   }
 
+  if (action === "cmdcooldownbtn") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (interaction.isModalSubmit()) {
+      const texte = interaction.fields.getTextInputValue("secondes").trim();
+      const secondes = texte === "" ? 0 : parseInt(texte, 10);
+      if (Number.isNaN(secondes) || secondes < 0) {
+        return interaction.reply({ content: "Indique un nombre de secondes valide (0 ou vide pour retirer le cooldown).", flags: MessageFlags.Ephemeral });
+      }
+      commandRules.setCooldown(guildId, extra, secondes);
+      return goto("commands", { commandsSelected: extra, commandsAspect: "cooldown" });
+    }
+    const rule = commandRules.getRule(guildId, extra);
+    const modal = new ModalBuilder().setCustomId(`${ID}:cmdcooldownbtn:${extra}`).setTitle("Cooldown de la commande");
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("secondes")
+          .setLabel("Secondes entre deux usages par membre (0 = aucun)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(6)
+          .setRequired(false)
+          .setValue(rule.cooldownSeconds ? String(rule.cooldownSeconds) : "")
+      )
+    );
+    return interaction.showModal(modal);
+  }
+
+  if (action === "cmdcooldownclear") {
+    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    commandRules.setCooldown(guildId, extra, null);
+    return goto("commands", { commandsSelected: extra, commandsAspect: "cooldown" });
+  }
+
   if (action === "permrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     return goto("permissions", { permissionsRoleId: interaction.values[0] });
@@ -2110,47 +1995,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("roletiers", { tierManageKey: extra, tierManageRoleId: interaction.values[0] });
   }
 
-  // "Ajouter un rôle à ce palier" : copie les clés du palier (ou, pour un
-  // groupe exclusif, celles du premier rôle du groupe — voir
-  // findManagedTier) sur le rôle choisi. Il rejoint le palier au prochain
-  // calcul de computeTiers(), automatiquement (même mécanique qui regroupe
-  // déjà les rôles à ensemble de clés identique).
-  // Nommer un palier : une étiquette posée sur un groupe qui existe déjà,
-  // rattachée à la SIGNATURE de ses permissions et non à son numéro (voir
-  // utils/permissions/store.js::setTierName). Ne touche à aucune permission.
-  if (action === "tiername") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    const gere = findManagedTier(guild, extra);
-    // Le palier est désigné par son NUMÉRO dans le customId : entre
-    // l'affichage et le clic, une permission accordée ailleurs a pu décaler
-    // la numérotation. On le relit donc, et on refuse proprement s'il a
-    // disparu plutôt que de nommer le palier voisin.
-    if (!gere || !gere.signature) {
-      return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
-    }
-    if (interaction.isModalSubmit()) {
-      permStore.setTierName(guildId, gere.signature, interaction.fields.getTextInputValue("nom"));
-      // Pas de `tierManageRoleId` : `state` n'existe pas dans les
-      // gestionnaires (il est reconstruit à chaque `goto`). On revient donc
-      // sur le palier, sans rôle présélectionné — comme le fait déjà
-      // "tierselect".
-      return goto("roletiers", { tierManageKey: gere.key });
-    }
-    const modal = new ModalBuilder().setCustomId(`${ID}:tiername:${gere.key}`).setTitle("Nommer ce palier");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("nom")
-          .setLabel("Nom du palier (vide pour le retirer)")
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(permStore.NOM_PALIER_MAX)
-          .setRequired(false)
-          .setValue(permStore.getTierName(guildId, gere.signature) || "")
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
   // Bouton d'une LIGNE de la rubrique : met ce palier en gestion, ce qui fait
   // apparaître juste en dessous le sélecteur "Ajouter un rôle" et, si le
   // palier compte plusieurs rôles, celui qui choisit lequel viser.
@@ -2167,34 +2011,32 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("roletiers", { palierPage: Number(extra) || 0 });
   }
 
+  // "Ajouter un rôle à ce niveau" : assigne le NIVEAU du palier géré au rôle
+  // choisi. Action d'escalade potentielle, réservée au propriétaire du bot.
   if (action === "tieraddrole") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
     const gere = findManagedTier(guild, extra);
-    if (!gere) return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
+    if (!gere) return interaction.reply({ content: "Ce niveau n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
     const roleId = interaction.values[0];
-    permStore.setRoleGrants(guildId, roleId, gere.keys);
-    if (gere.exclusiveLabel) permStore.setRoleExclusive(guildId, roleId, true, gere.exclusiveLabel);
+    levelStore.setRoleLevel(guildId, roleId, gere.niveau);
     return goto("roletiers", { tierManageKey: gere.key, tierManageRoleId: roleId });
   }
 
-  // "Déplacer vers un autre palier" : même mécanique que "tieraddrole" (copie
-  // les clés du palier CIBLE sur le rôle), mais lancée depuis le rôle plutôt
-  // que depuis le palier — le rôle quitte son palier d'origine du même coup,
-  // puisqu'un palier n'est qu'un regroupement par ensemble de clés identique
-  // (voir utils/permsCommands.js::computeTiers). extra = l'ID du rôle déplacé,
-  // interaction.values[0] = "t-<numéro>" du palier cible choisi dans le menu.
+  // "Déplacer vers un autre niveau" : change le niveau de ce rôle, lancée
+  // depuis le rôle plutôt que depuis le niveau — extra = l'ID du rôle déplacé,
+  // interaction.values[0] = le niveau cible choisi dans le menu.
   if (action === "tiermove") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
     const roleId = extra;
     if (!guild.roles.cache.has(roleId)) {
       return interaction.reply({ content: "Ce rôle n'existe plus.", flags: MessageFlags.Ephemeral });
     }
-    const cible = findManagedTier(guild, interaction.values[0]);
-    if (!cible) {
-      return interaction.reply({ content: "Ce palier n'existe plus — reviens à la liste et choisis-en un autre.", flags: MessageFlags.Ephemeral });
+    const niveauCible = parseInt(interaction.values[0], 10);
+    if (!Number.isInteger(niveauCible) || niveauCible < LEVEL_MIN || niveauCible > LEVEL_MAX) {
+      return interaction.reply({ content: "Niveau invalide.", flags: MessageFlags.Ephemeral });
     }
-    permStore.setRoleGrants(guildId, roleId, cible.keys);
-    return goto("roletiers", { tierManageKey: cible.key, tierManageRoleId: roleId });
+    levelStore.setRoleLevel(guildId, roleId, niveauCible);
+    return goto("roletiers", { tierManageKey: `t-${niveauCible}`, tierManageRoleId: roleId });
   }
 
   // Provisionnement en masse (utils/rolePresets.js) — voir le sélecteur dans
@@ -2384,77 +2226,19 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return;
   }
 
-  // "Exclusif" : simple étiquette côté panel, aucun effet sur le calcul des
-  // permissions (voir utils/permissions/store.js).
-  if (action === "roleexclusive" || action === "roleexclusiveoff") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    permStore.setRoleExclusive(guildId, extra, action === "roleexclusive");
+  // Assigner/retirer un NIVEAU (1-9) à un rôle — remplace l'ancien parcours
+  // catégorie/clés. Action d'escalade potentielle, réservée au propriétaire
+  // du bot (peutGererNiveaux) — jamais déléguée au rang sys lui-même.
+  if (action === "permlevel") {
+    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+    levelStore.setRoleLevel(guildId, extra, parseInt(interaction.values[0], 10));
     return goto("permissions", { permissionsRoleId: extra });
   }
 
-  if (action === "permcat") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permissionsRoleId: extra, permissionsCategory: interaction.values[0] });
-  }
-
-  // "🔎 Chercher une commande" : taper "ban" ouvre directement la catégorie
-  // "Modération" (où vit &ban) — même résultat que choisir la catégorie à la
-  // main dans le menu déroulant juste au-dessus, en évitant de devoir savoir
-  // dans laquelle des 7 catégories une commande précise se trouve.
-  if (action === "permsearchbtn") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    if (interaction.isModalSubmit()) {
-      const terme = interaction.fields.getTextInputValue("terme").trim();
-      const categorie = terme ? trouverCategoriePourTerme(terme) : null;
-      return goto("permissions", {
-        permissionsRoleId: extra,
-        permissionsCategory: categorie || undefined,
-        permissionsSearchError: categorie ? null : terme,
-      });
-    }
-    const modal = new ModalBuilder().setCustomId(`${ID}:permsearchbtn:${extra}`).setTitle("Chercher une commande");
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("terme").setLabel("Nom de la commande").setPlaceholder("ex: ban").setStyle(TextInputStyle.Short).setMaxLength(50).setRequired(true)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
-  if (action === "permkeys") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    // extra = roleId, extra2 = catégorie affichée dans ce menu : on ne
-    // remplace que les clés DE CETTE catégorie, les autres catégories
-    // déjà accordées à ce rôle restent intactes.
-    const categoryKeys = new Set(
-      permCatalog
-        .byCategory()
-        .find((c) => c.category === extra2)
-        ?.permissions.map((p) => p.key) || []
-    );
-    // Les clés "ownerOnlyGrant" (ex. panel.permissions.manage) ne peuvent
-    // être accordées QUE par le propriétaire du bot — un rang sys qui coche
-    // cette case voit son choix ignoré pour cette clé précise, le reste de
-    // la catégorie s'applique normalement (voir utils/permissions/engine.js
-    // ::peutAccorder). Silencieux plutôt qu'un refus bloquant : cocher 5
-    // permissions dont une seule est protégée ne doit pas faire échouer les
-    // 4 autres.
-    const cochees = interaction.values.filter((k) => peutAccorder(member, k));
-    const refusees = interaction.values.length - cochees.length;
-    const current = permStore.getRoleGrants(guildId, extra).filter((k) => !categoryKeys.has(k));
-    permStore.setRoleGrants(guildId, extra, [...current, ...cochees]);
-    if (refusees > 0) {
-      // Bannière au-dessus du panel plutôt qu'une seconde réponse à
-      // l'interaction : interaction.update() (dans goto) EST déjà la réponse
-      // initiale, un interaction.reply() séparé échouerait dessus.
-      return interaction.update(
-        banniereSurPanel(
-          buildConfigPanel(guild, "permissions", member, { permissionsRoleId: extra, permissionsCategory: extra2 }),
-          "⚠️ Certaines permissions cochées sont réservées au propriétaire du bot — les autres ont bien été appliquées."
-        )
-      );
-    }
-    return goto("permissions", { permissionsRoleId: extra, permissionsCategory: extra2 });
+  if (action === "permlevelclear") {
+    if (!peutGererNiveaux(member)) return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+    levelStore.setRoleLevel(guildId, extra, null);
+    return goto("permissions", { permissionsRoleId: extra });
   }
 
   // "roleinfo" et "jumpperm" appartenaient à la rubrique "Rôles", fusionnée

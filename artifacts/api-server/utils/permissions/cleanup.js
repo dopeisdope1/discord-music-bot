@@ -1,5 +1,5 @@
 const accessStore = require("../accessStore");
-const permStore = require("./store");
+const levelStore = require("./levelStore");
 
 // Portées globales concernées par le nettoyage (voir utils/accessStore.js).
 // "owner" est volontairement absent : c'est une variable d'environnement,
@@ -27,7 +27,7 @@ function revokeIfGone(client, guildId, userId) {
   if (isStillReachable(client, userId)) return [];
 
   const changes = [];
-  if (permStore.clearUserGrants(guildId, userId)) changes.push("octrois individuels retirés");
+  if (levelStore.clearUser(guildId, userId)) changes.push("niveau individuel retiré");
   for (const scope of GLOBAL_SCOPES) {
     if (accessStore.remove(scope, userId)) changes.push(`portée "${scope}" retirée`);
   }
@@ -45,7 +45,7 @@ function revokeIfGone(client, guildId, userId) {
  */
 function sweepGuild(client, guild) {
   const candidates = new Set([
-    ...permStore.listUserGrants(guild.id).map(([id]) => id),
+    ...levelStore.listUserLevels(guild.id).map(([id]) => id),
     ...GLOBAL_SCOPES.flatMap((scope) => accessStore.list(scope)),
   ]);
 
@@ -58,31 +58,23 @@ function sweepGuild(client, guild) {
 }
 
 /**
- * Retire les octrois (et l'étiquette "exclusif") des rôles qui n'existent
- * plus sur le serveur — un rôle supprimé (à la main, ou via &role delete /
- * le provisionnement en masse de utils/rolePresets.js) laisse sinon sa
- * clé traîner indéfiniment dans permissions.json. Sans effet visible sur
- * les permissions elles-mêmes (un rôle inexistant n'en accorde déjà plus
- * aucune, voir utils/permissions/engine.js::can qui lit member.roles.cache),
- * mais ces entrées mortes polluent &perms/&helpall/la rubrique "Rôles
- * (paliers)" : elles y apparaissent comme un palier fantôme, avec une
- * mention de rôle qui ne résout plus rien, et faussent la numérotation des
- * VRAIS paliers (triée par nombre de clés).
+ * Retire le niveau assigné aux rôles qui n'existent plus sur le serveur — un
+ * rôle supprimé (à la main, ou via &role delete / le provisionnement en
+ * masse de utils/rolePresets.js) laisse sinon son niveau traîner
+ * indéfiniment dans permissionLevels.json. Sans effet visible sur les
+ * permissions elles-mêmes (un rôle inexistant n'en accorde déjà plus aucune,
+ * voir utils/permissions/engine.js::levelOf qui lit member.roles.cache),
+ * mais ces entrées mortes polluent la rubrique "Niveaux" du panel.
  * @param {import('discord.js').Guild} guild
- * @returns {string[]} IDs des rôles dont l'entrée a été retirée
+ * @returns {string[]} IDs des rôles dont le niveau a été retiré
  */
 function pruneDeletedRoles(guild) {
   const vivants = guild.roles.cache;
   const removed = [];
-  for (const [roleId] of permStore.listRoleGrants(guild.id)) {
+  for (const [roleId] of levelStore.listRoleLevels(guild.id)) {
     if (vivants.has(roleId)) continue;
-    permStore.setRoleGrants(guild.id, roleId, []);
+    levelStore.setRoleLevel(guild.id, roleId, null);
     removed.push(roleId);
-  }
-  for (const roleId of permStore.listExclusiveRoles(guild.id)) {
-    if (vivants.has(roleId)) continue;
-    permStore.setRoleExclusive(guild.id, roleId, false);
-    if (!removed.includes(roleId)) removed.push(roleId);
   }
   return removed;
 }

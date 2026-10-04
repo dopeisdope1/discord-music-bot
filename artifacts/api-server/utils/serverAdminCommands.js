@@ -23,9 +23,9 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { iconDe } = require("./emojiSlots");
 const { carteConfirmationFichier } = require("./actionCard");
 const { THEME_BLEU } = require("./dashboardImage");
-const { can, peutAccorder } = require("./permissions/engine");
-const permStore = require("./permissions/store");
-const permCatalog = require("./permissions/catalog");
+const { can, peutGererNiveaux } = require("./permissions/engine");
+const levelStore = require("./permissions/levelStore");
+const { LEVEL_MIN, LEVEL_MAX } = require("./permissions/levelCatalog");
 const accessStore = require("./accessStore");
 const deroStore = require("./deroStore");
 const { checkBotPermission, report } = require("./moderation/actions");
@@ -119,61 +119,37 @@ async function sysRemove(client, message, args) {
 }
 
 /**
- * Carte "&access <@membre>" — octroi de permissions INDIVIDUELLES à UN
- * membre précis (utils/permissions/store.js::grantToUser/revokeFromUser),
- * même catalogue que &panel > Rôles et permissions (utils/permissions/
- * catalog.js) mais côté MEMBRE plutôt que côté rôle. Choisir une catégorie
- * révèle ses clés ; en choisir une la bascule tout de suite (accordée <->
- * retirée) — un seul aller-retour, pas de brouillon à confirmer.
+ * Carte "&access <@membre>" — assigne un NIVEAU individuel (1-9,
+ * utils/permissions/levelStore.js) à UN membre précis — remplace l'ancien
+ * octroi catégorie/clé par clé : un membre a désormais UN niveau, pas une
+ * collection de clés cochées une à une.
  */
-function buildAccessCard(guildId, memberId, memberTag, category = null) {
-  const granted = permStore.getUserGrants(guildId, memberId);
-  const groupes = permCatalog
-    .byCategory()
-    .map((g) => {
-      const accordees = g.permissions.filter((p) => granted.includes(p.key));
-      return accordees.length ? `**${g.label}** : ${accordees.map((p) => `\`${p.key}\``).join(", ")}` : null;
-    })
-    .filter(Boolean);
-
+function buildAccessCard(guildId, memberId, memberTag) {
+  const niveau = levelStore.getUserLevel(guildId, memberId);
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Accès de ${memberTag}`));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `**${granted.length}** permission(s) individuelle(s) accordée(s)\n${groupes.length ? groupes.join("\n") : "*Aucune.*"}`
-    )
+    new TextDisplayBuilder().setContent(niveau ? `**Niveau individuel** : ${niveau}/9` : "*Aucun niveau individuel assigné.*")
   );
 
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`srv:accesscat:${memberId}`)
-        .setPlaceholder("Choisir une catégorie")
+        .setCustomId(`srv:accesslevel:${memberId}`)
+        .setPlaceholder("Choisir un niveau (1-9)")
         .addOptions(
-          permCatalog
-            .byCategory()
-            .map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
+          Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
+            new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveau)
+          )
         )
     )
   );
-
-  const groupeOuvert = category && permCatalog.byCategory().find((g) => g.category === category);
-  if (groupeOuvert) {
+  if (niveau) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`srv:accesskey:${memberId}:${category}`)
-          .setPlaceholder(`Activer/désactiver — ${groupeOuvert.label}`)
-          .addOptions(
-            groupeOuvert.permissions.slice(0, 25).map((p) =>
-              new StringSelectMenuOptionBuilder()
-                .setLabel(p.label.slice(0, 100))
-                .setValue(p.key)
-                .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
-            )
-          )
+        new ButtonBuilder().setCustomId(`srv:accessclear:${memberId}`).setLabel("Retirer le niveau").setStyle(ButtonStyle.Danger)
       )
     );
   }
@@ -183,42 +159,14 @@ function buildAccessCard(guildId, memberId, memberTag, category = null) {
 
 /**
  * Carte de "=add"/"!!owner" — présentation demandée explicitement
- * (titre "Owner", "Utilisateur"/"Statut"/"Consulté par" en évidence, liste
- * numérotée des accès, coche/croix verte-rouge par clé dans le menu ouvert,
- * comme la capture d'un autre bot). `derniereCle` fait porter la coche
- * bleue native de Discord (option sélectionnée par défaut) sur la clé qui
- * vient d'être basculée — l'équivalent exact du "pvclear" mis en évidence
- * sur la capture, sans rien dessiner nous-mêmes. `categoriesAutorisees`
- * (tableau de clés de catégorie, ex. ["moderation","channels"]) restreint le
- * résumé ET le sélecteur de catégories à CES catégories du VRAI catalogue —
- * c'est ce qui distingue "=add" (tout le catalogue vocal),
- * "&owner" (legacy modération : moderation/channels/members/logs) et
- * "!!owner" (sécurité : protection)
- * sans dupliquer la moindre logique de rendu. Même mécanisme de fond que
- * buildAccessCard (mêmes permStore/permCatalog, catégorie -> clé) : "Statut"
- * reflète l'état RÉEL d'accès individuel de ce membre — jamais le mot
- * "Owner" tel quel, qui désignerait à tort le VRAI rang propriétaire du bot
- * (utils/accessStore.js), refusé plus haut avant l'appel. Les 9 libellés de
- * la capture qui a inspiré cette carte (wakeup, dog, pvlist...) n'existent
- * pas sur ce bot : le VRAI catalogue de permissions sert de base, jamais un
- * accès inventé — demande explicite.
+ * (titre "Owner", "Utilisateur"/"Statut"/"Consulté par" en évidence), adaptée
+ * au système à niveaux : "Statut" reflète le NIVEAU individuel réel de ce
+ * membre — jamais le mot "Owner" tel quel, qui désignerait à tort le VRAI
+ * rang propriétaire du bot (utils/accessStore.js), refusé plus haut avant
+ * l'appel.
  */
-function buildOwnerAccessCard(
-  guildId,
-  memberId,
-  memberTag,
-  consultePar,
-  category = null,
-  derniereCle = null,
-  categoriesAutorisees = null,
-  variante = "owner"
-) {
-  const granted = permStore.getUserGrants(guildId, memberId);
-  const groupes = categoriesAutorisees
-    ? permCatalog.byCategory().filter((g) => categoriesAutorisees.includes(g.category))
-    : permCatalog.byCategory();
-  const clesAutorisees = groupes.flatMap((g) => g.permissions.map((p) => p.key));
-  const grantedFiltre = categoriesAutorisees ? granted.filter((key) => clesAutorisees.includes(key)) : granted;
+function buildOwnerAccessCard(guildId, memberId, memberTag, consultePar, variante = "owner") {
+  const niveau = levelStore.getUserLevel(guildId, memberId);
 
   const container = new ContainerBuilder();
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent("## Owner"));
@@ -227,21 +175,8 @@ function buildOwnerAccessCard(
     new TextDisplayBuilder().setContent(
       [
         `**Utilisateur** — <@${memberId}>`,
-        `**Statut** — ${grantedFiltre.length ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS")} ${grantedFiltre.length ? "Accès individuel actif" : "Aucun accès individuel"}`,
+        `**Statut** — ${niveau ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS")} ${niveau ? `Niveau ${niveau}/9` : "Aucun niveau individuel"}`,
         `**Consulté par** — ${consultePar}`,
-      ].join("\n")
-    )
-  );
-
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      [
-        `**Accès attribués — ${grantedFiltre.length}**`,
-        "",
-        grantedFiltre.length
-          ? grantedFiltre.map((key, i) => `\`${String(i + 1).padStart(2, "0")}\` — ${permCatalog.label(key)}`).join("\n")
-          : "*Aucun accès individuel pour l'instant.*",
       ].join("\n")
     )
   );
@@ -250,51 +185,29 @@ function buildOwnerAccessCard(
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`srv:${variante}cat:${memberId}`)
-        .setPlaceholder("Choisir une catégorie")
+        .setCustomId(`srv:${variante}level:${memberId}`)
+        .setPlaceholder("Choisir un niveau (1-9)")
         .addOptions(
-          groupes.map((g) => new StringSelectMenuOptionBuilder().setLabel(g.label).setValue(g.category).setDefault(g.category === category))
+          Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
+            new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveau)
+          )
         )
     )
   );
-
-  const groupeOuvert = category && groupes.find((g) => g.category === category);
-  if (groupeOuvert) {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`srv:${variante}key:${memberId}:${category}`)
-          .setPlaceholder(`Ajouter ou retirer un accès — ${groupeOuvert.label}`)
-          .addOptions(
-            groupeOuvert.permissions.slice(0, 25).map((p) =>
-              new StringSelectMenuOptionBuilder()
-                .setLabel(p.label.slice(0, 100))
-                .setValue(p.key)
-                .setEmoji(granted.includes(p.key) ? iconDe(guildId, "CHECK") : iconDe(guildId, "CROSS"))
-                .setDescription(granted.includes(p.key) ? "Actuellement accordée" : "Actuellement non accordée")
-                .setDefault(p.key === derniereCle)
-            )
-          )
-      )
-    );
-  }
 
   return { flags: MessageFlags.IsComponentsV2, components: [container] };
 }
 
 /**
- * &access <@membre|id> — ouvre le panneau d'octroi de permissions
- * individuelles pour CE membre. `label` ne sert qu'au message d'erreur :
- * "&owner"/"!!owner" (préfixes séparés, voir les handlers dédiés
- * ci-dessous) délèguent ici mais doivent rappeler LEUR propre syntaxe ;
- * `ownerStyle` fait poster la carte "Owner" (buildOwnerAccessCard) au lieu
- * de la carte générique — même mécanisme de fond, présentation différente ;
- * `categoriesAutorisees`, transmis tel quel à buildOwnerAccessCard,
- * restreint quelles catégories du catalogue "&owner"/"!!owner" peuvent voir
- * et modifier (jamais utilisé par "&access", qui garde le catalogue complet).
+ * &access <@membre|id> — ouvre le panneau d'assignation de niveau pour CE
+ * membre. `label` ne sert qu'au message d'erreur : "&owner"/"!!owner"
+ * (préfixes séparés, voir les handlers dédiés ci-dessous) délèguent ici mais
+ * doivent rappeler LEUR propre syntaxe ; `ownerStyle` fait poster la carte
+ * "Owner" (buildOwnerAccessCard) au lieu de la carte générique — même
+ * mécanisme de fond, présentation différente.
  */
-async function access(client, message, args, label = "access", ownerStyle = false, categoriesAutorisees = null, variante = "owner") {
-  if (!can(message.member, "panel.permissions.manage")) return;
+async function access(client, message, args, label = "access", ownerStyle = false, variante = "owner") {
+  if (!peutGererNiveaux(message.member)) return;
 
   const mentionMatch = args[0]?.match(/^<@!?(\d{15,25})>$/);
   const idMatch = args[0]?.match(/^\d{15,25}$/);
@@ -309,25 +222,19 @@ async function access(client, message, args, label = "access", ownerStyle = fals
   }
 
   if (ownerStyle) {
-    return message.reply(
-      buildOwnerAccessCard(message.guild.id, target.id, target.user.tag, message.author.tag, null, null, categoriesAutorisees, variante)
-    );
+    return message.reply(buildOwnerAccessCard(message.guild.id, target.id, target.user.tag, message.author.tag, variante));
   }
   await message.reply(buildAccessCard(message.guild.id, target.id, target.user.tag));
 }
 
-const CATEGORIES_OWNER_MODERATION = ["moderation", "channels", "members", "logs"];
-
 /**
- * Legacy helper "&owner <@membre|id>" — carte "Owner" filtrée aux catégories
- * de MODÉRATION du VRAI catalogue (moderation/channels/members/logs) : jamais
- * les permissions sécurité/serveur/panel qui n'ont rien à faire ici.
- * La commande publique `&owner` reste réservée par le routeur à la famille
- * gestion ; ce helper reste exporté pour les anciennes interactions internes
- * et la compatibilité du catalogue de permissions.
+ * Legacy helper "&owner <@membre|id>" — carte "Owner" adaptée au système à
+ * niveaux. La commande publique `&owner` reste réservée par le routeur à la
+ * famille gestion ; ce helper reste exporté pour les anciennes interactions
+ * internes.
  */
 async function ownerModeration(client, message, args) {
-  return access(client, message, args, "owner", true, CATEGORIES_OWNER_MODERATION, "modowner");
+  return access(client, message, args, "owner", true, "modowner");
 }
 
 /**
@@ -357,79 +264,41 @@ async function handleServerAdminInteraction(interaction) {
   }
 
   // Panneau "&access <@membre>" (voir buildAccessCard) — `idKind` porte ici
-  // l'identifiant du MEMBRE ciblé, pas le nom d'une liste.
-  if (action === "accesscat" || action === "accesskey") {
-    if (!can(interaction.member, "panel.permissions.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+  // l'identifiant du MEMBRE ciblé, pas le nom d'une liste. Assigner/retirer
+  // un niveau est une action d'escalade potentielle : réservée au
+  // propriétaire du bot (voir peutGererNiveaux), jamais déléguée au rang sys.
+  if (action === "accesslevel" || action === "accessclear") {
+    if (!peutGererNiveaux(interaction.member)) {
+      return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
     }
     const memberId = idKind;
     const target = await interaction.guild.members.fetch(memberId).catch(() => null);
     const tag = target?.user?.tag || `<@${memberId}>`;
 
-    if (action === "accesscat") {
-      return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, interaction.values[0]));
-    }
-
-    // action === "accesskey" : `extra` porte la catégorie ouverte, la valeur choisie est la clé à basculer.
-    const category = extra;
-    const key = interaction.values[0];
-    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
-    if (granted.includes(key)) {
-      permStore.revokeFromUser(interaction.guild.id, memberId, key);
-    } else if (peutAccorder(interaction.member, key)) {
-      // ownerOnlyGrant (ex. panel.permissions.manage) : seul le propriétaire
-      // peut l'ACCORDER — voir utils/permissions/engine.js::peutAccorder.
-      // La révoquer reste toujours permis à quiconque a déjà accès à cette
-      // carte, ci-dessus.
-      permStore.grantToUser(interaction.guild.id, memberId, key);
+    if (action === "accesslevel") {
+      levelStore.setUserLevel(interaction.guild.id, memberId, parseInt(interaction.values[0], 10));
     } else {
-      return interaction.reply({ content: "Cette permission est réservée au propriétaire du bot.", flags: MessageFlags.Ephemeral });
+      levelStore.setUserLevel(interaction.guild.id, memberId, null);
     }
-    return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag, category));
+    return interaction.update(buildAccessCard(interaction.guild.id, memberId, tag));
   }
 
   // Panneau "Owner" (voir buildOwnerAccessCard) — 2 variantes du MÊME
-  // mécanisme sur 2 paires de customId distinctes, chacune avec son propre
-  // filtre de catégories réelles : "ownercat"/"ownerkey" = catalogue complet,
-  // "modownercat"/"modownerkey" = legacy "&owner" (modération). Chacune doit
-  // garder SON filtre au clic suivant, d'où la variante encodée dans le
-  // customId lui-même plutôt que dans un état à part. "Consulté par" reflète
-  // TOUJOURS qui clique maintenant, pas qui a tapé la commande au départ —
-  // aucun état à porter dans le customId pour ça.
-  const VARIANTES_OWNER = {
-    ownercat: { variante: "owner", categories: null },
-    ownerkey: { variante: "owner", categories: null },
-    modownercat: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
-    modownerkey: { variante: "modowner", categories: CATEGORIES_OWNER_MODERATION },
-  };
+  // mécanisme sur 2 customId distincts : "ownerlevel" = catalogue complet,
+  // "modownerlevel" = legacy "&owner" (modération). "Consulté par" reflète
+  // TOUJOURS qui clique maintenant, pas qui a tapé la commande au départ.
+  const VARIANTES_OWNER = { ownerlevel: "owner", modownerlevel: "modowner" };
   if (VARIANTES_OWNER[action]) {
-    if (!can(interaction.member, "panel.permissions.manage")) {
-      return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+    if (!peutGererNiveaux(interaction.member)) {
+      return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
     }
-    const { variante, categories } = VARIANTES_OWNER[action];
+    const variante = VARIANTES_OWNER[action];
     const memberId = idKind;
     const target = await interaction.guild.members.fetch(memberId).catch(() => null);
     const tag = target?.user?.tag || `<@${memberId}>`;
 
-    if (action.endsWith("cat")) {
-      return interaction.update(
-        buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, interaction.values[0], null, categories, variante)
-      );
-    }
-
-    const category = extra;
-    const key = interaction.values[0];
-    const granted = permStore.getUserGrants(interaction.guild.id, memberId);
-    if (granted.includes(key)) {
-      permStore.revokeFromUser(interaction.guild.id, memberId, key);
-    } else if (peutAccorder(interaction.member, key)) {
-      permStore.grantToUser(interaction.guild.id, memberId, key);
-    } else {
-      return interaction.reply({ content: "Cette permission est réservée au propriétaire du bot.", flags: MessageFlags.Ephemeral });
-    }
-    return interaction.update(
-      buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, category, key, categories, variante)
-    );
+    levelStore.setUserLevel(interaction.guild.id, memberId, parseInt(interaction.values[0], 10));
+    return interaction.update(buildOwnerAccessCard(interaction.guild.id, memberId, tag, interaction.user.tag, variante));
   }
 
   const LISTS = {

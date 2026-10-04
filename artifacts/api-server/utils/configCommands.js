@@ -1,8 +1,8 @@
 const { buildStatusEmbed } = require("./statusEmbed");
-const { can } = require("./permissions/engine");
+const { can, peutGererNiveaux } = require("./permissions/engine");
 const { getPrefixes, setPrefix, prefixConflicts, prefixConflictMessage } = require("./prefixStore");
-const permStore = require("./permissions/store");
-const permCatalog = require("./permissions/catalog");
+const levelStore = require("./permissions/levelStore");
+const { LEVEL_MIN, LEVEL_MAX } = require("./permissions/levelCatalog");
 const welcomeStore = require("./welcomeStore");
 const leaveStore = require("./leaveStore");
 const ticketStore = require("./ticketStore");
@@ -32,12 +32,10 @@ const PREFIX_HELP_COMMANDS = {
   musicMod: "help",
 };
 
-/** Clé de permission visée, tolérante à la casse et aux espaces parasites. */
-function resolvePermissionKey(raw) {
-  const cherche = (raw || "").trim().toLowerCase();
-  if (!cherche) return null;
-  const toutes = permCatalog.byCategory().flatMap((g) => g.permissions);
-  return toutes.find((p) => p.key.toLowerCase() === cherche)?.key || null;
+/** Niveau (1-9) valide, ou null si l'argument n'en est pas un. */
+function resolveLevel(raw) {
+  const n = parseInt((raw || "").trim(), 10);
+  return Number.isInteger(n) && n >= LEVEL_MIN && n <= LEVEL_MAX ? n : null;
 }
 
 const handlers = {
@@ -83,76 +81,54 @@ const handlers = {
   },
 
   /**
-   * &set perm <clé> <@rôle|@membre> — accorde une permission.
-   * Le panel fait la même chose en trois menus ; ici c'est en une ligne.
+   * &set perm <niveau 1-9> <@rôle|@membre> — assigne un niveau. Réservé au
+   * propriétaire du bot (voir utils/permissions/engine.js::peutGererNiveaux) :
+   * attribuer un niveau est une action d'escalade potentielle, jamais
+   * délégable au rang sys lui-même.
    */
   async setPerm(client, message, args) {
-    if (!can(message.member, "panel.permissions.manage")) return;
+    if (!peutGererNiveaux(message.member)) return;
 
-    const key = resolvePermissionKey(args[0]);
-    if (!key) {
-      const clés = permCatalog.byCategory().map((g) => `> **${g.label}** : ${g.permissions.map((p) => `\`${p.key}\``).join(", ")}`);
-      return reply(message, "error", ["Clé de permission inconnue. Clés disponibles :", ...clés].join("\n").slice(0, 3800));
+    const level = resolveLevel(args[0]);
+    if (!level) {
+      return reply(message, "error", `Indique un niveau entre ${LEVEL_MIN} et ${LEVEL_MAX} : \`set perm 5 @rôle\`.`);
     }
 
     const role = message.mentions.roles?.first();
     const membre = message.mentions.users?.first();
-    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre : `set perm channels.lock @rôle`.");
+    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre : `set perm 5 @rôle`.");
 
     if (role) {
-      const actuelles = permStore.getRoleGrants(message.guild.id, role.id);
-      if (actuelles.includes(key)) return reply(message, "info", `${role} a déjà \`${key}\`.`);
-      permStore.setRoleGrants(message.guild.id, role.id, [...actuelles, key]);
-      return reply(message, "success", `\`${key}\` accordée à ${role}.`);
+      levelStore.setRoleLevel(message.guild.id, role.id, level);
+      return reply(message, "success", `${role} réglé au niveau **${level}**.`);
     }
 
-    const ajoute = permStore.grantToUser(message.guild.id, membre.id, key);
-    return reply(message, ajoute ? "success" : "info", ajoute ? `\`${key}\` accordée à <@${membre.id}>.` : `<@${membre.id}> a déjà \`${key}\`.`);
+    levelStore.setUserLevel(message.guild.id, membre.id, level);
+    return reply(message, "success", `<@${membre.id}> réglé au niveau **${level}**.`);
   },
 
-  /** &del perm <clé> <@rôle|@membre> — retire une permission. */
+  /** &del perm <@rôle|@membre> — retire le niveau assigné. */
   async delPerm(client, message, args) {
-    if (!can(message.member, "panel.permissions.manage")) return;
-
-    const key = resolvePermissionKey(args[0]);
-    if (!key) return reply(message, "error", "Indique la clé à retirer : `del perm channels.lock @rôle`.");
+    if (!peutGererNiveaux(message.member)) return;
 
     const role = message.mentions.roles?.first();
     const membre = message.mentions.users?.first();
-    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre.");
+    if (!role && !membre) return reply(message, "error", "Indique un rôle ou un membre : `del perm @rôle`.");
 
     if (role) {
-      const actuelles = permStore.getRoleGrants(message.guild.id, role.id);
-      if (!actuelles.includes(key)) return reply(message, "info", `${role} n'a pas \`${key}\`.`);
-      permStore.setRoleGrants(
-        message.guild.id,
-        role.id,
-        actuelles.filter((k) => k !== key)
-      );
-      return reply(message, "success", `\`${key}\` retirée à ${role}.`);
+      const avait = levelStore.getRoleLevel(message.guild.id, role.id) != null;
+      levelStore.setRoleLevel(message.guild.id, role.id, null);
+      return reply(message, avait ? "success" : "info", avait ? `Niveau retiré à ${role}.` : `${role} n'avait aucun niveau assigné.`);
     }
 
-    const retire = permStore.revokeFromUser(message.guild.id, membre.id, key);
-    return reply(message, retire ? "success" : "info", retire ? `\`${key}\` retirée à <@${membre.id}>.` : `<@${membre.id}> n'avait pas \`${key}\`.`);
+    const avait = levelStore.getUserLevel(message.guild.id, membre.id) != null;
+    levelStore.setUserLevel(message.guild.id, membre.id, null);
+    return reply(message, avait ? "success" : "info", avait ? `Niveau retiré à <@${membre.id}>.` : `<@${membre.id}> n'avait aucun niveau assigné.`);
   },
 
-  /** &clear perms <@rôle|@membre> — retire TOUTES les permissions accordées. */
-  async clearPerms(client, message) {
-    if (!can(message.member, "panel.permissions.manage")) return;
-
-    const role = message.mentions.roles?.first();
-    const membre = message.mentions.users?.first();
-    if (!role && !membre) return reply(message, "error", "Indique le rôle ou le membre à vider : `clear perms @rôle`.");
-
-    if (role) {
-      const combien = permStore.getRoleGrants(message.guild.id, role.id).length;
-      if (!combien) return reply(message, "info", `${role} n'avait aucune permission accordée.`);
-      permStore.setRoleGrants(message.guild.id, role.id, []);
-      return reply(message, "success", `${combien} permission(s) retirée(s) à ${role}.`);
-    }
-
-    const vide = permStore.clearUserGrants(message.guild.id, membre.id);
-    return reply(message, vide ? "success" : "info", vide ? `Permissions individuelles de <@${membre.id}> retirées.` : `<@${membre.id}> n'en avait aucune.`);
+  /** &clear perms <@rôle|@membre> — retire le niveau assigné (alias de &del perm). */
+  async clearPerms(client, message, args) {
+    return handlers.delPerm(client, message, args);
   },
 
   /** &join settings — réglages d'arrivée (rubrique Bienvenue). */
@@ -227,4 +203,4 @@ const handlers = {
   },
 };
 
-module.exports = { configHandlers: handlers, resolvePermissionKey };
+module.exports = { configHandlers: handlers, resolveLevel };

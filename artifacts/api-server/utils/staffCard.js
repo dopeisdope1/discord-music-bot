@@ -10,7 +10,8 @@ const {
 } = require("discord.js");
 const accessStore = require("./accessStore");
 const rankLadder = require("./rankLadderCommands");
-const permStore = require("./permissions/store");
+const { levelOf } = require("./permissions/engine");
+const { keysForLevel } = require("./permissions/levelCatalog");
 const { commandesParPrefixe } = require("./permsCommands");
 const messageOwner = require("./messageOwner");
 const { iconDe } = require("./emojiSlots");
@@ -59,26 +60,25 @@ function buildStaffCard(guild, target, viewerId) {
     )
   );
 
-  // Les permissions accordées par rôle/individuellement restent affichées
-  // même pour un Owner/Sys (déjà tout, elles n'ajoutent rien) — c'est le
-  // service originel de "&staff check" : voir ce qu'un membre débloque
-  // RÉELLEMENT via ses rôles, peu importe son rang.
-  const keys = new Set(permStore.getUserGrants(guild.id, target.id));
-  for (const roleId of target.roles?.cache?.keys?.() || []) {
-    for (const k of permStore.getRoleGrants(guild.id, roleId)) keys.add(k);
-  }
+  // Le niveau effectif (1-9, le plus haut entre son niveau individuel et
+  // celui de ses rôles) reste affiché même pour un Owner/Sys (déjà tout, il
+  // n'ajoute rien) — c'est le service originel de "&staff check" : voir ce
+  // qu'un membre débloque RÉELLEMENT, peu importe son rang.
+  const niveau = levelOf(target);
+  const keys = new Set(niveau > 0 ? keysForLevel(niveau) : []);
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
   if (owner || sys) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         owner
-          ? "*Owner : propriétaire du bot, accès total sur tous les serveurs — les permissions accordées par rôle n'ont aucun effet en plus.*"
-          : "*Sys : accès total sur ce serveur (sauf distribuer le rang sys) — les permissions accordées par rôle n'ont aucun effet en plus.*"
+          ? "*Owner : propriétaire du bot, accès total sur tous les serveurs — le niveau n'a aucun effet en plus.*"
+          : "*Sys : accès total sur ce serveur (sauf distribuer le rang sys) — le niveau n'a aucun effet en plus.*"
       )
     );
-  } else if (!keys.size) {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*N'a aucune permission particulière accordée sur ce serveur.*"));
+  } else if (!niveau) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent("*N'a aucun niveau de permission assigné sur ce serveur.*"));
   } else {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Niveau** : ${niveau}/9`));
     // Regroupées par préfixe RÉEL (bug corrigé : tout apparaissait sous "&"
     // y compris des commandes de "-"/"!!"/"=" — voir utils/permsCommands.js
     // ::commandesParPrefixe), une section par groupe plutôt qu'une seule

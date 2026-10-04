@@ -4,7 +4,8 @@ const { buildListCard } = require("./listCard");
 const readOnlyLists = require("./readOnlyLists");
 const moderationHandlers = require("./moderationCommands");
 const { can } = require("./permissions/engine");
-const permStore = require("./permissions/store");
+const levelStore = require("./permissions/levelStore");
+const { keysForLevel } = require("./permissions/levelCatalog");
 const accessStore = require("./accessStore");
 const { commandesParPrefixe } = require("./permsCommands");
 const absenceStore = require("./absenceStore");
@@ -325,8 +326,10 @@ const handlers = {
 
     // Demande explicite : voir d'un coup, sur la fiche du rôle, QUI l'a et
     // ce qu'il débloque — jusque-là il fallait &rolemembers ET &panel >
-    // Rôles et permissions séparément pour la même information.
-    const granted = permStore.getRoleGrants(message.guild.id, role.id);
+    // Niveaux séparément pour la même information.
+    const niveauRole = levelStore.getRoleLevel(message.guild.id, role.id);
+    const granted = niveauRole ? keysForLevel(niveauRole) : [];
+    lines.push("", `**Niveau** : ${niveauRole || "*aucun*"}`);
     // Regroupées par préfixe réel (Gestion/Modération/Sécurité/Vocal), UNE
     // COMMANDE PAR LIGNE CITÉE — jamais une longue chaîne jointe par des
     // virgules, jamais tronquée par "...". Chaque groupe devient sa propre

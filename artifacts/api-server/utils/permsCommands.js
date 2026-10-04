@@ -1,55 +1,40 @@
 const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize, MessageFlags } = require("discord.js");
 const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
-const permStore = require("./permissions/store");
-const permCatalog = require("./permissions/catalog");
+const levelStore = require("./permissions/levelStore");
+const { keysAddedAtLevel, LEVEL_MIN, LEVEL_MAX } = require("./permissions/levelCatalog");
 const commandCatalog = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
 const { identityOf } = require("./helpPanel");
 const { getPrefixes } = require("./prefixStore");
 
-// &perms / &helpall : vue d'ensemble des permissions accordées par rôle,
-// dans le même style "Permission 1, 2, 3..." qu'une référence montrée par
-// l'utilisateur — MAIS toujours sur le système existant (rôle -> clés du
-// catalogue), pas un système de paliers nommés/créables séparé (décision
-// déjà prise : garder le système actuel, juste améliorer l'affichage).
-//
-// Le "palier" ici n'est qu'un regroupement d'AFFICHAGE : tous les rôles qui
-// ont EXACTEMENT le même ensemble de clés accordées apparaissent sous le
-// même numéro, du plus petit ensemble au plus grand — rien de nouveau à
-// gérer, entièrement calculé depuis utils/permissions/store.js.
+// &perms / &helpall : vue d'ensemble des 9 niveaux de permission et des
+// rôles qui y sont assignés — remplace l'ancien système où le "palier"
+// n'était qu'un regroupement d'affichage de rôles ayant EXACTEMENT le même
+// ensemble de clés (voir git history pour l'ancienne version, tierSignature/
+// computeTiers). Avec les niveaux explicites (utils/permissions/
+// levelStore.js), le numéro de palier EST le niveau lui-même, assigné
+// directement à un rôle — plus de calcul de signature.
 
 const ALL_COMMANDS = commandCatalog.CATEGORIES.flatMap((c) => c.commands);
 
 /**
  * @returns {{ index: number, keys: string[], roleIds: string[] }[]}
- *
- * Les rôles marqués "exclusif" (voir &panel > Permissions) n'apparaissent
- * PAS ici — ils sont affichés à part, dans leur propre section "Exclusives"
- * (voir buildTierCard) — pas doublés entre un palier numéroté et cette
- * section.
+ * Un "tier" par niveau (1-9) qui a AU MOINS un rôle assigné — les niveaux
+ * vides n'apparaissent pas. `keys` = les clés du catalogue débloquées À CE
+ * NIVEAU PRÉCIS (pas cumulatif ici : afficher "ce que ce niveau ajoute" est
+ * plus utile pour un palier numéroté que de répéter tout l'historique
+ * cumulé des niveaux en dessous).
  */
-/**
- * Signature d'un palier : ses clés triées. C'est l'identité STABLE d'un
- * palier, par opposition à son numéro, qui n'est qu'un rang d'affichage et se
- * décale dès qu'un palier plus petit apparaît. Tout ce qui doit rester
- * attaché au même ensemble de droits (son nom, par exemple) s'y rattache.
- */
-const tierSignature = (keys) => [...keys].sort().join("|");
-
 function computeTiers(guildId) {
-  const grants = permStore.listRoleGrants(guildId);
-  const exclusiveRoleIds = new Set(permStore.listExclusiveRoles(guildId));
-  const bySignature = new Map();
-  for (const [roleId, keys] of grants) {
-    if (exclusiveRoleIds.has(roleId)) continue;
-    const signature = tierSignature(keys);
-    if (!bySignature.has(signature)) bySignature.set(signature, { keys: [...keys], roleIds: [] });
-    bySignature.get(signature).roleIds.push(roleId);
+  const byLevel = new Map();
+  for (const [roleId, level] of levelStore.listRoleLevels(guildId)) {
+    if (!byLevel.has(level)) byLevel.set(level, []);
+    byLevel.get(level).push(roleId);
   }
-  return [...bySignature.values()]
-    .sort((a, b) => a.keys.length - b.keys.length)
-    .map((tier, i) => ({ index: i + 1, ...tier }));
+  return [...byLevel.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([level, roleIds]) => ({ index: level, keys: keysAddedAtLevel(level), roleIds }));
 }
 
 function commandsForKeys(keys) {
@@ -93,40 +78,25 @@ function commandesParPrefixe(keys, guildId) {
   return [{ label: "Gestion", prefixe: prefixes.musicMod, commandes }];
 }
 
-// Calculés à l'APPEL, pas au chargement du module : `isImplemented` fait un
-// require différé vers musicCommands.js (voir implementedCommands.js) pour
-// casser un cycle — l'appeler dès le chargement de ce module le rouvrirait,
-// puisque musicCommands.js require aussi configPanel.js qui require ce
-// fichier-ci.
-let CATALOG_LABELS = null;
-function catalogLabels() {
-  if (!CATALOG_LABELS) CATALOG_LABELS = new Map(permCatalog.byCategory().flatMap((g) => g.permissions).map((p) => [p.key, p.label]));
-  return CATALOG_LABELS;
-}
-
 /**
  * Certaines clés du catalogue (ex. `panel.roles.manage`) donnent accès à une
  * RUBRIQUE DU PANEL, pas à une commande tapée — elles restent invisibles
- * dans `commandsForKeys`. Sans ça, un rôle avec "1 permission accordée"
+ * dans `commandsForKeys`. Sans ça, un niveau qui débloque "1 permission"
  * pouvait afficher "0 commande débloquée : aucune", donnant l'impression
  * trompeuse que rien n'était accordé.
  * @returns {string[]} libellés du catalogue pour les clés sans commande
  */
 function nonCommandGrants(keys) {
   const commandKeys = new Set(ALL_COMMANDS.filter(isImplemented).map((cmd) => cmd.permission).filter(Boolean));
-  const labels = catalogLabels();
-  return [...new Set(keys.filter((k) => !commandKeys.has(k)).map((k) => labels.get(k) || k))];
+  return [...new Set(keys.filter((k) => !commandKeys.has(k)))];
 }
 
 // Texte brut Discord, comme avant — demande explicite (le rendu en image
 // essayé entre-temps ne convenait pas). Discord plafonne le texte affichable
 // à 4000 caractères, et ce plafond porte sur le TOTAL du message, pas
-// composant par composant : avec des paliers CUMULATIFS (utils/
-// rolePresets.js, chaque palier liste toutes les commandes de tous les
-// paliers en dessous), le palier le plus haut peut, une fois les 13
-// additionnés, largement dépasser ce total — DiscordAPIError constaté en
-// conditions réelles. La seule répartition qui tienne est donc PAR MESSAGE :
-// plusieurs messages séparés ("1/2", "2/2"...) plutôt qu'un mur de texte.
+// composant par composant : la seule répartition qui tienne est donc PAR
+// MESSAGE : plusieurs messages séparés ("1/2", "2/2"...) plutôt qu'un mur de
+// texte.
 const LIMITE_PAGE = 3800;
 
 /**
@@ -157,45 +127,7 @@ function paginerBlocs(blocs) {
 function buildTierCard(guildId, title, intro, tiers, renderTierLine) {
   const blocs = [];
   for (const tier of tiers) {
-    // Le nom donné au palier depuis &panel > Rôles (paliers) apparaît ICI
-    // aussi : sans ça, le panel et les commandes texte désigneraient le même
-    // palier de deux façons différentes.
-    // `keys` est absent des paliers synthétiques que les tests de pagination
-    // fabriquent : buildTierCard n'a jamais exigé ce champ, le nom est donc
-    // optionnel ici aussi.
-    const nomPalier = tier.keys ? permStore.getTierName(guildId, tierSignature(tier.keys)) : null;
-    blocs.push(`**Permission ${tier.index}${nomPalier ? ` — ${nomPalier}` : ""}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
-  }
-  // Rôles marqués "exclusif" depuis &panel > Permissions (utils/permissions/
-  // store.js) : une simple étiquette, affichée à part des paliers numérotés
-  // puisqu'elle ne dépend pas des clés accordées. Un rôle avec un NOM propre
-  // (ex: "Syndicat", posé par utils/rolePresets.js) a droit à sa propre ligne
-  // plutôt que d'être noyé dans un bloc "Exclusives" générique.
-  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
-  if (exclusiveRoleIds.length) {
-    const parLabel = new Map();
-    const sansLabel = [];
-    for (const id of exclusiveRoleIds) {
-      const label = permStore.getExclusiveLabel(guildId, id);
-      if (label) {
-        if (!parLabel.has(label)) parLabel.set(label, []);
-        parLabel.get(label).push(id);
-      } else {
-        sansLabel.push(id);
-      }
-    }
-    // Même `renderTierLine` que les paliers numérotés (pas une deuxième
-    // logique) : sur &perms elle rend des commandes (le texte figé de
-    // utils/rolePresets.js en priorité, sinon les vraies débloquées), sur
-    // &helpall des mentions de rôle — un rôle exclusif suit la même règle.
-    for (const [label, ids] of parLabel) {
-      const ligne = renderTierLine({ keys: permStore.getRoleGrants(guildId, ids[0]), roleIds: ids });
-      blocs.push(`**◆ ${label}** *(hors hiérarchie)*\n> ↳ ${ligne || "*aucune*"}`);
-    }
-    if (sansLabel.length) {
-      const ligne = renderTierLine({ keys: permStore.getRoleGrants(guildId, sansLabel[0]), roleIds: sansLabel });
-      blocs.push(`**Exclusives**\n> ↳ ${ligne || "*aucune*"}`);
-    }
+    blocs.push(`**Niveau ${tier.index}**\n> ↳ ${renderTierLine(tier) || "*aucune*"}`);
   }
 
   const pages = paginerBlocs([`> ${intro}`, ...blocs]);
@@ -216,51 +148,46 @@ async function envoyerPages(message, pages) {
   for (const page of pages.slice(1)) await message.channel.send(page);
 }
 
-/** &perms — les commandes débloquées par chaque palier de permissions. */
+/** &perms — les commandes débloquées par chaque niveau de permission. */
 async function perms(client, message) {
   if (!can(message.member, "panel.permissions.manage")) return;
   const guildId = message.guild.id;
   const tiers = computeTiers(guildId);
-  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
-  if (!tiers.length && !exclusiveRoleIds.length) {
-    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).", { guildId })] });
+  if (!tiers.length) {
+    return message.reply({ embeds: [buildStatusEmbed("info", "Aucun niveau n'est encore assigné à un rôle (voir `&panel` > Niveaux).", { guildId })] });
   }
   return envoyerPages(
     message,
-    buildTierCard(
-      guildId,
-      "Permissions liées aux commandes",
-      "Voici les différentes permissions ainsi que les commandes accessibles",
-      tiers,
-      // Un texte figé (utils/permissions/store.js::setPermsDisplay, posé par
-      // utils/rolePresets.js) prime sur les commandes RÉELLEMENT débloquées —
-      // demande explicite de reproduire une référence fournie telle quelle.
-      // Tous les rôles d'un même palier partagent le même texte (même
-      // ensemble de clés = même origine), un seul suffit à le retrouver.
-      (tier) => permStore.getPermsDisplay(guildId, tier.roleIds[0]) || commandsForKeys(tier.keys).join(", ")
+    buildTierCard(guildId, "Permissions liées aux commandes", "Voici les différents niveaux ainsi que les commandes qu'ils débloquent", tiers, (tier) =>
+      commandsForKeys(tier.keys).join(", ")
     )
   );
 }
 
-/** &helpall — les rôles associés à chaque palier de permissions. */
+/** &helpall — les rôles associés à chaque niveau de permission. */
 async function helpall(client, message) {
   if (!can(message.member, "panel.permissions.manage")) return;
   const guildId = message.guild.id;
   const tiers = computeTiers(guildId);
-  const exclusiveRoleIds = permStore.listExclusiveRoles(guildId);
-  if (!tiers.length && !exclusiveRoleIds.length) {
-    return message.reply({ embeds: [buildStatusEmbed("info", "Aucune permission n'est encore accordée à un rôle (voir `&panel` > Permissions).", { guildId })] });
+  if (!tiers.length) {
+    return message.reply({ embeds: [buildStatusEmbed("info", "Aucun niveau n'est encore assigné à un rôle (voir `&panel` > Niveaux).", { guildId })] });
   }
-  return envoyerPages(
-    message,
-    buildTierCard(
-      guildId,
-      "Permissions",
-      "Voici les différentes permissions ainsi que les rôles associés",
-      tiers,
-      (tier) => tier.roleIds.map((id) => `<@&${id}>`).join(", ")
-    )
-  );
+  return envoyerPages(message, buildTierCard(guildId, "Permissions", "Voici les différents niveaux ainsi que les rôles associés", tiers, (tier) =>
+    tier.roleIds.map((id) => `<@&${id}>`).join(", ")
+  ));
 }
 
-module.exports = { perms, helpall, computeTiers, tierSignature, commandsForKeys, commandesAffichables, commandesParPrefixe, prefixeDeCommande, nonCommandGrants, buildTierCard, LIMITE_PAGE };
+module.exports = {
+  perms,
+  helpall,
+  computeTiers,
+  commandsForKeys,
+  commandesAffichables,
+  commandesParPrefixe,
+  prefixeDeCommande,
+  nonCommandGrants,
+  buildTierCard,
+  LIMITE_PAGE,
+  LEVEL_MIN,
+  LEVEL_MAX,
+};

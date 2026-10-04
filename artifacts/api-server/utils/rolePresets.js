@@ -3,149 +3,42 @@ const { buildStatusEmbed } = require("./statusEmbed");
 const { can } = require("./permissions/engine");
 const { checkBotPermission, report } = require("./moderation/actions");
 const { requestConfirmation } = require("./serverAdminCommands");
-const permStore = require("./permissions/store");
+const levelStore = require("./permissions/levelStore");
 
-// Refonte demandée de la hiérarchie des rôles : 13 paliers numérotés
-// (calqués sur les commandes réellement accordées à chaque palier — voir la
-// discussion) + 3 rôles "hors hiérarchie" marqués EXCLUSIFS (jamais mélangés
-// à un palier numéroté, voir utils/permsCommands.js::computeTiers). Les
-// commandes demandées mais pas construites (absence, staff check, blrank/bl,
-// rank) ou publiques (snipe, pic, banner, server...) n'ajoutent aucune clé
-// PAR ELLES-MÊMES.
-//
-// Demande explicite : 13 paliers VISUELLEMENT distincts dans &perms/&helpall/
-// "Rôles (paliers)", comme la référence fournie — jamais deux paliers groupés
-// ensemble. Les listes de commandes d'origine donnaient pourtant le MÊME
-// contenu réel à plusieurs paliers de suite (1≈2 vides, 7≈8≈9≈10) une fois
-// filtrées des commandes inexistantes ou publiques — et deux rôles aux clés
-// strictement identiques s'affichent TOUJOURS groupés, quel que soit leur nom,
-// ce système regroupant par permission réellement accordée, pas par étiquette.
-// Chaque palier concerné reçoit donc UNE clé supplémentaire choisie parmi les
-// permissions du catalogue pas encore utilisées ailleurs dans cette liste
-// (outils annexes, rôles automatiques, sondages, giveaways, mode lent) —
-// purement pour les séparer visuellement, sans rapport avec les commandes
-// d'origine. Cumulatif de bout en bout : chaque palier garde TOUTES les clés
-// du précédent, plus au moins une nouvelle (garanti par un test dédié, voir
-// scripts/test-role-presets.js).
-// `display` : le texte EXACT fourni par l'utilisateur pour ce palier, montré
-// tel quel sur &perms (utils/permissions/store.js::setPermsDisplay) à la
-// place des commandes RÉELLEMENT débloquées par `keys`. Certains de ces noms
-// (absence reset/set, staff check, blrank/bl, rank...) ne correspondent à
-// AUCUNE commande de ce bot — assumé, demande explicite de reproduire la
-// référence fournie telle quelle plutôt que la liste réelle. `keys` reste ce
-// qui détermine le REGROUPEMENT en paliers distincts (voir plus haut) et les
-// permissions du bot réellement accordées ; `display` n'affecte que ce qui
-// s'affiche sur &perms.
+// Hiérarchie de rôles prédéfinis : 13 paliers nommés + 3 rôles autrefois
+// "hors hiérarchie" (Syndicat, Gérant gestion, (GAP/GS)) — conservés TELS
+// QUELS (mêmes 16 noms créés), mais désormais assignés à un NIVEAU (1-9,
+// utils/permissions/levelStore.js) au lieu d'un ensemble de clés propre à
+// chacun. Avec seulement 9 niveaux pour 16 rôles, plusieurs rôles partagent
+// nécessairement le même niveau — assumé, demande explicite : garder tous
+// les noms plutôt que d'en fusionner ou retirer. La correspondance ci-dessous
+// respecte l'ordre croissant d'origine (paliers les plus bas -> niveau 1,
+// les plus hauts -> niveau 9), "hors hiérarchie" répartis selon leur ampleur
+// réelle (Syndicat et Gérant gestion avaient des droits comparables aux
+// paliers du milieu, (GAP/GS) à un palier bas).
 const TIERS = [
-  { names: ["Perm I"], keys: ["server.tools.use"], display: "absence reset, absence set, snipe" },
-  { names: ["Perm II"], keys: ["server.tools.use", "channels.slowmode"], display: "absence reset, absence set, pic, snipe" },
-  {
-    names: ["Perm III"],
-    keys: ["server.tools.use", "channels.slowmode", "server.info.view"],
-    display: "absence reset, absence set, pic, snipe, user",
-  },
-  {
-    names: ["Perm IV"],
-    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list"],
-    display: "absence reset, absence set, find, pic, snipe, user",
-  },
-  {
-    names: ["Perm V", "🎤"],
-    keys: ["server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view" ],
-    display: "absence reset, absence set, find, pic, sanctions, snipe, tempmute, user",
-  },
-  {
-    names: ["(GAP/GS)", "✗", "🚩"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage"
-    ],
-    display: "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, snipe, tempmute, user",
-  },
-  {
-    names: ["Célestial", "🐋", "🦅"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view"
-    ],
-    display:
-      "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
-  },
-  {
-    names: ["🎗️", "🌹", "🦋"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage"
-    ],
-    display:
-      "absence reset, absence set, addrole, banner, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur pic, snipe, tempmute, user, vc",
-  },
-  {
-    names: ["Kina", "⛪", "🎣"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage"
-    ],
-    display:
-      "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
-  },
-  {
-    names: ["Crown", "Top"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage"
-    ],
-    display:
-      "absence reset, absence set, addrole, banner, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
-  },
-  {
-    names: ["Ordre", "Maître", "BOT=BOT"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "server.tickets.manage" ],
-    display:
-      "absence reset, absence set, addrole, ban, baninfo, banlist, banner, blrank add, blrank list, blrank remove, derank, find, mv, nick, pic, removerole, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, user, vc",
-  },
-  {
-    names: ["—", "=", "≡", "♂"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "server.tickets.manage", "panel.roles.manage" ],
-    display:
-      "absence reset, absence set, addrole, ban, baninfo, banlist, banner, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, mv, nick, pic, rank, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, user, vc",
-  },
-  {
-    names: ["者", "Couronne", "SECURE"],
-    keys: [
-      "server.tools.use", "channels.slowmode", "server.info.view", "server.members.list", "logs.view", "members.role", "members.nick", "server.voice.manage", "server.stats.view", "members.autorole.manage", "server.polls.manage",
-      "server.giveaways.manage", "server.tickets.manage", "panel.roles.manage", "logs.manage", "server.channels.manage", "channels.manage", "channels.lock", "server.voice.moveall"
-    ],
-    display:
-      "absence reset, absence set, addrole, avert, avertissements, ban, baninfo, banlist, banner, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, create, derank, embed, find, hide, lock, mv, nick, pic, rank, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur info, serveur pic, snipe, staff check, tempmute, unban, unhide, unlock, user, vc, voicemove",
-  }
+  { names: ["Perm I"], level: 1 },
+  { names: ["Perm II"], level: 1 },
+  { names: ["Perm III"], level: 2 },
+  { names: ["Perm IV"], level: 2 },
+  { names: ["Perm V", "🎤"], level: 3 },
+  { names: ["(GAP/GS)", "✗", "🚩"], level: 4 },
+  { names: ["Célestial", "🐋", "🦅"], level: 4 },
+  { names: ["🎗️", "🌹", "🦋"], level: 5 },
+  { names: ["Kina", "⛪", "🎣"], level: 5 },
+  { names: ["Crown", "Top"], level: 6 },
+  { names: ["Ordre", "Maître", "BOT=BOT"], level: 6 },
+  { names: ["—", "=", "≡", "♂"], level: 7 },
+  { names: ["者", "Couronne", "SECURE"], level: 9 },
 ];
 
-// "Hors hiérarchie" : chacun garde son propre NOM affiché (au lieu d'un bloc
-// "Exclusives" générique) — voir utils/permissions/store.js::setRoleExclusive
-// et utils/permsCommands.js::buildTierCard.
+// Autrefois "hors hiérarchie" (utils/permissions/store.js::setRoleExclusive,
+// retiré avec le passage aux niveaux) : ces 3 rôles restent créés comme les
+// autres, simplement assignés à un niveau comme n'importe quel rôle.
 const EXCLUSIVE = [
-  {
-    name: "♂",
-    label: "Syndicat",
-    keys: [
-      "members.role", "logs.manage", "server.members.list", "server.voice.manage", "members.nick", "logs.view",
-      "server.info.view", "server.stats.view"
-    ],
-    display:
-      "addrole, avert, avertissements, ban, baninfo, banlist, blrank add, blrank list, blrank remove, derank, find, mutelist, mv, nick, pic, remove avert, removerole, rolemembers, sanctions, serveur banner, serveur pic, snipe, tempmute, unban, unmute, user, vc",
-  },
-  {
-    name: "🏅",
-    label: "Gérant gestion",
-    keys: [
-      "members.role", "server.members.list",
-      "server.voice.manage", "members.nick", "server.info.view", "server.stats.view"
-    ],
-    display:
-      "addrole, ban, baninfo, banlist, bl add, bl info, bl list, bl remove, blrank add, blrank list, blrank remove, clear, derank, find, limitrole, mv, nick, pic, rank, removerole, rolemembers, serveur banner, serveur pic, snipe, staff check, user, vc",
-  },
-  { name: "(GAP/GS)", label: "(gs/gap)", keys: ["members.role"], display: "addrole, derank" }
+  { name: "♂", label: "Syndicat", level: 5 },
+  { name: "🏅", label: "Gérant gestion", level: 4 },
+  { name: "(GAP/GS)", label: "(gs/gap)", level: 1 },
 ];
 
 const TOTAL_ROLES = TIERS.reduce((n, t) => n + t.names.length, 0) + EXCLUSIVE.length;
@@ -167,40 +60,35 @@ async function createPresetRoles(client, message) {
       const guild = interaction.guild;
       let created = 0;
 
-      // Du palier 13 vers le 1 : les rôles créés en dernier remontent en haut
-      // de la liste Discord, donc l'ordre final va du plus haut palier (haut
-      // de liste) au plus bas — hiérarchie visuelle intuitive.
+      // Du palier le plus haut vers le plus bas : les rôles créés en dernier
+      // remontent en haut de la liste Discord, donc l'ordre final va du plus
+      // haut niveau (haut de liste) au plus bas — hiérarchie visuelle intuitive.
       for (let i = TIERS.length - 1; i >= 0; i--) {
         const tier = TIERS[i];
         for (const name of tier.names) {
           const role = await guild.roles.create({ name, reason: `Rôles prédéfinis créés par ${interaction.user.tag}` }).catch(() => null);
           if (!role) continue;
-          if (tier.keys.length) permStore.setRoleGrants(guild.id, role.id, tier.keys);
-          permStore.setPermsDisplay(guild.id, role.id, tier.display);
+          levelStore.setRoleLevel(guild.id, role.id, tier.level);
           created++;
         }
       }
       for (const entry of EXCLUSIVE) {
-        const role = await guild.roles.create({ name: entry.name, reason: `Rôle hors hiérarchie créé par ${interaction.user.tag}` }).catch(() => null);
+        const role = await guild.roles.create({ name: entry.name, reason: `Rôle prédéfini créé par ${interaction.user.tag}` }).catch(() => null);
         if (!role) continue;
-        permStore.setRoleGrants(guild.id, role.id, entry.keys);
-        permStore.setRoleExclusive(guild.id, role.id, true, entry.label);
-        permStore.setPermsDisplay(guild.id, role.id, entry.display);
+        levelStore.setRoleLevel(guild.id, role.id, entry.level);
         created++;
       }
 
-      // Le rôle géré du bot lui-même (ex: "PROTECT") reçoit les mêmes clés ET
-      // le même texte affiché que le palier le plus haut, pour qu'il se
-      // retrouve groupé AVEC "Permission 13" dans &perms/&helpall/"Rôles
-      // (paliers)" — demande explicite, plutôt qu'une rubrique "Bot" séparée.
-      // Il reste de toute façon toujours au-dessus de tout le reste dans la
-      // hiérarchie Discord (un bot ne peut pas créer de rôle plus haut que le
-      // sien).
+      // Le rôle géré du bot lui-même (ex: "PROTECT") reçoit le niveau le plus
+      // haut, pour qu'il se retrouve groupé avec le palier le plus élevé dans
+      // &perms/&helpall/"Rôles (niveaux)" — demande explicite, plutôt qu'une
+      // rubrique "Bot" séparée. Il reste de toute façon toujours au-dessus de
+      // tout le reste dans la hiérarchie Discord (un bot ne peut pas créer de
+      // rôle plus haut que le sien).
       const botRole = guild.members.me?.roles.botRole;
       if (botRole) {
         const dernierPalier = TIERS[TIERS.length - 1];
-        permStore.setRoleGrants(guild.id, botRole.id, dernierPalier.keys);
-        permStore.setPermsDisplay(guild.id, botRole.id, dernierPalier.display);
+        levelStore.setRoleLevel(guild.id, botRole.id, dernierPalier.level);
       }
 
       await report(interaction.client, {
