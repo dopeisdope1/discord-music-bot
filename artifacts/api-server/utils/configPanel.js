@@ -364,10 +364,10 @@ function sectionBody(section, guild, member, state) {
   // défaut) — voir buildConfigPanel pour les composants de chaque vue.
   if (section === "permissions") {
     // Rien à renvoyer ICI (voir buildConfigPanel > meta.key === "permissions"
-    // pour le vrai rendu) : chaque carte (addCards/panelCards.js) porte déjà
-    // son propre titre+description, directement liés à son bouton par le
-    // même bloc. Un texte-résumé ici ferait doublon — exactement le bug vu
-    // sur mobile (résumé en haut, boutons détachés en dessous).
+    // pour le vrai rendu) : chaque section y pose directement son propre
+    // bloc "titre + description/état" juste avant son bouton/sélecteur, dans
+    // le MÊME TextDisplay — jamais un résumé séparé qui dupliquerait les
+    // titres ou détacherait les boutons de leur description.
     return "";
   }
 
@@ -929,13 +929,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
-    // UNE SEULE grande carte (demande explicite, screenshot de référence) :
-    // le texte des 4 sections (Permissions/Cooldowns/Permissions
-    // supplémentaires/Salons bloqués) reste TOUJOURS affiché en haut, dans
-    // l'ordre, et TOUS leurs boutons/sélecteurs sont empilés à la suite —
-    // jamais un écran qui en remplace un autre. Un sélecteur affiché "ouvre"
-    // une section en ajoutant ses contrôles juste après son bouton, sans
-    // rien masquer du reste de la carte.
+    // UNE SEULE grande carte, 4 sections dans l'ORDRE du screen de référence.
+    // Patron STRICT par section (jamais de titre dupliqué, jamais de bouton
+    // générique avant la description) :
+    //   TextDisplay("**Titre**\nDescription/état")
+    //   ActionRow(bouton ou sélecteur "Choisir...")
+    //   [contrôles supplémentaires si la section est "ouverte"]
+    //   Separator
     const niveau = state.permLevel;
     const peutModifier = peutGererNiveaux(member);
     const nbBloques = blockedChannelsStore.list(guild.id).filter((id) => guild.channels.cache.has(id)).length;
@@ -943,31 +943,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     const listPages = Math.max(1, Math.ceil(noms.length / CMDS_PAR_PAGE));
     const listPage = Math.min(Math.max(0, Number(state.permCmdListPage) || 0), listPages - 1);
 
-    // --- Texte des 4 sections, toujours visible en entier ---
+    // --- Section "Permissions" ---
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        [
-          "**Permissions**",
-          "Vous pouvez configurer les permissions (1-9)",
-          "",
-          "**Cooldowns**",
-          `Page ${listPage + 1}/${listPages}`,
-          "",
-          "**Permissions supplémentaires**",
-          "Donnez un accès direct à certaines commandes",
-          "",
-          "**Salons bloqués**",
-          nbBloques ? `${nbBloques} salon(s) bloqué(s)` : "Aucun salon bloqué",
-        ].join("\n")
-      )
+      new TextDisplayBuilder().setContent("**Permissions**\nVous pouvez configurer les permissions (1-9)")
     );
-    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-
-    // --- Section "Permissions" : bouton d'entrée, puis (si ouverte) son
-    // sélecteur de niveau et, niveau choisi, rôles d'accès + commandes ---
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:permtoggleopen`).setLabel("Permissions").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${ID}:permtoggleopen`).setLabel("Choisir une permission").setStyle(ButtonStyle.Secondary)
       )
     );
     if (state.permOpen) {
@@ -992,7 +974,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
 
         container.addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(`**Rôles d'accès** — ${rolesValides.length} rôle(s) configuré(s)`)
+          new TextDisplayBuilder().setContent(`**Rôles d'accès**\n${rolesValides.length} rôle(s) configuré(s)`)
         );
         if (peutModifier) {
           container.addActionRowComponents(
@@ -1002,11 +984,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           );
         }
 
-        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes** — page ${page + 1}/${pages}`));
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes**\nPage ${page + 1}/${pages}`));
         container.addActionRowComponents(
           new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("◀").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
-            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel("▶").setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1 || pages <= 1)
+            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("←").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
+            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel("→").setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1 || pages <= 1)
           )
         );
       }
@@ -1034,11 +1016,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
     // --- Section "Cooldowns" ---
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**Cooldowns**\nPage ${listPage + 1}/${listPages}`)
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`${ID}:permcmdname:cooldowns`)
-          .setPlaceholder(`Choisir une commande — page ${listPage + 1}/${listPages}`)
+          .setPlaceholder("Choisir une commande")
           .addOptions(
             noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE).map((n) =>
               new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdNameCooldown)
@@ -1048,15 +1033,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage - 1}`).setLabel("◀").setStyle(ButtonStyle.Secondary).setDisabled(listPage === 0 || listPages <= 1),
-        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage + 1}`).setLabel("▶").setStyle(ButtonStyle.Secondary).setDisabled(listPage >= listPages - 1 || listPages <= 1)
+        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage - 1}`).setLabel("←").setStyle(ButtonStyle.Secondary).setDisabled(listPage === 0 || listPages <= 1),
+        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage + 1}`).setLabel("→").setStyle(ButtonStyle.Secondary).setDisabled(listPage >= listPages - 1 || listPages <= 1)
       )
     );
     if (state.permCmdNameCooldown) {
       const rule = commandRules.getRule(guild.id, state.permCmdNameCooldown);
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `**Cooldown de \`${state.permCmdNameCooldown}\`** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s` : "*aucun*"}`
+          `**Cooldown de \`${state.permCmdNameCooldown}\`**\n${rule.cooldownSeconds ? `${rule.cooldownSeconds}s` : "*aucun*"}`
         )
       );
       container.addActionRowComponents(
@@ -1074,11 +1059,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
     // --- Section "Permissions supplémentaires" ---
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("**Permissions supplémentaires**\nDonnez un accès direct à certaines commandes")
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`${ID}:permcmdname:extra`)
-          .setPlaceholder(`Choisir une configuration — page ${listPage + 1}/${listPages}`)
+          .setPlaceholder("Choisir une configuration")
           .addOptions(
             noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE).map((n) =>
               new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdNameExtra)
@@ -1090,7 +1078,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       const rule = commandRules.getRule(guild.id, state.permCmdNameExtra);
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `**Accès direct à \`${state.permCmdNameExtra}\`** — rôles : ${rule.allowedRoles.length}, membres : ${rule.allowedUsers.length}`
+          `**Accès direct à \`${state.permCmdNameExtra}\`**\nRôles : ${rule.allowedRoles.length} — Membres : ${rule.allowedUsers.length}`
         )
       );
       container.addActionRowComponents(
@@ -1103,6 +1091,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
     // --- Section "Salons bloqués" ---
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Salons bloqués**\n${nbBloques ? `${nbBloques} salon(s) bloqué(s)` : "Aucun salon bloqué"}`
+      )
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder().setCustomId(`${ID}:blockedchanneltoggle`).setPlaceholder("Configurer les salons bloqués")
