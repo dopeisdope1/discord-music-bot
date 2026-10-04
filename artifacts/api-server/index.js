@@ -72,6 +72,15 @@ const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChang
 // "&confess" — confessions anonymes avec validation avant publication (voir
 // utils/confessions.js), configurable depuis &panel > Confessions.
 const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_CUSTOM_ID } = require("./utils/confessions");
+// Modération (fusionnée depuis moderation-bot) : panneaux interactifs.
+const { handleBanInteraction, CUSTOM_ID: BAN_CUSTOM_ID } = require("./utils/banPanel");
+const { handleBanAllInteraction, ID: BANALL_CUSTOM_ID } = require("./utils/banAll");
+const { handleUnbanAllInteraction, ID: UNBANALL_CUSTOM_ID } = require("./utils/unbanAll");
+const { handleBanInfoInteraction, CUSTOM_ID: BANINFO_CUSTOM_ID } = require("./utils/banInfoCard");
+const { handleBlacklistCardInteraction, CUSTOM_ID: BLCARD_CUSTOM_ID } = require("./utils/blacklistCard");
+const zinkillerStore = require("./utils/zinkillerStore");
+const moderationExtraForIntervals = require("./utils/moderationExtra");
+const { checkExpiredZinkillers } = require("./utils/zinkillerCommands");
 
 // Liste FIXE — construite une seule fois au chargement, jamais recréée à
 // chaque clic. Un panneau ne change pas de customId en cours de route.
@@ -85,6 +94,11 @@ const PANNEAUX_PRIVES = [
   `${staffCard.CUSTOM_ID}:`,
   `${gradeCardPanel.CUSTOM_ID}:`,
   `${emojiPanel.CUSTOM_ID}:`,
+  `${BAN_CUSTOM_ID}:`,
+  `${BANALL_CUSTOM_ID}:`,
+  `${UNBANALL_CUSTOM_ID}:`,
+  `${BANINFO_CUSTOM_ID}:`,
+  `${BLCARD_CUSTOM_ID}:`,
 ];
 
 // Confessions : PAS dans PANNEAUX_PRIVES — carte publique cliquable par tout
@@ -129,10 +143,17 @@ setInterval(() => {
 }, 30_000);
 
 // Lève les rôles temporaires arrivés à échéance (&temprole, voir
-// utils/serverExtra.js) — même fréquence que les giveaways. Les mutes/bans
-// temporaires ont migré avec le reste de la modération vers moderation-bot.
+// utils/serverExtra.js) — même fréquence que les giveaways.
 setInterval(() => {
   checkExpiredTempRoles(client).catch((err) => console.error("[temprole]", err));
+}, 30_000);
+
+// Lève les mutes/bans temporaires et redéclenche les zinkillers expirés
+// (fusionné depuis moderation-bot).
+setInterval(() => {
+  moderationExtraForIntervals.checkExpiredMutes(client).catch((err) => console.error("[mute]", err));
+  moderationExtraForIntervals.checkExpiredTempbans(client).catch((err) => console.error("[tempban]", err));
+  checkExpiredZinkillers(client).catch((err) => console.error("[zinkiller]", err));
 }, 30_000);
 
 // Écrit sur disque les compteurs de &stats history (voir utils/statsStore.js)
@@ -261,6 +282,29 @@ client.on("interactionCreate", async (interaction) => {
   // "&setclear" — voir utils/setClearCommand.js.
   if (interaction.customId?.startsWith(`${SETCLEAR_CUSTOM_ID}:`)) {
     await handleSetClearInteraction(interaction).catch((err) => console.error("[setClearCommand]", err));
+    return;
+  }
+
+  // Modération (fusionnée depuis moderation-bot) : &ban/&unban, &banall,
+  // &unbanall, &baninfo, &zinkiller/&bl (carte blacklist).
+  if (interaction.customId?.startsWith(`${BAN_CUSTOM_ID}:`)) {
+    await handleBanInteraction(interaction).catch((err) => console.error("[banPanel]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith(`${BANALL_CUSTOM_ID}:`)) {
+    await handleBanAllInteraction(interaction).catch((err) => console.error("[banAll]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith(`${UNBANALL_CUSTOM_ID}:`)) {
+    await handleUnbanAllInteraction(interaction).catch((err) => console.error("[unbanAll]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith(`${BANINFO_CUSTOM_ID}:`)) {
+    await handleBanInfoInteraction(interaction).catch((err) => console.error("[banInfoCard]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith(`${BLCARD_CUSTOM_ID}:`)) {
+    await handleBlacklistCardInteraction(interaction).catch((err) => console.error("[blacklistCard]", err));
     return;
   }
 
@@ -498,8 +542,23 @@ client.on("guildAuditLogEntryCreate", (entry, guild) => {
   });
 });
 
-// Le ban persistant ("&zinkiller") a migré avec le reste de la modération
-// vers moderation-bot, qui porte désormais son propre écouteur guildBanRemove.
+// ---- Ban persistant (&zinkiller) : re-bannit si débanni ailleurs que par &unzinkiller ----
+client.on("guildBanRemove", async (ban) => {
+  if (zinkillerStore.getConfig(ban.guild.id).enabled === false) return;
+  const entry = zinkillerStore.isZinkilled(ban.guild.id, ban.user.id) ? zinkillerStore.remove(ban.guild.id, ban.user.id) : null;
+  // remove() a déjà retiré l'entrée : un futur débannissement légitime
+  // (&unzinkiller) ne se re-déclenchera pas dessus.
+  if (!entry) return;
+  try {
+    await ban.guild.members.ban(ban.user.id, { reason: "Ban persistant (zinkiller) — redéclenché automatiquement" });
+    console.log(`[zinkiller] ${ban.user.tag} re-banni automatiquement sur "${ban.guild.name}"`);
+  } catch (err) {
+    console.error(`[zinkiller] échec du re-ban automatique pour ${ban.user.id} :`, err.message);
+    // Le débannissement externe a eu lieu et le re-ban a échoué : remettre
+    // l'entrée pour retenter à la prochaine tentative de débannissement.
+    zinkillerStore.add(ban.guild.id, ban.user.id, entry);
+  }
+});
 
 // Dernier rempart. Sous Node, une promesse rejetée sans preneur arrête le
 // process entier : une erreur réseau isolée sur une requête Discord ou un

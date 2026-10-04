@@ -1,5 +1,6 @@
 const accessStore = require("../accessStore");
 const { postModerationEntry } = require("../moderationLog");
+const historyStore = require("../moderationHistoryStore");
 
 /**
  * Motifs de refus indépendants de qui lance l'action ET de la permission
@@ -59,6 +60,26 @@ function checkHierarchy(guild, actor, target) {
   return null;
 }
 
+/**
+ * Même refus que checkHierarchy, mais pour une cible qui n'est PAS (ou plus)
+ * membre du serveur — comportement Discord natif pour un ban par ID
+ * (&zinkiller doit pouvoir blacklister quelqu'un AVANT qu'il rejoigne).
+ * Sans objet GuildMember, aucune comparaison de rôle n'est possible : on se
+ * limite aux protections absolues (propriétaire, rang sys, soi-même).
+ * @param {import('discord.js').Guild} guild
+ * @param {import('discord.js').GuildMember} actor
+ * @param {string} targetId
+ * @returns {string|null}
+ */
+function checkHierarchyById(guild, actor, targetId) {
+  if (targetId === actor.id) return "Tu ne peux pas agir sur toi-même.";
+  if (targetId === guild.ownerId) return "Impossible d'agir sur le propriétaire du serveur.";
+  if (targetId === guild.client.user.id) return "Je ne peux pas agir sur moi-même.";
+  if (accessStore.isOwner(targetId)) return "Ce membre est propriétaire du bot.";
+  if (accessStore.isAllowed("sys", targetId)) return "Ce membre a le rang sys, retire-le lui d'abord.";
+  return null;
+}
+
 const PERMISSION_LABELS = {
   BanMembers: "Bannir des membres",
   KickMembers: "Expulser des membres",
@@ -82,17 +103,15 @@ function checkBotPermission(guild, flag, flagName) {
 
 /**
  * Journalise une action de modération effectuée par CE bot : salon de logs
- * (utils/moderationLog.js::postModerationEntry). Point d'écriture pour toute
- * action encore présente sur ce bot (rôles, salons, grades...) — le
- * modérateur enregistré est toujours la vraie personne qui a tapé la
- * commande (jamais le compte du bot, voir l'explication dans
- * utils/moderationLog.js).
+ * (utils/moderationLog.js::postModerationEntry) + historique consultable
+ * (utils/moderationHistoryStore.js — &modlogs/&sanctions/&case). Point
+ * d'écriture UNIQUE pour toute commande de modération — le modérateur
+ * enregistré est toujours la vraie personne qui a tapé la commande (jamais
+ * le compte du bot).
  *
- * Plus d'écriture dans un historique consultable séparé (utils/
- * moderationHistoryStore.js) : cet historique est parti avec le reste de la
- * modération vers moderation-bot, qui journalise ses propres actions
- * lui-même. `action`/`targetTag`/`extra` restent acceptés en entrée pour ne
- * pas casser les appelants existants, mais ne sont plus utilisés ici.
+ * `category` est optionnelle : par défaut "moderation" (sanctions), mais les
+ * appelants hors modération (rôles, salons, grades...) passent la leur
+ * ("members"/"server"/...) comme avant la fusion.
  *
  * `fields` ne porte que ce qui est spécifique à l'action (ex: "Cible",
  * "Durée") — Auteur et Raison sont ajoutés automatiquement par
@@ -100,14 +119,19 @@ function checkBotPermission(guild, flag, flagName) {
  * @param {import('discord.js').Client} client
  * @param {object} params
  * @param {string} params.guildId
- * @param {"moderation"|"members"|"server"} params.category
- * @param {string} params.title ex: "Rôle ajouté", "Salon créé"
+ * @param {"moderation"|"members"|"server"|"roles"|"channels"} [params.category] défaut "moderation"
+ * @param {string} params.title ex: "Rôle ajouté", "Salon créé", "Bannissement"
  * @param {{label: string, value: string}[]} params.fields
+ * @param {string} [params.action] ex: "ban", "kick", "timeout", "clear"... — pour l'historique consultable
+ * @param {string} [params.targetId]
+ * @param {string|null} [params.targetTag]
  * @param {import('discord.js').User} params.moderator
  * @param {string|null} [params.reason]
+ * @param {string|null} [params.channelId]
+ * @param {object|null} [params.extra]
  */
 async function report(client, params) {
-  const { guildId, category, title, fields, moderator, reason } = params;
+  const { guildId, category = "moderation", title, fields, action, targetId, targetTag, moderator, reason, channelId, extra } = params;
 
   await postModerationEntry(client, guildId, category, {
     title,
@@ -116,6 +140,21 @@ async function report(client, params) {
     moderatorTag: moderator.tag,
     reason,
   });
+
+  if (action && targetId) {
+    historyStore.record({
+      guildId,
+      action,
+      targetId,
+      targetTag: targetTag || null,
+      moderatorId: moderator.id,
+      moderatorTag: moderator.tag,
+      reason: reason || null,
+      channelId: channelId || null,
+      source: "bot",
+      extra: extra || null,
+    });
+  }
 }
 
-module.exports = { checkHierarchy, botAndRankRefusal, checkBotPermission, report };
+module.exports = { checkHierarchy, checkHierarchyById, botAndRankRefusal, checkBotPermission, report };

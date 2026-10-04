@@ -12,6 +12,16 @@ const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
 const moderationCommands = require("./moderationCommands");
+const { sanctionsHandlers } = require("./sanctionsCommands");
+const moderationExtra = require("./moderationExtra");
+const { handleBan, handleUnban, handleBanInteraction, CUSTOM_ID: BAN_CUSTOM_ID } = require("./banPanel");
+const { handleBanAll, handleBanAllInteraction, ID: BANALL_CUSTOM_ID } = require("./banAll");
+const { unbanall, handleUnbanAllInteraction, ID: UNBANALL_CUSTOM_ID } = require("./unbanAll");
+const { repondreAvecBanInfo, handleBanInfoInteraction, CUSTOM_ID: BANINFO_CUSTOM_ID } = require("./banInfoCard");
+const { zinkiller, unzinkiller, blinfo, zinkillerlist, checkExpiredZinkillers } = require("./zinkillerCommands");
+const { handleBlacklistCardInteraction, CUSTOM_ID: BLCARD_CUSTOM_ID } = require("./blacklistCard");
+const { reasonadd, reasondel, reasonproof, reasongrade, reasonlist } = require("./reasonCommands");
+const { clearmybl } = require("./clearMyBlCommands");
 const { botProfileHandlers } = require("./botProfileCommands");
 const serverExtra = require("./serverExtra");
 const commandForms = require("./commandForms");
@@ -191,15 +201,19 @@ const modHandlers = {
     // directement (staffCheck lit la mention, jamais les mots de `args`).
     return utilityHandlers.staffCheck(client, message, sub === "check" ? args.slice(1) : args);
   },
-  // "clear perms"/"clear limit" restent ici (config de gestion) ; le
-  // nettoyage de messages lui-même ("clear @membre", sans sous-commande
-  // reconnue) et "clear sanctions"/"clear all sanctions" ont migré avec le
-  // reste de la modération vers moderation-bot.
+  // "clear perms"/"clear limit" (config de gestion), "clear sanctions"/
+  // "clear all sanctions" (historique de modération, fusionné depuis
+  // moderation-bot) ; sans sous-commande reconnue, nettoyage de messages
+  // ciblé (sanctionsCommands.js::clear — "clear @membre [nombre]").
   clear: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "perms") return configHandlers.clearPerms(client, message, args.slice(1));
     if (sub === "limit") return configHandlers.clearLimit(client, message, args.slice(1));
+    if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
+    if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
+    return sanctionsHandlers.clear(client, message, args);
   },
+  purge: (client, message, args) => sanctionsHandlers.purge(client, message, args),
 
   // Administration du serveur (rôles/salons créés de zéro, owners, whitelist,
   // liste des bots, dero automatique) — voir utils/serverAdminCommands.js.
@@ -313,12 +327,12 @@ const modHandlers = {
   },
 
   // Profil/présence du bot — voir utils/botProfileCommands.js, rang sys
-  // uniquement (comme &owners/&sources/&allbots).
-  // "set muterole" a migré avec le reste de la modération vers
-  // moderation-bot ; le reste (name/pic/banner/perm) reste ici.
+  // uniquement (comme &owners/&sources/&allbots). "set muterole" fusionné
+  // depuis moderation-bot (utils/moderationExtra.js::setMuteRole).
   set: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "perm") return configHandlers.setPerm(client, message, args.slice(1));
+    if (sub === "muterole") return moderationExtra.setMuteRole(client, message, args.slice(1));
     return botProfileHandlers.set(client, message, args);
   },
   playto: botProfileHandlers.playto,
@@ -344,6 +358,7 @@ const modHandlers = {
   del: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
     if (sub === "perm") return configHandlers.delPerm(client, message, args.slice(1));
+    if (sub === "sanction") return moderationExtra.delSanction(client, message, args.slice(1));
   },
 
   // Extensions "Gestion du serveur" — voir utils/serverExtra.js.
@@ -390,6 +405,68 @@ const modHandlers = {
   serverlog: logHandlers.serverlog,
   botlog: logHandlers.botlog,
   messagelog: logHandlers.messagelog,
+
+  // --- Modération (fusionné depuis moderation-bot) ---
+  kick: sanctionsHandlers.kick,
+  softban: sanctionsHandlers.softban,
+  timeout: sanctionsHandlers.timeout,
+  untimeout: sanctionsHandlers.untimeout,
+  modlogs: sanctionsHandlers.modlogs,
+  lockdown: sanctionsHandlers.lockdown,
+  panic: sanctionsHandlers.panic,
+  unlockdown: sanctionsHandlers.unlockdown,
+
+  ban: handleBan,
+  unban: handleUnban,
+  banall: handleBanAll,
+  unbanall: (client, message) => unbanall(client, message),
+  // Deux commandes distinctes partagent le nom : consultation (logs.view,
+  // sans argument supplémentaire suffisant) vs carte de bannissement
+  // (moderation.ban) — chacune vérifie son propre droit et répond en
+  // silence si refusé.
+  baninfo: async (client, message, args) => {
+    const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);
+    const id = args[0]?.match(/^\d{15,25}$/);
+    const targetId = mention?.[1] || id?.[0] || null;
+    if (targetId) {
+      const target = await message.guild.members.fetch(targetId).catch(() => null);
+      if (target) return repondreAvecBanInfo(message, target);
+    }
+    return moderationExtra.baninfo(client, message, args);
+  },
+  zinkiller,
+  bl: zinkiller,
+  unzinkiller,
+  unbl: unzinkiller,
+  zinkillerlist,
+  bllist: zinkillerlist,
+  blinfo,
+  clearmybl,
+  reasonadd,
+  reasondel,
+  reasonproof,
+  reasongrade,
+  reasonlist,
+
+  muterole: moderationExtra.muterole,
+  mute: moderationExtra.mute,
+  tempmute: moderationExtra.tempmute,
+  unmute: moderationExtra.unmute,
+  cmute: moderationExtra.cmute,
+  tempcmute: moderationExtra.tempcmute,
+  uncmute: moderationExtra.uncmute,
+  mutelist: moderationExtra.mutelist,
+  unmuteall: moderationExtra.unmuteall,
+  sanctions: moderationExtra.sanctions,
+  warn: moderationExtra.warn,
+  warnings: moderationExtra.warnings,
+  unwarn: moderationExtra.unwarn,
+  case: moderationExtra.caseView,
+  tempban: moderationExtra.tempban,
+  banlist: moderationExtra.banlist,
+  hideall: moderationExtra.hideall,
+  unhideall: moderationExtra.unhideall,
+  derank: moderationExtra.derank,
 };
 
 /**
@@ -519,9 +596,9 @@ const MOD_SUBCOMMANDS = {
   emoji: ["list", "reset"],
   absence: ["set", "reset"],
   backup: ["list", "delete", "load"],
-  set: ["name", "pic", "banner", "perm"],
-  clear: ["perms", "limit"],
-  del: ["perm"],
+  set: ["name", "pic", "banner", "perm", "muterole"],
+  clear: ["perms", "limit", "sanctions", "all"],
+  del: ["perm", "sanction"],
   ticket: ["setup", "settings"],
   compteur: ["create", "list", "delete"],
   giveaway: ["start", "reroll"],

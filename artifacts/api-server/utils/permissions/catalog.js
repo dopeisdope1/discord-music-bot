@@ -12,6 +12,8 @@ const PERMISSIONS = [
   { key: "channels.lock", category: "channels", label: "Verrouiller/déverrouiller un salon (&lock, &unlock)" },
   { key: "channels.slowmode", category: "channels", label: "Mode lent (&slowmode)" },
   { key: "channels.manage", category: "channels", label: "Masquer/renouveler un salon, supprimer en lot depuis le panel (&hide, &unhide, &renew)" },
+  { key: "channels.manageall", category: "channels", label: "Masquer/réafficher TOUS les salons (&hideall, &unhideall)" },
+  { key: "channels.lockdown", category: "channels", label: "Verrouiller/déverrouiller tous les salons (&lockdown, &panic, &unlockdown)" },
 
   // --- Membres ---
   { key: "members.nick", category: "members", label: "Modifier un pseudo (&nick, &resetnick)" },
@@ -24,6 +26,22 @@ const PERMISSIONS = [
     category: "moderation",
     label: "Mute bot gradé, verrouillé au grade du poseur (&bmute, &bunmute, &bmutelist, &bmuteresetall)",
   },
+  { key: "moderation.clear", category: "moderation", label: "Nettoyer des messages (&clear)" },
+  { key: "moderation.kick", category: "moderation", label: "Expulser un membre (&kick)" },
+  { key: "moderation.ban", category: "moderation", label: "Bannir un membre (&ban)" },
+  { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
+  { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
+  { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout, &mute, &unmute)" },
+  { key: "moderation.warn", category: "moderation", label: "Avertir un membre (&warn, &unwarn)" },
+  { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },
+  { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)", roleGrantable: false },
+  { key: "moderation.unbanall", category: "moderation", label: "Débannissement de masse (&unbanall)", roleGrantable: false },
+  {
+    key: "moderation.zinkiller",
+    category: "moderation",
+    label: "Ban persistant, re-banni automatiquement si débanni ailleurs (&zinkiller/&bl, &unzinkiller/&unbl, &zinkillerlist/&bllist, &blinfo, &clearmybl)",
+  },
+  { key: "moderation.reasons", category: "moderation", label: "Gérer les raisons de ban prédéfinies (&reasonadd, &reasondel, &reasonproof, &reasongrade, &reasonlist)" },
   // Pas de clé pour &userinfo/&avatar/&serverinfo : ce sont des commandes
   // publiques de lecture seule, comme &pic/&banner/&server déjà existantes.
 
