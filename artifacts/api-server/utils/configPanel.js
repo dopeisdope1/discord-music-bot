@@ -567,11 +567,11 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "embedBuilder") {
-    return "> *Aucun réglage — le bouton ci-dessous ouvre le même constructeur d'embed que `&embed`.*";
+    return "> *Aucun réglage — le menu ci-dessous ouvre le même constructeur d'embed que `&embed`.*";
   }
 
   if (section === "polls") {
-    return "> *Sondages en mémoire, perdus au redémarrage du bot — le bouton ci-dessous ouvre le même formulaire que `&poll`.*";
+    return "> *Sondages en mémoire, perdus au redémarrage du bot — le menu ci-dessous ouvre le même formulaire que `&poll`.*";
   }
 
   if (section === "banall") {
@@ -919,7 +919,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:prefix:musicMod`).setLabel("Préfixe gestion").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:prefix`)
+          .setPlaceholder("Modifier un préfixe")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Préfixe gestion").setValue("musicMod"))
       )
     );
   } else if (meta.key === "moderation") {
@@ -1161,7 +1164,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:welcomeadd`).setLabel("Ajouter un message").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:welcomeadd`)
+          .setPlaceholder("Ajouter un message")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Ajouter un message").setValue("add"))
       )
     );
     if (config.messages.length) {
@@ -1203,7 +1209,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:leaveadd`).setLabel("Ajouter un message").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:leaveadd`)
+          .setPlaceholder("Ajouter un message")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Ajouter un message").setValue("add"))
       )
     );
     if (config.messages.length) {
@@ -1245,17 +1254,20 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     if (config.roleId) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
+          new StringSelectMenuBuilder()
             .setCustomId(`${ID}:verifypost`)
-            .setLabel("Poster le bouton dans ce salon")
-            .setStyle(ButtonStyle.Success)
+            .setPlaceholder("Poster le bouton dans ce salon")
+            .addOptions(new StringSelectMenuOptionBuilder().setLabel("Poster le bouton dans ce salon").setValue("post"))
         )
       );
     }
   } else if (meta.key === "access") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:access:sweep`).setLabel("Nettoyer les accès obsolètes").setStyle(ButtonStyle.Danger)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:access`)
+          .setPlaceholder("Nettoyer les accès obsolètes")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Nettoyer les accès obsolètes").setValue("sweep"))
       )
     );
   } else if (meta.key === "sys") {
@@ -1294,12 +1306,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        // Bascule encodée dans le customId : le libellé reflète ce que CE
-        // rendu affiche, donc un clic fait toujours l'inverse.
-        new ButtonBuilder()
-          .setCustomId(`${ID}:ticketownerclose:${config.ownerCanClose ? "off" : "on"}`)
-          .setLabel(config.ownerCanClose ? "Interdire au demandeur de fermer" : "Autoriser le demandeur à fermer")
-          .setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:ticketownerclose`)
+          .setPlaceholder(config.ownerCanClose ? "Interdire au demandeur de fermer" : "Autoriser le demandeur à fermer")
+          .addOptions(
+            new StringSelectMenuOptionBuilder()
+              .setLabel(config.ownerCanClose ? "Interdire au demandeur de fermer" : "Autoriser le demandeur à fermer")
+              .setValue(config.ownerCanClose ? "off" : "on")
+          )
       )
     );
   } else if (meta.key === "confessions") {
@@ -1320,7 +1334,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "giveaways") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:giveawaystart`).setLabel("Démarrer un giveaway").setStyle(ButtonStyle.Success)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:giveawaystart`)
+          .setPlaceholder("Démarrer un giveaway")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Démarrer un giveaway").setValue("start"))
       )
     );
     const active = giveawayStore
@@ -1364,19 +1381,28 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "embedBuilder") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:embedbuild`).setLabel("Construire un embed").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:embedbuild`)
+          .setPlaceholder("Construire un embed")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Construire un embed").setValue("build"))
       )
     );
   } else if (meta.key === "polls") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:pollstart`).setLabel("Créer un sondage").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:pollstart`)
+          .setPlaceholder("Créer un sondage")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Créer un sondage").setValue("start"))
       )
     );
   } else if (meta.key === "backups") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:backupsavebtn`).setLabel("Sauvegarder ce serveur").setStyle(ButtonStyle.Success)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:backupsavebtn`)
+          .setPlaceholder("Sauvegarder ce serveur")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Sauvegarder ce serveur").setValue("save"))
       )
     );
     const saved = backupStore.listBackups().map((b) => b.name);
@@ -1429,7 +1455,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:botnamebtn`).setLabel("Changer le nom").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:botnamebtn`)
+          .setPlaceholder("Changer le nom")
+          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Changer le nom").setValue("rename"))
       )
     );
   }
@@ -1988,7 +2017,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("verification");
   }
 
-  if (action === "access" && extra === "sweep") {
+  if (action === "access" && interaction.values?.[0] === "sweep") {
     if (!can(member, "sys")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const revoked = sweepGuild(interaction.client, guild);
     await interaction.reply({
@@ -2045,12 +2074,16 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 
   if (action === "ticketownerclose") {
     if (!can(member, "server.tickets.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    ticketStore.setConfig(guildId, { ownerCanClose: extra === "on" });
+    ticketStore.setConfig(guildId, { ownerCanClose: interaction.values[0] === "on" });
     return goto("tickets");
   }
 
   if (action === "prefix") {
-    const field = PREFIX_FIELDS[extra];
+    // Select "Modifier un préfixe" (valeur choisie) ou retour du modal qu'il
+    // a ouvert (customId reconstruit nous-mêmes : "prefix:<champ>") — deux
+    // sources possibles pour le même identifiant de champ.
+    const champ = interaction.isModalSubmit() ? extra : interaction.values[0];
+    const field = PREFIX_FIELDS[champ];
     if (!field) return interaction.reply({ content: "Type de préfixe inconnu.", flags: MessageFlags.Ephemeral });
     if (interaction.isModalSubmit()) {
       const value = interaction.fields.getTextInputValue("value").trim();
@@ -2060,22 +2093,22 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       if (value.length > 3 || /\s/.test(value)) {
         return interaction.reply({ content: "Un préfixe fait 3 caractères au maximum, sans espace.", flags: MessageFlags.Ephemeral });
       }
-      const conflicts = prefixConflicts({ ...getPrefixes(guildId), [extra]: value });
+      const conflicts = prefixConflicts({ ...getPrefixes(guildId), [champ]: value });
       if (conflicts.length) {
         return interaction.reply({
           content: `Préfixe refusé : ${prefixConflictMessage(conflicts)}. Choisis un préfixe qui ne commence pas par un autre.`,
           flags: MessageFlags.Ephemeral,
         });
       }
-      setPrefix(guildId, extra, value);
+      setPrefix(guildId, champ, value);
       await interaction.reply({
-        content: `**${PREFIX_FIELDS[extra].label}** réglé sur \`${value}\`.`,
+        content: `**${field.label}** réglé sur \`${value}\`.`,
         flags: MessageFlags.Ephemeral,
       });
       return interaction.message?.edit(buildConfigPanel(guild, "prefixes", member)).catch(() => {});
     }
 
-    const modal = new ModalBuilder().setCustomId(interaction.customId).setTitle(field.label);
+    const modal = new ModalBuilder().setCustomId(`${ID}:prefix:${champ}`).setTitle(field.label);
     modal.addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
