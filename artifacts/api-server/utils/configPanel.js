@@ -787,7 +787,7 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
  * les valeurs par défaut déjà affichées sur le message avant d'y appliquer le
  * changement demandé par ce clic précis.
  * @param {import('discord.js').Message} message
- * @returns {object} état reconstruit (permOpen, permLevel, permCmdPage,
+ * @returns {object} état reconstruit (permLevel, permCmdPage,
  *   permCmdListPage, permCmdNameCooldown, permCmdNameExtra)
  */
 function lireStatePermissions(message) {
@@ -796,7 +796,6 @@ function lireStatePermissions(message) {
   for (const row of message.components) {
     for (const comp of row.components || []) {
       if (comp.customId === `${ID}:permlevel`) {
-        state.permOpen = true;
         const choisi = comp.options?.find((o) => o.default);
         if (choisi) state.permLevel = parseInt(choisi.value, 10);
       } else if (comp.customId?.startsWith(`${ID}:permcmdname:cooldowns`)) {
@@ -946,69 +945,62 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:permtoggleopen`).setLabel("Choisir une permission").setStyle(ButtonStyle.Secondary)
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:permlevel`)
+          .setPlaceholder("Choisir une permission")
+          .addOptions(
+            Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
+              new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveau)
+            )
+          )
       )
     );
-    if (state.permOpen) {
+    if (niveau) {
+      const roleIds = levelStore.listRoleLevels(guild.id).filter(([, lvl]) => lvl === niveau).map(([id]) => id);
+      const rolesValides = roleIds.filter((id) => guild.roles.cache.has(id));
+      const granted = keysForLevel(niveau);
+      const commandes = commandsForKeys(granted);
+      const pages = Math.max(1, Math.ceil(commandes.length / CMDS_PAR_PAGE));
+      const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
+
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`**Rôles d'accès**\n${rolesValides.length} rôle(s) configuré(s)`)
+      );
+      if (peutModifier) {
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new RoleSelectMenuBuilder().setCustomId(`${ID}:permlevelrole:${niveau}`).setPlaceholder("Ajouter ou retirer un rôle")
+          )
+        );
+      }
+
+      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes**\nPage ${page + 1}/${pages}`));
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("←").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
+          new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel("→").setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1 || pages <= 1)
+        )
+      );
+    }
+    if (can(member, "sys")) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:permlevel`)
-            .setPlaceholder("Choisir une permission (niveau)")
+            .setCustomId(`${ID}:rolepresets`)
+            .setPlaceholder("Provisionnement en masse")
             .addOptions(
-              Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
-                new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveau)
-              )
+              new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
+              new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
             )
         )
       );
-      if (niveau) {
-        const roleIds = levelStore.listRoleLevels(guild.id).filter(([, lvl]) => lvl === niveau).map(([id]) => id);
-        const rolesValides = roleIds.filter((id) => guild.roles.cache.has(id));
-        const granted = keysForLevel(niveau);
-        const commandes = commandsForKeys(granted);
-        const pages = Math.max(1, Math.ceil(commandes.length / CMDS_PAR_PAGE));
-        const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
-
-        container.addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(`**Rôles d'accès**\n${rolesValides.length} rôle(s) configuré(s)`)
-        );
-        if (peutModifier) {
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new RoleSelectMenuBuilder().setCustomId(`${ID}:permlevelrole:${niveau}`).setPlaceholder("Ajouter ou retirer un rôle")
-            )
-          );
-        }
-
-        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes**\nPage ${page + 1}/${pages}`));
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("←").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
-            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel("→").setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1 || pages <= 1)
-          )
-        );
-      }
-      if (can(member, "sys")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId(`${ID}:rolepresets`)
-              .setPlaceholder("Provisionnement en masse")
-              .addOptions(
-                new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
-                new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
-              )
-          )
-        );
-      }
-      if (can(member, "panel.permissions.manage")) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
-          )
-        );
-      }
+    }
+    if (can(member, "panel.permissions.manage")) {
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
+        )
+      );
     }
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
@@ -1617,15 +1609,10 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   // contrôles (sélecteur de niveau, etc.) SANS jamais masquer le reste de la
   // carte (Cooldowns/Permissions supplémentaires/Salons bloqués restent
   // affichés en dessous, comme sur le screen de référence).
-  if (action === "permtoggleopen") {
-    if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { ...state, permOpen: !state.permOpen });
-  }
-
   // Choisir un niveau (1-9) dans la section "Permissions".
   if (action === "permlevel") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { ...state, permOpen: true, permLevel: parseInt(interaction.values[0], 10) });
+    return goto("permissions", { ...state, permLevel: parseInt(interaction.values[0], 10) });
   }
 
   // Rôle d'accès ajouté/retiré à CE niveau — action d'escalade potentielle,
