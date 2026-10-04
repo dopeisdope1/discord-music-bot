@@ -363,87 +363,11 @@ function sectionBody(section, guild, member, state) {
   // Salons bloqués. `state.permView` choisit lequel est affiché ("levels" par
   // défaut) — voir buildConfigPanel pour les composants de chaque vue.
   if (section === "permissions") {
-    // Pas de vue par défaut : l'écran d'ACCUEIL de la rubrique montre les 4
-    // blocs empilés (titre + description + bouton), exactement comme le
-    // screen de référence — pas un sélecteur qui bascule entre eux. Chaque
-    // bouton ouvre la vue détail correspondante (state.permView), qui garde
-    // ici le même contenu qu'avant ; seule la page d'accueil change.
-    const view = state.permView || null;
-
-    if (!view) {
-      const nbBloques = blockedChannelsStore.list(guildId).filter((id) => guild.channels.cache.has(id)).length;
-      return [
-        "**Permissions**",
-        "Vous pouvez configurer les permissions (1-9)",
-        "",
-        "**Cooldowns**",
-        `Page ${(state.permCmdListPage || 0) + 1}/${Math.max(1, Math.ceil(allModCommandNames().length / CMDS_PAR_PAGE))}`,
-        "",
-        "**Permissions supplémentaires**",
-        "Donnez un accès direct à certaines commandes",
-        "",
-        "**Salons bloqués**",
-        nbBloques ? `${nbBloques} salon(s) bloqué(s)` : "Aucun salon bloqué",
-      ].join("\n");
-    }
-
-    if (view === "levels") {
-      const niveau = state.permLevel;
-      if (!niveau) return "> *Choisis une permission (niveau) dans le menu ci-dessous.*";
-      const roleIds = levelStore.listRoleLevels(guildId).filter(([, lvl]) => lvl === niveau).map(([id]) => id);
-      const rolesValides = roleIds.filter((id) => guild.roles.cache.has(id));
-      const granted = keysForLevel(niveau);
-      const commands = commandsForKeys(granted);
-      const prefixeCommandes = getPrefixes(guildId).musicMod;
-
-      const lines = [
-        `> **Niveau ${niveau}**`,
-        `> **Rôles d'accès** : ${rolesValides.length ? rolesValides.map((id) => `<@&${id}>`).join(", ") : "*aucun*"}`,
-        "",
-        `**Commandes (${commands.length})** — page ${(state.permCmdPage || 0) + 1}/${Math.max(1, Math.ceil(commands.length / CMDS_PAR_PAGE))}`,
-      ];
-      const page = Math.max(0, state.permCmdPage || 0);
-      const pageCommands = commands.slice(page * CMDS_PAR_PAGE, (page + 1) * CMDS_PAR_PAGE);
-      if (!pageCommands.length) lines.push("> *aucune*");
-      else for (const c of pageCommands) lines.push(`> \`${prefixeCommandes}${c}\``);
-      return lines.join("\n");
-    }
-
-    if (view === "cooldowns") {
-      const cmdName = state.permCmdName;
-      if (!cmdName) {
-        return `> *Choisis une commande dans le menu ci-dessous — page ${(state.permCmdListPage || 0) + 1}.*`;
-      }
-      const rule = commandRules.getRule(guildId, cmdName);
-      return [
-        `> **Commande** : \`${cmdName}\``,
-        `> **Cooldown actuel** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s entre deux usages par membre` : "*aucun*"}`,
-      ].join("\n");
-    }
-
-    if (view === "extra") {
-      const cmdName = state.permCmdName;
-      if (!cmdName) {
-        return `> *Choisis une commande dans le menu ci-dessous — page ${(state.permCmdListPage || 0) + 1}. Donne un accès direct à CETTE commande, sans toucher au niveau.*`;
-      }
-      const rule = commandRules.getRule(guildId, cmdName);
-      const mentionUser = (id) => `<@${id}>`;
-      const mentionRole = (id) => `<@&${id}>`;
-      return [
-        `> **Commande** : \`${cmdName}\``,
-        `> **Rôles autorisés** : ${rule.allowedRoles.length ? rule.allowedRoles.map(mentionRole).join(", ") : "*aucun*"}`,
-        `> **Membres autorisés** : ${rule.allowedUsers.length ? rule.allowedUsers.map(mentionUser).join(", ") : "*aucun*"}`,
-      ].join("\n");
-    }
-
-    if (view === "blocked") {
-      const blocked = blockedChannelsStore.list(guildId).filter((id) => guild.channels.cache.has(id));
-      return [
-        `> **Salons bloqués (${blocked.length})** — aucune commande n'y répond, sauf owner/rang sys.`,
-        blocked.length ? blocked.map((id) => `<#${id}>`).join(", ") : "> *aucun*",
-      ].join("\n");
-    }
-
+    // Rien à renvoyer ICI (voir buildConfigPanel > meta.key === "permissions"
+    // pour le vrai rendu) : chaque carte (addCards/panelCards.js) porte déjà
+    // son propre titre+description, directement liés à son bouton par le
+    // même bloc. Un texte-résumé ici ferait doublon — exactement le bug vu
+    // sur mobile (résumé en haut, boutons détachés en dessous).
     return "";
   }
 
@@ -859,6 +783,40 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
  * Les boutons DÉSACTIVÉS sont écartés : un menu n'a pas d'option grisée, et
  * proposer une action impossible serait pire que de la masquer.
  */
+/**
+ * La rubrique "Permissions" (grande carte unique) n'a pas de state persistant
+ * côté serveur — comme le reste du panel, chaque clic reconstruit l'écran à
+ * partir de ce qu'un handler connaît déjà (extra/interaction.values). Pour
+ * garder les AUTRES sections de la carte dans leur état au moment d'un clic
+ * (ex : changer de page "Cooldowns" ne doit pas fermer "Permissions" ni
+ * oublier la commande choisie dans "Permissions supplémentaires"), on relit
+ * les valeurs par défaut déjà affichées sur le message avant d'y appliquer le
+ * changement demandé par ce clic précis.
+ * @param {import('discord.js').Message} message
+ * @returns {object} état reconstruit (permOpen, permLevel, permCmdPage,
+ *   permCmdListPage, permCmdNameCooldown, permCmdNameExtra)
+ */
+function lireStatePermissions(message) {
+  const state = {};
+  if (!message?.components) return state;
+  for (const row of message.components) {
+    for (const comp of row.components || []) {
+      if (comp.customId === `${ID}:permlevel`) {
+        state.permOpen = true;
+        const choisi = comp.options?.find((o) => o.default);
+        if (choisi) state.permLevel = parseInt(choisi.value, 10);
+      } else if (comp.customId?.startsWith(`${ID}:permcmdname:cooldowns`)) {
+        const choisi = comp.options?.find((o) => o.default);
+        if (choisi) state.permCmdNameCooldown = choisi.value;
+      } else if (comp.customId?.startsWith(`${ID}:permcmdname:extra`)) {
+        const choisi = comp.options?.find((o) => o.default);
+        if (choisi) state.permCmdNameExtra = choisi.value;
+      }
+    }
+  }
+  return state;
+}
+
 function regrouperBoutonsEnMenu(container) {
   const enfants = container.components;
   const boutons = [];
@@ -953,10 +911,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${NOM_IMAGE_RUBRIQUE}`))
     );
-  } else {
+  } else if (corps) {
     // Le corps d'origine, pas enTexte(spec) : ici le texte Discord est
     // MEILLEUR que sa transposition (il résout les mentions et les dates
     // tout seul). Le repli rend donc la rubrique telle qu'elle était.
+    // "Permissions" n'a PAS de texte ici : chaque carte (addCards) porte déjà
+    // son propre titre+description, un résumé en plus ferait le doublon vu
+    // sur mobile (texte en haut + boutons à plat en dessous, sans lien
+    // visuel entre les deux).
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(corps));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
@@ -973,50 +935,48 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "moderation") {
     for (const row of accessRows("clear", "dispense de nettoyage")) container.addActionRowComponents(row);
   } else if (meta.key === "permissions") {
-    // Les 4 blocs demandés (capture de référence "elyra") : Permissions
-    // (niveaux 1-9), Cooldowns, Permissions supplémentaires (accès direct à
-    // une commande), Salons bloqués — TOUS affichés d'un coup sur l'écran
-    // d'accueil de la rubrique, chacun avec son propre bouton ("Choisir une
-    // permission"/"Choisir une commande"/"Choisir une configuration"/
-    // "Configurer les salons bloqués"). Un clic ouvre la vue détail
-    // correspondante (state.permView) ; "◀ Retour" y ramène à cet accueil.
-    const view = state.permView || null;
+    // UNE SEULE grande carte (demande explicite, screenshot de référence) :
+    // le texte des 4 sections (Permissions/Cooldowns/Permissions
+    // supplémentaires/Salons bloqués) reste TOUJOURS affiché en haut, dans
+    // l'ordre, et TOUS leurs boutons/sélecteurs sont empilés à la suite —
+    // jamais un écran qui en remplace un autre. Un sélecteur affiché "ouvre"
+    // une section en ajoutant ses contrôles juste après son bouton, sans
+    // rien masquer du reste de la carte.
+    const niveau = state.permLevel;
+    const peutModifier = peutGererNiveaux(member);
+    const nbBloques = blockedChannelsStore.list(guild.id).filter((id) => guild.channels.cache.has(id)).length;
+    const noms = allModCommandNames();
+    const listPages = Math.max(1, Math.ceil(noms.length / CMDS_PAR_PAGE));
+    const listPage = Math.min(Math.max(0, Number(state.permCmdListPage) || 0), listPages - 1);
 
-    if (!view) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:permview:levels`).setLabel("Choisir une permission").setStyle(ButtonStyle.Secondary)
-        )
-      );
-      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:permview:cooldowns`).setLabel("Choisir une commande").setStyle(ButtonStyle.Secondary)
-        )
-      );
-      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:permview:extra`).setLabel("Choisir une configuration").setStyle(ButtonStyle.Secondary)
-        )
-      );
-      container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:permview:blocked`).setLabel("Configurer les salons bloqués").setStyle(ButtonStyle.Secondary)
-        )
-      );
-    } else {
-    // Vue détail : un bouton "◀ Retour" ramène systématiquement à l'accueil
-    // des 4 blocs, placé avant les contrôles propres à la vue.
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${ID}:permview:`).setLabel("◀ Retour").setStyle(ButtonStyle.Secondary)
+    // --- Texte des 4 sections, toujours visible en entier ---
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        [
+          "**Permissions**",
+          "Vous pouvez configurer les permissions (1-9)",
+          "",
+          "**Cooldowns**",
+          `Page ${listPage + 1}/${listPages}`,
+          "",
+          "**Permissions supplémentaires**",
+          "Donnez un accès direct à certaines commandes",
+          "",
+          "**Salons bloqués**",
+          nbBloques ? `${nbBloques} salon(s) bloqué(s)` : "Aucun salon bloqué",
+        ].join("\n")
       )
     );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
-    if (view === "levels") {
-      const peutModifier = peutGererNiveaux(member);
+    // --- Section "Permissions" : bouton d'entrée, puis (si ouverte) son
+    // sélecteur de niveau et, niveau choisi, rôles d'accès + commandes ---
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:permtoggleopen`).setLabel("Permissions").setStyle(ButtonStyle.Secondary)
+      )
+    );
+    if (state.permOpen) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
@@ -1024,43 +984,38 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
             .setPlaceholder("Choisir une permission (niveau)")
             .addOptions(
               Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => LEVEL_MIN + i).map((n) =>
-                new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === state.permLevel)
+                new StringSelectMenuOptionBuilder().setLabel(`Niveau ${n}`).setValue(String(n)).setDefault(n === niveau)
               )
             )
         )
       );
-
-      const niveau = state.permLevel;
       if (niveau) {
-        // Rôles d'accès : ajouter/retirer un rôle à CE niveau — réutilise le
-        // même store que l'ancien système de paliers (levelStore), juste
-        // adressé par niveau plutôt que par rôle déjà choisi.
-        if (peutModifier) {
-          container.addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new RoleSelectMenuBuilder().setCustomId(`${ID}:permlevelrole:${niveau}`).setPlaceholder(`Ajouter/retirer un rôle d'accès au niveau ${niveau}`)
-            )
-          );
-        }
-
-        // Pagination des commandes débloquées à ce niveau — "Page X/Y" ◀/▶,
-        // même mise en page que le screen de référence.
+        const roleIds = levelStore.listRoleLevels(guild.id).filter(([, lvl]) => lvl === niveau).map(([id]) => id);
+        const rolesValides = roleIds.filter((id) => guild.roles.cache.has(id));
         const granted = keysForLevel(niveau);
         const commandes = commandsForKeys(granted);
         const pages = Math.max(1, Math.ceil(commandes.length / CMDS_PAR_PAGE));
         const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
-        if (pages > 1) {
+
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`**Rôles d'accès** — ${rolesValides.length} rôle(s) configuré(s)`)
+        );
+        if (peutModifier) {
           container.addActionRowComponents(
             new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("◀ Précédent").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-              new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel(`Page ${page + 1}/${pages}`).setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1)
+              new RoleSelectMenuBuilder().setCustomId(`${ID}:permlevelrole:${niveau}`).setPlaceholder("Ajouter ou retirer un rôle")
             )
           );
         }
-      }
 
-      // Provisionnement en masse (utils/rolePresets.js) — demande explicite,
-      // rang sys (touche TOUS les rôles du serveur).
+        container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes** — page ${page + 1}/${pages}`));
+        container.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("◀").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
+            new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page + 1}`).setLabel("▶").setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1 || pages <= 1)
+          )
+        );
+      }
       if (can(member, "sys")) {
         container.addActionRowComponents(
           new ActionRowBuilder().addComponents(
@@ -1081,66 +1036,84 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           )
         );
       }
-    } else if (view === "cooldowns" || view === "extra") {
-      // Les deux vues partagent le même sélecteur paginé de commande
-      // ("Choisir une commande") — seul ce qui s'affiche une fois choisie
-      // diffère (cooldown vs accès direct rôles/membres).
-      const noms = allModCommandNames();
-      const pages = Math.max(1, Math.ceil(noms.length / CMDS_PAR_PAGE));
-      const listPage = Math.min(Math.max(0, Number(state.permCmdListPage) || 0), pages - 1);
-      const pageNoms = noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE);
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:permcmdname`)
-            .setPlaceholder(`Choisir une commande — page ${listPage + 1}/${pages}`)
-            .addOptions(
-              pageNoms.map((n) => new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdName))
-            )
-        )
-      );
-      if (pages > 1) {
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage - 1}`).setLabel("◀ Précédent").setStyle(ButtonStyle.Secondary).setDisabled(listPage === 0),
-            new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage + 1}`).setLabel(`Page ${listPage + 1}/${pages}`).setStyle(ButtonStyle.Secondary).setDisabled(listPage >= pages - 1)
-          )
-        );
-      }
+    }
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
-      const cmdName = state.permCmdName;
-      if (cmdName && view === "cooldowns") {
-        const rule = commandRules.getRule(guild.id, cmdName);
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`${ID}:cmdcooldownbtn:${cmdName}`)
-              .setLabel(rule.cooldownSeconds ? `Cooldown : ${rule.cooldownSeconds}s — modifier` : "Définir un cooldown")
-              .setStyle(ButtonStyle.Secondary),
-            ...(rule.cooldownSeconds
-              ? [new ButtonBuilder().setCustomId(`${ID}:cmdcooldownclear:${cmdName}`).setLabel("Retirer le cooldown").setStyle(ButtonStyle.Danger)]
-              : [])
+    // --- Section "Cooldowns" ---
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:permcmdname:cooldowns`)
+          .setPlaceholder(`Choisir une commande — page ${listPage + 1}/${listPages}`)
+          .addOptions(
+            noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE).map((n) =>
+              new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdNameCooldown)
+            )
           )
-        );
-      } else if (cmdName && view === "extra") {
-        // Accès direct à CETTE commande, sans toucher au niveau — rôles et
-        // membres autorisés (les variantes "deny"/salon restent gérées par
-        // les niveaux, pas par cette vue, conformément au screen).
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmdallowrole:${cmdName}`).setPlaceholder("Ajouter/retirer un rôle autorisé"))
-        );
-        container.addActionRowComponents(
-          new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmdallowuser:${cmdName}`).setPlaceholder("Ajouter/retirer un membre autorisé"))
-        );
-      }
-    } else if (view === "blocked") {
+      )
+    );
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage - 1}`).setLabel("◀").setStyle(ButtonStyle.Secondary).setDisabled(listPage === 0 || listPages <= 1),
+        new ButtonBuilder().setCustomId(`${ID}:permcmdlistpage:${listPage + 1}`).setLabel("▶").setStyle(ButtonStyle.Secondary).setDisabled(listPage >= listPages - 1 || listPages <= 1)
+      )
+    );
+    if (state.permCmdNameCooldown) {
+      const rule = commandRules.getRule(guild.id, state.permCmdNameCooldown);
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**Cooldown de \`${state.permCmdNameCooldown}\`** : ${rule.cooldownSeconds ? `${rule.cooldownSeconds}s` : "*aucun*"}`
+        )
+      );
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ChannelSelectMenuBuilder().setCustomId(`${ID}:blockedchanneltoggle`).setPlaceholder("Configurer les salons bloqués")
+          new ButtonBuilder()
+            .setCustomId(`${ID}:cmdcooldownbtn:${state.permCmdNameCooldown}`)
+            .setLabel(rule.cooldownSeconds ? "Modifier le cooldown" : "Définir un cooldown")
+            .setStyle(ButtonStyle.Secondary),
+          ...(rule.cooldownSeconds
+            ? [new ButtonBuilder().setCustomId(`${ID}:cmdcooldownclear:${state.permCmdNameCooldown}`).setLabel("Retirer").setStyle(ButtonStyle.Danger)]
+            : [])
         )
       );
     }
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    // --- Section "Permissions supplémentaires" ---
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${ID}:permcmdname:extra`)
+          .setPlaceholder(`Choisir une configuration — page ${listPage + 1}/${listPages}`)
+          .addOptions(
+            noms.slice(listPage * CMDS_PAR_PAGE, (listPage + 1) * CMDS_PAR_PAGE).map((n) =>
+              new StringSelectMenuOptionBuilder().setLabel(n).setValue(n).setDefault(n === state.permCmdNameExtra)
+            )
+          )
+      )
+    );
+    if (state.permCmdNameExtra) {
+      const rule = commandRules.getRule(guild.id, state.permCmdNameExtra);
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**Accès direct à \`${state.permCmdNameExtra}\`** — rôles : ${rule.allowedRoles.length}, membres : ${rule.allowedUsers.length}`
+        )
+      );
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(new RoleSelectMenuBuilder().setCustomId(`${ID}:cmdallowrole:${state.permCmdNameExtra}`).setPlaceholder("Ajouter/retirer un rôle autorisé"))
+      );
+      container.addActionRowComponents(
+        new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId(`${ID}:cmdallowuser:${state.permCmdNameExtra}`).setPlaceholder("Ajouter/retirer un membre autorisé"))
+      );
     }
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    // --- Section "Salons bloqués" ---
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder().setCustomId(`${ID}:blockedchanneltoggle`).setPlaceholder("Configurer les salons bloqués")
+      )
+    );
   } else if (meta.key === "logs") {
     if (can(member, "logs.manage")) {
       if (!state.logsCategory) {
@@ -1591,16 +1564,23 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("confessions", {});
   }
 
+  // "Permissions" (grande carte unique) n'a pas de state persistant côté
+  // serveur : on relit l'état actuel depuis le message affiché (voir
+  // lireStatePermissions) pour que chaque clic ne modifie QUE la section
+  // visée sans réinitialiser les autres (niveau ouvert, commande choisie
+  // dans Cooldowns/Permissions supplémentaires, page en cours).
+  const state = lireStatePermissions(interaction.message);
+
   if (action === "cmdallowrole") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.toggleAllowedRole(guildId, extra, interaction.values[0]);
-    return goto("permissions", { permView: "extra", permCmdName: extra });
+    return goto("permissions", { ...state, permCmdNameExtra: extra });
   }
 
   if (action === "cmdallowuser") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.toggleAllowedUser(guildId, extra, interaction.values[0]);
-    return goto("permissions", { permView: "extra", permCmdName: extra });
+    return goto("permissions", { ...state, permCmdNameExtra: extra });
   }
 
   if (action === "cmdcooldownbtn") {
@@ -1612,7 +1592,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
         return interaction.reply({ content: "Indique un nombre de secondes valide (0 ou vide pour retirer le cooldown).", flags: MessageFlags.Ephemeral });
       }
       commandRules.setCooldown(guildId, extra, secondes);
-      return goto("permissions", { permView: "cooldowns", permCmdName: extra });
+      return goto("permissions", { ...state, permCmdNameCooldown: extra });
     }
     const rule = commandRules.getRule(guildId, extra);
     const modal = new ModalBuilder().setCustomId(`${ID}:cmdcooldownbtn:${extra}`).setTitle("Cooldown de la commande");
@@ -1633,22 +1613,22 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   if (action === "cmdcooldownclear") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     commandRules.setCooldown(guildId, extra, null);
-    return goto("permissions", { permView: "cooldowns", permCmdName: extra });
+    return goto("permissions", { ...state, permCmdNameCooldown: extra });
   }
 
-  // Bouton d'un des 4 blocs de l'accueil "Permissions" (ou "◀ Retour", extra
-  // vide) — ouvre/ferme la vue détail correspondante. Boutons, pas un menu :
-  // les 4 blocs sont tous affichés en même temps sur l'accueil, comme le
-  // screen de référence.
-  if (action === "permview") {
+  // Bouton "Permissions" de la grande carte unique : ouvre/ferme ses
+  // contrôles (sélecteur de niveau, etc.) SANS jamais masquer le reste de la
+  // carte (Cooldowns/Permissions supplémentaires/Salons bloqués restent
+  // affichés en dessous, comme sur le screen de référence).
+  if (action === "permtoggleopen") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permView: extra || null });
+    return goto("permissions", { ...state, permOpen: !state.permOpen });
   }
 
-  // Vue "Permissions" : choisir un niveau (1-9).
+  // Choisir un niveau (1-9) dans la section "Permissions".
   if (action === "permlevel") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return goto("permissions", { permView: "levels", permLevel: parseInt(interaction.values[0], 10) });
+    return goto("permissions", { ...state, permOpen: true, permLevel: parseInt(interaction.values[0], 10) });
   }
 
   // Rôle d'accès ajouté/retiré à CE niveau — action d'escalade potentielle,
@@ -1662,33 +1642,35 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     const roleId = interaction.values[0];
     const niveauActuel = levelStore.getRoleLevel(guildId, roleId);
     levelStore.setRoleLevel(guildId, roleId, niveauActuel === niveau ? null : niveau);
-    return goto("permissions", { permView: "levels", permLevel: niveau });
+    return goto("permissions", { ...state, permOpen: true, permLevel: niveau });
   }
 
   // Pagination des commandes débloquées à ce niveau.
   if (action === "permcmdpage") {
-    return goto("permissions", { permView: "levels", permLevel: state.permLevel, permCmdPage: Number(extra) || 0 });
+    return goto("permissions", { ...state, permOpen: true, permCmdPage: Number(extra) || 0 });
   }
 
-  // Pagination du sélecteur de commande (vues "Cooldowns"/"Permissions
-  // supplémentaires").
+  // Pagination du sélecteur de commande partagé par "Cooldowns"/"Permissions
+  // supplémentaires" (même liste, même page pour les deux sections).
   if (action === "permcmdlistpage") {
-    return goto("permissions", { permView: state.permView, permCmdListPage: Number(extra) || 0 });
+    return goto("permissions", { ...state, permCmdListPage: Number(extra) || 0 });
   }
 
-  // Commande choisie dans le sélecteur paginé des vues "Cooldowns"/
-  // "Permissions supplémentaires".
+  // Commande choisie dans le sélecteur paginé de "Cooldowns" ou "Permissions
+  // supplémentaires" — extra distingue la section d'origine.
   if (action === "permcmdname") {
-    return goto("permissions", { permView: state.permView, permCmdName: interaction.values[0] });
+    if (extra === "cooldowns") return goto("permissions", { ...state, permCmdNameCooldown: interaction.values[0] });
+    if (extra === "extra") return goto("permissions", { ...state, permCmdNameExtra: interaction.values[0] });
+    return undefined;
   }
 
-  // Vue "Salons bloqués" : toggle direct sur le(s) salon(s) choisi(s) — même
-  // store que le check en tête de dispatch (musicCommands.js), bypass
+  // Section "Salons bloqués" : toggle direct sur le(s) salon(s) choisi(s) —
+  // même store que le check en tête de dispatch (musicCommands.js), bypass
   // owner/rang sys inconditionnel.
   if (action === "blockedchanneltoggle") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     for (const channelId of interaction.values) blockedChannelsStore.toggle(guildId, channelId);
-    return goto("permissions", { permView: "blocked" });
+    return goto("permissions", { ...state });
   }
 
   if (action === "pruneroles") {
@@ -1699,7 +1681,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       : "Rien à nettoyer, tous les rôles avec des permissions accordées existent encore.";
     // Retour sur "permissions" (où vit le bouton), pas une carte isolée sans
     // retour possible — même correctif que rolecreate/renamerole/roledelete.
-    const panel = buildConfigPanel(guild, "permissions", member, { permView: "levels" }, {});
+    const panel = buildConfigPanel(guild, "permissions", member, { ...state, permOpen: true }, {});
     return interaction.update(banniereSurPanel(panel, texte));
   }
 
