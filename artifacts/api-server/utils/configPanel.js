@@ -982,29 +982,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         )
       );
     }
-    if (can(member, "sys")) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:rolepresets`)
-            .setPlaceholder("Provisionnement en masse")
-            .addOptions(
-              new StringSelectMenuOptionBuilder().setLabel("Créer les rôles").setValue("create").setDescription(`Crée les ${rolePresets.TOTAL_ROLES} rôles prédéfinis`),
-              new StringSelectMenuOptionBuilder().setLabel("Supprimer les rôles").setValue("deleteall").setDescription("Supprime TOUS les rôles du serveur")
-            )
-        )
-      );
-    }
-    if (can(member, "panel.permissions.manage")) {
-      container.addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${ID}:permmaintenance`)
-            .setPlaceholder("Nettoyer les rôles supprimés")
-            .addOptions(new StringSelectMenuOptionBuilder().setLabel("Nettoyer les rôles supprimés").setValue("pruneroles"))
-        )
-      );
-    }
     container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
     // --- Section "Cooldowns" ---
