@@ -998,7 +998,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     if (can(member, "panel.permissions.manage")) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${ID}:pruneroles`).setLabel("Nettoyer les rôles supprimés").setStyle(ButtonStyle.Secondary)
+          new StringSelectMenuBuilder()
+            .setCustomId(`${ID}:permmaintenance`)
+            .setPlaceholder("Nettoyer les rôles supprimés")
+            .addOptions(new StringSelectMenuOptionBuilder().setLabel("Nettoyer les rôles supprimés").setValue("pruneroles"))
         )
       );
     }
@@ -1462,14 +1465,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // la règle « les actions passent dans un menu déroulant ».
   if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
 
-  // Navigation "Choisir une famille"/"Choisis une rubrique" : tout en BAS de
-  // la carte (jamais avant le contenu de la rubrique, sinon son select affiché
-  // avec le nom de la rubrique en cours ressemble à un bouton dupliquant le
-  // titre juste au-dessus — exactement le bug vu sur mobile).
-  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
-  const subNav = buildSubNav(meta.key, member, isOwner);
-  if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
+  // AUCUNE navigation ici (demande explicite, screen de référence) : chaque
+  // rubrique est une carte autonome, seul l'accueil (meta.key === "home",
+  // voir plus haut) garde le select "Choisir une famille". Pour changer de
+  // rubrique depuis une rubrique ouverte, on retape &panel.
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
@@ -1657,7 +1656,7 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     return goto("permissions", { ...state });
   }
 
-  if (action === "pruneroles") {
+  if (action === "permmaintenance") {
     if (!can(member, "panel.permissions.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
     const removed = pruneDeletedRoles(guild);
     const texte = removed.length
