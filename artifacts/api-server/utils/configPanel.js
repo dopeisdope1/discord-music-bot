@@ -420,32 +420,11 @@ function sectionBody(section, guild, member, state) {
     ].join("\n");
   }
 
-  if (section === "welcome") {
-    const config = welcomeStore.getConfig(guildId);
-    const lines = config.messages.length
-      ? config.messages.map((m, i) => `${i + 1}. *${m}*`).join("\n")
-      : "*Aucun message configuré — le message de bienvenue reste désactivé tant qu'il n'y en a pas au moins un.*";
-    return [
-      `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
-      `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "jamais"}`,
-      "",
-      "**Messages** (un est tiré au hasard à chaque arrivée) :",
-      lines,
-    ].join("\n");
-  }
-
-  if (section === "leave") {
-    const config = leaveStore.getConfig(guildId);
-    const lines = config.messages.length
-      ? config.messages.map((m, i) => `${i + 1}. *${m}*`).join("\n")
-      : "*Aucun message configuré — le message de départ reste désactivé tant qu'il n'y en a pas au moins un.*";
-    return [
-      `> **Salon** : ${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`,
-      `> **Suppression auto** : ${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "jamais"}`,
-      "",
-      "**Messages** (un est tiré au hasard à chaque départ, \"{user}\" = pseudo de la personne) :",
-      lines,
-    ].join("\n");
+  if (section === "welcome" || section === "leave") {
+    // Rien à renvoyer ICI : chaque sous-section pose son propre bloc
+    // "titre + état" juste avant son composant, dans buildConfigPanel (même
+    // patron que "Permissions") — jamais un résumé séparé.
+    return "";
   }
 
   if (section === "autorole") {
@@ -457,12 +436,9 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "verification") {
-    const config = verificationStore.getConfig(guildId);
-    const role = config.roleId && guild.roles.cache.get(config.roleId);
-    return [
-      `> **Rôle donné** : ${role ? role : "*aucun — non configuré*"}`,
-      `> **Salon du bouton** : ${config.channelId ? `<#${config.channelId}>` : "*pas encore posté*"}`,
-    ].join("\n");
+    // Rien à renvoyer ICI : chaque sous-section pose son propre bloc
+    // "titre + état" juste avant son composant, dans buildConfigPanel.
+    return "";
   }
 
   if (section === "access") {
@@ -518,19 +494,9 @@ function sectionBody(section, guild, member, state) {
   }
 
   if (section === "tickets") {
-    const config = ticketStore.getConfig(guildId);
-    const role = (id) => (id && guild.roles.cache.has(id) ? `<@&${id}>` : null);
-    const categorie = config.categoryId && guild.channels.cache.get(config.categoryId);
-    return [
-      `> **Rôle qui voit les tickets** : ${role(config.staffRoleId) || "*aucun — seul le demandeur y a accès*"}`,
-      // Sans rôle dédié, c'est le rôle staff qui ferme : on le dit, plutôt que
-      // d'afficher "aucun" et de laisser croire que personne ne peut fermer.
-      `> **Rôle qui peut fermer** : ${
-        role(config.closeRoleId) || (role(config.staffRoleId) ? `${role(config.staffRoleId)} *(le rôle staff)*` : "*aucun*")
-      }`,
-      `> **Le demandeur peut fermer son ticket** : ${config.ownerCanClose ? "oui" : "non"}`,
-      `> **Catégorie des tickets** : ${categorie ? `<#${categorie.id}>` : "*aucune — créés à la racine*"}`,
-    ].join("\n");
+    // Rien à renvoyer ICI : chaque sous-section pose son propre bloc
+    // "titre + état" juste avant son composant, dans buildConfigPanel.
+    return "";
   }
 
   if (section === "channels") {
@@ -865,7 +831,10 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // brutes sortaient en pastilles — un `@everyone` cité dans une alerte de
   // sécurité, notamment. Ils sont désormais DESSINÉS dans l'image de
   // l'accueil, où ils informent sans pouvoir notifier personne.
-  if (meta.key !== "home") enteteLignes.push(`### ${meta.label}`);
+  // Pas de "### Titre de la rubrique" ici : chaque carte commence directement
+  // par le titre en gras de sa première sous-section (ex. "**Permissions**"),
+  // sans bandeau générique au-dessus qui ferait doublon — demande explicite,
+  // comparée précisément au screen de référence.
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(enteteLignes.join("\n")));
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
 
@@ -1138,7 +1107,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       );
     }
   } else if (meta.key === "welcome") {
+    // UNE SEULE grande carte, 3 sous-sections (même patron que "Permissions").
     const config = welcomeStore.getConfig(guild.id);
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Salon**\n${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`
+      )
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
@@ -1148,6 +1124,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setMinValues(0)
           .setMaxValues(1)
           .setDefaultChannels(config.channelId ? [config.channelId] : [])
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Suppression automatique**\n${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "Jamais"}`
       )
     );
     container.addActionRowComponents(
@@ -1160,6 +1143,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
               new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(String(opt.seconds)).setDefault(config.autoDeleteSeconds === opt.seconds)
             )
           )
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Messages**\n${config.messages.length} message(s) — un est tiré au hasard à chaque arrivée`
       )
     );
     container.addActionRowComponents(
@@ -1183,7 +1173,14 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       );
     }
   } else if (meta.key === "leave") {
+    // UNE SEULE grande carte, 3 sous-sections (même patron que "Permissions").
     const config = leaveStore.getConfig(guild.id);
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Salon**\n${config.channelId ? `<#${config.channelId}>` : "*aucun — désactivé*"}`
+      )
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
@@ -1193,6 +1190,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setMinValues(0)
           .setMaxValues(1)
           .setDefaultChannels(config.channelId ? [config.channelId] : [])
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Suppression automatique**\n${config.autoDeleteSeconds ? `${config.autoDeleteSeconds} secondes` : "Jamais"}`
       )
     );
     container.addActionRowComponents(
@@ -1205,6 +1209,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
               new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(String(opt.seconds)).setDefault(config.autoDeleteSeconds === opt.seconds)
             )
           )
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Messages**\n${config.messages.length} message(s) — un est tiré au hasard à chaque départ`
       )
     );
     container.addActionRowComponents(
@@ -1240,7 +1251,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       )
     );
   } else if (meta.key === "verification") {
+    // UNE SEULE grande carte, 2 sous-sections (même patron que "Permissions").
     const config = verificationStore.getConfig(guild.id);
+    const role = config.roleId && guild.roles.cache.get(config.roleId);
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**Rôle donné**\n${role ? role : "*aucun — non configuré*"}`)
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
@@ -1249,6 +1266,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setMinValues(0)
           .setMaxValues(1)
           .setDefaultRoles(config.roleId && guild.roles.cache.has(config.roleId) ? [config.roleId] : [])
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Salon du bouton**\n${config.channelId ? `<#${config.channelId}>` : "*pas encore posté*"}`
       )
     );
     if (config.roleId) {
@@ -1275,7 +1299,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   } else if (meta.key === "banall") {
     for (const row of accessRows("banall", "ban de masse")) container.addActionRowComponents(row);
   } else if (meta.key === "tickets") {
+    // UNE SEULE grande carte, 4 sous-sections (même patron que "Permissions").
     const config = ticketStore.getConfig(guild.id);
+    const role = (id) => (id && guild.roles.cache.has(id) ? `<@&${id}>` : null);
+    const categorie = config.categoryId && guild.channels.cache.get(config.categoryId);
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Rôle staff**\n${role(config.staffRoleId) || "*aucun — seul le demandeur y a accès*"}`
+      )
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
@@ -1283,6 +1316,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setPlaceholder("Rôle qui voit les tickets (vide = aucun)")
           .setMinValues(0)
           .setDefaultRoles(config.staffRoleId && guild.roles.cache.has(config.staffRoleId) ? [config.staffRoleId] : [])
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        // Sans rôle dédié, c'est le rôle staff qui ferme : on le dit, plutôt
+        // que d'afficher "aucun" et de laisser croire que personne ne peut fermer.
+        `**Rôle de fermeture**\n${role(config.closeRoleId) || (role(config.staffRoleId) ? `${role(config.staffRoleId)} *(le rôle staff)*` : "*aucun*")}`
       )
     );
     container.addActionRowComponents(
@@ -1294,6 +1336,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .setDefaultRoles(config.closeRoleId && guild.roles.cache.has(config.closeRoleId) ? [config.closeRoleId] : [])
       )
     );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Catégorie des tickets**\n${categorie ? `<#${categorie.id}>` : "*aucune — créés à la racine*"}`
+      )
+    );
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
@@ -1302,6 +1351,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
           .addChannelTypes(ChannelType.GuildCategory)
           .setMinValues(0)
           .setDefaultChannels(config.categoryId && guild.channels.cache.has(config.categoryId) ? [config.categoryId] : [])
+      )
+    );
+    container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `**Le demandeur peut fermer son ticket**\n${config.ownerCanClose ? "Oui" : "Non"}`
       )
     );
     container.addActionRowComponents(
@@ -1471,10 +1527,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // la règle « les actions passent dans un menu déroulant ».
   if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
 
-  // AUCUNE navigation ici (demande explicite, screen de référence) : chaque
-  // rubrique est une carte autonome, seul l'accueil (meta.key === "home",
-  // voir plus haut) garde le select "Choisir une famille". Pour changer de
-  // rubrique depuis une rubrique ouverte, on retape &panel.
+  // Bouton "Accueil" : seule exception bouton restante avec la pagination,
+  // demande explicite pour ne plus avoir à retaper &panel — y compris après
+  // une modification, puisque chaque écran (donc chaque réponse à un clic)
+  // repasse par buildConfigPanel et le réaffiche.
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${ID}:home`).setLabel("Accueil").setStyle(ButtonStyle.Secondary).setEmoji("🏠")
+    )
+  );
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
@@ -1529,6 +1590,14 @@ async function handleConfigInteraction(interaction, customIdImpose) {
       console.error("[configPanel] interaction.update a échoué :", err);
       return editer(section, state, true).catch((err2) => console.error("[configPanel] repli texte refusé lui aussi :", err2));
     });
+
+  if (action === "home") {
+    // Bouton "Accueil" présent sur chaque rubrique : repart systématiquement
+    // sur un état vierge (aucun "state" précédent, utile pour qu'un retour
+    // suivi d'une réouverture d'une rubrique ne réaffiche pas une sélection
+    // d'une visite antérieure).
+    return goto("home", {});
+  }
 
   if (action === "nav") {
     // Le bouton de navigation donne une famille (clé dans le customId,
