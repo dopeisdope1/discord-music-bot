@@ -13,6 +13,7 @@ const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
 const moderationCommands = require("./moderationCommands");
 const { sanctionsHandlers } = require("./sanctionsCommands");
+const { perms, helpall } = require("./permsCommands");
 const moderationExtra = require("./moderationExtra");
 const { handleBan, handleUnban, handleBanInteraction, CUSTOM_ID: BAN_CUSTOM_ID } = require("./banPanel");
 const { handleBanAll, handleBanAllInteraction, ID: BANALL_CUSTOM_ID } = require("./banAll");
@@ -467,6 +468,11 @@ const modHandlers = {
   hideall: moderationExtra.hideall,
   unhideall: moderationExtra.unhideall,
   derank: moderationExtra.derank,
+  // &perms/&helpall — retirés temporairement (commit e54c514, "déplacés vers
+  // moderation-bot"), réintégrés ici puisque moderation-bot disparaît avec
+  // cette fusion.
+  perms,
+  helpall,
 };
 
 /**
