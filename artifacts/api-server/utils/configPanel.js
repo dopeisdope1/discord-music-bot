@@ -916,9 +916,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     container.addTextDisplayComponents(new TextDisplayBuilder().setContent(corps));
   }
   container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
-  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
-  const subNav = buildSubNav(meta.key, member, isOwner);
-  if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
 
   if (meta.key === "prefixes") {
     container.addActionRowComponents(
@@ -1472,6 +1469,15 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // saurait plus quel palier chaque action vise. C'est l'exception assumée à
   // la règle « les actions passent dans un menu déroulant ».
   if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
+
+  // Navigation "Choisir une famille"/"Choisis une rubrique" : tout en BAS de
+  // la carte (jamais avant le contenu de la rubrique, sinon son select affiché
+  // avec le nom de la rubrique en cours ressemble à un bouton dupliquant le
+  // titre juste au-dessus — exactement le bug vu sur mobile).
+  container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
+  const subNav = buildSubNav(meta.key, member, isOwner);
+  if (subNav) container.addActionRowComponents(new ActionRowBuilder().addComponents(subNav));
 
   return { flags: MessageFlags.IsComponentsV2, components: [container], ...(fichiers.length ? { files: fichiers } : {}) };
 }
