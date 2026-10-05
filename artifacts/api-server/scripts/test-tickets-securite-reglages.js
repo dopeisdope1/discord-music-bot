@@ -26,7 +26,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
 const ticketStore = require("../utils/ticketStore");
-const { buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -70,9 +70,13 @@ const guild = {
 };
 const owner = { id: "owner-1", guild: { id: "g1", ownerId: "owner-1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
 
+// La rubrique Tickets n'est pas dessinée : chaque réglage pose son propre
+// texte juste au-dessus de son sélecteur. On lit donc ce texte-là.
 const texteDe = (section, state) =>
-  buildSectionSpec(guild, section, owner, state)
-    .cartes.flatMap((c) => [c.titre || "", ...c.items.map((i) => `${i.nom} ${i.description || ""}`)])
+  buildConfigPanel(guild, section, owner, state)
+    .components[0].toJSON()
+    .components.filter((c) => c.type === 10)
+    .map((c) => c.content)
     .join("\n");
 
 const interaction = (customId, values) => ({
@@ -113,16 +117,19 @@ const interaction = (customId, values) => ({
   });
 
   await cas("on peut interdire au demandeur de fermer son propre ticket, puis le rautoriser", async () => {
-    await handleConfigInteraction(interaction("ticketownerclose:off", []));
+    // Bascule devenue un menu déroulant (plus de boutons) : la valeur choisie
+    // porte on/off.
+    await handleConfigInteraction(interaction("ticketownerclose", ["off"]));
     assert.strictEqual(ticketStore.getConfig("g1").ownerCanClose, false);
-    await handleConfigInteraction(interaction("ticketownerclose:on", []));
+    await handleConfigInteraction(interaction("ticketownerclose", ["on"]));
     assert.strictEqual(ticketStore.getConfig("g1").ownerCanClose, true);
   });
 
   await cas("l'écran affiche les quatre réglages, avec leur valeur réelle", () => {
     const texte = texteDe("tickets");
-    assert.ok(texte.includes("Rôle qui voit les tickets"), texte);
-    assert.ok(texte.includes("Rôle qui peut fermer"), texte);
+    assert.ok(texte.includes("Rôle staff"), texte);
+    assert.ok(texte.includes(`<@&${STAFF}>`), "le rôle staff réel doit être affiché");
+    assert.ok(texte.includes("Rôle de fermeture"), texte);
     assert.ok(texte.includes("Le demandeur peut fermer son ticket"), texte);
     assert.ok(texte.includes("Catégorie des tickets"), texte);
   });
@@ -130,7 +137,7 @@ const interaction = (customId, values) => ({
   await cas("sans rôle dédié, l'écran dit que c'est le staff qui ferme — pas \"aucun\"", () => {
     ticketStore.setConfig("g1", { closeRoleId: null });
     const texte = texteDe("tickets");
-    assert.ok(/le rôle staff/.test(texte), `l'écran doit expliquer le repli : ${texte}`);
+    assert.ok(texte.includes(`<@&${STAFF}> *(le rôle staff)*`), `l'écran doit expliquer le repli : ${texte}`);
   });
 
   // Les cas "Protection" (seuils anti-spam/anti-lien/anti-mention, salons

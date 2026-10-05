@@ -330,12 +330,13 @@ function sectionBody(section, guild, member, state) {
     const channels = getAllLogChannels(guildId);
     const manage = can(member, "logs.manage");
 
-    const lignes = Object.entries(LOG_CATEGORY_LABELS).flatMap(([cat, label]) => [
-      `**${label}**`,
-      channels[cat] ? `<#${channels[cat]}>` : "*aucun — désactivé*",
-      "",
-    ]);
-    lignes.pop();
+    // Format « > **Libellé** : valeur » : c'est celui que le tableau de bord
+    // dessiné sait lire (une ligne à deux niveaux par catégorie). L'ancien
+    // format titre/valeur sur deux lignes était lu comme huit cartes VIDES,
+    // les salons partant en vrac dans le pied de l'image.
+    const lignes = Object.entries(LOG_CATEGORY_LABELS).map(
+      ([cat, label]) => `> **${label}** : ${channels[cat] ? `<#${channels[cat]}>` : "*aucun — désactivé*"}`
+    );
     if (!manage) lignes.push("", "*Lecture seule — le droit `logs.manage` est requis pour modifier.*");
     return lignes.join("\n");
   }
@@ -807,7 +808,11 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // actions rapides juste en dessous (renommer/ajouter/supprimer) s'y
   // réfèrent directement, mieux servies par le vrai texte Discord (mentions
   // résolues) que par une image à régénérer à chaque clic.
-  const texteForce = meta.key === "permissions";
+  // Une rubrique dont le corps est VIDE (Bienvenue, Départ, Vérification,
+  // Tickets : chaque sous-section pose son propre texte plus bas) n'a rien à
+  // dessiner — sans ce garde-fou, elle joignait une image « Rien à afficher
+  // pour l'instant. » au-dessus de son vrai contenu.
+  const texteForce = meta.key === "permissions" || !corps;
   const specRubrique = texteForce ? null : buildSectionSpec(guild, meta.key, member, state, corps);
   const pngRubrique = sansImage || texteForce ? null : rendreEnCache(specRubrique);
   if (pngRubrique) {

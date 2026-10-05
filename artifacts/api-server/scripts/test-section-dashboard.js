@@ -199,10 +199,28 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
     }
   });
 
-  // "Permissions" est la rubrique TEXTE assumée (configPanel.js, texteForce) :
-  // ses sections s'éditent en place, mieux servies par le vrai texte Discord
-  // qu'une image à régénérer à chaque clic. Elle est vérifiée à part plus bas.
-  const TEXTE_SEUL = ["permissions"];
+  // Rubriques TEXTE (configPanel.js, texteForce) : "Permissions", et celles
+  // dont chaque sous-section pose son propre texte (corps vide : Bienvenue,
+  // Départ, Vérification, Tickets). Elles n'ont rien à dessiner.
+  const TEXTE_SEUL = ["permissions", "welcome", "leave", "verification", "tickets"];
+
+  await cas("une rubrique sans rien à dessiner ne joint JAMAIS une image « Rien à afficher »", () => {
+    for (const key of TEXTE_SEUL) {
+      const panel = buildConfigPanel(guild, key, owner);
+      const composants = panel.components[0].toJSON().components;
+      assert.ok(!composants.some((c) => c.type === 12), `${key} : galerie inutile`);
+      assert.strictEqual(panel.files, undefined, `${key} : image inutile jointe`);
+      assert.ok(composants.some((c) => c.type === 10 && c.content.includes("**")), `${key} : son texte doit rester affiché`);
+    }
+  });
+
+  await cas("Logs : chaque catégorie est dessinée avec son salon, sur une ligne à deux niveaux", () => {
+    const spec = buildSectionSpec(guild, "logs", owner);
+    const items = spec.cartes.flatMap((c) => c.items);
+    assert.ok(items.length >= 8, `${items.length} ligne(s) — chaque catégorie doit être une ligne`);
+    assert.ok(items.every((i) => i.description), "chaque catégorie doit porter sa valeur (salon ou désactivé)");
+    assert.ok(!spec.pied || !spec.pied.includes("désactivé"), "les valeurs ne doivent plus partir dans le pied");
+  });
 
   await cas("le panel joint bien l'image sur chaque rubrique, jamais une galerie sans pièce jointe", () => {
     for (const s of rubriques.filter((r) => !TEXTE_SEUL.includes(r.key))) {

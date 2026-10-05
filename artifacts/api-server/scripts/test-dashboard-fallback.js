@@ -185,11 +185,11 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     // était interminable et redondante. Les rubriques, elles, dessinent bien
     // leur contenu.
     assert.strictEqual(buildConfigPanel(makeGuild(), "home", membre).files, undefined);
-    assert.strictEqual(buildConfigPanel(makeGuild(), "tickets", membre).files.length, 1);
+    assert.strictEqual(buildConfigPanel(makeGuild(), "logs", membre).files.length, 1);
   });
 
   await cas("sansImage : une rubrique repasse en texte, sans pièce jointe, navigation intacte", () => {
-    const panel = buildConfigPanel(makeGuild(), "tickets", membre, {}, { sansImage: true });
+    const panel = buildConfigPanel(makeGuild(), "logs", membre, {}, { sansImage: true });
     assert.strictEqual(panel.files, undefined);
     assert.ok(!composantsDe(panel).some((c) => c.type === GALERIE));
     assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "le menu de navigation doit rester utilisable");
@@ -200,7 +200,7 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
       .flatMap((r) => r.components)
       .find((c) => c.custom_id === "cfg:home");
     assert.ok(accueil, "le bouton Accueil doit rester présent");
-    assert.ok(texteDe(panel).includes("Rôle staff"), texteDe(panel));
+    assert.ok(texteDe(panel).includes("**Modération** :"), texteDe(panel));
   });
 
   console.log("\nEnvoi refusé par Discord (pas de « Joindre des fichiers ») :");
@@ -255,7 +255,7 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     // L'accueil n'a plus d'image : il n'y a rien à replier pour lui. Une
     // rubrique, si — et un salon qui refuse les pièces jointes doit toujours
     // pouvoir l'afficher en texte plutôt que de laisser le clic sans réponse.
-    const clic = fakeClic(`${ID_PANEL}:nav:tickets`);
+    const clic = fakeClic(`${ID_PANEL}:nav:logs`);
     await handleConfigInteraction(clic);
     assert.strictEqual(clic.editions.length, 2);
     assert.strictEqual(clic.editions[1].files, undefined);
