@@ -211,6 +211,37 @@ const client = { user: { id: "bot-1", tag: "bot#0001" }, channels: { cache: new 
     assert.ok(texte(msg).includes("**2**"), texte(msg));
   });
 
+  await cas("&unmuteall épargne les mutes &bmute (verrou de grade) et leur entrée reste cohérente", async () => {
+    const gradeMuteStore = require("../utils/gradeMuteStore");
+    const normal = makeTarget("333333333333333333");
+    const grade = makeTarget("444444444444444444");
+    const { guild } = makeContext({ targets: [normal, grade] });
+    normal.roles.cache.set(MUTE_ROLE_ID, { id: MUTE_ROLE_ID });
+    grade.roles.cache.set(MUTE_ROLE_ID, { id: MUTE_ROLE_ID });
+    gradeMuteStore.setMute(guild.id, grade.id, { gradeIndex: 3, moderatorId: "chef-1" });
+
+    const msg = makeMessage(guild, []);
+    await modHandlers.unmuteall(client, msg, []);
+    assert.ok(!normal.roles.cache.has(MUTE_ROLE_ID), "le mute normal est levé");
+    assert.ok(grade.roles.cache.has(MUTE_ROLE_ID), "le mute bmute reste en place");
+    assert.ok(gradeMuteStore.getMute(guild.id, grade.id), "son entrée de grade n'est pas orpheline");
+    assert.ok(texte(msg).includes("bunmute"), texte(msg));
+    gradeMuteStore.removeMute(guild.id, grade.id);
+  });
+
+  await cas("&permunmute refuse un mute &bmute et renvoie vers &bunmute", async () => {
+    const gradeMuteStore = require("../utils/gradeMuteStore");
+    const { guild } = makeContext();
+    const target = guild.members.cache.get(TARGET_ID);
+    target.roles.cache.set(MUTE_ROLE_ID, { id: MUTE_ROLE_ID });
+    gradeMuteStore.setMute(guild.id, TARGET_ID, { gradeIndex: 2, moderatorId: "chef-1" });
+    const msg = makeMessage(guild, [`<@${TARGET_ID}>`]);
+    await modHandlers.permunmute(client, msg, [`<@${TARGET_ID}>`]);
+    assert.ok(target.roles.cache.has(MUTE_ROLE_ID), "le rôle ne doit pas être retiré");
+    assert.ok(texte(msg).includes("bunmute"), texte(msg));
+    gradeMuteStore.removeMute(guild.id, TARGET_ID);
+  });
+
   console.log("\nCommandes retirées :");
 
   await cas("&tempmute, &cmute, &tempcmute et &uncmute ne sont plus routées", () => {

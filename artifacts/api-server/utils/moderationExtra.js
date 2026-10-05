@@ -5,6 +5,7 @@ const { checkHierarchy, checkBotPermission, report } = require("./moderation/act
 const { formatDuration, parseDuration } = require("./sanctionsCommands");
 const historyStore = require("./moderationHistoryStore");
 const muteStore = require("./muteStore");
+const gradeMuteStore = require("./gradeMuteStore");
 const tempBanStore = require("./tempBanStore");
 const listNavigator = require("./listNavigator");
 
@@ -128,6 +129,13 @@ async function unmuteMember(client, message, args) {
 
   if (!target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} n'a pas le rôle de mute (pour un timeout : \`unmute\`).`);
 
+  // Mute posé par &bmute : même rôle, mais verrouillé à un grade. Le lever
+  // ici contournerait ce verrou (et laisserait l'entrée orpheline dans
+  // gradeMuteStore) — seul &bunmute vérifie le grade.
+  if (gradeMuteStore.getMute(message.guild.id, target.id)) {
+    return reply(message, "error", `${target.user.tag} est mute par \`bmute\` (verrouillé au grade) — utilise \`bunmute @membre\`.`);
+  }
+
   try {
     await target.roles.remove(role, `Démute par ${message.author.tag}`);
   } catch (err) {
@@ -205,6 +213,11 @@ listNavigator.registerProvider("mutelist", (guild) => {
  * ET les timeouts natifs en cours (&mute). Le rôle de mute n'est requis que
  * pour la première partie : sans rôle configuré, les timeouts sont quand même
  * levés.
+ *
+ * Les mutes posés par &bmute (même rôle, verrouillé à un grade) sont
+ * volontairement ÉPARGNÉS : ils ne se lèvent que par &bunmute, qui vérifie le
+ * grade. Les inclure ici contournerait ce verrou et laisserait leurs entrées
+ * orphelines dans gradeMuteStore.
  */
 async function unmuteall(client, message) {
   if (!can(message.member, "moderation.unmuteall")) return;
@@ -214,8 +227,13 @@ async function unmuteall(client, message) {
   const echecs = [];
 
   let roleCount = 0;
+  let gradesEpargnes = 0;
   if (role) {
     for (const m of role.members.values()) {
+      if (gradeMuteStore.getMute(message.guild.id, m.id)) {
+        gradesEpargnes++;
+        continue;
+      }
       try {
         await m.roles.remove(role, `Démute de masse par ${message.author.tag}`);
         roleCount++;
@@ -250,15 +268,19 @@ async function unmuteall(client, message) {
     fields: [
       { label: "Rôle de mute retiré", value: String(roleCount) },
       { label: "Timeouts levés", value: String(timeoutCount) },
+      ...(gradesEpargnes ? [{ label: "Mutes bot (bmute) épargnés", value: String(gradesEpargnes) }] : []),
     ],
     action: "unmuteall",
     targetId: null,
     targetTag: null,
     moderator: message.author,
     channelId: message.channel.id,
-    extra: { count, roleCount, timeoutCount },
+    extra: { count, roleCount, timeoutCount, gradesEpargnes },
   });
-  await reply(message, "success", `**${count}** membre(s) démute (${roleCount} rôle de mute, ${timeoutCount} timeout).`);
+  const epargnes = gradesEpargnes
+    ? `\n${gradesEpargnes} mute(s) \`bmute\` laissé(s) en place (verrouillés au grade) — \`bunmute @membre\` pour les lever.`
+    : "";
+  await reply(message, "success", `**${count}** membre(s) démute (${roleCount} rôle de mute, ${timeoutCount} timeout).${epargnes}`);
 }
 
 /**
