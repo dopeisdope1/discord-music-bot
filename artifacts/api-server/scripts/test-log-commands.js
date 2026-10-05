@@ -15,7 +15,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "logcmd-test-"));
 process.env.BOT_OWNER_IDS = "staff-1";
 
 const { Collection, ChannelType, PermissionsBitField } = require("discord.js");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 const { logHandlers, COMMAND_TO_CATEGORY } = require("../utils/logCommands");
 const { getAllLogChannels, setLogChannelId } = require("../utils/modLogStore");
 

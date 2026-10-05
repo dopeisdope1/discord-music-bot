@@ -47,7 +47,6 @@ const { handleSelfClear } = require("./utils/selfClear");
 // (voir utils/setClearCommand.js et utils/selfClearStore.js).
 const { handleSetClearTextCommand, handleSetClearInteraction, CUSTOM_ID: SETCLEAR_CUSTOM_ID } = require("./utils/setClearCommand");
 const { handleConfigInteraction } = require("./utils/configPanel");
-const { buildPermissionsPanel, handlePermissionsPanelInteraction, EXAMPLE_CUSTOM_IDS } = require("./utils/examplePermissionsPanel");
 const levels = require("./utils/levels");
 const { revokeIfGone } = require("./utils/permissions/cleanup");
 const {
@@ -235,14 +234,6 @@ client.on("interactionCreate", async (interaction) => {
   // et ne sont donc pas concernées.
   if (interaction.customId?.startsWith("cfg:")) {
     await handleConfigInteraction(interaction).catch((err) => console.error("[configPanel]", err));
-    return;
-  }
-
-  // "&examplepanel" — panel de démonstration Embed+ActionRows (voir
-  // utils/examplePermissionsPanel.js), distinct du vrai "&panel" : données
-  // factices, sert uniquement à visualiser la structure demandée.
-  if (EXAMPLE_CUSTOM_IDS.includes(interaction.customId)) {
-    await handlePermissionsPanelInteraction(interaction).catch((err) => console.error("[examplePermissionsPanel]", err));
     return;
   }
 

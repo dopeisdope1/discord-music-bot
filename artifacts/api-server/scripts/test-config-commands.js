@@ -15,8 +15,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "configcmd-test-"))
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const permStore = require("../utils/permissions/store");
-const { configHandlers, resolvePermissionKey } = require("../utils/configCommands");
+const levelStore = require("../utils/permissions/levelStore");
+const { configHandlers, resolveLevel } = require("../utils/configCommands");
 const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;
@@ -31,8 +31,6 @@ async function cas(nom, fn) {
   }
 }
 
-const ROLE_ADMIN = "role-admin-perms";
-permStore.setRoleGrants("g1", ROLE_ADMIN, ["panel.permissions.manage"]);
 
 function makeMessage({ userId = "owner-1", roleIds = [], roles = [], users = [], channels = new Collection() } = {}) {
   const roleCache = new Collection();
@@ -91,61 +89,48 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
 
   console.log("\n&set perm / &del perm / &clear perms :");
 
-  await cas("une clé inconnue liste les clés valides au lieu d'échouer sèchement", async () => {
-    const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
+  await cas("un niveau invalide rappelle la plage 1-9 au lieu d'échouer sèchement", async () => {
+    const msg = makeMessage({ roles: [cible] });
     await configHandlers.setPerm(null, msg, ["nimportequoi"]);
-    assert.ok(texte(msg).includes("channels.lock"), "les clés disponibles doivent être rappelées");
+    assert.ok(texte(msg).includes("entre 1 et 9"), texte(msg));
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), null);
   });
 
-  await cas("accorde une permission à un rôle", async () => {
-    const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["channels.lock"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.lock"]);
+  await cas("assigne un niveau à un rôle", async () => {
+    await configHandlers.setPerm(null, makeMessage({ roles: [cible] }), ["4"]);
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), 4);
   });
 
-  await cas("accorder deux fois ne duplique pas et le dit", async () => {
-    const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["channels.lock"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.lock"]);
-    assert.ok(texte(msg).includes("déjà"), texte(msg));
+  await cas("réassigner remplace le niveau précédent", async () => {
+    await configHandlers.setPerm(null, makeMessage({ roles: [cible] }), ["6"]);
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), 6);
   });
 
-  await cas("une permission de plus s'ajoute sans écraser la précédente", async () => {
-    await configHandlers.setPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["channels.manage"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible").sort(), ["channels.lock", "channels.manage"]);
+  await cas("&del perm retire le niveau du rôle", async () => {
+    await configHandlers.delPerm(null, makeMessage({ roles: [cible] }), []);
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), null);
   });
 
-  await cas("&del perm ne retire que la clé visée", async () => {
-    await configHandlers.delPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] }), ["channels.lock"]);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), ["channels.manage"]);
-  });
-
-  await cas("&clear perms vide tout et annonce le nombre retiré", async () => {
-    const msg = makeMessage({ roleIds: [ROLE_ADMIN], roles: [cible] });
-    await configHandlers.clearPerms(null, msg);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), []);
-    assert.ok(texte(msg).includes("1 permission"), texte(msg));
-  });
-
-  await cas("les permissions individuelles passent par le même chemin", async () => {
+  await cas("les niveaux individuels passent par le même chemin", async () => {
     const membre = { id: "membre-1" };
-    await configHandlers.setPerm(null, makeMessage({ roleIds: [ROLE_ADMIN], users: [membre] }), ["logs.view"]);
-    assert.deepStrictEqual(permStore.getUserGrants("g1", "membre-1"), ["logs.view"]);
-    await configHandlers.clearPerms(null, makeMessage({ roleIds: [ROLE_ADMIN], users: [membre] }));
-    assert.deepStrictEqual(permStore.getUserGrants("g1", "membre-1"), []);
+    await configHandlers.setPerm(null, makeMessage({ users: [membre] }), ["3"]);
+    assert.strictEqual(levelStore.getUserLevel("g1", "membre-1"), 3);
+    await configHandlers.clearPerms(null, makeMessage({ users: [membre] }), []);
+    assert.strictEqual(levelStore.getUserLevel("g1", "membre-1"), null);
   });
 
-  await cas("la clé est tolérante à la casse", () => {
-    assert.strictEqual(resolvePermissionKey("CHANNELS.Lock"), "channels.lock");
-    assert.strictEqual(resolvePermissionKey("  logs.view  "), "logs.view");
-    assert.strictEqual(resolvePermissionKey("inexistante"), null);
+  await cas("resolveLevel n'accepte que 1 à 9", () => {
+    assert.strictEqual(resolveLevel(" 5 "), 5);
+    assert.strictEqual(resolveLevel("0"), null);
+    assert.strictEqual(resolveLevel("10"), null);
+    assert.strictEqual(resolveLevel("abc"), null);
   });
 
-  await cas("sans le droit panel.permissions.manage, tout reste muet", async () => {
+  await cas("hors propriétaire du bot, tout reste muet", async () => {
     const msg = makeMessage({ userId: "membre-lambda", roles: [cible] });
-    await configHandlers.setPerm(null, msg, ["channels.manage"]);
+    await configHandlers.setPerm(null, msg, ["7"]);
     assert.strictEqual(msg._replies.length, 0);
-    assert.deepStrictEqual(permStore.getRoleGrants("g1", "role-cible"), []);
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), null);
   });
 
   console.log("\nVues de configuration :");

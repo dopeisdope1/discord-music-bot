@@ -27,7 +27,7 @@ const { Collection } = require("discord.js");
 const { handleSetClearTextCommand, handleSetClearInteraction } = require("../utils/setClearCommand");
 const selfClearStore = require("../utils/selfClearStore");
 const { handleSelfClear } = require("../utils/selfClear");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

@@ -19,7 +19,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection } = require("discord.js");
 const ticketStore = require("../utils/ticketStore");
-const permissionsStore = require("../utils/permissions/store");
+const permissionsStore = require("./_levelGrants");
 const { claimTicket, addTicketMember, removeTicketMember, renameTicket, closeTicketCommand } = require("../utils/tickets");
 const { handleMusicTextCommand } = require("../utils/musicCommands");
 

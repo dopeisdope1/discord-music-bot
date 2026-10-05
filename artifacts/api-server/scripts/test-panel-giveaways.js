@@ -19,7 +19,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 const { Collection, PermissionsBitField } = require("discord.js");
 const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
 const giveawayStore = require("../utils/giveawayStore");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

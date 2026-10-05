@@ -22,7 +22,7 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const accessStore = require("../utils/accessStore");
 const { checkHierarchy } = require("../utils/moderation/actions");
 const moderationHandlers = require("../utils/moderationCommands");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 const roleLimitStore = require("../utils/roleLimitStore");
 
 accessStore.add("sys", "sys-1");

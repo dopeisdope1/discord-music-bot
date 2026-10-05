@@ -264,40 +264,6 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(!autoReactStore.getForChannel("c1").includes("👍"));
   });
 
-  await cas("set_perm_grant accorde la clé choisie au RÔLE choisi (mentionable = rôle)", async () => {
-    const permStore = require("../utils/permissions/store");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.set_perm_grant.run(client, interaction, {
-      mentionableId: TEST_ROLE_ID,
-      mentionableType: "role",
-      text: { category: "channels", key: "channels.lock" },
-    });
-    assert.ok(permStore.getRoleGrants("g1", TEST_ROLE_ID).includes("channels.lock"));
-  });
-
-  await cas("set_perm_grant accorde la clé choisie au MEMBRE choisi (mentionable = membre)", async () => {
-    const permStore = require("../utils/permissions/store");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.set_perm_grant.run(client, interaction, {
-      mentionableId: TARGET_ID,
-      mentionableType: "user",
-      text: { category: "channels", key: "channels.lock" },
-    });
-    assert.ok(permStore.getUserGrants("g1", TARGET_ID).includes("channels.lock"));
-  });
-
-  await cas("del_perm_grant retire la clé du membre choisi", async () => {
-    const permStore = require("../utils/permissions/store");
-    permStore.grantToUser("g1", TARGET_ID, "channels.lock");
-    const interaction = makeInteraction();
-    await commandForms.FORMS.del_perm_grant.run(client, interaction, {
-      mentionableId: TARGET_ID,
-      mentionableType: "user",
-      text: { category: "channels", key: "channels.lock" },
-    });
-    assert.ok(!permStore.getUserGrants("g1", TARGET_ID).includes("channels.lock"));
-  });
-
   await cas("la carte set_perm_grant n'affiche le sélecteur de clé qu'une fois une catégorie choisie", () => {
     const emptyJson = commandForms.buildFormCard("set_perm_grant", { id: "staff-1" }).components[0].toJSON();
     // type 3 = StringSelectMenu (catégorie/clé) ; le mentionable est un type 7 à part.

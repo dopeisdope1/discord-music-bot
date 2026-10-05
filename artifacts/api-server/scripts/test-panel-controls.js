@@ -25,7 +25,7 @@ const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
 const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHistorySearchModal, ID, SECTIONS: SECTIONS_META } = require("../utils/configPanel");
 const { ACCENT_COLOR } = require("../utils/helpPanel");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 const permCatalog = require("../utils/permissions/catalog");
 const { getPrefixes } = require("../utils/prefixStore");
 
@@ -331,7 +331,7 @@ function actionsDe(json) {
     assert.ok(!texte.includes("panel.roles.manage"), "la clé technique ne doit pas apparaître, seulement son libellé");
   });
 
-  console.log("\nCréer / supprimer un rôle, le marquer exclusif (permissions > rôle) :");
+  console.log("\nCréer / supprimer un rôle (permissions > rôle) :");
 
   /** Un serveur assez complet pour que utils/serverAdminCommands.js::roleAdmin fonctionne (create/delete réels). */
   function fakeGuildForRoleAdmin() {
@@ -503,28 +503,6 @@ function actionsDe(json) {
     assert.ok(!g.roles.cache.has(role.id));
   });
 
-  await cas("\"Ajouter à l'exclusif\" marque le rôle, l'affichage et le bouton basculent", async () => {
-    const g = guild;
-    permStore.setRoleExclusive("g1", roleId, false);
-    let panel = null;
-    await handleConfigInteraction(fakeInteraction(`roleexclusive:${roleId}`, { update: async (p) => { panel = p; } }));
-    assert.ok(permStore.isRoleExclusive("g1", roleId), "le rôle doit être marqué exclusif");
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
-    assert.ok(/Exclusif[\s\S]{0,12}oui/.test(texte), texte);
-    assert.ok(
-      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:roleexclusiveoff:${roleId}`),
-      "l'action doit basculer vers \"Retirer de l'exclusif\""
-    );
-  });
-
-  await cas("\"Retirer de l'exclusif\" annule le marquage", async () => {
-    permStore.setRoleExclusive("g1", roleId, true);
-    let panel = null;
-    await handleConfigInteraction(fakeInteraction(`roleexclusiveoff:${roleId}`, { update: async (p) => { panel = p; } }));
-    assert.ok(!permStore.isRoleExclusive("g1", roleId));
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
-    assert.ok(/Exclusif[\s\S]{0,12}non/.test(texte), texte);
-  });
 
   console.log("\nNavigation regroupée par famille :");
 

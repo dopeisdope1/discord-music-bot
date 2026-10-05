@@ -17,7 +17,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "levels-test-"));
 const { Collection } = require("discord.js");
 const levelStore = require("../utils/levelStore");
 const levels = require("../utils/levels");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

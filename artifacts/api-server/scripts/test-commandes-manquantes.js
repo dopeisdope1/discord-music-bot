@@ -23,7 +23,7 @@ const { applyAutoroles } = require("../utils/autoroleCommands");
 const autoroleStore = require("../utils/autoroleStore");
 const absenceStore = require("../utils/absenceStore");
 const roleLimitStore = require("../utils/roleLimitStore");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

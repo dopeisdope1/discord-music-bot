@@ -10,7 +10,6 @@ const helpNavigator = require("./helpNavigator");
 const gradeCardPanel = require("./gradeCardPanel");
 const emojiPanel = require("./emojiPanel");
 const { buildConfigPanel, hasAnyPanelAccess } = require("./configPanel");
-const { buildPermissionsPanel } = require("./examplePermissionsPanel");
 const palierPanel = require("./palierPanel");
 const { publicHandlers } = require("./publicCommands");
 const moderationCommands = require("./moderationCommands");
@@ -136,14 +135,6 @@ const modHandlers = {
     await repondreAvecTableauDeBord(message, (sansImage) =>
       buildConfigPanel(message.guild, "home", message.member, {}, { sansImage })
     );
-  },
-
-  // Panel de démonstration (Embed + ActionRows, voir
-  // utils/examplePermissionsPanel.js) — structure demandée reproduisant une
-  // capture de référence, données factices. Distinct du vrai "&panel"
-  // ci-dessus (Components V2, données réelles) : ne JAMAIS les confondre.
-  async examplepanel(client, message) {
-    return message.reply(buildPermissionsPanel());
   },
 
   // Raccourci direct vers les paliers de permissions (voir

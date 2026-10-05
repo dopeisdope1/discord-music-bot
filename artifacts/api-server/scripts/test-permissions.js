@@ -19,7 +19,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "perm-test-"));
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const accessStore = require("../utils/accessStore");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
+const levelStore = require("../utils/permissions/levelStore");
 const { can, hasConfiguredAccess } = require("../utils/permissions/engine");
 const { revokeIfGone, sweepGuild, pruneDeletedRoles } = require("../utils/permissions/cleanup");
 
@@ -139,7 +140,7 @@ cas("un membre absent de tous les serveurs perd ses octrois individuels", () => 
   permStore.grantToUser(GUILD_ID, "gone-1", "channels.manageall");
   const changes = revokeIfGone(fakeClient([guild]), GUILD_ID, "gone-1");
   assert.ok(changes.length > 0);
-  assert.deepStrictEqual(permStore.getUserGrants(GUILD_ID, "gone-1"), []);
+  assert.strictEqual(levelStore.getUserLevel(GUILD_ID, "gone-1"), null);
 });
 
 cas("un membre encore présent sur un autre serveur du bot n'est PAS révoqué", () => {
@@ -148,7 +149,7 @@ cas("un membre encore présent sur un autre serveur du bot n'est PAS révoqué",
   permStore.grantToUser(GUILD_ID, "still-here", "channels.manageall");
   const changes = revokeIfGone(fakeClient([guildA, guildB]), GUILD_ID, "still-here");
   assert.deepStrictEqual(changes, []);
-  assert.deepStrictEqual(permStore.getUserGrants(GUILD_ID, "still-here"), ["channels.manageall"]);
+  assert.strictEqual(levelStore.getUserLevel(GUILD_ID, "still-here"), 5);
 });
 
 cas("un retour recalcule l'accès sur les rôles actuels, sans rien à restaurer", () => {
@@ -174,15 +175,12 @@ cas("pruneDeletedRoles retire les octrois des rôles qui n'existent plus, garde 
   const guild = { id: "guild-prune", roles: { cache: new Collection([[roleVivant.id, roleVivant]]) } };
   permStore.setRoleGrants("guild-prune", "role-vivant", ["moderation.kick"]);
   permStore.setRoleGrants("guild-prune", "role-mort", ["channels.manageall"]);
-  permStore.setRoleExclusive("guild-prune", "role-mort-2", true);
 
   const removed = pruneDeletedRoles(guild);
   assert.ok(removed.includes("role-mort"));
-  assert.ok(removed.includes("role-mort-2"));
   assert.ok(!removed.includes("role-vivant"));
-  assert.deepStrictEqual(permStore.getRoleGrants("guild-prune", "role-vivant"), ["moderation.kick"]);
-  assert.deepStrictEqual(permStore.getRoleGrants("guild-prune", "role-mort"), []);
-  assert.strictEqual(permStore.isRoleExclusive("guild-prune", "role-mort-2"), false);
+  assert.strictEqual(levelStore.getRoleLevel("guild-prune", "role-vivant"), 4);
+  assert.strictEqual(levelStore.getRoleLevel("guild-prune", "role-mort"), null);
 });
 
 cas("pruneDeletedRoles n'a rien à faire quand tout existe encore", () => {

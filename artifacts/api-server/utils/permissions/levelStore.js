@@ -4,8 +4,8 @@ const { ecrireJson, lireJson } = require("../jsonFile");
 const { LEVEL_MIN, LEVEL_MAX } = require("./levelCatalog");
 
 // Niveau (1-9) assigné à un RÔLE ou à un MEMBRE INDIVIDUEL, par serveur —
-// remplace les octrois clé par clé de utils/permissions/store.js (conservé
-// pour mémoire/migration, plus consommé par engine.js).
+// remplace les octrois clé par clé de l'ancien utils/permissions/store.js (supprimé ;
+// plus aucun code ne le lisait).
 //
 // Structure : { [guildId]: { roleLevels: {roleId: 1-9}, userLevels: {userId: 1-9} } }
 // Un membre peut avoir un niveau individuel EN PLUS de celui de ses rôles —

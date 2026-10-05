@@ -18,7 +18,7 @@ const { Collection } = require("discord.js");
 const { utilityHandlers } = require("../utils/utilityCommands");
 const { commandesParPrefixe } = require("../utils/permsCommands");
 const { estTableau } = require("../utils/sectionDashboard");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

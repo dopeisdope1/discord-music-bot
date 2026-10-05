@@ -22,7 +22,7 @@ const readOnlyLists = require("../utils/readOnlyLists");
 const { DEFINITIONS } = readOnlyLists;
 const calc = require("../utils/calc");
 const wikipedia = require("../utils/wikipedia");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {

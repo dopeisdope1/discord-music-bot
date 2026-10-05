@@ -26,7 +26,7 @@ const { Collection } = require("discord.js");
 const { buildFamilyCard, famillesDe, tourneSeule } = require("../utils/familyHelp");
 const { CATEGORIES } = require("../utils/commandCatalog");
 const { isImplemented } = require("../utils/implementedCommands");
-const permStore = require("../utils/permissions/store");
+const permStore = require("./_levelGrants");
 
 let reussis = 0;
 async function cas(nom, fn) {
