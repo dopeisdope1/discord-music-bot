@@ -1,10 +1,15 @@
 /**
- * Vérifie le bouton "Renommer" de la rubrique Rôles et permissions du panel
- * (utils/configPanel.js) : demande explicite pour ne pas avoir à taper
- * `&role rename` — cliquer un rôle dans le panel doit permettre de le
- * renommer directement, via une modale Discord pré-remplie avec le nom
- * actuel. Réutilise TEL QUEL utils/serverAdminCommands.js::roleAdmin (même
- * chemin que `&role rename`), pas une deuxième implémentation.
+ * Vérifie le bouton "Renommer" des RÔLES PAR NIVEAU (&p, utils/palierPanel.js).
+ *
+ * Il vivait auparavant dans &panel > Rôles et permissions ; ce parcours a été
+ * remplacé par la carte à niveaux (commit 023ec29) et "Renommer" a déménagé
+ * dans &p, avec Supprimer/Gérer, une ligne par niveau. Demande d'origine
+ * inchangée : ne pas avoir à taper `&role rename` — cliquer doit ouvrir une
+ * modale pré-remplie avec le nom actuel. Réutilise TEL QUEL
+ * utils/serverAdminCommands.js::roleAdmin (même chemin que `&role rename`).
+ *
+ * Vérifie aussi que "Gérer" (attribuer/déplacer un niveau) est réservé au
+ * propriétaire du bot, comme &set perm, &access et &panel > Permissions.
  *
  * Lancement : node scripts/test-panel-role-rename.js
  */
@@ -17,8 +22,9 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-role-rename-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField, MessageFlags } = require("discord.js");
-const { handleConfigInteraction, ID } = require("../utils/configPanel");
-const permStore = require("./_levelGrants");
+const { buildPalierPanel, handlePalierInteraction, CUSTOM_ID } = require("../utils/palierPanel");
+const levelStore = require("../utils/permissions/levelStore");
+const accessStore = require("../utils/accessStore");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -32,14 +38,14 @@ async function cas(nom, fn) {
   }
 }
 
-// Un vrai snowflake (que des chiffres) : roleAdmin résout la cible en cherchant
-// un ID BRUT à 15-25 chiffres dans les args (messageFromInteraction ne peuple
-// jamais mentions.roles) — voir utils/serverAdminCommands.js:240.
+// Un vrai snowflake : roleAdmin résout la cible en cherchant un ID BRUT à
+// 15-25 chiffres dans les args.
 const ROLE_ID = "111111111111111111";
+const AUTRE_ID = "222222222222222222";
 
-function makeRole(name) {
+function makeRole(id, name) {
   const role = {
-    id: ROLE_ID,
+    id,
     name,
     position: 1,
     hexColor: "#000000",
@@ -49,187 +55,149 @@ function makeRole(name) {
       role.name = n;
       return role;
     },
+    toString: () => `<@&${id}>`,
   };
   return role;
 }
 
-function makeGuild(role) {
-  return {
-    id: "grn",
-    name: "Serveur",
-    ownerId: "owner-1",
-    memberCount: 0,
-    roles: {
-      cache: new Collection([[ROLE_ID, role]]),
-      everyone: { permissions: new PermissionsBitField([]) },
-    },
-    channels: { cache: new Collection() },
-    members: { cache: new Collection(), me: { roles: { highest: { position: 9 } }, permissions: { has: () => true } } },
-    emojis: { cache: new Collection() },
-    voiceStates: { cache: new Collection() },
-    client: { uptime: 1, ws: { ping: 1 }, guilds: { cache: new Collection() } },
-  };
-}
+const role = makeRole(ROLE_ID, "Modérateur");
+const autre = makeRole(AUTRE_ID, "Support");
+const guild = {
+  id: "grn",
+  name: "Serveur",
+  ownerId: "owner-1",
+  roles: { cache: new Collection([[ROLE_ID, role], [AUTRE_ID, autre]]), everyone: { permissions: new PermissionsBitField([]) } },
+  channels: { cache: new Collection() },
+  members: { cache: new Collection(), me: { roles: { highest: { position: 9 } }, permissions: { has: () => true } } },
+};
 
-function mkMember(id, roleId) {
+function mkMember(id) {
   return {
     id,
-    guild: { id: "grn", ownerId: "owner-1" },
-    roles: { cache: roleId ? new Collection([[roleId, { id: roleId }]]) : new Collection() },
+    guild,
+    roles: { cache: new Collection(), highest: { position: 10 } },
     permissions: { has: () => false },
-    user: { tag: `${id}#0001` },
+    user: { id, tag: `${id}#0001` },
   };
 }
+const owner = mkMember("owner-1");
+const sys = mkMember("sys-1");
+const quidam = mkMember("quidam-1");
+accessStore.add("sys", "sys-1");
+levelStore.setRoleLevel("grn", ROLE_ID, 4);
 
-/** Les rangées de boutons du panel sont regroupées en UN menu déroulant (cfg:action) ; on lit les options. */
-function actionOptions(guild, member, state) {
-  const { buildConfigPanel } = require("../utils/configPanel");
-  const json = buildConfigPanel(guild, "permissions", member, state).components[0].toJSON();
-  const menus = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).filter((c) => c.custom_id === `${ID}:action`);
-  return menus.flatMap((menu) => menu.options).map((o) => ({ label: o.label, custom_id: o.value }));
+const boutonsDe = (payload) =>
+  payload.components[0]
+    .toJSON()
+    .components.filter((c) => c.type === 1)
+    .flatMap((r) => r.components);
+const lire = (n) => [n.content || "", ...(n.components || []).map(lire)].join("\n");
+const texteDe = (payload) => payload.components.map((c) => lire(c.toJSON())).join("\n");
+
+function interaction(member, customId, extra = {}) {
+  return { customId, member, guild, client: {}, user: member.user, channel: { id: "chan-1" }, isModalSubmit: () => false, ...extra };
 }
 
 (async () => {
-  console.log("Rôles et permissions — bouton \"Renommer\" :");
+  console.log("&p — bouton \"Renommer\" :");
 
-  const role = makeRole("Modérateur");
-  const guild = makeGuild(role);
-  // Voir le bouton exige panel.permissions.manage (c'est "peutModifier" dans
-  // configPanel.js, même gate que "Supprimer ce rôle"/"Ajouter à l'exclusif") ;
-  // l'ACTION elle-même, une fois cliquée, revérifie server.roles.manage (même
-  // droit que la commande texte &role rename). Un rôle réel en aurait besoin
-  // des deux ; on les donne ensemble ici.
-  permStore.setRoleGrants("grn", "role-manage", ["panel.permissions.manage", "server.roles.manage"]);
-  // Juste assez pour VOIR la rubrique (hasAnyPanelAccess), mais pas de quoi
-  // modifier quoi que ce soit — le cas négatif du bouton.
-  permStore.setRoleGrants("grn", "role-basic", ["panel.roles.manage"]);
-
-  await cas('le bouton "Renommer" apparaît avec panel.permissions.manage', () => {
-    const member = mkMember("u-manage", "role-manage");
-    const options = actionOptions(guild, member, { permissionsRoleId: ROLE_ID });
-    const bouton = options.find((o) => o.label === "Renommer");
-    assert.ok(bouton, options.map((o) => o.label).join(", "));
-    assert.strictEqual(bouton.custom_id, `${ID}:renamerole:${ROLE_ID}`);
+  await cas('le bouton "Renommer" apparaît sur la ligne du niveau, pour qui peut gérer les rôles', () => {
+    const bouton = boutonsDe(buildPalierPanel(guild, owner)).find((b) => b.label === "Renommer");
+    assert.ok(bouton, "le bouton Renommer doit être proposé");
+    assert.strictEqual(bouton.custom_id, `${CUSTOM_ID}:ren:${ROLE_ID}`);
   });
 
-  await cas('sans server.roles.manage, le bouton "Renommer" n\'apparaît pas', () => {
-    const member = mkMember("u-basic", "role-basic");
-    const options = actionOptions(guild, member, { permissionsRoleId: ROLE_ID });
-    assert.ok(!options.some((o) => o.label === "Renommer"), options.map((o) => o.label).join(", "));
+  await cas("sans droit, la liste reste lisible mais AUCUN bouton n'apparaît", () => {
+    const panel = buildPalierPanel(guild, quidam);
+    assert.ok(texteDe(panel).includes(`<@&${ROLE_ID}>`), "la ligne du niveau reste affichée");
+    assert.strictEqual(boutonsDe(panel).length, 0);
   });
 
   await cas("cliquer ouvre une modale PRÉ-REMPLIE avec le nom actuel", async () => {
-    const member = mkMember("u-manage", "role-manage");
-    let modaleOuverte = null;
-    await handleConfigInteraction({
-      customId: `${ID}:renamerole:${ROLE_ID}`,
-      member,
-      guild,
-      client: {},
-      isModalSubmit: () => false,
-      showModal: async (m) => {
-        modaleOuverte = m;
-      },
-    });
-    assert.ok(modaleOuverte, "une modale doit s'ouvrir");
-    const champ = modaleOuverte.toJSON().components[0].components[0];
+    let modale = null;
+    await handlePalierInteraction(interaction(owner, `${CUSTOM_ID}:ren:${ROLE_ID}`, { showModal: async (m) => (modale = m) }));
+    assert.ok(modale, "une modale doit s'ouvrir");
+    const champ = modale.toJSON().components[0].components[0];
     assert.strictEqual(champ.custom_id, "name");
     assert.strictEqual(champ.value, "Modérateur");
   });
 
-  await cas("soumettre la modale renomme RÉELLEMENT le rôle (même chemin que &role rename)", async () => {
-    const member = mkMember("u-manage", "role-manage");
+  await cas("soumettre la modale renomme RÉELLEMENT le rôle et revient sur &p", async () => {
     let reponse = null;
-    await handleConfigInteraction({
-      customId: `${ID}:renamerole:${ROLE_ID}`,
-      member,
-      guild,
-      client: {},
-      user: member.user,
-      channel: { id: "chan-1" },
-      isModalSubmit: () => true,
-      fields: { getTextInputValue: () => "Modérateur en chef" },
-      // update(), pas reply() : le succès passe par roleAdmin ->
-      // messageFromInteraction, qui remplace le panneau (voir configPanel.js).
-      update: async (p) => {
-        reponse = p;
-      },
-    });
+    await handlePalierInteraction(
+      interaction(owner, `${CUSTOM_ID}:ren:${ROLE_ID}`, {
+        isModalSubmit: () => true,
+        fields: { getTextInputValue: () => "Modérateur en chef" },
+        update: async (p) => (reponse = p),
+      })
+    );
     assert.strictEqual(role.name, "Modérateur en chef");
-    // Depuis la demande "revenir au panel" : la confirmation n'est plus un
-    // embed isolé, elle revient sur le panel (Rôles et permissions) avec la
-    // confirmation en bannière au-dessus — voir configPanel.js::
-    // messageFromInteraction.
-    const lire = (n) => [n.content || "", ...(n.components || []).map(lire)].join("\n");
-    const texte = reponse.components.map((c) => lire(c.toJSON())).join("\n");
+    const texte = texteDe(reponse);
     assert.ok(texte.includes("renommé"), texte);
-    assert.ok(texte.includes("PANEL DE CONFIGURATION"), "doit revenir sur le panel, pas rester sur la seule confirmation");
+    assert.ok(texte.includes("Rôles (niveaux)"), "doit revenir sur &p, pas rester sur la seule confirmation");
   });
 
-  await cas("panneau en Components V2 : la réponse (embed classique) est convertie, pas refusée par Discord — bug réel rencontré en production", async () => {
-    // Reproduit exactement l'erreur observée en prod :
-    // embeds[MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2]. Le panneau
-    // réel EST en V2 ; messageFromInteraction doit donc passer par majSure
-    // (utils/componentsV2.js), pas interaction.update() brut.
-    const member = mkMember("u-manage", "role-manage");
+  await cas("panneau en Components V2 : la réponse (embed classique) est convertie, pas refusée par Discord", async () => {
     let reponse = null;
-    await handleConfigInteraction({
-      customId: `${ID}:renamerole:${ROLE_ID}`,
-      member,
-      guild,
-      client: {},
-      user: member.user,
-      channel: { id: "chan-1" },
-      isModalSubmit: () => true,
-      fields: { getTextInputValue: () => "Modérateur en second" },
-      message: { flags: { bitfield: Number(MessageFlags.IsComponentsV2) } },
-      update: async (p) => {
-        reponse = p;
-      },
-    });
+    await handlePalierInteraction(
+      interaction(owner, `${CUSTOM_ID}:ren:${ROLE_ID}`, {
+        isModalSubmit: () => true,
+        fields: { getTextInputValue: () => "Modérateur en second" },
+        message: { flags: { bitfield: Number(MessageFlags.IsComponentsV2) } },
+        update: async (p) => (reponse = p),
+      })
+    );
     assert.strictEqual(role.name, "Modérateur en second");
-    assert.strictEqual(reponse.embeds, undefined, "un `embeds` qui survit avec le flag V2 fait refuser tout le message par Discord");
+    assert.strictEqual(reponse.embeds, undefined, "un `embeds` qui survit avec le flag V2 fait refuser tout le message");
     assert.ok(Number(reponse.flags) & Number(MessageFlags.IsComponentsV2), "le flag V2 doit être posé");
-    const lire = (n) => [n.content || "", ...(n.components || []).map(lire)].join("\n");
-    const texte = reponse.components.map((c) => lire(c.toJSON())).join("\n");
-    assert.ok(texte.includes("renommé"), texte);
   });
 
   await cas("nom vide : rien n'est renommé, message d'erreur clair", async () => {
-    const member = mkMember("u-manage", "role-manage");
-    const nomAvant = role.name;
+    const avant = role.name;
     let reponse = null;
-    await handleConfigInteraction({
-      customId: `${ID}:renamerole:${ROLE_ID}`,
-      member,
-      guild,
-      client: {},
-      user: member.user,
-      channel: { id: "chan-1" },
-      isModalSubmit: () => true,
-      fields: { getTextInputValue: () => "   " },
-      reply: async (p) => {
-        reponse = p;
-      },
-    });
-    assert.strictEqual(role.name, nomAvant);
+    await handlePalierInteraction(
+      interaction(owner, `${CUSTOM_ID}:ren:${ROLE_ID}`, {
+        isModalSubmit: () => true,
+        fields: { getTextInputValue: () => "   " },
+        reply: async (p) => (reponse = p),
+      })
+    );
+    assert.strictEqual(role.name, avant);
     assert.ok(reponse?.content?.includes("vide"), JSON.stringify(reponse));
   });
 
-  await cas("sans server.roles.manage, l'action directe reste refusée", async () => {
-    const member = mkMember("u-basic", "role-basic");
-    let refused = null;
-    await handleConfigInteraction({
-      customId: `${ID}:renamerole:${ROLE_ID}`,
-      member,
-      guild,
-      client: {},
-      isModalSubmit: () => false,
-      reply: async (p) => {
-        refused = p;
-      },
-    });
-    assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
+  await cas("sans droit, l'action directe reste refusée", async () => {
+    let refus = null;
+    await handlePalierInteraction(interaction(quidam, `${CUSTOM_ID}:ren:${ROLE_ID}`, { reply: async (p) => (refus = p) }));
+    assert.ok(refus?.content?.includes("pas la permission"), JSON.stringify(refus));
+  });
+
+  console.log("\n&p — \"Gérer\" (attribuer un niveau) réservé au propriétaire :");
+
+  await cas('un rang sys voit Renommer/Supprimer, mais pas "Gérer"', () => {
+    const labels = boutonsDe(buildPalierPanel(guild, sys)).map((b) => b.label);
+    assert.ok(labels.includes("Renommer"), labels.join(", "));
+    assert.ok(!labels.includes("Gérer"), labels.join(", "));
+    assert.ok(boutonsDe(buildPalierPanel(guild, owner)).some((b) => b.label === "Gérer"), "le propriétaire, lui, l'a");
+  });
+
+  await cas("un rang sys ne peut ni attribuer ni déplacer un niveau, même par un customId direct", async () => {
+    let refus = null;
+    await handlePalierInteraction(interaction(sys, `${CUSTOM_ID}:add:n4:0`, { values: [AUTRE_ID], reply: async (p) => (refus = p) }));
+    assert.ok(refus?.content?.includes("propriétaire"), JSON.stringify(refus));
+    assert.strictEqual(levelStore.getRoleLevel("grn", AUTRE_ID), null, "aucun niveau attribué");
+
+    refus = null;
+    await handlePalierInteraction(interaction(sys, `${CUSTOM_ID}:move:${ROLE_ID}:0`, { values: ["9"], reply: async (p) => (refus = p) }));
+    assert.ok(refus, "le déplacement doit être refusé");
+    assert.strictEqual(levelStore.getRoleLevel("grn", ROLE_ID), 4, "le niveau n'a pas bougé");
+  });
+
+  await cas("le propriétaire déplace un rôle vers un autre niveau (persisté)", async () => {
+    await handlePalierInteraction(interaction(owner, `${CUSTOM_ID}:move:${ROLE_ID}:0`, { values: ["6"], update: async () => {} }));
+    assert.strictEqual(levelStore.getRoleLevel("grn", ROLE_ID), 6);
+    const surDisque = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, "permissionLevels.json"), "utf8"));
+    assert.strictEqual(surDisque.grn.roleLevels[ROLE_ID], 6);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

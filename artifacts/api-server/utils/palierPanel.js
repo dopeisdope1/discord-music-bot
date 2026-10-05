@@ -17,7 +17,7 @@ const {
 const { computeTiers } = require("./permsCommands");
 const levelStore = require("./permissions/levelStore");
 const { LEVEL_MIN, LEVEL_MAX } = require("./permissions/levelCatalog");
-const { can } = require("./permissions/engine");
+const { can, peutGererNiveaux } = require("./permissions/engine");
 const { roleAdmin } = require("./serverAdminCommands");
 const messageOwner = require("./messageOwner");
 const { majSure, banniereSurPanel, texteDUnEmbed } = require("./componentsV2");
@@ -70,13 +70,17 @@ function buildPalierPanel(guild, member, state = {}) {
   const lignes = lignesPaliers(guild);
   if (!lignes.length) {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent("*Aucun niveau n'est encore assigné à un rôle (voir &panel > Niveaux).*")
+      new TextDisplayBuilder().setContent("*Aucun niveau n'est encore assigné à un rôle (voir &panel > Permissions).*")
     );
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
   }
 
   const peutGerer = can(member, "panel.permissions.manage");
   const peutRoles = can(member, "server.roles.manage");
+  // Attribuer/déplacer un niveau ("Gérer") : propriétaire du bot SEULEMENT,
+  // comme partout ailleurs (&set perm, &access, &panel > Permissions) — un
+  // rang sys peut profiter d'un niveau, jamais en distribuer.
+  const peutNiveaux = peutGererNiveaux(member);
   const ouvert = lignes.find((l) => l.cle === state.addOpenKey || l.cle === state.manOpenKey) || null;
   const pages = Math.max(1, Math.ceil(lignes.length / PAR_PAGE));
   const page = Math.min(Math.max(0, Number(state.page) || 0), pages - 1);
@@ -97,7 +101,9 @@ function buildPalierPanel(guild, member, state = {}) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:del:${ligne.roleIds[0]}`).setLabel("Supprimer").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
+          ...(peutNiveaux
+            ? [new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success)]
+            : []),
           new ButtonBuilder().setCustomId(`${CUSTOM_ID}:ren:${ligne.roleIds[0]}`).setLabel("Renommer").setStyle(ButtonStyle.Primary)
         )
       );
@@ -107,7 +113,9 @@ function buildPalierPanel(guild, member, state = {}) {
       // sélecteurs juste en dessous.
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success),
+          ...(peutNiveaux
+            ? [new ButtonBuilder().setCustomId(`${CUSTOM_ID}:addopen:${ligne.cle}:${page}`).setLabel("Gérer").setStyle(ButtonStyle.Success)]
+            : []),
           new ButtonBuilder()
             .setCustomId(`${CUSTOM_ID}:manopen:${ligne.cle}:${page}`)
             .setLabel("Renommer/Supprimer")
@@ -117,7 +125,7 @@ function buildPalierPanel(guild, member, state = {}) {
       );
     }
 
-    if (state.addOpenKey === ligne.cle) {
+    if (state.addOpenKey === ligne.cle && peutNiveaux) {
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new RoleSelectMenuBuilder()
@@ -232,6 +240,13 @@ async function handlePalierInteraction(interaction) {
 
   if (!can(member, "panel.permissions.manage")) {
     return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
+  }
+
+  // Attribuer ou déplacer un niveau : propriétaire du bot uniquement (voir
+  // peutNiveaux dans buildPalierPanel). Revérifié ici : un ancien panneau
+  // affiché, ou un customId forgé, ne doit pas suffire.
+  if ((action === "addopen" || action === "add" || action === "move") && !peutGererNiveaux(member)) {
+    return interaction.reply({ content: "Réservé au propriétaire du bot.", flags: MessageFlags.Ephemeral });
   }
 
   if (action === "addopen") return interaction.update(buildPalierPanel(guild, member, { addOpenKey: p1, page: Number(p2) || 0 }));
