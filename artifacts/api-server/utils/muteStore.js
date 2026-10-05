@@ -2,8 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
-// Rôle de mute (distinct du timeout natif Discord, voir &mute/&tempmute) +
-// suivi des mutes temporaires pour les lever automatiquement à l'échéance.
+// Rôle de mute utilisé par &permmute et &bmute (distinct du timeout natif
+// Discord, voir &mute) + suivi des anciens mutes temporaires à rôle (posés
+// par l'ex-&tempmute, retiré) pour les lever automatiquement à l'échéance.
 // Le rôle lui-même doit être configuré manuellement dans Discord pour
 // refuser Envoyer des messages/Parler sur les salons — comme la plupart des
 // bots de modération, le bot ne gère que l'attribution/retrait du rôle.
@@ -59,12 +60,6 @@ function setMuteRoleId(guildId, roleId) {
   saveRoles();
 }
 
-function addTempMute(guildId, userId, expiresAt) {
-  const list = loadTemp().filter((m) => !(m.guildId === guildId && m.userId === userId));
-  list.push({ guildId, userId, expiresAt });
-  tempCache = list;
-  saveTemp();
-}
 function removeTempMute(guildId, userId) {
   tempCache = loadTemp().filter((m) => !(m.guildId === guildId && m.userId === userId));
   saveTemp();
@@ -88,7 +83,6 @@ function getTempMutesForGuild(guildId) {
 module.exports = {
   getMuteRoleId,
   setMuteRoleId,
-  addTempMute,
   removeTempMute,
   clearTempMutes,
   getExpiredTempMutes,

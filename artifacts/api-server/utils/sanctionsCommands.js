@@ -4,8 +4,9 @@ const { can } = require("./permissions/engine");
 const { checkHierarchy, checkBotPermission, report } = require("./moderation/actions");
 const { deleteMessages } = require("./deleteMessages");
 const historyStore = require("./moderationHistoryStore");
+const muteStore = require("./muteStore");
 
-// Commandes de SANCTION (kick/softban/timeout/untimeout/modlogs/clear/
+// Commandes de SANCTION (kick/softban/mute=timeout/unmute=untimeout/modlogs/clear/
 // lockdown/panic/unlockdown) — fusionnées depuis moderation-bot. Distinct de
 // utils/moderationCommands.js, qui garde slowmode/nick/resetnick/addrole/
 // delrole/userinfo (gestion générale, jamais parti vers moderation-bot).
@@ -15,9 +16,12 @@ const historyStore = require("./moderationHistoryStore");
 
 const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
-/** Traduction des durées "&timeout @membre 10m" -> millisecondes. Plafond Discord : 28 jours. */
+/** Traduction des durées "&mute @membre 10m" -> millisecondes. Plafond Discord : 28 jours. */
 const DURATION_UNITS = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 const MAX_TIMEOUT_MS = 28 * 86_400_000;
+// &mute sans durée : le maximum que Discord autorise pour un timeout natif.
+// Pour un mute vraiment illimité, c'est &permmute (rôle de mute).
+const DEFAULT_MUTE_MS = MAX_TIMEOUT_MS;
 
 function parseDuration(text) {
   const match = (text || "").trim().match(/^(\d+)\s*(s|m|h|d)$/i);
@@ -134,18 +138,31 @@ const handlers = {
     await reply(message, "success", `**${tag}** a été softban (messages des dernières 24h purgés).${reason ? `\nRaison : ${reason}` : ""}`);
   },
 
+  /**
+   * &mute <@membre> [durée] [raison] (alias historique : &timeout) — timeout
+   * NATIF Discord : rien à configurer, visible directement dans l'interface
+   * Discord, levé automatiquement à l'échéance. Sans durée : 28 jours (le
+   * plafond Discord). Pour un mute sans échéance : &permmute.
+   */
   async timeout(client, message, args) {
     if (!can(message.member, "moderation.timeout")) return;
     const { targetId, rest } = parseTarget(message, args);
     const target = await fetchTargetOrReply(message, targetId);
     if (!target) return;
 
-    const [durationText, ...reasonParts] = rest.split(/\s+/);
-    const ms = parseDuration(durationText);
-    if (!ms) {
-      return reply(message, "error", "Indique une durée valide : `10s`, `10m`, `1h`, `1d` (max 28 jours).");
+    const [premier = "", ...suite] = rest.split(/\s+/).filter(Boolean);
+    let ms = parseDuration(premier);
+    let reason;
+    if (ms) {
+      reason = suite.join(" ").trim();
+    } else if (/^\d/.test(premier)) {
+      // "10", "10 min", "2sem"... : une durée mal tapée ne doit JAMAIS
+      // retomber silencieusement sur 28 jours avec la durée prise pour raison.
+      return reply(message, "error", "Durée invalide : `10s`, `10m`, `1h`, `1d` (max 28 jours). Sans durée : 28 jours.");
+    } else {
+      ms = DEFAULT_MUTE_MS;
+      reason = rest.trim();
     }
-    const reason = reasonParts.join(" ").trim();
 
     const refusal =
       checkBotPermission(message.guild, PermissionFlagsBits.ModerateMembers, "ModerateMembers") ||
@@ -154,14 +171,14 @@ const handlers = {
 
     const tag = target.user.tag;
     try {
-      await target.timeout(ms, reason || `Timeout par ${message.author.tag}`);
+      await target.timeout(ms, reason || `Mute par ${message.author.tag}`);
     } catch (err) {
-      console.error("[timeout] échec :", err);
+      console.error("[mute] échec :", err);
       return reply(message, "error", `Discord a refusé : ${err.message}`);
     }
     await report(client, {
       guildId: message.guild.id,
-      title: "Timeout",
+      title: "Mute (timeout Discord)",
       fields: [
         { label: "Cible", value: `<@${target.id}> (${target.id})` },
         { label: "Durée", value: formatDuration(ms) },
@@ -174,9 +191,10 @@ const handlers = {
       channelId: message.channel.id,
       extra: { durationMs: ms },
     });
-    await reply(message, "success", `**${tag}** est en timeout pour **${formatDuration(ms)}**.${reason ? `\nRaison : ${reason}` : ""}`);
+    await reply(message, "success", `**${tag}** est mute pour **${formatDuration(ms)}**.${reason ? `\nRaison : ${reason}` : ""}`);
   },
 
+  /** &unmute <@membre> (alias historique : &untimeout) — lève le timeout natif posé par &mute. */
   async untimeout(client, message, args) {
     if (!can(message.member, "moderation.timeout")) return;
     const { targetId } = parseTarget(message, args);
@@ -189,19 +207,24 @@ const handlers = {
     if (refusal) return reply(message, "error", refusal);
 
     if (!target.communicationDisabledUntil) {
-      return reply(message, "info", `**${target.user.tag}** n'est pas en timeout.`);
+      // Mute illimité (rôle) : ce n'est pas un timeout, &unmute n'y touche pas.
+      const muteRoleId = muteStore.getMuteRoleId(message.guild.id);
+      if (muteRoleId && target.roles.cache?.has(muteRoleId)) {
+        return reply(message, "info", `**${target.user.tag}** n'est pas en timeout mais a le rôle de mute — utilise \`permunmute\`.`);
+      }
+      return reply(message, "info", `**${target.user.tag}** n'est pas mute.`);
     }
 
     const tag = target.user.tag;
     try {
-      await target.timeout(null, `Fin de timeout par ${message.author.tag}`);
+      await target.timeout(null, `Démute par ${message.author.tag}`);
     } catch (err) {
-      console.error("[untimeout] échec :", err);
+      console.error("[unmute] échec :", err);
       return reply(message, "error", `Discord a refusé : ${err.message}`);
     }
     await report(client, {
       guildId: message.guild.id,
-      title: "Fin de timeout",
+      title: "Démute (fin du timeout)",
       fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
       action: "untimeout",
       targetId: target.id,
@@ -209,7 +232,7 @@ const handlers = {
       moderator: message.author,
       channelId: message.channel.id,
     });
-    await reply(message, "success", `Timeout de **${tag}** levé.`);
+    await reply(message, "success", `**${tag}** n'est plus mute.`);
   },
 
   async modlogs(client, message, args) {

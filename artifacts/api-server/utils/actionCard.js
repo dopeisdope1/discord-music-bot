@@ -403,7 +403,6 @@ const SANCTIONS = {
   timeout: { titre: "Mise en timeout", couleur: TEINTE },
   untimeout: { titre: "Timeout levé", couleur: TEINTE },
   mute: { titre: "Membre mute", couleur: TEINTE },
-  tempmute: { titre: "Mute temporaire", couleur: TEINTE },
   unmute: { titre: "Démute", couleur: TEINTE },
   warn: { titre: "Avertissement", couleur: TEINTE },
   zinkiller: { titre: "Ban persistant (zinkiller)", couleur: TEINTE },

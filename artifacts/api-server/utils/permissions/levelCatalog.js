@@ -145,9 +145,9 @@ const PERMISSIONS = [
   { key: "moderation.ban", category: "moderation", label: "Bannir un membre (&ban)" },
   { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
   { key: "moderation.softban", category: "moderation", label: "Softban (&softban)" },
-  { key: "moderation.timeout", category: "moderation", label: "Timeout / fin de timeout (&timeout, &untimeout, &mute, &unmute)" },
+  { key: "moderation.timeout", category: "moderation", label: "Mute / démute (&mute, &unmute, alias &timeout/&untimeout ; mute illimité &permmute, &permunmute)" },
   { key: "moderation.warn", category: "moderation", label: "Avertir un membre (&warn, &unwarn)" },
-  { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse (&unmuteall)" },
+  { key: "moderation.unmuteall", category: "moderation", label: "Démute de masse, timeouts et rôle de mute (&unmuteall)" },
   { key: "moderation.banall", category: "moderation", label: "Ban de masse (&banall)" },
   { key: "moderation.unbanall", category: "moderation", label: "Débannissement de masse (&unbanall)" },
   {

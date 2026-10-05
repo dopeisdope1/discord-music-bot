@@ -10,10 +10,10 @@ const { carteSanctionMessage, repondreAvecCarte } = require("./actionCard");
 
 // "&bmute"/"&bunmute" — mute bot GRADÉ : un mute posé par quelqu'un au grade
 // N (échelle "&promote"/"&demote", voir utils/rankLadderCommands.js) ne peut
-// être levé que par un grade AU MOINS égal à N. Distinct de &mute/&unmute
-// (utils/moderationExtra.js) : ceux-ci restent inchangés et lèvent le rôle
-// sans condition de grade — &bmute est le choix à faire quand ce verrou est
-// voulu. Réutilise le même rôle configuré (`set muterole`, utils/
+// être levé que par un grade AU MOINS égal à N. Distinct de &permmute/
+// &permunmute (utils/moderationExtra.js), qui posent/lèvent le même rôle
+// sans condition de grade, et de &mute (timeout natif Discord, 28 j max) —
+// &bmute est le choix à faire quand ce verrou est voulu. Réutilise le même rôle configuré (`set muterole`, utils/
 // muteStore.js) pour ne pas exiger un second rôle à créer.
 const PERMISSION = "moderation.mutebot";
 

@@ -411,6 +411,10 @@ const modHandlers = {
   // --- Modération (fusionné depuis moderation-bot) ---
   kick: sanctionsHandlers.kick,
   softban: sanctionsHandlers.softban,
+  // &mute = timeout NATIF Discord (durée optionnelle, 28 j max) ; &timeout /
+  // &untimeout restent acceptés comme alias historiques du même handler.
+  mute: sanctionsHandlers.timeout,
+  unmute: sanctionsHandlers.untimeout,
   timeout: sanctionsHandlers.timeout,
   untimeout: sanctionsHandlers.untimeout,
   modlogs: sanctionsHandlers.modlogs,
@@ -451,12 +455,9 @@ const modHandlers = {
   reasonlist,
 
   muterole: moderationExtra.muterole,
-  mute: moderationExtra.mute,
-  tempmute: moderationExtra.tempmute,
-  unmute: moderationExtra.unmute,
-  cmute: moderationExtra.cmute,
-  tempcmute: moderationExtra.tempcmute,
-  uncmute: moderationExtra.uncmute,
+  // Mute SANS échéance via le rôle de mute (le timeout natif plafonne à 28 j).
+  permmute: moderationExtra.permmute,
+  permunmute: moderationExtra.permunmute,
   mutelist: moderationExtra.mutelist,
   unmuteall: moderationExtra.unmuteall,
   sanctions: moderationExtra.sanctions,

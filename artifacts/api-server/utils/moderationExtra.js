@@ -65,9 +65,17 @@ async function requireMuteRole(message) {
   return role;
 }
 
-// --- -mute / -tempmute / -unmute ---
+// --- &permmute / &permunmute (rôle de mute, SANS échéance) ---
+//
+// Distinct de &mute (utils/sanctionsCommands.js), qui est le timeout NATIF
+// Discord : plafonné à 28 jours par Discord, rien à configurer. &permmute
+// existe pour la seule chose que le timeout natif ne sait pas faire — un mute
+// sans aucune échéance, levé uniquement à la main. Exige `set muterole`.
+// (L'ancien &tempmute, plafonné lui aussi à 28 jours, faisait doublon avec
+// &mute <durée> et a été retiré ; &cmute/&tempcmute/&uncmute n'étaient que
+// des alias exacts de ces commandes, sans aucune restriction au texte.)
 
-async function muteMember(client, message, args, { temporary }) {
+async function muteMember(client, message, args) {
   if (!can(message.member, "moderation.timeout")) return;
   const role = await requireMuteRole(message);
   if (!role) return;
@@ -82,33 +90,23 @@ async function muteMember(client, message, args, { temporary }) {
   const refusal = checkHierarchy(message.guild, message.member, target);
   if (refusal) return reply(message, "error", refusal);
 
-  let durationMs = null;
-  let reasonArgs = args.slice(1);
-  if (temporary) {
-    durationMs = parseDuration(args[1]);
-    if (!durationMs) return reply(message, "error", "Indique une durée valide : `tempmute @membre 10m [raison]`.");
-    reasonArgs = args.slice(2);
-  }
-  const reason = reasonArgs.join(" ").trim() || null;
+  const reason = args.slice(1).join(" ").trim() || null;
 
-  if (target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} est déjà mute.`);
+  if (target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} est déjà mute (rôle de mute).`);
 
   try {
-    await target.roles.add(role, `Mute par ${message.author.tag}${reason ? ` : ${reason}` : ""}`);
+    await target.roles.add(role, `Mute illimité par ${message.author.tag}${reason ? ` : ${reason}` : ""}`);
   } catch (err) {
     return reply(message, "error", `Discord a refusé : ${err.message}`);
   }
 
-  if (temporary) muteStore.addTempMute(message.guild.id, target.id, Date.now() + durationMs);
-
+  // Historique : action "mute" conservée (même nom qu'avant le renommage en
+  // &permmute) pour que les anciennes entrées et les nouvelles se lisent pareil.
   await report(client, {
     guildId: message.guild.id,
-    title: temporary ? "Mute temporaire" : "Mute",
-    fields: [
-      { label: "Cible", value: `<@${target.id}> (${target.id})` },
-      ...(temporary ? [{ label: "Durée", value: formatDuration(durationMs) }] : []),
-    ],
-    action: temporary ? "tempmute" : "mute",
+    title: "Mute illimité (rôle de mute)",
+    fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
+    action: "mute",
     targetId: target.id,
     targetTag: target.user.tag,
     moderator: message.author,
@@ -116,7 +114,7 @@ async function muteMember(client, message, args, { temporary }) {
     channelId: message.channel.id,
   });
 
-  await reply(message, "success", `**${target.user.tag}** mute${temporary ? ` pour ${formatDuration(durationMs)}` : ""}.`);
+  await reply(message, "success", `**${target.user.tag}** mute sans échéance (rôle de mute) — \`permunmute\` pour lever.`);
 }
 
 async function unmuteMember(client, message, args) {
@@ -128,7 +126,7 @@ async function unmuteMember(client, message, args) {
   const target = await fetchTargetOrReply(message, targetId);
   if (!target) return;
 
-  if (!target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} n'est pas mute.`);
+  if (!target.roles.cache.has(role.id)) return reply(message, "info", `${target.user.tag} n'a pas le rôle de mute (pour un timeout : \`unmute\`).`);
 
   try {
     await target.roles.remove(role, `Démute par ${message.author.tag}`);
@@ -139,7 +137,7 @@ async function unmuteMember(client, message, args) {
 
   await report(client, {
     guildId: message.guild.id,
-    title: "Démute",
+    title: "Démute (rôle de mute retiré)",
     fields: [{ label: "Cible", value: `<@${target.id}> (${target.id})` }],
     action: "unmute",
     targetId: target.id,
@@ -150,7 +148,8 @@ async function unmuteMember(client, message, args) {
   await reply(message, "success", `**${target.user.tag}** n'est plus mute.`);
 }
 
-const ROLE_MUTE_ACTIONS = new Set(["mute", "tempmute", "cmute", "tempcmute"]);
+// "tempmute" : entrées d'historique antérieures au retrait de &tempmute.
+const ROLE_MUTE_ACTIONS = new Set(["mute", "tempmute"]);
 
 /** Dernière entrée d'historique d'une des `actions` données pour ce membre. */
 function dernierePlus(guildId, targetId, actions) {
@@ -193,50 +192,81 @@ listNavigator.registerProvider("mutelist", (guild) => {
     title: "Mutes actifs",
     compteur: `**${lignesMute.length + lignesTimeout.length}** fiche(s) active(s)`,
     lines: [
-      `**Rôle de mute** (${lignesMute.length})`,
+      `**Mute illimité — rôle de mute** (${lignesMute.length})`,
       ...(lignesMute.length ? lignesMute : [role ? "*Personne n'est mute actuellement.*" : "*Aucun rôle de mute configuré.*"]),
-      `**Timeout Discord** (${lignesTimeout.length})`,
+      `**Mute — timeout Discord** (${lignesTimeout.length})`,
       ...(lignesTimeout.length ? lignesTimeout : ["*Aucun timeout en cours.*"]),
     ],
   };
 });
 
+/**
+ * &unmuteall — lève TOUS les mutes du serveur : le rôle de mute (&permmute)
+ * ET les timeouts natifs en cours (&mute). Le rôle de mute n'est requis que
+ * pour la première partie : sans rôle configuré, les timeouts sont quand même
+ * levés.
+ */
 async function unmuteall(client, message) {
   if (!can(message.member, "moderation.unmuteall")) return;
-  const role = await requireMuteRole(message);
-  if (!role) return;
 
-  const members = [...role.members.values()];
-  let count = 0;
+  const roleId = muteStore.getMuteRoleId(message.guild.id);
+  const role = roleId ? message.guild.roles.cache.get(roleId) : null;
   const echecs = [];
-  for (const m of members) {
+
+  let roleCount = 0;
+  if (role) {
+    for (const m of role.members.values()) {
+      try {
+        await m.roles.remove(role, `Démute de masse par ${message.author.tag}`);
+        roleCount++;
+      } catch (err) {
+        echecs.push(`${m.user?.tag || m.id} (${err.message})`);
+      }
+    }
+    muteStore.clearTempMutes(message.guild.id);
+  }
+
+  let timeoutCount = 0;
+  const enTimeout = message.guild.members.cache.filter(
+    (m) => m.communicationDisabledUntil && new Date(m.communicationDisabledUntil).getTime() > Date.now()
+  );
+  for (const m of enTimeout.values()) {
     try {
-      await m.roles.remove(role, `Démute de masse par ${message.author.tag}`);
-      count++;
+      await m.timeout(null, `Démute de masse par ${message.author.tag}`);
+      timeoutCount++;
     } catch (err) {
       echecs.push(`${m.user?.tag || m.id} (${err.message})`);
     }
   }
+
   if (echecs.length) {
     console.error(`[unmuteall] ${echecs.length} echec(s) : ${echecs.join(", ")}`);
   }
-  muteStore.clearTempMutes(message.guild.id);
+  const count = roleCount + timeoutCount;
 
   await report(client, {
     guildId: message.guild.id,
     title: "Démute de masse",
-    fields: [{ label: "Membres démute", value: String(count) }],
+    fields: [
+      { label: "Rôle de mute retiré", value: String(roleCount) },
+      { label: "Timeouts levés", value: String(timeoutCount) },
+    ],
     action: "unmuteall",
     targetId: null,
     targetTag: null,
     moderator: message.author,
     channelId: message.channel.id,
-    extra: { count },
+    extra: { count, roleCount, timeoutCount },
   });
-  await reply(message, "success", `**${count}** membre(s) démute.`);
+  await reply(message, "success", `**${count}** membre(s) démute (${roleCount} rôle de mute, ${timeoutCount} timeout).`);
 }
 
-/** Appelé périodiquement (voir index.js) pour lever les mutes temporaires arrivés à échéance. */
+/**
+ * Appelé périodiquement (voir index.js) pour lever les mutes temporaires à
+ * rôle arrivés à échéance. &tempmute n'existe plus, mais des entrées posées
+ * avant son retrait peuvent encore être en attente dans muteStore : elles
+ * doivent continuer d'expirer normalement.
+ */
 async function checkExpiredMutes(client) {
   const expired = muteStore.getExpiredTempMutes();
   for (const entry of expired) {
@@ -584,14 +614,8 @@ async function derank(client, message, args) {
 module.exports = {
   muterole,
   setMuteRole,
-  mute: (client, message, args) => muteMember(client, message, args, { temporary: false }),
-  tempmute: (client, message, args) => muteMember(client, message, args, { temporary: true }),
-  unmute: unmuteMember,
-  // -cmute/-tempcmute/-uncmute partagent exactement le même mécanisme que
-  // -mute/-tempmute/-unmute (rôle de mute) — jamais un système parallèle.
-  cmute: (client, message, args) => muteMember(client, message, args, { temporary: false }),
-  tempcmute: (client, message, args) => muteMember(client, message, args, { temporary: true }),
-  uncmute: unmuteMember,
+  permmute: muteMember,
+  permunmute: unmuteMember,
   mutelist,
   unmuteall,
   checkExpiredMutes,

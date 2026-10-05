@@ -67,7 +67,7 @@ function computeSecurityScan(guild) {
 
   // --- Rôle de mute ---
   const muteRoleId = muteStore.getMuteRoleId(guild.id);
-  if (!muteRoleId) warnings.push("Aucun rôle de mute configuré (`set muterole @rôle`) — &mute/&tempmute/&cmute restent inutilisables.");
+  if (!muteRoleId) warnings.push("Aucun rôle de mute configuré (`set muterole @rôle`) — &permmute/&bmute restent inutilisables.");
   else if (!guild.roles.cache.has(muteRoleId)) warnings.push("Le rôle de mute configuré n'existe plus sur le serveur.");
   else ok.push("Rôle de mute configuré et valide.");
 
