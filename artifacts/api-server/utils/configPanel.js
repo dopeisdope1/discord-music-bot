@@ -56,7 +56,6 @@ const { fakeMessage } = require("./fakeMessage");
 const { utilityHandlers } = require("./utilityCommands");
 const giveawayStore = require("./giveawayStore");
 const { endGiveaway, rerollGiveaway } = require("./giveaways");
-const { handleEmbedButton } = require("./serverExtra");
 const backupStore = require("./serverBackupStore");
 const { backup, countChannels, PRESET_BACKUPS } = require("./serverBackup");
 const botProfileStore = require("./botProfileStore");
@@ -116,8 +115,6 @@ const SECTIONS = [
   },
   { key: "channels", label: "Salons", description: "Sélectionner plusieurs salons et les supprimer d'un coup", permission: "channels.manage" },
   { key: "giveaways", label: "Giveaways", description: "Giveaways en cours : démarrer, terminer, reroll", permission: "server.giveaways.manage" },
-  { key: "embedBuilder", label: "Constructeur d'embed", description: "Composer et envoyer un embed dans un salon", permission: "server.channels.manage" },
-  { key: "polls", label: "Sondages", description: "Créer un sondage (2 à 5 options)", permission: "server.polls.manage" },
   { key: "access", label: "Accès panel", description: "Qui a accès, nettoyage des accès obsolètes", permission: "sys" },
   { key: "backups", label: "Sauvegardes", description: "Structure du serveur : créer, restaurer, supprimer", permission: "sys" },
   { key: "botProfile", label: "Profil du bot", description: "Statut et nom du bot (partagés sur tous les serveurs)", permission: "sys" },
@@ -159,29 +156,16 @@ const SECTION_OF_SCOPE = { clear: "moderation", sys: "sys", banall: "banall" };
 
 const mentions = (ids) => (ids.length ? ids.map((id) => `<@${id}>`).join(", ") : "*personne*");
 
-// Rubriques regroupées par FAMILLE (centre de contrôle, refonte du panel) :
-// le menu principal ne montre que les familles, un second menu n'apparaît
-// que pour choisir une rubrique dans la famille ouverte. Onze familles
-// cibles au total (Accueil/Sécurité/Modération/Serveur/Communauté/Support/
-// Communication/Monitoring/Sauvegardes/Bot), toutes présentes
-// désormais.
-//
-// Les écrans eux-mêmes ne sont PAS fusionnés — chacun garde ses contrôles et
-// ses avertissements. "Rang sys" et "Ban de masse" voisinent dans la même
-// famille sans jamais partager le même écran : l'un donne accès à tout le bot,
-// l'autre bannit le serveur entier, et un mauvais clic ne pardonne pas.
+// Les écrans ne sont PAS fusionnés — chacun garde ses contrôles et ses
+// avertissements. "Rang sys" et "Ban de masse" restent deux écrans séparés :
+// l'un donne accès à tout le bot, l'autre bannit le serveur entier, et un
+// mauvais clic ne pardonne pas.
 // L'accueil du panel est rendu en image (même moteur que &help, voir
 // utils/dashboardImage.js) : nom de fichier fixe, référencé par
 // "attachment://" dans le composant MediaGallery.
 const NOM_IMAGE_PANEL = "centre-de-gestion.png";
 const NOM_IMAGE_RUBRIQUE = "rubrique.png";
 
-// Une couleur par famille — c'est tout l'intérêt de l'image : un Container
-// Components V2 n'a qu'UNE couleur d'accent pour tout le message.
-// Une teinte par rubrique : c'est elle qui colore le liseré et le titre de
-// l'image. Les sujets proches partagent une famille de couleur (protection en
-// vert, communauté en ambre, réglages du bot en gris-bleu) pour que le panel
-// garde une cohérence malgré le nombre d'entrées.
 // Refonte visuelle (identité bleu-sombre) : une seule teinte d'accent sert de
 // liseré/titre pour toutes les images du panel — voir utils/dashboardImage.js
 // ::THEME_BLEU.accent, même source que le reste de la refonte.
@@ -227,102 +211,69 @@ const MAX_COMMANDES_AFFICHEES = 27;
 // (cooldown/accès direct) — un menu déroulant Discord plafonne à 25 options,
 // une commande par ligne de texte occupe bien moins.
 const CMDS_PAR_PAGE = 10;
-const FAMILY_COLORS = new Proxy({}, { get: () => TEINTE_NEUTRE });
 
-// Le menu du panel liste des SUJETS CONCRETS — Logs, Bienvenue, Permissions,
-// Giveaways — et non plus des familles abstraites
-// ("Serveur", "Communauté", "Communication") dans lesquelles il fallait
-// deviner ce qui se cachait. Demande explicite : « je veux genre des rubriques
-// comme Logs, Sécurité, Bienvenue, Permission, Giveaway ».
+// Le menu du panel liste directement les RUBRIQUES — Logs, Bienvenue,
+// Permissions, Giveaways — sur UN SEUL niveau. Il existait auparavant un
+// niveau "famille" au-dessus, avec un second menu pour choisir une rubrique
+// dans la famille ouverte ; chaque famille ne contenant plus qu'une rubrique
+// (la seule qui en regroupait plusieurs, "Sécurité", a déménagé dans
+// "!!secur"), ce second niveau n'offrait jamais aucun choix et a été retiré.
 //
-// Chaque entrée ne contient qu'UNE rubrique — la famille "Sécurité"
-// (vue d'ensemble/anti-spam/anti-nuke/rôle de mute), seule à en regrouper
-// plusieurs jusqu'ici, a déménagé intégralement dans "!!secur" (voir
-// utils/securityPanel.js — demande explicite : "enlève tout les trucs de
-// sécurité du &panel et le mets dans !!secur").
+// `key` = valeur de l'option du menu. Ce sont les anciennes clés de famille,
+// conservées telles quelles pour que les panneaux déjà affichés dans Discord
+// (menus envoyés avant ce changement) restent cliquables. `section` = la
+// rubrique ouverte. Ordre = ordre d'affichage. Libellés/descriptions propres
+// au menu, plus courts que ceux de SECTIONS.
+//
+// Les rubriques "Constructeur d'embed" et "Sondages" ont été retirées : elles
+// ne faisaient que rouvrir &embed / &poll, sans aucun réglage propre.
 //
 // Un menu déroulant Discord accepte 25 options au maximum : la liste
 // ci-dessous en compte moins.
-const FAMILIES = [
-  { key: "accueil", label: "Accueil", description: "Statut du bot et alertes de sécurité", sections: ["home"] },
-  { key: "logs", label: "Logs", description: "Salon de logs par catégorie", sections: ["logs"] },
-  { key: "bienvenue", label: "Bienvenue", description: "Message à l'arrivée d'un membre", sections: ["welcome"] },
-  { key: "depart", label: "Départ", description: "Message quand un membre s'en va", sections: ["leave"] },
-  { key: "salons", label: "Salons", description: "Supprimer plusieurs salons d'un coup", sections: ["channels"] },
-  { key: "permissions", label: "Permissions", description: "Niveaux, cooldowns, accès direct, salons bloqués", sections: ["permissions"] },
-  { key: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée", sections: ["autorole"] },
-  { key: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé", sections: ["verification"] },
-  { key: "tickets", label: "Tickets", description: "Système de tickets d'assistance", sections: ["tickets"] },
-  { key: "confessions", label: "Confessions", description: "Salon public et salon de validation", sections: ["confessions"] },
-  { key: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll", sections: ["giveaways"] },
-  { key: "sondages", label: "Sondages", description: "Créer un sondage à boutons", sections: ["polls"] },
-  { key: "annonces", label: "Annonces", description: "Composer et envoyer un embed", sections: ["embedBuilder"] },
-  { key: "statistiques", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours", sections: ["stats"] },
-  { key: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire", sections: ["diagnostics"] },
-  { key: "sauvegardes", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure", sections: ["backups"] },
-  { key: "profil", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot", sections: ["botProfile"] },
-  { key: "prefixes", label: "Préfixes", description: "Gestion, modération, sécurité et vocal", sections: ["prefixes"] },
-  { key: "acces", label: "Accès panel", description: "Qui peut ouvrir ce panneau", sections: ["access"] },
-  { key: "sys", label: "Rang sys", description: "Qui a accès à tout le bot", sections: ["sys"] },
-  { key: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse", sections: ["banall"] },
-  { key: "dispenses", label: "Dispenses", description: "Qui échappe au quota de nettoyage", sections: ["moderation"] },
+const MENU = [
+  { key: "accueil", section: "home", label: "Accueil", description: "Statut du bot et alertes de sécurité" },
+  { key: "logs", section: "logs", label: "Logs", description: "Salon de logs par catégorie" },
+  { key: "bienvenue", section: "welcome", label: "Bienvenue", description: "Message à l'arrivée d'un membre" },
+  { key: "depart", section: "leave", label: "Départ", description: "Message quand un membre s'en va" },
+  { key: "salons", section: "channels", label: "Salons", description: "Supprimer plusieurs salons d'un coup" },
+  { key: "permissions", section: "permissions", label: "Permissions", description: "Niveaux, cooldowns, accès direct, salons bloqués" },
+  { key: "autorole", section: "autorole", label: "Rôles automatiques", description: "Rôles donnés à chaque arrivée" },
+  { key: "verification", section: "verification", label: "Vérification", description: "Bouton « Se vérifier » et rôle accordé" },
+  { key: "tickets", section: "tickets", label: "Tickets", description: "Système de tickets d'assistance" },
+  { key: "confessions", section: "confessions", label: "Confessions", description: "Salon public et salon de validation" },
+  { key: "giveaways", section: "giveaways", label: "Giveaways", description: "Concours en cours, tirage et reroll" },
+  { key: "statistiques", section: "stats", label: "Statistiques", description: "Compteurs et activité des 7 derniers jours" },
+  { key: "diagnostics", section: "diagnostics", label: "Diagnostics", description: "Uptime, latence et mémoire" },
+  { key: "sauvegardes", section: "backups", label: "Sauvegardes", description: "Sauvegarder et restaurer la structure" },
+  { key: "profil", section: "botProfile", label: "Profil du bot", description: "Nom, photo, bannière et statut du bot" },
+  { key: "prefixes", section: "prefixes", label: "Préfixes", description: "Gestion, modération, sécurité et vocal" },
+  { key: "acces", section: "access", label: "Accès panel", description: "Qui peut ouvrir ce panneau" },
+  { key: "sys", section: "sys", label: "Rang sys", description: "Qui a accès à tout le bot" },
+  { key: "banall", section: "banall", label: "Ban de masse", description: "Qui peut lancer un ban de masse" },
+  { key: "dispenses", section: "moderation", label: "Dispenses", description: "Qui échappe au quota de nettoyage" },
 ];
 
-
-const familyOf = (sectionKey) => FAMILIES.find((f) => f.sections.includes(sectionKey)) || FAMILIES[0];
-
-/** Rubriques d'une famille auxquelles la personne a réellement droit. */
-function familySections(family, member, isOwner) {
-  const visibles = sectionsFor(member, isOwner);
-  return family.sections.map((key) => visibles.find((s) => s.key === key)).filter(Boolean);
-}
-
 /**
- * Menu déroulant de navigation entre familles — même contrôle que &help
- * (identité partagée "Centre de commandes" / "Centre de gestion"). Une
- * rangée de boutons occupait presque tout l'écran sur mobile avec dix
- * familles ; un menu tient sur une ligne et marque la famille ouverte avec
- * `setDefault`. Reste, pour mémoire, l'ancienne logique : la famille active
- * ressortait en style Primary, les
- * autres en Secondary, réparties sur autant de rangées de 5 que nécessaire
- * (limite Discord par ActionRow). Remplace l'ancien menu déroulant.
- * @returns {import('discord.js').ActionRowBuilder[]}
+ * Menu déroulant de navigation — même contrôle que &help (identité partagée
+ * "Centre de commandes" / "Centre de gestion"). Ne propose que les rubriques
+ * auxquelles la personne a réellement droit, et marque celle qui est ouverte
+ * avec `setDefault`.
+ * @returns {StringSelectMenuBuilder}
  */
 function buildNav(current, member, isOwner) {
-  const famille = familyOf(current);
-  const disponibles = FAMILIES.filter((f) => familySections(f, member, isOwner).length);
+  const visibles = new Set(sectionsFor(member, isOwner).map((s) => s.key));
+  const disponibles = MENU.filter((e) => visibles.has(e.section));
   return new StringSelectMenuBuilder()
     .setCustomId(`${ID}:nav`)
-    .setPlaceholder("Choisir une famille")
+    .setPlaceholder("Choisir une rubrique")
     .addOptions(
-      disponibles.map((f) =>
+      disponibles.map((e) =>
         new StringSelectMenuOptionBuilder()
-          .setLabel(f.label)
-          .setValue(f.key)
+          .setLabel(e.label)
+          .setValue(e.key)
           // Discord plafonne la description d'une option à 100 caractères.
-          .setDescription(f.description.slice(0, 100))
-          .setDefault(f.key === famille.key)
-      )
-    );
-}
-
-/**
- * Second menu, affiché seulement quand la famille ouverte contient plus d'une
- * rubrique visible : sinon il n'offrirait aucun choix.
- */
-function buildSubNav(current, member, isOwner) {
-  const rubriques = familySections(familyOf(current), member, isOwner);
-  if (rubriques.length < 2) return null;
-  return new StringSelectMenuBuilder()
-    .setCustomId(`${ID}:subnav`)
-    .setPlaceholder("Choisis une rubrique")
-    .addOptions(
-      rubriques.map((s) =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(s.label)
-          .setDescription(s.description.slice(0, 100))
-          .setValue(s.key)
-          .setDefault(s.key === current)
+          .setDescription(e.description.slice(0, 100))
+          .setDefault(e.section === current)
       )
     );
 }
@@ -532,14 +483,6 @@ function sectionBody(section, guild, member, state) {
     return ["**Giveaways en cours :**", ...lines].join("\n");
   }
 
-  if (section === "embedBuilder") {
-    return "> *Aucun réglage — le menu ci-dessous ouvre le même constructeur d'embed que `&embed`.*";
-  }
-
-  if (section === "polls") {
-    return "> *Sondages en mémoire, perdus au redémarrage du bot — le menu ci-dessous ouvre le même formulaire que `&poll`.*";
-  }
-
   if (section === "banall") {
     return [
       `> **Autorisés** : ${mentions(accessStore.list("banall"))}`,
@@ -685,7 +628,7 @@ function accessRows(scope, label) {
  */
 /**
  * Ce qui est réellement DESSINÉ sur le tableau de bord de l'accueil du panel
- * (utils/dashboardImage.js) : une carte par famille, ses rubriques réelles
+ *  (utils/dashboardImage.js) : une carte par rubrique
  * en lignes. Exporté pour que les tests vérifient le contenu de l'image —
  * autrement invérifiable une fois rendue en PNG.
  */
@@ -712,7 +655,7 @@ function buildSectionSpec(guild, section, member, state = {}, corps) {
   const meta = SECTIONS.find((s) => s.key === section) || SECTIONS[0];
   return sectionDashboard.enSpec(corps ?? sectionBody(meta.key, guild, member, state), {
     titre: meta.label,
-    couleur: FAMILY_COLORS[familyOf(meta.key).key] || TEINTE_NEUTRE,
+    couleur: TEINTE_NEUTRE,
     sousTitre: `${member.displayName || member.user?.username || meta.label} · Gestion : ${getPrefixes(guild.id).musicMod}`,
     guild,
     // Nombre de colonnes laissé à enSpec : il le déduit de la longueur réelle
@@ -813,7 +756,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
   const meta = available.find((s) => s.key === current) || available[0];
-  const famille = familyOf(meta.key);
   // AUCUNE couleur d'accent : demande explicite. La barre colorée à gauche du
   // conteneur ne portait aucune information, elle ne faisait que teinter le
   // message.
@@ -825,7 +767,7 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     "## 「 PANEL DE CONFIGURATION 」",
     `> <@${member.id}> · Gestion : \`${getPrefixes(guild.id).musicMod}\``,
   ];
-  // Sur l'accueil, les cartes annoncent déjà chaque famille : répéter
+  // Sur l'accueil, le menu annonce déjà chaque rubrique : répéter
   // "### Accueil" juste au-dessus n'apporterait rien. Le statut et les
   // alertes ne sont plus écrits ici non plus : en texte, les mentions
   // brutes sortaient en pastilles — un `@everyone` cité dans une alerte de
@@ -1434,24 +1376,6 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         );
       }
     }
-  } else if (meta.key === "embedBuilder") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:embedbuild`)
-          .setPlaceholder("Construire un embed")
-          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Construire un embed").setValue("build"))
-      )
-    );
-  } else if (meta.key === "polls") {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`${ID}:pollstart`)
-          .setPlaceholder("Créer un sondage")
-          .addOptions(new StringSelectMenuOptionBuilder().setLabel("Créer un sondage").setValue("start"))
-      )
-    );
   } else if (meta.key === "backups") {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -1600,17 +1524,13 @@ async function handleConfigInteraction(interaction, customIdImpose) {
   }
 
   if (action === "nav") {
-    // Le bouton de navigation donne une famille (clé dans le customId,
-    // "cfg:nav:<clé>" — plus un menu déroulant) : on ouvre sa première
-    // rubrique accessible, celle qui a le plus de chances d'être celle
-    // qu'on cherche.
-    const famille = FAMILIES.find((f) => f.key === (interaction.values?.[0] || extra));
-    const rubriques = famille ? familySections(famille, member, isOwner) : [];
-    return goto(rubriques[0]?.key || "home");
-  }
-
-  if (action === "subnav") {
-    return goto(interaction.values[0]);
+    // Valeur du menu = clé d'une entrée de MENU (ou, par tolérance, une clé de
+    // rubrique directe). Une rubrique retirée ou non visible retombe sur
+    // l'accueil : buildConfigPanel ne montre jamais que ce à quoi on a droit.
+    const choix = interaction.values?.[0] || extra;
+    const entree = MENU.find((e) => e.key === choix || e.section === choix);
+    const visible = entree && sectionsFor(member, isOwner).some((sec) => sec.key === entree.section);
+    return goto(visible ? entree.section : "home");
   }
 
   if (action === "confesschannel") {
@@ -1780,17 +1700,6 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     if (action === "giveawayend") await endGiveaway(interaction.client, msg, [messageId]);
     else await rerollGiveaway(interaction.client, msg, [messageId]);
     return;
-  }
-
-  // Communication : le bouton ouvre EXACTEMENT ce que &embed/&poll ouvrent
-  // déjà (modale / carte de formulaire) — aucune deuxième implémentation.
-  if (action === "embedbuild") {
-    return handleEmbedButton(interaction);
-  }
-
-  if (action === "pollstart") {
-    if (!can(member, "server.polls.manage")) return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
-    return interaction.reply(buildFormCard("poll_create", member));
   }
 
   // Sauvegardes : réutilise TEL QUEL &backup (utils/serverBackup.js) — un
@@ -2193,4 +2102,4 @@ async function handleConfigInteraction(interaction, customIdImpose) {
 }
 
 module.exports = {
-  buildConfigPanel, buildSectionSpec, handleConfigInteraction, hasAnyPanelAccess, ID, SECTIONS };
+  buildConfigPanel, buildSectionSpec, handleConfigInteraction, hasAnyPanelAccess, ID, SECTIONS, MENU };

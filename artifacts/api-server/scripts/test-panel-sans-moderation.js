@@ -131,6 +131,8 @@ const CLES = SECTIONS.map((s) => s.key);
 
   await cas("la configuration complète du serveur reste présente", () => {
     // "Protection"/"Anti-nuke" ont déménagé dans !!secur (utils/securityPanel.js).
+    // "Sondages"/"Constructeur d'embed" retirés volontairement : ils ne
+    // faisaient que rouvrir &poll/&embed (voir scripts/test-panel-navigation.js).
     const labels = SECTIONS.map((s) => s.label);
     for (const attendu of [
       "Bienvenue",
@@ -141,7 +143,6 @@ const CLES = SECTIONS.map((s) => s.key);
       "Vérification",
       "Rôles automatiques",
       "Sauvegardes",
-      "Sondages",
     ]) {
       assert.ok(labels.includes(attendu), `"${attendu}" a disparu du panel : ${labels.join(", ")}`);
     }

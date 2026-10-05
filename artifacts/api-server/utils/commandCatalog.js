@@ -915,8 +915,6 @@ const CATEGORIES = [
           "server.tickets.manage",
           "channels.manage",
           "server.giveaways.manage",
-          "server.channels.manage",
-          "server.polls.manage",
         ],
         description: "Panneau de configuration (rubriques visibles selon tes droits)",
       },
