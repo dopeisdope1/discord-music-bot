@@ -26,7 +26,7 @@ const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, handleHisto
 const { ACCENT_COLOR } = require("../utils/helpPanel");
 const { handleConfirmInteraction } = require("../utils/serverAdminCommands");
 const permStore = require("./_levelGrants");
-const permCatalog = require("../utils/permissions/catalog");
+const permCatalog = require("../utils/permissions/levelCatalog");
 const { getPrefixes } = require("../utils/prefixStore");
 
 let reussis = 0;

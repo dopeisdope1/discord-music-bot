@@ -35,7 +35,7 @@ const { EMOJI } = require("./emojis");
 //    lieu d'exister ensemble).
 //  - Qui peut Accepter/Refuser (et qui peut écrire dans le salon public) :
 //    la permission "server.confessions.manage" du système EXISTANT de
-//    &panel > Permissions (utils/permissions/catalog.js) OU un
+//    &panel > Permissions (utils/permissions/levelCatalog.js) OU un
 //    administrateur Discord — jamais un rôle codé en dur.
 //  - Une confession déjà traitée ne peut plus l'être une seconde fois
 //    (bascule atomique "attente" -> décision, voir confessStore::moderer) :
@@ -55,7 +55,7 @@ const { EMOJI } = require("./emojis");
 const CUSTOM_ID = "confess";
 const LONGUEUR_MAX = 4000; // marge sous la limite réelle de description d'embed (4096) — aussi la limite max d'un champ de modale
 
-// Clé du catalogue de permissions existant (utils/permissions/catalog.js),
+// Clé du catalogue de permissions existant (utils/permissions/levelCatalog.js),
 // configurable depuis &panel > Permissions comme n'importe quelle autre —
 // AUCUN rôle codé en dur (demande explicite).
 const PERM_GERER = "server.confessions.manage";

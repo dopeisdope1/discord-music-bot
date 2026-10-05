@@ -616,7 +616,7 @@ async function roleAdmin(client, message, args) {
 
   if (sub === "admin") {
     // Réservé au rang sys/propriétaire, jamais délégable par rôle (voir
-    // "roleGrantable: false" dans utils/permissions/catalog.js) : c'est la
+    // OWNER_SYS_ONLY_KEYS dans utils/permissions/levelCatalog.js) : c'est la
     // commande la plus sensible du bot, confirmation obligatoire.
     if (!can(message.member, "server.roles.admin_grant")) return;
     const botPerm = checkBotPermission(message.guild, PermissionFlagsBits.ManageRoles, "ManageRoles");

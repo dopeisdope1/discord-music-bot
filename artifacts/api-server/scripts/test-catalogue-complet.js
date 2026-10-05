@@ -23,7 +23,7 @@ process.env.BOT_OWNER_IDS = "owner-1";
 
 const { MOD_COMMAND_NAMES, MOD_SUBCOMMANDS } = require("../utils/musicCommands");
 const { CATEGORIES } = require("../utils/commandCatalog");
-const permCatalog = require("../utils/permissions/catalog");
+const permCatalog = require("../utils/permissions/levelCatalog");
 
 let reussis = 0;
 function cas(nom, fn) {

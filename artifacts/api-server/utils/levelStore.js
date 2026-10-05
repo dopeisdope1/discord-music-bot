@@ -3,7 +3,7 @@ const path = require("path");
 const { ecrireJson, lireJson } = require("./jsonFile");
 
 // Système de niveaux/XP par message. La permission "server.levels.manage"
-// existe dans le catalogue depuis toujours (utils/permissions/catalog.js)
+// existe dans le catalogue depuis toujours (utils/permissions/levelCatalog.js)
 // mais n'avait jamais eu d'implémentation avant ce chantier — voir
 // utils/levels.js pour les commandes et l'écoute des messages.
 // { [guildId]: { config: {enabled, xpMin, xpMax, cooldownSeconds,

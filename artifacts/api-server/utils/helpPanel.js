@@ -1,13 +1,13 @@
 const { can, hasConfiguredAccess } = require("./permissions/engine");
 const { CATEGORIES } = require("./commandCatalog");
 const { isImplemented } = require("./implementedCommands");
-const { PERMISSIONS } = require("./permissions/catalog");
+const { PERMISSIONS } = require("./permissions/levelCatalog");
 
 // Conservé pour compatibilité (utils/permsCommands.js l'importait) — plus
 // aucun composant ne colore quoi que ce soit dans &help.
 const ACCENT_COLOR = 0x2c2f5c;
 
-// Catégorie du moteur de permissions (utils/permissions/catalog.js) pour
+// Catégorie du registre de permissions (utils/permissions/levelCatalog.js) pour
 // chaque clé — sert uniquement à savoir si une commande est "dangereuse"
 // pour l'affichage ci-dessous, jamais pour l'octroi réel (utils/
 // permissions/engine.js reste l'unique juge de ce qui est accordé).

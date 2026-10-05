@@ -1,7 +1,7 @@
 /**
  * Système de niveaux/XP (utils/levelStore.js, utils/levels.js) — &rank,
  * &leaderboard, &levels on/off. La permission "server.levels.manage" existe
- * dans le catalogue depuis toujours (utils/permissions/catalog.js) mais
+ * dans le catalogue depuis toujours (utils/permissions/levelCatalog.js) mais
  * n'avait jamais eu d'implémentation avant ce chantier. Désactivé par
  * défaut par serveur, comme le reste de l'automod léger.
  *

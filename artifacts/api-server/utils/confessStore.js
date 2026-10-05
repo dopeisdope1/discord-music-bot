@@ -19,7 +19,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 // est en attente.
 //
 // Qui a le droit de valider vient du système de permissions existant du
-// panel (clé "server.confessions.manage", voir utils/permissions/catalog.js
+// panel (clé "server.confessions.manage", voir utils/permissions/levelCatalog.js
 // et utils/confessions.js::PERM_GERER) — jamais un rôle codé en dur ici.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "confess.json");

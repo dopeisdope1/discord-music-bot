@@ -5,7 +5,7 @@ const { ecrireJson, lireJson } = require("./jsonFile");
 // Config par serveur du déclencheur "<nom> clear" (voir utils/selfClear.js) —
 // remplace l'ancien "uo clear" fixé en dur. Réglable via "!!setclear"
 // (utils/setClearCommand.js), gardé derrière la permission
-// "server.selfclear.manage" (utils/permissions/catalog.js) comme le reste.
+// "server.selfclear.manage" (utils/permissions/levelCatalog.js) comme le reste.
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "selfClear.json");
 
