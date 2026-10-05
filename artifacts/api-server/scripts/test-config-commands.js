@@ -1,8 +1,9 @@
 /**
  * Vérifie les commandes de configuration (utils/configCommands.js) : &prefix,
- * &set perm / &del perm / &clear perms, &join settings, &ticket settings,
- * &clear limit. Elles écrivent dans les MÊMES stores que les
- * rubriques correspondantes de &panel.
+ * &set perm / &del perm, &join settings, &ticket settings. Elles écrivent
+ * dans les MÊMES stores que les rubriques correspondantes de &panel.
+ * Vérifie aussi que les anciennes formes "&clear perms|limit|sanctions"
+ * redirigent (et ne nettoient rien), et que "&reset sanctions" est routé.
  *
  * Lancement : node scripts/test-config-commands.js
  */
@@ -18,6 +19,8 @@ const { Collection, PermissionsBitField } = require("discord.js");
 const levelStore = require("../utils/permissions/levelStore");
 const { configHandlers, resolveLevel } = require("../utils/configCommands");
 const { getPrefixes } = require("../utils/prefixStore");
+const { modHandlers, MOD_SUBCOMMANDS } = require("../utils/musicCommands");
+const historyStore = require("../utils/moderationHistoryStore");
 
 let reussis = 0;
 async function cas(nom, fn) {
@@ -87,7 +90,7 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
     assert.ok(texte(msg).includes("Préfixe des commandes"), texte(msg));
   });
 
-  console.log("\n&set perm / &del perm / &clear perms :");
+  console.log("\n&set perm / &del perm :");
 
   await cas("un niveau invalide rappelle la plage 1-9 au lieu d'échouer sèchement", async () => {
     const msg = makeMessage({ roles: [cible] });
@@ -115,7 +118,7 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
     const membre = { id: "membre-1" };
     await configHandlers.setPerm(null, makeMessage({ users: [membre] }), ["3"]);
     assert.strictEqual(levelStore.getUserLevel("g1", "membre-1"), 3);
-    await configHandlers.clearPerms(null, makeMessage({ users: [membre] }), []);
+    await configHandlers.delPerm(null, makeMessage({ users: [membre] }), []);
     assert.strictEqual(levelStore.getUserLevel("g1", "membre-1"), null);
   });
 
@@ -135,13 +138,50 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
 
   console.log("\nVues de configuration :");
 
-  await cas("&join settings, &ticket settings et &clear limit répondent", async () => {
-    for (const handler of [configHandlers.joinSettings, configHandlers.ticketSettings, configHandlers.clearLimit]) {
+  await cas("&join settings et &ticket settings répondent", async () => {
+    for (const handler of [configHandlers.joinSettings, configHandlers.ticketSettings]) {
       const msg = makeMessage();
       await handler(null, msg);
       assert.strictEqual(msg._replies.length, 1, "chacune doit répondre");
       assert.ok(texte(msg).includes(">"), "et afficher l'état courant");
     }
+  });
+
+  console.log("\n&clear (messages) vs &reset (réinitialisations) :");
+
+  await cas("les anciennes formes &clear perms|limit|sanctions|all redirigent sans rien nettoyer", async () => {
+    const attendu = { perms: "del perm", limit: "Dispenses", sanctions: "reset sanctions", all: "reset all sanctions" };
+    for (const [sub, indice] of Object.entries(attendu)) {
+      const msg = makeMessage();
+      msg.channel = { id: "chan-1", messages: { fetch: async () => assert.fail("aucun message ne doit être lu/supprimé") } };
+      await modHandlers.clear(null, msg, sub === "all" ? ["all", "sanctions"] : [sub]);
+      assert.strictEqual(msg._replies.length, 1, `${sub} : une redirection attendue`);
+      assert.ok(texte(msg).includes(indice), `${sub} : ${texte(msg)}`);
+    }
+  });
+
+  await cas("sans le droit de l'ancienne commande, la redirection reste muette", async () => {
+    const msg = makeMessage({ userId: "membre-lambda" });
+    await modHandlers.clear(null, msg, ["sanctions"]);
+    assert.strictEqual(msg._replies.length, 0);
+  });
+
+  await cas("&reset sanctions @membre et &reset all sanctions vident l'historique", async () => {
+    const membre = { id: "123456789012345678" };
+    historyStore.record({ guildId: "g1", action: "warn", targetId: membre.id, moderatorId: "owner-1" });
+    historyStore.record({ guildId: "g1", action: "warn", targetId: "876543210987654321", moderatorId: "owner-1" });
+    const msg = makeMessage();
+    msg.guild.members = { fetch: async (id) => (id === membre.id ? { id, user: { tag: "cible#1" } } : null) };
+    await modHandlers.reset(null, msg, ["sanctions", `<@${membre.id}>`]);
+    assert.strictEqual(historyStore.search("g1", { targetId: membre.id }).length, 0, texte(msg));
+    assert.strictEqual(historyStore.search("g1", { targetId: "876543210987654321" }).length, 1);
+    await modHandlers.reset(null, makeMessage(), ["all", "sanctions"]);
+    assert.strictEqual(historyStore.search("g1", {}).length, 0);
+  });
+
+  await cas("&reset n'annonce que les sous-commandes réellement routées", () => {
+    assert.deepStrictEqual(MOD_SUBCOMMANDS.reset, ["sanctions", "all"]);
+    assert.strictEqual(MOD_SUBCOMMANDS.clear, undefined, "&clear n'a plus de sous-commande");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

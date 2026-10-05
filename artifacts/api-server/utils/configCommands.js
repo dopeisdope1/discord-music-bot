@@ -6,7 +6,6 @@ const { LEVEL_MIN, LEVEL_MAX } = require("./permissions/levelCatalog");
 const welcomeStore = require("./welcomeStore");
 const leaveStore = require("./leaveStore");
 const ticketStore = require("./ticketStore");
-const accessStore = require("./accessStore");
 
 // Équivalents texte des rubriques de &panel qui n'en avaient pas encore
 // (Préfixes, Permissions, Bienvenue, Tickets, Vocaux). Mêmes stores que le
@@ -126,11 +125,6 @@ const handlers = {
     return reply(message, avait ? "success" : "info", avait ? `Niveau retiré à <@${membre.id}>.` : `<@${membre.id}> n'avait aucun niveau assigné.`);
   },
 
-  /** &clear perms <@rôle|@membre> — retire le niveau assigné (alias de &del perm). */
-  async clearPerms(client, message, args) {
-    return handlers.delPerm(client, message, args);
-  },
-
   /** &join settings — réglages d'arrivée (rubrique Bienvenue). */
   async joinSettings(client, message) {
     if (!can(message.member, "server.welcome.manage")) return;
@@ -183,22 +177,6 @@ const handlers = {
       ]
         .filter((l) => l !== null)
         .join("\n")
-    );
-  },
-
-  /** &clear limit — dispensés du quota de `uo clear` (rubrique Dispenses). */
-  async clearLimit(client, message) {
-    if (!can(message.member, "sys")) return;
-    const dispenses = accessStore.list("clear");
-    await reply(
-      message,
-      "info",
-      [
-        `> **Dispensés du quota** : ${dispenses.length ? dispenses.map((id) => `<@${id}>`).join(", ") : "*personne*"}`,
-        "> Les autres sont plafonnés à 2 usages de `uo clear` par 25 minutes.",
-        "",
-        "Modification dans `&panel` > Dispenses.",
-      ].join("\n")
     );
   },
 };

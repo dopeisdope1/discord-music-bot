@@ -114,6 +114,17 @@ async function repondreAvecTableauDeBord(message, construire) {
   }
 }
 
+// Anciennes formes "&clear <sous-commande>" (réinitialisations), retirées du
+// mot "clear" pour ne plus les confondre avec le nettoyage de messages.
+// Chaque redirection n'est montrée qu'à qui avait le droit de l'ancienne
+// commande — comme partout ailleurs, une commande refusée reste muette.
+const ANCIENS_CLEAR = {
+  sanctions: { permission: "logs.manage", texte: "`clear sanctions` est devenu `reset sanctions @membre`." },
+  all: { permission: "logs.manage", texte: "`clear all sanctions` est devenu `reset all sanctions`." },
+  perms: { permission: "panel.permissions.manage", texte: "`clear perms` n'existe plus : utilise `del perm @rôle|@membre`." },
+  limit: { permission: "sys", texte: "`clear limit` n'existe plus : les dispensés du quota sont dans `&panel` > Dispenses." },
+};
+
 const modHandlers = {
   // Ouvert à tout le monde, mais le contenu est filtré sur les droits réels
   // de la personne (voir utils/helpPanel.js). Un seul message, navigable via
@@ -203,19 +214,31 @@ const modHandlers = {
     // directement (staffCheck lit la mention, jamais les mots de `args`).
     return utilityHandlers.staffCheck(client, message, sub === "check" ? args.slice(1) : args);
   },
-  // "clear perms"/"clear limit" (config de gestion), "clear sanctions"/
-  // "clear all sanctions" (historique de modération, fusionné depuis
-  // moderation-bot) ; sans sous-commande reconnue, nettoyage de messages
-  // ciblé (sanctionsCommands.js::clear — "clear @membre [nombre]").
+  // "&clear"/"&purge" = UNIQUEMENT le nettoyage de messages ciblé
+  // (sanctionsCommands.js::clear — "clear @membre [nombre]"). Les anciennes
+  // sous-commandes de RÉINITIALISATION qui partageaient ce mot ont été
+  // séparées pour qu'on ne tape plus "&clear" en croyant nettoyer un salon :
+  //   clear sanctions / clear all sanctions -> &reset sanctions / &reset all sanctions
+  //   clear perms -> &del perm (dont c'était un alias exact)
+  //   clear limit -> &panel > Dispenses (affichait la même liste en lecture seule)
+  // Taper l'ancienne forme redirige au lieu de ne rien faire.
   clear: (client, message, args) => {
     const sub = (args[0] || "").toLowerCase();
-    if (sub === "perms") return configHandlers.clearPerms(client, message, args.slice(1));
-    if (sub === "limit") return configHandlers.clearLimit(client, message, args.slice(1));
-    if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
-    if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
+    if (Object.hasOwn(ANCIENS_CLEAR, sub)) {
+      const { permission, texte } = ANCIENS_CLEAR[sub];
+      if (!can(message.member, permission)) return undefined;
+      return message.reply({ embeds: [buildStatusEmbed("info", texte, { guildId: message.guild.id })] });
+    }
     return sanctionsHandlers.clear(client, message, args);
   },
   purge: (client, message, args) => sanctionsHandlers.purge(client, message, args),
+  // Réinitialisations d'historique de modération (ex-"&clear sanctions").
+  reset: (client, message, args) => {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "sanctions") return moderationExtra.clearSanctions(client, message, args.slice(1));
+    if (sub === "all" && (args[1] || "").toLowerCase() === "sanctions") return moderationExtra.clearAllSanctions(client, message);
+    return undefined;
+  },
 
   // Administration du serveur (rôles/salons créés de zéro, owners, whitelist,
   // liste des bots, dero automatique) — voir utils/serverAdminCommands.js.
@@ -616,7 +639,7 @@ const MOD_SUBCOMMANDS = {
   absence: ["set", "reset"],
   backup: ["list", "delete", "load"],
   set: ["name", "pic", "banner", "perm", "muterole"],
-  clear: ["perms", "limit", "sanctions", "all"],
+  reset: ["sanctions", "all"],
   del: ["perm", "sanction"],
   ticket: ["setup", "settings"],
   compteur: ["create", "list", "delete"],

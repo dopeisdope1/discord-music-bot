@@ -140,7 +140,7 @@ const PERMISSIONS = [
     category: "moderation",
     label: "Mute bot gradé, verrouillé au grade du poseur (&bmute, &bunmute, &bmutelist, &bmuteresetall)",
   },
-  { key: "moderation.clear", category: "moderation", label: "Nettoyer des messages (&clear)" },
+  { key: "moderation.clear", category: "moderation", label: "Nettoyer des messages (&clear, &purge)" },
   { key: "moderation.kick", category: "moderation", label: "Expulser un membre (&kick)" },
   { key: "moderation.ban", category: "moderation", label: "Bannir un membre (&ban)" },
   { key: "moderation.unban", category: "moderation", label: "Débannir un membre (&unban)" },
@@ -172,7 +172,7 @@ const PERMISSIONS = [
 
   // --- Protection --- (anti-spam/anti-nuke/anti-lien migrés vers le bot
   // Secure — seul le rôle de mute générique reste ici, sans rapport)
-  { key: "protection.automod", category: "protection", label: "Configurer le rôle de mute et sa limite de nettoyage (&set muterole, &clear limit)" },
+  { key: "protection.automod", category: "protection", label: "Configurer le rôle de mute (&set muterole, &muterole)" },
 
   // --- Serveur --- (structure du serveur, distinct de "channels" qui reste
   // limité au salon courant — création/suppression touchent tout le serveur)

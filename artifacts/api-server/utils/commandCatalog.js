@@ -62,12 +62,6 @@ const CATEGORIES = [
         description: "Affiche la liste des bots ayant la permission administrateur",
       },
       {
-        name: "clear limit <nombre>",
-        prefix: "mod",
-        permission: "protection.automod",
-        description: "Règle le nombre maximum de messages supprimables en une fois",
-      },
-      {
         name: "owner <@membre>",
         prefix: "mod",
         permission: "panel.permissions.manage",
@@ -884,12 +878,6 @@ const CATEGORIES = [
         description: "Retire les permissions accordées à un rôle",
       },
       {
-        name: "clear perms",
-        prefix: "mod",
-        permission: "panel.permissions.manage",
-        description: "Réinitialise toutes les permissions accordées",
-      },
-      {
         name: "prefix <préfixe>",
         prefix: "mod",
         permission: "sys",
@@ -1081,8 +1069,8 @@ const CATEGORIES = [
       { name: "clearmybl", prefix: "mod", permission: null, description: "Retire toutes tes propres entrées blacklist sur ce serveur et débannit" },
 
       // --- Actions de masse ---
-      { name: "clear [nombre]", prefix: "mod", permission: "moderation.clear", description: "Supprime des messages en masse" },
-      { name: "purge [nombre]", prefix: "mod", permission: "moderation.clear", description: "Alias de &clear" },
+      { name: "clear <@membre> [nombre]", prefix: "mod", permission: "moderation.clear", description: "Supprime les derniers messages d'un membre dans ce salon" },
+      { name: "purge <@membre> [nombre]", prefix: "mod", permission: "moderation.clear", description: "Alias de &clear" },
       { name: "banall <raison>", prefix: "mod", permission: "moderation.banall", description: "Bannit plusieurs membres à la fois, avec confirmation" },
       { name: "unbanall", prefix: "mod", permission: "moderation.unbanall", description: "Débannit tout le monde, avec confirmation" },
       { name: "unmuteall", prefix: "mod", permission: "moderation.unmuteall", description: "Lève tous les mutes : timeouts (&mute) et rôle de mute (&permmute)" },
@@ -1104,8 +1092,8 @@ const CATEGORIES = [
 
       // --- Configuration ---
       { name: "del sanction <numéro>", prefix: "mod", permission: "logs.manage", description: "Supprime une entrée de l'historique de modération" },
-      { name: "clear sanctions <@membre>", prefix: "mod", permission: "logs.manage", description: "Supprime toutes les sanctions d'un membre" },
-      { name: "clear all sanctions", prefix: "mod", permission: "logs.manage", description: "Supprime tout l'historique de modération du serveur" },
+      { name: "reset sanctions <@membre>", prefix: "mod", permission: "logs.manage", description: "Réinitialise l'historique de modération d'un membre (n'efface aucun message)" },
+      { name: "reset all sanctions", prefix: "mod", permission: "logs.manage", description: "Réinitialise tout l'historique de modération du serveur (n'efface aucun message)" },
       { name: "set muterole <@rôle>", prefix: "mod", permission: "protection.automod", description: "Définit le rôle utilisé par &permmute et &bmute" },
       { name: "muterole", prefix: "mod", permission: "protection.automod", description: "Affiche le rôle de mute configuré (utilisé par &permmute et &bmute)" },
       { name: "reasonadd <libellé>", prefix: "mod", permission: "moderation.reasons", description: "Ajoute une raison de ban prédéfinie" },

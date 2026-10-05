@@ -297,7 +297,7 @@ async function checkExpiredMutes(client) {
   }
 }
 
-// --- Sanctions (-sanctions, -del sanction, -clear sanctions, -clear all sanctions) ---
+// --- Sanctions (&sanctions, &del sanction, &reset sanctions, &reset all sanctions) ---
 
 async function sanctions(client, message, args) {
   if (!can(message.member, "logs.view")) return;
