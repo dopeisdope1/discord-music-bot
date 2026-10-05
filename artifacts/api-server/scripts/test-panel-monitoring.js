@@ -105,8 +105,14 @@ function body(guild, section, member) {
 
   await cas("sans le rang sys, Diagnostics n'est pas proposée (mêmes infos sensibles que &status)", () => {
     const noAccess = mkMember("u-none");
-    const titre = buildConfigPanel(guild, "diagnostics", noAccess).components[0].toJSON().components.find((c) => c.type === 10).content;
-    assert.ok(!titre.includes("Diagnostics"), titre);
+    // Plus de bandeau de titre : on vérifie ce que le PANEL renvoie — aucune
+    // image de rubrique (où seraient dessinées les valeurs de computeStatus),
+    // l'écran retombe sur l'accueil et son seul menu de navigation.
+    const panel = buildConfigPanel(guild, "diagnostics", noAccess);
+    assert.strictEqual(panel.files, undefined, "aucune image de Diagnostics ne doit être jointe");
+    const json = JSON.stringify(panel.components[0].toJSON());
+    assert.ok(!json.includes("Uptime") && !json.includes("37ms"), json);
+    assert.ok(json.includes("cfg:nav"), "retour à l'accueil (menu de navigation)");
   });
 
   await cas("avec le rang sys, Diagnostics affiche les VRAIES valeurs de computeStatus (uptime/latence/serveurs)", () => {
@@ -115,7 +121,7 @@ function body(guild, section, member) {
     assert.ok(texte.includes("37ms"), texte);
     assert.ok(texte.includes("3h"), texte);
     assert.ok(texte.includes("Serveurs : 1"), texte);
-    assert.ok(texte.includes("aucun nœud déclaré"), texte);
+    // (Plus de ligne "nœud Lavalink" : la pile musique a quitté ce bot.)
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
