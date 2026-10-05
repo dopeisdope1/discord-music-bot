@@ -475,6 +475,15 @@ const embedTitle = (payload) =>
     const g = fakeGuild({ roles: [role] });
     permStore.setRoleGrants(g.id, role.id, ["channels.lock", "channels.manage"]);
     const msg = fakeMessage(g, { mentions: { roles: new Collection([[role.id, role]]) } });
+    // Le texte alternatif de l'image est plafonné à 1024 caractères par
+    // Discord : avec les 100+ commandes d'un niveau 7 (cumulatif), les membres
+    // n'y figurent plus. On lit donc la fiche COMPLÈTE par sa version texte
+    // (salon sans « Joindre des fichiers »), la même chaîne que l'image dessine.
+    const replyOrigine = msg.reply;
+    msg.reply = async (p) => {
+      if (p.files) throw new Error("Missing Permissions (Attach Files)");
+      return replyOrigine(p);
+    };
     await utilityHandlers.roleInfo(null, msg, []);
     const texte = embedText(msg._replies[0]);
     assert.ok(texte.includes("alice#0001") && texte.includes("bob#0002"), texte);
