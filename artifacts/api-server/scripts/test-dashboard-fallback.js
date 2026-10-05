@@ -193,7 +193,14 @@ function fakeMessage(contenu, { refuseFichiers = false } = {}) {
     assert.strictEqual(panel.files, undefined);
     assert.ok(!composantsDe(panel).some((c) => c.type === GALERIE));
     assert.ok(composantsDe(panel).some((c) => c.type === RANGEE), "le menu de navigation doit rester utilisable");
-    assert.ok(texteDe(panel).includes("Tickets"), texteDe(panel));
+    // Plus de bandeau "### Tickets" (retiré sur demande) : dans une rubrique,
+    // la navigation est le bouton "Accueil", et le CONTENU reste lisible en texte.
+    const accueil = composantsDe(panel)
+      .filter((c) => c.type === RANGEE)
+      .flatMap((r) => r.components)
+      .find((c) => c.custom_id === "cfg:home");
+    assert.ok(accueil, "le bouton Accueil doit rester présent");
+    assert.ok(texteDe(panel).includes("Rôle staff"), texteDe(panel));
   });
 
   console.log("\nEnvoi refusé par Discord (pas de « Joindre des fichiers ») :");

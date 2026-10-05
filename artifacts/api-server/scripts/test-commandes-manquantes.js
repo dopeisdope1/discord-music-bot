@@ -114,10 +114,14 @@ const embedText = (reply) =>
   await cas("un membre avec des rôles accordés voit les VRAIES commandes débloquées", async () => {
     const guild = { id: "g2" };
     permStore.setRoleGrants("g2", "role-mod", ["channels.lock"]);
+    // Un vrai GuildMember porte toujours son serveur (levelOf() en a besoin)
+    // et s'affiche en mention.
     const target = {
       id: "u-mod",
+      guild,
       user: { tag: "mod#0001" },
       roles: { cache: new Collection([["role-mod", { id: "role-mod" }]]) },
+      toString: () => "<@u-mod>",
     };
     const msg = fakeMessage({ guild, mentions: { members: new Collection([[target.id, target]]) } });
     await utilityHandlers.staffCheck(null, msg, []);
@@ -127,10 +131,11 @@ const embedText = (reply) =>
 
   await cas("un membre sans aucune permission accordée le dit clairement", async () => {
     const guild = { id: "g2" };
-    const target = { id: "u-rien", user: { tag: "rien#0001" }, roles: { cache: new Collection() } };
+    const target = { id: "u-rien", guild, user: { tag: "rien#0001" }, roles: { cache: new Collection() }, toString: () => "<@u-rien>" };
     const msg = fakeMessage({ guild, mentions: { members: new Collection([[target.id, target]]) } });
     await utilityHandlers.staffCheck(null, msg, []);
-    assert.ok(embedText(msg._replies[0]).includes("aucune permission"));
+    // Système à niveaux : le message dit "aucun niveau de permission".
+    assert.ok(embedText(msg._replies[0]).includes("aucun niveau de permission"), embedText(msg._replies[0]));
   });
 
   await cas("sans mention, vérifie l'auteur lui-même", async () => {
