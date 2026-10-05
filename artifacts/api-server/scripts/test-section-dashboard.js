@@ -159,7 +159,7 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
   // "roletiers" ("Rôles (paliers)") est volontairement exclue : demande
   // explicite de la garder en texte pur, comme &helpall, jamais dessinée —
   // voir le cas dédié plus bas.
-  const rubriques = SECTIONS.filter((s) => s.key !== "home" && s.key !== "roletiers");
+  const rubriques = SECTIONS.filter((s) => s.key !== "home");
 
   await cas(`les ${rubriques.length} rubriques produisent une spec dessinable`, () => {
     for (const s of rubriques) {
@@ -199,8 +199,13 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
     }
   });
 
+  // "Permissions" est la rubrique TEXTE assumée (configPanel.js, texteForce) :
+  // ses sections s'éditent en place, mieux servies par le vrai texte Discord
+  // qu'une image à régénérer à chaque clic. Elle est vérifiée à part plus bas.
+  const TEXTE_SEUL = ["permissions"];
+
   await cas("le panel joint bien l'image sur chaque rubrique, jamais une galerie sans pièce jointe", () => {
-    for (const s of rubriques) {
+    for (const s of rubriques.filter((r) => !TEXTE_SEUL.includes(r.key))) {
       const panel = buildConfigPanel(guild, s.key, owner);
       const composants = panel.components[0].toJSON().components;
       const galeries = composants.filter((c) => c.type === 12).length;
@@ -219,12 +224,13 @@ const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
     }
   });
 
-  await cas('"Rôles (paliers)" reste en texte, jamais en image (demande explicite, comme &helpall)', () => {
-    const panel = buildConfigPanel(guild, "roletiers", owner);
+  // "Rôles (paliers)" a quitté le panel pour &p (texte, utils/palierPanel.js).
+  await cas('"Permissions" reste en texte, jamais en image', () => {
+    const panel = buildConfigPanel(guild, "permissions", owner);
     const composants = panel.components[0].toJSON().components;
-    assert.ok(!composants.some((c) => c.type === 12), "roletiers ne doit jamais avoir de galerie média");
-    assert.strictEqual(panel.files, undefined, "roletiers ne doit jamais joindre de fichier");
-    assert.ok(composants.some((c) => c.type === 10), "roletiers doit rester lisible en texte");
+    assert.ok(!composants.some((c) => c.type === 12), "permissions ne doit jamais avoir de galerie média");
+    assert.strictEqual(panel.files, undefined, "permissions ne doit jamais joindre de fichier");
+    assert.ok(composants.some((c) => c.type === 10 && c.content.includes("**Permissions**")), "permissions doit rester lisible en texte");
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);

@@ -1477,7 +1477,9 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   // repasse par buildConfigPanel et le réaffiche.
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${ID}:home`).setLabel("Accueil").setStyle(ButtonStyle.Secondary).setEmoji("🏠")
+      // Sans emoji : l'interface d'administration n'en porte aucun (demande
+      // explicite, voir scripts/test-sans-emoji.js).
+      new ButtonBuilder().setCustomId(`${ID}:home`).setLabel("Accueil").setStyle(ButtonStyle.Secondary)
     )
   );
 
