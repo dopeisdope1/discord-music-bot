@@ -75,14 +75,25 @@ async function createLogChannelsAutomatically(guild) {
 async function deleteLogChannelsAutomatically(guild) {
   const existing = getAllLogChannels(guild.id);
   const deleted = [];
+  const echecs = [];
   for (const [category, channelId] of Object.entries(existing)) {
     if (!channelId) continue;
     const channel = guild.channels.cache.get(channelId);
-    if (channel) await channel.delete("Suppression des salons de logs (&panel > Logs)").catch(() => {});
+    if (channel) {
+      try {
+        await channel.delete("Suppression des salons de logs (&panel > Logs)");
+      } catch (err) {
+        // Le salon existe toujours : on garde la configuration, sinon les logs
+        // s'arrêteraient en silence alors que le salon est encore là.
+        console.error(`[logChannels] suppression refusée pour ${category} (${channelId}) :`, err.message);
+        echecs.push(category);
+        continue;
+      }
+    }
     setLogChannelId(guild.id, category, null);
     deleted.push(category);
   }
-  return { deleted };
+  return { deleted, echecs };
 }
 
 module.exports = { LOG_CHANNEL_NAMES, createLogChannelsAutomatically, deleteLogChannelsAutomatically };

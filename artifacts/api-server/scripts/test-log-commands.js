@@ -204,5 +204,23 @@ const texte = (msg) => msg._replies[0]?.embeds?.[0]?.data?.description || "";
     assert.ok(texte(msg).includes("déjà"), texte(msg));
   });
 
+  console.log("\nSuppression des salons de logs (bouton du panel) :");
+
+  await cas("un salon que Discord refuse de supprimer reste configuré, et l'échec est remonté", async () => {
+    const { deleteLogChannelsAutomatically } = require("../utils/logChannels");
+    const g = "g-del";
+    setLogChannelId(g, "members", "c-ok");
+    setLogChannelId(g, "voice", "c-bloque");
+    const cache = new Collection([
+      ["c-ok", { id: "c-ok", delete: async () => {} }],
+      ["c-bloque", { id: "c-bloque", delete: async () => { throw new Error("Missing Permissions"); } }],
+    ]);
+    const { deleted, echecs } = await deleteLogChannelsAutomatically({ id: g, channels: { cache } });
+    assert.deepStrictEqual(deleted, ["members"]);
+    assert.deepStrictEqual(echecs, ["voice"]);
+    assert.strictEqual(getAllLogChannels(g).members, null, "le salon supprimé est retiré de la config");
+    assert.strictEqual(getAllLogChannels(g).voice, "c-bloque", "le salon toujours présent reste configuré");
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué" : ", tout est vert"}.`);
 })();

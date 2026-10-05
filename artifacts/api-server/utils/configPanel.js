@@ -1462,11 +1462,13 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
   }
 
   // Dernière étape du rendu : les boutons d'action deviennent un seul menu.
-  // "Rôles (paliers)" garde ses VRAIS boutons : ils sont attachés à une ligne
-  // précise (« Permission 3 : @rôle » + Supprimer/Ajouter/Renommer), ce qu'un
-  // menu unique ne sait pas rendre — il les fondrait tous ensemble et on ne
-  // saurait plus quel palier chaque action vise. C'est l'exception assumée à
-  // la règle « les actions passent dans un menu déroulant ».
+  // La carte "Permissions" garde ses VRAIS boutons : chacun est attaché à une
+  // section précise de la carte (pagination ←/→ des commandes d'un niveau ou
+  // de la liste des cooldowns, définir/retirer un cooldown), ce qu'un menu
+  // unique ne sait pas rendre — il les fondrait tous ensemble et on ne
+  // saurait plus quelle section chaque action vise. C'est l'exception assumée
+  // à la règle « les actions passent dans un menu déroulant ». (Les boutons
+  // de ligne des rôles par niveau vivent dans &p, utils/palierPanel.js.)
   if (meta.key !== "permissions") regrouperBoutonsEnMenu(container);
 
   // Bouton "Accueil" : seule exception bouton restante avec la pagination,
@@ -1820,11 +1822,15 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     const botPerm = checkBotPermission(guild, PermissionFlagsBits.ManageChannels, "ManageChannels");
     if (botPerm) return interaction.reply({ content: botPerm, flags: MessageFlags.Ephemeral });
 
-    const { deleted } = await deleteLogChannelsAutomatically(guild);
+    const { deleted, echecs = [] } = await deleteLogChannelsAutomatically(guild);
+    const refus = echecs.length ? `\nDiscord a refusé ${echecs.length} suppression(s) — ces salons restent configurés.` : "";
     await interaction.reply({
-      content: deleted.length
-        ? `${deleted.length} salon(s) de logs supprimé(s). Utilise "Créer les salons automatiquement" pour les recréer.`
-        : "Aucun salon de logs configuré, rien à supprimer.",
+      content:
+        (deleted.length
+          ? `${deleted.length} salon(s) de logs supprimé(s). Utilise "Créer les salons automatiquement" pour les recréer.`
+          : echecs.length
+          ? "Aucun salon de logs n'a pu être supprimé."
+          : "Aucun salon de logs configuré, rien à supprimer.") + refus,
       flags: MessageFlags.Ephemeral,
     });
     return goto("logs");
