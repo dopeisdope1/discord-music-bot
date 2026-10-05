@@ -73,7 +73,11 @@ function famillesDe(mot, member) {
     const identite = identityOf(cmd);
     if (vues.has(identite)) continue;
     const premierMot = identite.split(" ")[0];
-    if (premierMot === mot) {
+    // « mute|timeout <@membre> » : deux noms pour la même commande. Taper
+    // l'un OU l'autre seul doit rappeler sa syntaxe — sans ça, &mute et
+    // &unmute tombaient sur un simple « Indique un membre » quand &ban ou
+    // &kick affichaient la carte complète.
+    if (premierMot === mot || premierMot.split("|").includes(mot)) {
       vues.add(identite);
       themesDeLaFamille.add(theme);
       variantes.push(cmd);

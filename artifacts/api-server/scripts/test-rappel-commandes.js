@@ -131,5 +131,25 @@ const nomsDe = (carte) =>
     assert.ok(!tout.includes("addrole"), tout);
   });
 
+  console.log("\nModération tapée sans argument : la syntaxe, jamais une erreur sèche :");
+
+  await cas("chaque commande de modération (et ses alias) rappelle sa syntaxe quand on la tape seule", () => {
+    // &mute/&unmute s'appellent « mute|timeout » / « unmute|untimeout » dans le
+    // catalogue : avant, seul « Indique un membre » leur répondait, quand
+    // &ban ou &kick affichaient leur carte complète.
+    const commandes = ["ban", "kick", "mute", "timeout", "unmute", "untimeout", "permmute", "permunmute", "warn", "unwarn", "purge", "clear"];
+    for (const mot of commandes) {
+      const carte = buildFamilyCard(mot, owner, "g1", { sansImage: true });
+      assert.ok(carte, `&${mot} seul doit rappeler sa syntaxe`);
+      const texte = nomsDe(carte);
+      assert.ok(/La syntaxe attendue|Les variantes disponibles/.test(texte), `&${mot} : ${texte}`);
+      assert.ok(/<@membre>/.test(texte), `&${mot} doit dire qu'il attend un membre : ${texte}`);
+    }
+  });
+
+  await cas("sans le droit, la commande de modération tapée seule reste muette (rien à révéler)", () => {
+    assert.strictEqual(buildFamilyCard("ban", simple, "g1", { sansImage: true }), null);
+  });
+
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);
 })();
