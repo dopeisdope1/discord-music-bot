@@ -1,9 +1,16 @@
 /**
- * Vérifie l'ajout du lien "rôle -> membres" dans la rubrique Rôles et
- * permissions du panel (module 5 de la refonte) : &rolemembers existait déjà
- * en commande mais n'était jamais exposé dans &panel. Le bouton doit
- * réutiliser TEL QUEL utilityHandlers.rolemembers (même liste paginée), pas
- * une deuxième implémentation, et rester gated par server.members.list.
+ * "Rôle -> membres" : où le trouver, et ce qu'il advient de l'ancien bouton.
+ *
+ * Le bouton "Voir les membres" vivait dans &panel > Rôles et permissions ; ce
+ * parcours a été remplacé par la carte à niveaux (commit 023ec29). La liste
+ * reste disponible par la commande &rolemembers (utilityHandlers.rolemembers,
+ * même gate server.members.list). Ce test vérifie :
+ *  - que la carte Permissions actuelle ne propose plus ce bouton ;
+ *  - qu'un clic sur l'ancien bouton d'un panneau resté affiché reçoit une
+ *    réponse claire, au lieu de « Échec de l'interaction » ;
+ *  - que &rolemembers reste gated par server.members.list, débloquée par un
+ *    NIVEAU (système actuel).
+ * Le contenu de la liste elle-même est vérifié par test-utility-commands.js.
  *
  * Lancement : node scripts/test-panel-rolemembers.js
  */
@@ -16,7 +23,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "panel-rolemembers-
 process.env.BOT_OWNER_IDS = "owner-1";
 
 const { Collection, PermissionsBitField } = require("discord.js");
-const { buildConfigPanel, buildSectionSpec, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { buildConfigPanel, handleConfigInteraction, ID } = require("../utils/configPanel");
+const { utilityHandlers } = require("../utils/utilityCommands");
 const permStore = require("./_levelGrants");
 
 let reussis = 0;
@@ -31,109 +39,89 @@ async function cas(nom, fn) {
   }
 }
 
-const ROLE_ID = "role-perm-1";
+const ROLE_ID = "333333333333333333";
 
-function makeGuild() {
-  return {
-    id: "grm",
-    name: "Serveur",
-    ownerId: "owner-1",
-    memberCount: 0,
-    roles: {
-      cache: new Collection([[ROLE_ID, { id: ROLE_ID, name: "Modérateur", members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } }]]),
-      everyone: { permissions: new PermissionsBitField([]) },
-    },
-    channels: { cache: new Collection() },
-    members: { cache: new Collection(), me: { roles: { highest: { position: 9 } } } },
-    emojis: { cache: new Collection() },
-    voiceStates: { cache: new Collection() },
-    client: { uptime: 1, ws: { ping: 1 }, guilds: { cache: new Collection() } },
-  };
-}
+const guild = {
+  id: "grm",
+  name: "Serveur",
+  ownerId: "owner-1",
+  memberCount: 0,
+  roles: {
+    cache: new Collection([[ROLE_ID, { id: ROLE_ID, name: "Modérateur", members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } }]]),
+    everyone: { permissions: new PermissionsBitField([]) },
+  },
+  channels: { cache: new Collection() },
+  members: { cache: new Collection(), me: { roles: { highest: { position: 9 } } }, fetch: async () => new Collection() },
+  emojis: { cache: new Collection() },
+  voiceStates: { cache: new Collection() },
+  client: { uptime: 1, ws: { ping: 1 }, guilds: { cache: new Collection() } },
+};
 
 function mkMember(id, roleId) {
   return {
     id,
-    guild: { id: "grm", ownerId: "owner-1" },
+    guild,
     roles: { cache: roleId ? new Collection([[roleId, { id: roleId }]]) : new Collection() },
     permissions: { has: () => false },
   };
 }
 
-/**
- * Les actions d'un écran sont désormais les options d'un menu déroulant
- * unique (`cfg:action`) et non plus des boutons. La valeur de chaque option
- * EST le customId du bouton d'origine : les assertions restent les mêmes.
- */
-function buttons(guild, member, state) {
-  const json = buildConfigPanel(guild, "permissions", member, state).components[0].toJSON();
-  const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-  const actions = composants
-    .filter((c) => c.custom_id === `${ID}:action`)
-    .flatMap((menu) => menu.options)
-    .map((o) => ({ label: o.label, custom_id: o.value }));
-  return [...composants.filter((c) => c.custom_id !== `${ID}:action`), ...actions];
+function makeMessage(member, args) {
+  const replies = [];
+  return {
+    author: { id: member.id, tag: `${member.id}#0001` },
+    member,
+    guild,
+    channel: { id: "chan-1", send: async (p) => (replies.push(p), {}) },
+    mentions: { roles: new Collection(args[0] === `<@&${ROLE_ID}>` ? [[ROLE_ID, guild.roles.cache.get(ROLE_ID)]] : []), members: new Collection(), users: new Collection() },
+    reply: async (p) => {
+      replies.push(p);
+      return { edit: async () => {} };
+    },
+    _replies: replies,
+  };
 }
 
 (async () => {
-  console.log("Rôles et permissions — lien vers les membres du rôle :");
+  console.log("Rôle -> membres :");
 
-  const guild = makeGuild();
+  const owner = mkMember("owner-1");
 
-  await cas("sans server.members.list, aucun bouton \"Voir les membres\"", () => {
-    permStore.setRoleGrants("grm", "role-basic", ["panel.roles.manage"]);
-    const member = mkMember("u-basic", "role-basic");
-    const labels = buttons(guild, member, { permissionsRoleId: ROLE_ID }).map((b) => b.label).filter(Boolean);
-    assert.ok(!labels.includes("Voir les membres"), labels.join(", "));
+  await cas("la carte Permissions actuelle ne propose plus de bouton \"Voir les membres\"", () => {
+    const json = buildConfigPanel(guild, "permissions", owner).components[0].toJSON();
+    const ids = JSON.stringify(json);
+    assert.ok(!ids.includes(`${ID}:rolemembers`), "plus de customId rolemembers dans le panel");
   });
 
-  await cas("avec server.members.list, le bouton apparaît et poste la VRAIE liste (utilityHandlers.rolemembers)", async () => {
-    permStore.setRoleGrants("grm", "role-list", ["panel.roles.manage", "server.members.list"]);
-    const member = mkMember("u-list", "role-list");
-    const boutons = buttons(guild, member, { permissionsRoleId: ROLE_ID });
-    const bouton = boutons.find((b) => b.label === "Voir les membres");
-    assert.ok(bouton, "le bouton doit apparaître avec server.members.list");
-    assert.strictEqual(bouton.custom_id, `${ID}:rolemembers:${ROLE_ID}`);
-
-    let updated = null;
-    let followedUp = null;
-    await handleConfigInteraction({
-      customId: bouton.custom_id,
-      member,
-      guild,
-      client: {},
-      update: async (p) => {
-        updated = p;
-      },
-      followUp: async (p) => {
-        followedUp = p;
-        return {};
-      },
-    });
-    assert.ok(updated, "le panel doit rester sur la rubrique Rôles et permissions");
-    // La liste s'affiche DANS l'écran, plus dans un message éphémère ouvert à
-    // côté : on la lit donc sur la spec réellement dessinée.
-    assert.strictEqual(followedUp, null, "aucun message séparé ne doit être posté");
-    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: ROLE_ID, permissionsShowMembers: true });
-    const texte = spec.cartes
-      .flatMap((carte) => [carte.titre || "", ...carte.items.map((i) => `${i.nom} ${i.description || ""}`)])
-      .join("\n");
-    assert.ok(texte.includes("Membres ayant ce rôle"), texte);
-  });
-
-  await cas("sans server.members.list, actionner directement le bouton reste refusé", async () => {
-    const member = mkMember("u-basic", "role-basic");
-    let refused = null;
+  await cas("un clic sur l'ancien bouton d'un panneau resté affiché reçoit une réponse claire", async () => {
+    let reponse = null;
     await handleConfigInteraction({
       customId: `${ID}:rolemembers:${ROLE_ID}`,
-      member,
+      member: owner,
       guild,
       client: {},
+      isModalSubmit: () => false,
       reply: async (p) => {
-        refused = p;
+        reponse = p;
+      },
+      update: async () => {
+        throw new Error("ne doit pas réafficher un écran au hasard");
       },
     });
-    assert.ok(refused?.content?.includes("pas la permission"), JSON.stringify(refused));
+    assert.ok(reponse?.content?.includes("&panel"), JSON.stringify(reponse));
+  });
+
+  await cas("&rolemembers est débloquée par un niveau portant server.members.list", async () => {
+    permStore.setRoleGrants("grm", "role-list", ["server.members.list"]);
+    const msg = makeMessage(mkMember("u-list", "role-list"), [`<@&${ROLE_ID}>`]);
+    await utilityHandlers.rolemembers(null, msg, [`<@&${ROLE_ID}>`]);
+    assert.strictEqual(msg._replies.length, 1, "la liste doit être postée");
+  });
+
+  await cas("sans server.members.list, &rolemembers reste muette (aucune fuite de la liste)", async () => {
+    const msg = makeMessage(mkMember("u-rien"), [`<@&${ROLE_ID}>`]);
+    await utilityHandlers.rolemembers(null, msg, [`<@&${ROLE_ID}>`]);
+    assert.strictEqual(msg._replies.length, 0);
   });
 
   console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

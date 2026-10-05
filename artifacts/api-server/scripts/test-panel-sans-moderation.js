@@ -107,6 +107,7 @@ const CLES = SECTIONS.map((s) => s.key);
   await cas("les anciens identifiants d'action ne répondent plus, même actionnés directement", async () => {
     // Un ancien message de panel encore affiché ne doit pas pouvoir bannir.
     for (const customId of [`${ID}:modaction:ban_member:123`, `${ID}:modtarget`, `${ID}:modhistory:123`]) {
+      let ecran = null;
       let reponse = null;
       await handleConfigInteraction({
         customId,
@@ -114,7 +115,7 @@ const CLES = SECTIONS.map((s) => s.key);
         member: owner,
         guild,
         update: async (p) => {
-          reponse = p;
+          ecran = p;
           return {};
         },
         reply: async (p) => {
@@ -123,7 +124,10 @@ const CLES = SECTIONS.map((s) => s.key);
         },
         followUp: async () => ({}),
       });
-      assert.strictEqual(reponse, null, `${customId} ne doit plus rien déclencher`);
+      assert.strictEqual(ecran, null, `${customId} ne doit plus rien déclencher`);
+      // Seule réponse tolérée : l'avis éphémère « ce bouton n'existe plus »,
+      // qui évite « Échec de l'interaction » sans rien exécuter.
+      assert.ok(reponse === null || /n'existe plus/.test(reponse.content || ""), `${customId} : ${JSON.stringify(reponse)}`);
     }
   });
 

@@ -2117,6 +2117,16 @@ async function handleConfigInteraction(interaction, customIdImpose) {
     );
     return interaction.showModal(modal);
   }
+
+  // Action inconnue : un panneau affiché AVANT le retrait d'un contrôle
+  // (ancien parcours rôle->clés, "Voir les membres", etc.) peut encore
+  // l'envoyer. Sans réponse, Discord afficherait « Échec de l'interaction ».
+  if (!interaction.replied && !interaction.deferred && typeof interaction.reply === "function") {
+    return interaction
+      .reply({ content: "Ce bouton n'existe plus — retape `&panel` pour la version à jour.", flags: MessageFlags.Ephemeral })
+      .catch(() => {});
+  }
+  return undefined;
 }
 
 module.exports = {
