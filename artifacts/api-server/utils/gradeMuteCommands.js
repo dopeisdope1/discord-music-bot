@@ -153,15 +153,34 @@ async function bmuteresetall(client, message) {
 
   const roleId = muteStore.getMuteRoleId(message.guild.id);
   let leves = 0;
+  const echecs = [];
   for (const entry of entries) {
     if (roleId) {
+      // Membre parti du serveur : rien à retirer, l'entrée est simplement nettoyée.
       const member = await message.guild.members.fetch(entry.userId).catch(() => null);
-      if (member) await member.roles.remove(roleId, `Réinitialisation des mutes bot par ${message.author.tag}`).catch(() => {});
+      if (member) {
+        try {
+          await member.roles.remove(roleId, `Réinitialisation des mutes bot par ${message.author.tag}`);
+        } catch (err) {
+          // Le rôle est toujours là : on GARDE l'entrée, sinon le membre
+          // resterait mute sans plus aucune trace du verrou de grade.
+          echecs.push(`<@${entry.userId}> (${err.message})`);
+          continue;
+        }
+      }
     }
     gradeMuteStore.removeMute(message.guild.id, entry.userId);
     leves++;
   }
 
+  if (echecs.length) {
+    console.error(`[bmuteresetall] ${echecs.length} échec(s) : ${echecs.join(", ")}`);
+    return reply(
+      message,
+      leves ? "info" : "error",
+      `${leves} mute(s) bot levé(s). Discord a refusé pour ${echecs.length} membre(s), toujours mute : ${echecs.slice(0, 10).join(", ")}`
+    );
+  }
   return reply(message, "success", `${leves} mute(s) bot levé(s).`);
 }
 

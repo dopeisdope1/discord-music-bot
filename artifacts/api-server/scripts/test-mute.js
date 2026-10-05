@@ -242,6 +242,26 @@ const client = { user: { id: "bot-1", tag: "bot#0001" }, channels: { cache: new 
     gradeMuteStore.removeMute(guild.id, TARGET_ID);
   });
 
+  await cas("&bmuteresetall garde l'entrée quand Discord refuse de retirer le rôle", async () => {
+    const gradeMuteStore = require("../utils/gradeMuteStore");
+    const ok = makeTarget("666666666666666666");
+    const bloque = makeTarget("777777777777777777");
+    bloque.roles.remove = async () => {
+      throw new Error("Missing Permissions");
+    };
+    const { guild } = makeContext({ targets: [ok, bloque] });
+    for (const t of [ok, bloque]) {
+      t.roles.cache.set(MUTE_ROLE_ID, { id: MUTE_ROLE_ID });
+      gradeMuteStore.setMute(guild.id, t.id, { gradeIndex: 0, moderatorId: "chef-1" });
+    }
+    const msg = makeMessage(guild, []);
+    await modHandlers.bmuteresetall(client, msg, []);
+    assert.strictEqual(gradeMuteStore.getMute(guild.id, ok.id), null, "le mute levé est nettoyé");
+    assert.ok(gradeMuteStore.getMute(guild.id, bloque.id), "le mute toujours en place garde son entrée");
+    assert.ok(texte(msg).includes("refusé"), texte(msg));
+    gradeMuteStore.removeMute(guild.id, bloque.id);
+  });
+
   console.log("\nCommandes retirées :");
 
   await cas("&tempmute, &cmute, &tempcmute et &uncmute ne sont plus routées", () => {

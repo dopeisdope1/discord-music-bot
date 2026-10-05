@@ -46,12 +46,17 @@ console.log("Aucune action de modération n'échoue plus en silence :");
 // correction (count++ dans le try, échec = pas d'annonce) est préservée
 // telle quelle côté moderation-bot.
 
-cas("l'anti-nuke journalise un re-bannissement impossible", () => {
-  // C'est une DÉFENSE qui n'a pas eu lieu : la personne débannie en rafale
-  // reste sur le serveur. Rien nulle part ne permettait de s'en apercevoir.
-  const code = source("utils/guard/definitions.js");
-  assert.ok(/antiunban[\s\S]{0,600}console\.error/.test(code), "l'échec doit être journalisé");
-  assert.ok(!/members\.ban\([^;]*\.catch\(\(\) => \{\}\)/.test(code), "plus de .catch vide sur le bannissement");
+// L'anti-nuke (utils/guard/) a quitté ce bot : il vit dans le bot Sécurité
+// (CrowBot). Le cas qui le vérifiait ici est retiré avec lui.
+
+cas("&bmuteresetall garde l'entrée d'un mute dont le rôle n'a pas pu être retiré", () => {
+  // Retirer l'entrée après un échec laissait le membre mute sans plus
+  // aucune trace du verrou de grade.
+  const code = source("utils/gradeMuteCommands.js");
+  const i = code.indexOf("async function bmuteresetall");
+  const bloc = code.slice(i, i + 1800);
+  assert.ok(/catch \(err\)[\s\S]*continue;[\s\S]*removeMute/.test(bloc), "un échec doit sauter le removeMute");
+  assert.ok(/Discord a refusé/.test(bloc), "l'échec doit être dit à la personne");
 });
 
 console.log("\nAucune commande de serveur n'annonce plus un succès imaginaire :");
