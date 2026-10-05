@@ -1,4 +1,5 @@
 require("dotenv").config();
+console.log(`[boot] Zinki — démarrage (Node ${process.version}) · DATA_DIR=${process.env.DATA_DIR || "défaut"} · API panel ${process.env.PANEL_API_KEY ? "activée" : "DÉSACTIVÉE (PANEL_API_KEY manquant)"}`);
 
 const http = require("http");
 
@@ -418,6 +419,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 
 client.once("ready", () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+  console.log(`[boot] Prêt — ${client.guilds.cache.size} serveur(s), API panel sur le port ${process.env.PANEL_API_PORT || "défaut"}.`);
 
   // Réapplique le statut/activité configuré (&online/&idle/&dnd/&invisible,
   // &playto/&listen/&watch/&compet/&stream) — Discord ne le garde pas d'un
