@@ -114,4 +114,27 @@ cas("plus aucune action de modération n'est suivie d'un .catch vide", () => {
   assert.deepStrictEqual(fautifs, [], `échecs d'action encore avalés : ${fautifs.join(", ")}`);
 });
 
+cas("aucune réponse n'envoie un EmbedBuilder nu (message vide refusé par Discord)", () => {
+  // message.reply(buildStatusEmbed(...)) : discord.js étale l'EmbedBuilder en
+  // `{ data }`, sans `content` ni `embeds` — Discord refuse ce message vide.
+  // Toutes les réponses de &warn/&unwarn/&permmute/&permunmute... partaient
+  // ainsi. Il faut `{ embeds: [buildStatusEmbed(...)] }`.
+  const dossiers = [path.join(__dirname, "..", "utils")];
+  const fautifs = [];
+  const NU = /\b(?:reply|send|edit|followUp|update)\(\s*buildStatusEmbed\(/;
+  while (dossiers.length) {
+    for (const entree of fs.readdirSync(dossiers.pop(), { withFileTypes: true })) {
+      const complet = path.join(entree.path || entree.parentPath, entree.name);
+      if (entree.isDirectory()) {
+        dossiers.push(complet);
+        continue;
+      }
+      if (!entree.name.endsWith(".js")) continue;
+      const code = fs.readFileSync(complet, "utf8");
+      if (NU.test(code)) fautifs.push(entree.name);
+    }
+  }
+  assert.deepStrictEqual(fautifs, [], `EmbedBuilder nu passé à un envoi : ${fautifs.join(", ")}`);
+});
+
 console.log(`\n${reussis} cas vérifiés${process.exitCode ? " — des cas ont échoué." : ", tout est vert."}`);

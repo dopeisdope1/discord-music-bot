@@ -10,7 +10,9 @@ const banReasonsStore = require("./banReasonsStore");
 // n'étaient jamais appelées, aucune UI pour les gérer).
 const PERMISSION = "moderation.ban";
 
-const reply = (message, kind, text) => message.reply(buildStatusEmbed(kind, text, { guildId: message.guild.id }));
+// `{ embeds: [...] }` et non l'EmbedBuilder nu : discord.js étalerait ce dernier en
+// `{ data }`, sans `content` ni `embeds` — un message VIDE, refusé par Discord.
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** "-reasonadd <label> [obligatoire]" — "obligatoire" en dernier mot = preuve requise pour cette raison. */
 async function reasonadd(client, message, args) {

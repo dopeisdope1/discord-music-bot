@@ -239,6 +239,8 @@ const client = { user: { id: "bot-1", tag: "bot#0001" }, channels: { cache: new 
     await modHandlers.permunmute(client, msg, [`<@${TARGET_ID}>`]);
     assert.ok(target.roles.cache.has(MUTE_ROLE_ID), "le rôle ne doit pas être retiré");
     assert.ok(texte(msg).includes("bunmute"), texte(msg));
+    // Forme du payload : un EmbedBuilder nu donnerait un message VIDE côté Discord.
+    assert.ok(Array.isArray(msg._replies[0]?.embeds), "la réponse doit porter un tableau `embeds`");
     gradeMuteStore.removeMute(guild.id, TARGET_ID);
   });
 

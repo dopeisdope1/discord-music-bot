@@ -17,7 +17,9 @@ const listNavigator = require("./listNavigator");
 // preuve:/grade:/duree:), remplacés par l'UX carte demandée.
 const PERMISSION = "moderation.zinkiller";
 
-const reply = (message, kind, text) => message.reply(buildStatusEmbed(kind, text, { guildId: message.guild.id }));
+// `{ embeds: [...] }` et non l'EmbedBuilder nu : discord.js étalerait ce dernier en
+// `{ data }`, sans `content` ni `embeds` — un message VIDE, refusé par Discord.
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 function parseTarget(args) {
   const mention = args[0]?.match(/^<@!?(\d{15,25})>$/);

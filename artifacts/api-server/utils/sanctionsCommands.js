@@ -250,7 +250,7 @@ const handlers = {
       return `\`${e.action}\` ${e.targetTag ? `**${e.targetTag}**` : ""} — par ${e.moderatorTag || e.moderatorId} — ${when}${e.reason ? ` — ${e.reason}` : ""}`;
     });
     const titre = `Historique de modération${targetId ? " — membre ciblé" : ""}`;
-    return message.reply(buildStatusEmbed("info", lines.join("\n"), { title: titre, guildId: message.guild.id }));
+    return message.reply({ embeds: [buildStatusEmbed("info", lines.join("\n"), { title: titre, guildId: message.guild.id })] });
   },
 };
 
@@ -316,7 +316,7 @@ async function clear(client, message, args) {
 
   await message.delete().catch(() => {});
   const confirmation = await message.channel
-    .send(buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`, { guildId: message.guild.id }))
+    .send({ embeds: [buildStatusEmbed("success", `**${deleted}** message(s) supprimé(s).`, { guildId: message.guild.id })] })
     .catch(() => null);
   if (confirmation) confirmation.delete().catch(() => {});
 }

@@ -9,7 +9,9 @@ const gradeMuteStore = require("./gradeMuteStore");
 const tempBanStore = require("./tempBanStore");
 const listNavigator = require("./listNavigator");
 
-const reply = (message, kind, text) => message.reply(buildStatusEmbed(kind, text, { guildId: message.guild.id }));
+// `{ embeds: [...] }` et non l'EmbedBuilder nu : discord.js étalerait ce dernier en
+// `{ data }`, sans `content` ni `embeds` — un message VIDE, refusé par Discord.
+const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed(kind, text, { guildId: message.guild.id })] });
 
 /** Cible = PREMIER argument exactement (mention ou ID) — jamais "une mention trouvée n'importe où". */
 function parseTarget(args) {
