@@ -42,10 +42,24 @@ const COULEUR_PAR_TYPE = {
  * @param {{ title?: string, thumbnail?: string, image?: string, fields?: {name: string, value: string, inline?: boolean}[], guildId?: string }} [options]
  * @returns {EmbedBuilder}
  */
+// Plafond Discord d'une description d'embed. Au-delà, discord.js LÈVE une
+// erreur : la réponse entière était perdue (vu sur la version texte de
+// &role info d'un rôle très doté, quand l'image ne peut pas partir).
+const DESCRIPTION_MAX = 4096;
+const AVIS_COUPE = "\n*… liste coupée (limite Discord de 4096 caractères).*";
+
+/** Coupe proprement à une fin de ligne, avec un avis visible — jamais en silence. */
+function borner(texte) {
+  if (texte.length <= DESCRIPTION_MAX) return texte;
+  const budget = DESCRIPTION_MAX - AVIS_COUPE.length;
+  const finDeLigne = texte.lastIndexOf("\n", budget);
+  return `${texte.slice(0, finDeLigne > budget / 2 ? finDeLigne : budget)}${AVIS_COUPE}`;
+}
+
 function buildStatusEmbed(type, description, options = {}) {
   const embed = new EmbedBuilder();
   const emoji = options.guildId ? iconDe(options.guildId, CLE_ICONE_PAR_TYPE[type]) : TYPE_EMOJI[type];
-  if (description) embed.setDescription(emoji ? `${emoji} ${description}` : description);
+  if (description) embed.setDescription(borner(emoji ? `${emoji} ${description}` : description));
   if (options.title) embed.setTitle(options.title);
   if (options.thumbnail) embed.setThumbnail(options.thumbnail);
   if (options.image) embed.setImage(options.image);
