@@ -67,7 +67,6 @@ const { handleGiveawayButton, checkExpiredGiveaways } = require("./utils/giveawa
 const { applyPresence } = require("./utils/botProfileCommands");
 const { checkExpiredTempRoles, applyAutoReact, handleEmbedButton, handleEmbedModal } = require("./utils/serverExtra");
 const commandForms = require("./utils/commandForms");
-const protections = require("./utils/protections");
 const { relayAuditLogEntry, logMessageDelete, logMessageEdit, logVoiceStateChange } = require("./utils/moderationLog");
 // "&confess" — confessions anonymes avec validation avant publication (voir
 // utils/confessions.js), configurable depuis &panel > Confessions.
@@ -469,17 +468,6 @@ client.on("guildMemberRemove", async (member) => {
 // Dero automatique (voir &dero, utils/serverAdminCommands.js) : applique les
 // permissions configurées aux rôles concernés sur chaque nouveau salon créé,
 // sans action manuelle. Ne fait rien si aucun rôle n'est configuré.
-// Protections du panel (utils/protections.js).
-client.on("guildAuditLogEntryCreate", (entry, guild) => {
-  protections.handleAuditEntry(entry, guild).catch((err) => console.error("[protections]", err));
-});
-client.on("messageCreate", (message) => {
-  protections.handleMessage(message).catch((err) => console.error("[protections]", err));
-});
-client.on("guildMemberAdd", (member) => {
-  protections.handleJoin(member).catch((err) => console.error("[protections]", err));
-});
-
 client.on("channelCreate", (channel) => {
   applyDeroToNewChannel(channel).catch((err) => console.error("[dero]", err));
 });
@@ -650,7 +638,6 @@ const verificationStoreForSystems = require("./utils/verificationStore");
 
 
 const ZINKI_SYSTEMS = [
-  ...protections.systems,
   {
     key: "levels",
     label: "Niveaux (XP)",
