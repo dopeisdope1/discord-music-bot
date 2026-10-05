@@ -423,6 +423,7 @@ const modHandlers = {
   // automatique — voir utils/logCommands.js.
   settings: logHandlers.settings,
   autoconfiglog: logHandlers.autoconfiglog,
+  modlog: logHandlers.modlog,
   memberlog: logHandlers.memberlog,
   rolelog: logHandlers.rolelog,
   channellog: logHandlers.channellog,

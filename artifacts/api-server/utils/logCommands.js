@@ -17,6 +17,10 @@ const reply = (message, kind, text) => message.reply({ embeds: [buildStatusEmbed
  * se tape plus court que la version à deux arguments.
  */
 const COMMAND_TO_CATEGORY = {
+  // Sanctions (&ban/&kick/&mute...) : catégorie écrite par report()
+  // (utils/moderation/actions.js). Sa commande avait disparu avec la
+  // migration de la modération et n'était pas revenue avec elle.
+  modlog: "moderation",
   memberlog: "members",
   rolelog: "roles",
   channellog: "channels",
