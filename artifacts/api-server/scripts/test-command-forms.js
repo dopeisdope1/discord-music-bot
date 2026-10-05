@@ -264,18 +264,22 @@ const client = { user: { id: "bot-1", tag: "bot#0000" } };
     assert.ok(!autoReactStore.getForChannel("c1").includes("👍"));
   });
 
-  await cas("la carte set_perm_grant n'affiche le sélecteur de clé qu'une fois une catégorie choisie", () => {
-    const emptyJson = commandForms.buildFormCard("set_perm_grant", { id: "staff-1" }).components[0].toJSON();
-    // type 3 = StringSelectMenu (catégorie/clé) ; le mentionable est un type 7 à part.
-    const selectRows = emptyJson.components.filter((c) => c.type === 1 && c.components[0]?.type === 3);
-    // Sans catégorie choisie : uniquement le menu de catégorie, pas encore la clé.
-    assert.strictEqual(selectRows.length, 1, "le menu de clé ne doit pas apparaître avant qu'une catégorie soit choisie");
-
-    commandForms.setFormState("staff-1", "set_perm_grant", { text: { category: "moderation" } });
-    const filledJson = commandForms.buildFormCard("set_perm_grant", { id: "staff-1" }).components[0].toJSON();
-    const filledSelectRows = filledJson.components.filter((c) => c.type === 1 && c.components[0]?.type === 3);
-    assert.strictEqual(filledSelectRows.length, 2, "le menu de clé doit apparaître une fois la catégorie choisie");
-    commandForms.clearFormState("staff-1", "set_perm_grant");
+  // Les anciens formulaires "clé de permission" (set_perm_grant/del_perm_grant)
+  // envoyaient une clé à setPerm, qui attend un niveau 1-9 : ils ne faisaient
+  // rien. Retirés — les niveaux se règlent par &set perm/&del perm, &access
+  // @membre et &panel > Permissions.
+  await cas("plus aucun formulaire à clé de permission (système à niveaux)", async () => {
+    assert.ok(!commandForms.FORMS.set_perm_grant && !commandForms.FORMS.del_perm_grant);
+    assert.ok(!Object.values(commandForms.BARE_COMMAND_FORMS).some((k) => /perm_grant/.test(k)));
+    // Une carte périmée encore affichée répond au lieu d'échouer en silence.
+    let repondu = null;
+    await commandForms.handleFormCardInteraction({
+      customId: `${commandForms.CARD_ID}:launch:set_perm_grant`,
+      reply: async (p) => {
+        repondu = p;
+      },
+    });
+    assert.ok(repondu && /plus disponible/.test(repondu.content), "une carte périmée doit répondre");
   });
 
   await cas("le champ mentionable résout correctement un RÔLE choisi dans le menu natif", async () => {

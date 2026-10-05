@@ -122,6 +122,43 @@ const cible = { id: "role-cible", toString: () => "<@&role-cible>" };
     assert.strictEqual(levelStore.getUserLevel("g1", "membre-1"), null);
   });
 
+  await cas("l'octroi est PERSISTÉ sur disque, puis réellement appliqué par can()", async () => {
+    const { can } = require("../utils/permissions/engine");
+    const role = { id: "role-staff", toString: () => "<@&role-staff>" };
+    // Membre porteur du rôle, sans niveau : &ban (niveau 5) lui est refusé.
+    const porteur = makeMessage({ userId: "porteur-1", roleIds: ["role-staff"] }).member;
+    assert.strictEqual(can(porteur, "moderation.ban"), false, "sans niveau, pas de ban");
+
+    await configHandlers.setPerm(null, makeMessage({ roles: [role] }), ["5"]);
+    const surDisque = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, "permissionLevels.json"), "utf8"));
+    assert.strictEqual(surDisque.g1.roleLevels["role-staff"], 5, "le niveau doit être écrit dans permissionLevels.json");
+    assert.strictEqual(can(porteur, "moderation.ban"), true, "niveau 5 -> &ban autorisé");
+    assert.strictEqual(can(porteur, "moderation.kick"), true, "cumulatif : le niveau 4 (&kick) est inclus");
+
+    await configHandlers.delPerm(null, makeMessage({ roles: [role] }), []);
+    const apres = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, "permissionLevels.json"), "utf8"));
+    assert.ok(!("role-staff" in apres.g1.roleLevels), "le retrait doit être écrit sur disque");
+    assert.strictEqual(can(porteur, "moderation.ban"), false, "retiré -> &ban de nouveau refusé");
+  });
+
+  await cas("un rang sys (non propriétaire) ne peut PAS attribuer de niveau", async () => {
+    const accessStore = require("../utils/accessStore");
+    accessStore.add("sys", "sys-1");
+    const msg = makeMessage({ userId: "sys-1", roles: [cible] });
+    await configHandlers.setPerm(null, msg, ["9"]);
+    assert.strictEqual(levelStore.getRoleLevel("g1", "role-cible"), null, "aucun niveau ne doit avoir été posé");
+    accessStore.remove("sys", "sys-1");
+  });
+
+  await cas("sans cible valide, un message clair (et rien n'est écrit)", async () => {
+    const msg = makeMessage();
+    await configHandlers.setPerm(null, msg, ["5"]);
+    assert.ok(texte(msg).includes("rôle ou un membre"), texte(msg));
+    const msgDel = makeMessage();
+    await configHandlers.delPerm(null, msgDel, []);
+    assert.ok(texte(msgDel).includes("rôle ou un membre"), texte(msgDel));
+  });
+
   await cas("resolveLevel n'accepte que 1 à 9", () => {
     assert.strictEqual(resolveLevel(" 5 "), 5);
     assert.strictEqual(resolveLevel("0"), null);

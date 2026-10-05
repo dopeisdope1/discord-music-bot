@@ -29,7 +29,6 @@ const serverAdmin = require("./serverAdminCommands");
 const serverExtra = require("./serverExtra");
 const botProfileCommands = require("./botProfileCommands");
 const { configHandlers } = require("./configCommands");
-const permCatalog = require("./permissions/levelCatalog");
 const { autoroleHandlers } = require("./autoroleCommands");
 const { fakeMessage, remplacerParLaReponse, aEteRemplace } = require("./fakeMessage");
 const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./actionCard");
@@ -46,30 +45,6 @@ const { rendreCarteActionSync, prechargerAvatar, avatarDe, nomDe } = require("./
 // du catalogue — la plupart n'ont d'ailleurs aucun backend à appeler (voir
 // utils/commandCatalog.js). Complété au fil des prochaines commandes qui
 // gagnent un vrai backend.
-
-/**
- * Construit le faux message pour un champ "mentionable" déjà résolu (rôle OU
- * membre, voir extractFormValues/handleFormCardInteraction) — factorisé car
- * utilisé par plusieurs formulaires (set_perm_grant, del_perm_grant).
- * @returns {Promise<object|null>} null si la cible n'existe plus (réponse
- *   d'erreur déjà envoyée dans ce cas).
- */
-async function resolveMentionableMessage(interaction, v) {
-  if (v.mentionableType === "role") {
-    const role = interaction.guild.roles.cache.get(v.mentionableId);
-    if (!role) {
-      await interaction.followUp({ content: "Rôle introuvable.", flags: MessageFlags.Ephemeral });
-      return null;
-    }
-    return fakeMessage(interaction, { role });
-  }
-  const member = await interaction.guild.members.fetch(v.mentionableId).catch(() => null);
-  if (!member) {
-    await interaction.followUp({ content: "Membre introuvable.", flags: MessageFlags.Ephemeral });
-    return null;
-  }
-  return fakeMessage(interaction, { user: member });
-}
 
 const CATEGORIES = {
   moderation: "Modération",
@@ -622,40 +597,6 @@ const FORMS = {
     },
   },
 
-  set_perm_grant: {
-    label: "Accorder une permission à un rôle ou un membre",
-    category: "server",
-    permission: "panel.permissions.manage",
-    fields: ["mentionable"],
-    choiceFields: [
-      {
-        key: "category",
-        label: "Catégorie",
-        placeholder: "Choisir une catégorie de permissions",
-        noCustom: true,
-        resets: ["key"],
-        options: permCatalog.byCategory().map((c) => ({ label: c.label, value: c.category })),
-      },
-      {
-        key: "key",
-        label: "Permission",
-        placeholder: "Choisir une clé de permission",
-        noCustom: true,
-        showIf: (active) => Boolean(active.text?.category),
-        options: (active) => {
-          const cat = permCatalog.byCategory().find((c) => c.category === active.text?.category);
-          return (cat?.permissions || []).map((p) => ({ label: p.label.slice(0, 100), value: p.key }));
-        },
-      },
-    ],
-    ready: (v) => Boolean(v.mentionableId && v.text?.key),
-    run: async (client, interaction, v) => {
-      const msg = await resolveMentionableMessage(interaction, v);
-      if (!msg) return;
-      await configHandlers.setPerm(client, msg, [v.text.key]);
-    },
-  },
-
   autorole_add: {
     label: "Ajouter un rôle automatique",
     category: "server",
@@ -684,39 +625,6 @@ const FORMS = {
     },
   },
 
-  del_perm_grant: {
-    label: "Retirer une permission d'un rôle ou d'un membre",
-    category: "server",
-    permission: "panel.permissions.manage",
-    fields: ["mentionable"],
-    choiceFields: [
-      {
-        key: "category",
-        label: "Catégorie",
-        placeholder: "Choisir une catégorie de permissions",
-        noCustom: true,
-        resets: ["key"],
-        options: permCatalog.byCategory().map((c) => ({ label: c.label, value: c.category })),
-      },
-      {
-        key: "key",
-        label: "Permission",
-        placeholder: "Choisir une clé de permission",
-        noCustom: true,
-        showIf: (active) => Boolean(active.text?.category),
-        options: (active) => {
-          const cat = permCatalog.byCategory().find((c) => c.category === active.text?.category);
-          return (cat?.permissions || []).map((p) => ({ label: p.label.slice(0, 100), value: p.key }));
-        },
-      },
-    ],
-    ready: (v) => Boolean(v.mentionableId && v.text?.key),
-    run: async (client, interaction, v) => {
-      const msg = await resolveMentionableMessage(interaction, v);
-      if (!msg) return;
-      await configHandlers.delPerm(client, msg, [v.text.key]);
-    },
-  },
 };
 
 /**
@@ -1109,9 +1017,8 @@ function buildFormCard(formKey, member) {
   }
 
   for (const cf of form.choiceFields || []) {
-    // showIf : n'affiche ce menu qu'une fois un choix précédent fait (ex : la
-    // clé de permission dépend de la catégorie choisie juste avant, voir
-    // set_perm_grant/del_perm_grant). Sans condition, toujours affiché.
+    // showIf : n'affiche ce menu qu'une fois un choix précédent fait. Sans
+    // condition, toujours affiché.
     if (cf.showIf && !cf.showIf(active)) continue;
     const current = active.text?.[cf.key];
     // Les options peuvent dépendre de l'état courant (ex : la liste des clés
@@ -1299,7 +1206,11 @@ async function executerFormulaire(interaction, form, formKey, active) {
 async function handleFormCardInteraction(interaction) {
   const [, action, formKey] = interaction.customId.split(":");
   const form = FORMS[formKey];
-  if (!form) return;
+  // Carte affichée avant le retrait de ce formulaire : on le dit plutôt que
+  // de laisser Discord afficher « Échec de l'interaction ».
+  if (!form) {
+    return interaction.reply({ content: "Cette carte n'est plus disponible — retape la commande.", flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
   if (form.permission !== undefined && !can(interaction.member, form.permission)) {
     return interaction.reply({ content: "Tu n'as pas la permission nécessaire pour cette action.", flags: MessageFlags.Ephemeral });
   }
@@ -1415,7 +1326,7 @@ async function handleFormCardInteraction(interaction) {
  * pas de retour à un message d'erreur sec.
  */
 const SANS_CARTE_SANS_ARGUMENT = new Set([
-  "addrole", "delrole", "temprole", "untemprole", "del perm", "set perm",
+  "addrole", "delrole", "temprole", "untemprole",
 ]);
 
 const BARE_COMMAND_FORMS = {
@@ -1447,8 +1358,6 @@ const BARE_COMMAND_FORMS = {
   "channel rename": "channel_rename",
   "channel topic": "channel_topic",
   "giveaway reroll": "giveaway_reroll",
-  "del perm": "del_perm_grant",
-  "set perm": "set_perm_grant",
   "autoreact add": "autoreact_add",
   "autoreact del": "autoreact_del",
 };
