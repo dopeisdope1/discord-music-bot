@@ -221,288 +221,114 @@ function actionsDe(json) {
   });
 
   await cas("le catalogue des permissions n'est plus recopié à côté de son menu", () => {
-    // Il était listé en texte ET dans le menu déroulant qui coche les mêmes
-    // clés : deux fois la même information, dont une seule cliquable.
+    // Il était listé en texte ET dans le menu déroulant : deux fois la même
+    // information. La carte "Permissions" actuelle (niveaux 1-9) ne montre
+    // que ses quatre sections, jamais les clés techniques.
     const { texte } = render("permissions");
-    assert.ok(texte.length < 300, `${texte.length} caractères — le catalogue est probablement recopié`);
+    assert.ok(texte.length < 900, `${texte.length} caractères — le catalogue est probablement recopié`);
     assert.ok(!texte.includes("channels.lock"), "les clés de permission n'ont pas à être listées en texte");
   });
 
-  console.log("\n« Voir les commandes débloquées » (permissions > rôle) :");
+  // L'ancien parcours « Permissions > rôle > catégorie > clés » (sélecteur de
+  // rôle, "Voir les membres", créer/supprimer un rôle depuis le panel) a été
+  // remplacé par la carte à niveaux (commit 023ec29). Créer/supprimer un rôle
+  // passe par &role create / &role delete (voir test-command-forms.js).
+  console.log("\nPermissions — carte à niveaux (1-9) :");
 
+  const { LEVEL_MAX } = permCatalog;
+  const levelStore = require("../utils/permissions/levelStore");
+  const { commandsForKeys } = require("../utils/permsCommands");
   const roleId = "role-1";
-  guild.roles.cache.set(roleId, { id: roleId, members: { size: 0 }, position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
-  permStore.setRoleGrants("g1", roleId, ["server.stats.view"]);
+  guild.roles.cache.set(roleId, { id: roleId, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
 
-  const fakeInteraction = (customId, extra = {}) => ({
-    customId: `${ID}:${customId}`,
-    member,
-    guild,
-    isModalSubmit: () => false,
-    reply: async () => {},
-    update: async () => {},
-    ...extra,
-  });
+  const lignesDe = (json) => json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
+  const textesDe = (json) => json.components.filter((c) => c.type === 10).map((c) => c.content).join("\n");
 
-  await cas("sans rôle choisi, le sélecteur de rôle est proposé", () => {
+  await cas("sans niveau choisi : le sélecteur de niveau (1-9), pas encore de rôles ni de commandes", () => {
     const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
-    const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(composants.some((c) => c.custom_id === `${ID}:permrole`), "le sélecteur de rôle doit apparaître tant qu'aucun rôle n'est choisi");
+    const niveaux = lignesDe(json).find((c) => c.custom_id === `${ID}:permlevel`);
+    assert.ok(niveaux, "le sélecteur de niveau doit être présent");
+    assert.strictEqual(niveaux.options.length, LEVEL_MAX, "un choix par niveau");
+    assert.ok(!lignesDe(json).some((c) => (c.custom_id || "").startsWith(`${ID}:permlevelrole`)), "pas de sélecteur de rôle avant le niveau");
   });
 
-  await cas("une fois le rôle choisi, le sélecteur DISPARAÎT au profit d'une action pour en changer", () => {
-    // Il ne servait plus à rien à ce moment-là et repoussait les vrais
-    // réglages hors de l'écran.
-    const json = buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON();
-    const composants = json.components.filter((c) => c.type === 1).flatMap((r) => r.components);
-    assert.ok(!composants.some((c) => c.custom_id === `${ID}:permrole`), "le sélecteur de rôle doit disparaître une fois un rôle choisi");
-    assert.ok(
-      actionsDe(json).some((a) => a.custom_id === `${ID}:permrolereset`),
-      "une action doit permettre de changer de rôle"
-    );
+  await cas("niveau choisi : les rôles de ce niveau sont NOMMÉS, et les commandes débloquées réellement listées", () => {
+    levelStore.setRoleLevel("g1", roleId, 5);
+    const json = buildConfigPanel(guild, "permissions", member, { permLevel: 5 }).components[0].toJSON();
+    const texte = textesDe(json);
+    assert.ok(texte.includes(`<@&${roleId}>`), `le rôle du niveau doit être cité : ${texte}`);
+    assert.ok(lignesDe(json).some((c) => c.custom_id === `${ID}:permlevelrole:5`), "le propriétaire peut ajouter/retirer un rôle");
+    const attendues = commandsForKeys(permCatalog.keysForLevel(5));
+    assert.ok(attendues.length > 0, "le niveau 5 débloque des commandes");
+    assert.ok(texte.includes(`**Commandes** (${attendues.length})`), `le total doit être annoncé : ${texte}`);
+    // La page 1 montre bien des commandes, préfixées, une par ligne.
+    assert.ok(texte.includes(`\`&${attendues[0]}\``), `la première commande doit être affichée : ${texte}`);
   });
 
-  await cas("les commandes débloquées sont TOUJOURS affichées, plus derrière un bouton", () => {
-    // Elles arrivaient auparavant dans un message éphémère ouvert à côté du
-    // panneau ; elles font maintenant partie de l'écran lui-même.
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId });
-    assert.ok(texte.includes("Commandes débloquées"), texte);
-    assert.ok(texte.includes("vc") || texte.includes("stats"), `attendu vc/stats (server.stats.view) : ${texte}`);
-    assert.ok(!actionsDe(buildConfigPanel(guild, "permissions", member, { permissionsRoleId: roleId }).components[0].toJSON()).some((a) => /permshowcmds|permhidecmds/.test(a.custom_id)), "plus de bascule Voir/Masquer");
-  });
-
-  await cas("elles occupent leur PROPRE carte, une commande par ligne — plus une phrase en bas d'écran", () => {
-    // Demande explicite : « quand on donne des permissions à un rôle je veux
-    // que dans le dashboard ça écrive dans la case Commandes débloquées, pas
-    // tout en bas ». Collées en une seule ligne de virgules, elles formaient
-    // une phrase que le moteur de rendu tronquait au premier tiers.
-    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: roleId });
-    const carte = spec.cartes.find((c) => (c.titre || "").startsWith("Commandes débloquées"));
-    assert.ok(carte, `aucune carte dédiée : ${spec.cartes.map((c) => c.titre).join(" | ")}`);
-    assert.ok(carte.items.length, "la carte ne doit pas être vide");
-    for (const item of carte.items) {
-      // Chaque entrée est UNE commande, avec son vrai préfixe et sans liste.
-      assert.ok(/^&\S/.test(item.nom) || /^\+\d+ autres?$/.test(item.nom), `"${item.nom}" n'est pas une commande seule`);
-      assert.ok(!item.nom.includes(","), `"${item.nom}" contient encore une liste collée`);
-    }
-    // Et elles ne traînent plus dans le pied de l'image.
-    assert.ok(!(spec.pied || "").includes("&"), `le pied ne doit plus porter les commandes : ${spec.pied}`);
-  });
-
-  await cas("un rôle très doté n'étire pas l'image à l'infini — le compte exact reste annoncé", () => {
-    const roleGros = "role-gros";
-    guild.roles.cache.set(roleGros, { id: roleGros, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
-    // Toutes les clés du catalogue d'un coup : le pire cas réel.
-    permStore.setRoleGrants("g1", roleGros, permCatalog.byCategory().flatMap((g) => g.permissions.map((p) => p.key)));
-    const spec = buildSectionSpec(guild, "permissions", member, { permissionsRoleId: roleGros });
-    const lignes = spec.cartes.filter((c) => (c.titre || "").startsWith("Commandes débloquées")).flatMap((c) => c.items);
-    assert.ok(lignes.length <= 28, `${lignes.length} lignes dessinées — l'image deviendrait illisible`);
-    const annonce = spec.cartes.find((c) => (c.titre || "").startsWith("Commandes débloquées")).titre;
-    const total = parseInt(/\((\d+)\)/.exec(annonce)[1], 10);
-    assert.ok(total > lignes.length, `le compte annoncé (${total}) doit être le VRAI total, pas le nombre affiché`);
-    assert.ok(lignes.some((i) => /^\+\d+ autres?$/.test(i.nom)), `le reste doit être annoncé : ${lignes.map((i) => i.nom).join(" | ")}`);
-  });
-
-  await cas("\"Voir les membres\" affiche la liste DANS l'écran, pas dans un message à côté", async () => {
+  await cas("la pagination des commandes change réellement ce qui est affiché", async () => {
+    const attendues = commandsForKeys(permCatalog.keysForLevel(LEVEL_MAX));
+    assert.ok(attendues.length > 10, "assez de commandes au niveau max pour paginer");
+    const page0 = textesDe(buildConfigPanel(guild, "permissions", member, { permLevel: LEVEL_MAX }).components[0].toJSON());
+    const page1 = textesDe(buildConfigPanel(guild, "permissions", member, { permLevel: LEVEL_MAX, permCmdPage: 1 }).components[0].toJSON());
+    assert.ok(page1.includes(`\`&${attendues[10]}\``), "la page 2 commence à la 11e commande");
+    assert.ok(!page0.includes(`\`&${attendues[10]}\``), "la page 1 n'affiche pas la suite");
+    assert.ok(!page1.includes(`\`&${attendues[0]}\``), "la page 2 n'affiche plus le début");
+    // Le clic sur → passe bien par le handler et réaffiche l'écran.
     let panel = null;
-    await handleConfigInteraction(fakeInteraction(`rolemembers:${roleId}`, { update: async (p) => { panel = p; } }));
-    assert.ok(panel, "le panneau doit être réaffiché");
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId, permissionsShowMembers: true });
-    assert.ok(texte.includes("Membres ayant ce rôle"), texte);
-    // Et de quoi refermer la liste.
-    assert.ok(
-      actionsDe(panel.components[0].toJSON()).some((a) => a.custom_id === `${ID}:rolemembershide:${roleId}`),
-      "l'action doit basculer vers \"Masquer les membres\""
-    );
-  });
-
-  await cas("une permission accordée SANS commande dédiée (ex. accès à une rubrique du panel) reste visible — pas juste \"0 : aucune\"", () => {
-    const roleId2 = "role-2";
-    // `members` est une Collection sur un vrai rôle : le mock la reproduit,
-    // la liste des membres étant désormais affichée dans l'écran.
-    guild.roles.cache.set(roleId2, { id: roleId2, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
-    // panel.roles.manage donne accès à une rubrique du panel, pas à une
-    // commande tapée : reproduit le cas "1 permission accordée" affichant
-    // "0 commande débloquée" sans explication.
-    permStore.setRoleGrants("g1", roleId2, ["panel.roles.manage"]);
-    const texte = texteDessine("permissions", { permissionsRoleId: roleId2 });
-    assert.ok(texte.includes("Commandes débloquées (0)"), texte);
-    assert.ok(texte.includes("Accès sans commande dédiée (1)"), texte);
-    assert.ok(!texte.includes("panel.roles.manage"), "la clé technique ne doit pas apparaître, seulement son libellé");
-  });
-
-  console.log("\nCréer / supprimer un rôle (permissions > rôle) :");
-
-  /** Un serveur assez complet pour que utils/serverAdminCommands.js::roleAdmin fonctionne (create/delete réels). */
-  function fakeGuildForRoleAdmin() {
-    const rolesCache = new Collection();
-    const g = {
-      id: "g-rolecrud",
-      name: "Serveur",
-      roles: {
-        cache: rolesCache,
-        create: async ({ name, reason }) => {
-          const created = {
-            id: `role-created-${rolesCache.size + 1}`,
-            name,
-            position: 1,
-            hexColor: "#000000",
-            hoist: false,
-            mentionable: false,
-            createdTimestamp: Date.now(),
-            members: { size: 0 },
-            permissions: { toArray: () => [] },
-            toString() {
-              return `<@&${this.id}>`;
-            },
-          };
-          rolesCache.set(created.id, created);
-          return created;
-        },
-      },
-      members: {
-        me: { permissions: new PermissionsBitField(PermissionsBitField.All), roles: { highest: { position: 10 } } },
-        cache: new Collection(),
-      },
-      channels: { cache: new Collection() },
-    };
-    return g;
-  }
-
-  await cas("action \"Créer un rôle\" proposée à qui a server.roles.manage", () => {
-    const json = buildConfigPanel(guild, "permissions", member).components[0].toJSON();
-    assert.ok(actionsDe(json).some((a) => a.custom_id === `${ID}:rolecreate`), "l'action \"Créer un rôle\" est absente du menu");
-  });
-
-  await cas("cliquer \"Créer un rôle\" (pas encore un modal) ouvre bien une modale, ne crée rien tout de suite", async () => {
-    let modalShown = null;
-    const g = fakeGuildForRoleAdmin();
-    const interaction = {
-      customId: `${ID}:rolecreate`,
+    await handleConfigInteraction({
+      customId: `${ID}:permcmdpage:1`,
       member,
-      guild: g,
-      client: {},
-      user: { id: "owner-1", tag: "owner#0001" },
+      guild,
       isModalSubmit: () => false,
-      showModal: async (m) => {
-        modalShown = m;
+      message: { components: [] },
+      update: async (p) => {
+        panel = p;
       },
       reply: async () => {},
-    };
-    await handleConfigInteraction(interaction);
-    assert.ok(modalShown, "une modale doit s'ouvrir");
-    assert.strictEqual(g.roles.cache.size, 0, "aucun rôle ne doit être créé avant la soumission de la modale");
+    });
+    assert.ok(panel, "le panneau doit être réaffiché");
   });
 
-  await cas("soumettre la modale \"Créer un rôle\" crée réellement le rôle sur le serveur", async () => {
-    const g = fakeGuildForRoleAdmin();
-    const replies = [];
-    const interaction = {
-      customId: `${ID}:rolecreate`,
-      member,
-      guild: g,
-      channel: { id: "chan-1" },
-      client: { users: { fetch: async () => null } },
-      user: { id: "owner-1", tag: "owner#0001" },
-      isModalSubmit: () => true,
-      fields: { getTextInputValue: () => "Nouveau Rôle" },
-      // update(), pas reply() : le résultat remplace le panneau au lieu
-      // d'ouvrir un second message replié à côté (voir configPanel.js::
-      // messageFromInteraction).
-      update: async (p) => {
-        replies.push(p);
-        return {};
-      },
-    };
-    await handleConfigInteraction(interaction);
-    const created = [...g.roles.cache.values()][0];
-    assert.ok(created, "le rôle devrait avoir été créé sur le serveur");
-    assert.strictEqual(created.name, "Nouveau Rôle");
+  await cas("choisir un rôle dans le sélecteur BASCULE son niveau (ajout puis retrait), persisté", async () => {
+    const autre = "role-2";
+    guild.roles.cache.set(autre, { id: autre, members: new Collection(), position: 1, hexColor: "#000000", permissions: { toArray: () => [], has: () => false } });
+    const clic = () =>
+      handleConfigInteraction({
+        customId: `${ID}:permlevelrole:3`,
+        member,
+        guild,
+        values: [autre],
+        isModalSubmit: () => false,
+        message: { components: [] },
+        update: async () => {},
+        reply: async () => {},
+      });
+    await clic();
+    assert.strictEqual(levelStore.getRoleLevel("g1", autre), 3, "premier choix : niveau 3 attribué");
+    const surDisque = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, "permissionLevels.json"), "utf8"));
+    assert.strictEqual(surDisque.g1.roleLevels[autre], 3, "écrit sur disque");
+    await clic();
+    assert.strictEqual(levelStore.getRoleLevel("g1", autre), null, "second choix du même rôle : retiré");
   });
 
-  await cas("cliquer \"Supprimer ce rôle\" demande une confirmation, ne supprime pas tout de suite", async () => {
-    const g = fakeGuildForRoleAdmin();
-    // ID numérique de type "snowflake" — utils/serverAdminCommands.js::roleAdmin
-    // ne reconnaît un ID brut (sans mention) que via /^\d{15,25}$/.
-    const role = { id: "333333333333333331", name: "Éphémère", position: 1, delete: async () => {} };
-    g.roles.cache.set(role.id, role);
-    const replies = [];
-    const interaction = {
-      customId: `${ID}:roledelete:${role.id}`,
-      member,
-      guild: g,
-      channel: { id: "chan-1" },
-      client: { users: { fetch: async () => null } },
-      user: { id: "owner-1", tag: "owner#0001" },
+  await cas("un non-propriétaire ne peut pas attribuer de niveau depuis le panel", async () => {
+    const intrus = { id: "intrus-1", guild: { id: "g1" }, roles: { cache: new Collection() }, permissions: { has: () => true } };
+    let refus = null;
+    await handleConfigInteraction({
+      customId: `${ID}:permlevelrole:9`,
+      member: intrus,
+      guild,
+      values: [roleId],
       isModalSubmit: () => false,
-      // update(), pas reply() : voir la remarque plus haut.
-      update: async (p) => {
-        replies.push(p);
-        return {};
-      },
-    };
-    await handleConfigInteraction(interaction);
-    assert.strictEqual(replies.length, 1);
-    // La confirmation est désormais une carte EN IMAGE (utils/actionCard.js),
-    // avec les deux issues en boutons dessous.
-    const json = replies[0].components[0].toJSON();
-    assert.ok(json.components.some((c) => c.type === 12), "la confirmation doit être affichée en image");
-    assert.strictEqual(replies[0].files[0].name, "confirmation.png");
-    assert.strictEqual(replies[0].files[0].attachment.subarray(1, 4).toString(), "PNG");
-    const labels = json.components.filter((c) => c.type === 1).flatMap((r) => r.components).map((b) => b.label);
-    assert.deepStrictEqual(labels, ["Supprimer", "Annuler"], "les deux issues doivent rester proposées");
-    assert.ok(g.roles.cache.has(role.id), "le rôle ne doit pas encore être supprimé avant confirmation");
-  });
-
-  await cas("confirmer la suppression supprime réellement le rôle", async () => {
-    const g = fakeGuildForRoleAdmin();
-    let deleted = false;
-    // Comme discord.js le fait réellement : delete() retire le rôle du
-    // cache du serveur, pas seulement côté API.
-    const role = {
-      id: "333333333333333332",
-      name: "Éphémère2",
-      position: 1,
-      delete: async () => {
-        deleted = true;
-        g.roles.cache.delete(role.id);
-      },
-    };
-    g.roles.cache.set(role.id, role);
-    let confirmCard = null;
-    const initial = {
-      customId: `${ID}:roledelete:${role.id}`,
-      member,
-      guild: g,
-      channel: { id: "chan-1" },
-      client: { users: { fetch: async () => null } },
-      user: { id: "owner-1", tag: "owner#0001" },
-      isModalSubmit: () => false,
-      // update(), pas reply() : voir la remarque plus haut.
-      update: async (p) => {
-        confirmCard = p;
-        return {};
-      },
-    };
-    await handleConfigInteraction(initial);
-    const confirmButton = confirmCard.components[0]
-      .toJSON()
-      .components.find((c) => c.type === 1)
-      .components.find((b) => b.label === "Supprimer");
-    const confirmInteraction = {
-      customId: confirmButton.custom_id,
-      user: { id: "owner-1", tag: "owner#0001" },
-      member,
-      guild: g,
-      channelId: "chan-1",
-      client: { users: { fetch: async () => null } },
+      message: { components: [] },
       update: async () => {},
-    };
-    await handleConfirmInteraction(confirmInteraction);
-    assert.ok(deleted, "le rôle doit être réellement supprimé après confirmation");
-    assert.ok(!g.roles.cache.has(role.id));
+      reply: async (p) => {
+        refus = p;
+      },
+    });
+    assert.ok(refus, "un refus doit être répondu");
+    assert.strictEqual(levelStore.getRoleLevel("g1", roleId), 5, "le niveau n'a pas changé");
   });
-
 
   console.log("\nNavigation regroupée par famille :");
 
@@ -518,7 +344,8 @@ function actionsDe(json) {
     assert.ok(menu.options.length <= 25, `${menu.options.length} options — Discord en refuse plus de 25`);
     // Les sujets sont nommés, pas regroupés sous des étiquettes abstraites.
     const labels = menu.options.map((o) => o.label);
-    for (const attendu of ["Logs", "Bienvenue", "Vocaux temporaires", "Permissions", "Giveaways"]) {
+    // "Vocaux temporaires" a quitté ce bot avec la pile vocale.
+    for (const attendu of ["Logs", "Bienvenue", "Permissions", "Giveaways"]) {
       assert.ok(labels.includes(attendu), `"${attendu}" doit être proposé directement : ${labels.join(", ")}`);
     }
     assert.ok(menu.options.some((o) => o.default), "la rubrique ouverte doit être marquée comme choisie");

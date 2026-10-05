@@ -877,8 +877,17 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
       const pages = Math.max(1, Math.ceil(commandes.length / CMDS_PAR_PAGE));
       const page = Math.min(Math.max(0, Number(state.permCmdPage) || 0), pages - 1);
 
+      // Les rôles eux-mêmes, pas seulement leur nombre : le sélecteur juste
+      // en dessous BASCULE (ajoute ou retire), il faut donc voir l'état actuel
+      // pour savoir ce qu'un choix va faire. Cet écran n'est atteint que par
+      // une édition (interaction.update), qui ne notifie jamais un rôle cité.
+      const ROLES_AFFICHES = 15;
+      const listeRoles = rolesValides.length
+        ? rolesValides.slice(0, ROLES_AFFICHES).map((id) => `<@&${id}>`).join(", ") +
+          (rolesValides.length > ROLES_AFFICHES ? ` +${rolesValides.length - ROLES_AFFICHES}` : "")
+        : "*aucun*";
       container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`**Rôles d'accès**\n${rolesValides.length} rôle(s) configuré(s)`)
+        new TextDisplayBuilder().setContent(`**Rôles d'accès** (${rolesValides.length})\n${listeRoles}`)
       );
       if (peutModifier) {
         container.addActionRowComponents(
@@ -888,7 +897,16 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
         );
       }
 
-      container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Commandes**\nPage ${page + 1}/${pages}`));
+      // La page courante des commandes débloquées (cumulatif : niveaux 1 à N).
+      // Seule la pagination était affichée — elle paginait une liste absente.
+      const prefixe = getPrefixes(guild.id).musicMod;
+      const pageCommandes = commandes.slice(page * CMDS_PAR_PAGE, (page + 1) * CMDS_PAR_PAGE);
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**Commandes** (${commandes.length}) — page ${page + 1}/${pages}\n` +
+            (pageCommandes.length ? pageCommandes.map((nom) => `\`${prefixe}${nom}\``).join("\n") : "*aucune commande à ce niveau*")
+        )
+      );
       container.addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`${ID}:permcmdpage:${page - 1}`).setLabel("←").setStyle(ButtonStyle.Secondary).setDisabled(page === 0 || pages <= 1),
