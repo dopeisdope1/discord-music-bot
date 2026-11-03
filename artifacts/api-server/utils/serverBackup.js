@@ -108,8 +108,8 @@ async function fetchChannelMessages(channel, limit) {
 }
 
 /**
- * Capture le serveur ENTIER : rôles, catégories, salons (topic, nsfw, mode
- * lent, bitrate, limite vocale), permissions par salon, emojis et — si
+ * Capture catégories, salons (topic, nsfw, mode lent, bitrate, limite
+ * vocale) et — si
  * `messagesPerChannel` > 0 — l'historique récent de chaque salon textuel.
  * Compatible avec les anciennes sauvegardes (structure seule) : les champs
  * ajoutés sont tous optionnels à la restauration.
@@ -118,20 +118,6 @@ async function captureGuildStructure(guild, { messagesPerChannel = 0 } = {}) {
   const channels = [...guild.channels.cache.values()]
     .filter((c) => CREATABLE_TYPES.has(c.type))
     .sort((a, b) => a.rawPosition - b.rawPosition);
-
-  const roles = [...(guild.roles?.cache?.values() || [])]
-    .filter((r) => r.id !== guild.id && !r.managed)
-    .sort((a, b) => b.position - a.position)
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      color: r.color,
-      hoist: r.hoist,
-      mentionable: r.mentionable,
-      permissions: r.permissions.bitfield.toString(),
-    }));
-
-  const everyonePermissions = guild.roles?.everyone?.permissions?.bitfield?.toString() ?? null;
 
   const serializeChannel = async (c) => {
     const entry = { name: c.name, type: c.type };
@@ -144,12 +130,6 @@ async function captureGuildStructure(guild, { messagesPerChannel = 0 } = {}) {
       if (c.nsfw) entry.nsfw = true;
       if (c.rateLimitPerUser) entry.rateLimitPerUser = c.rateLimitPerUser;
     }
-    entry.overwrites = [...(c.permissionOverwrites?.cache?.values() || [])].map((o) => ({
-      id: o.id,
-      type: o.type,
-      allow: o.allow.bitfield.toString(),
-      deny: o.deny.bitfield.toString(),
-    }));
     if (messagesPerChannel > 0 && TEXT_TYPES.has(c.type)) {
       entry.messages = await fetchChannelMessages(c, Math.min(messagesPerChannel, MAX_MESSAGES_PER_CHANNEL));
     }
@@ -160,8 +140,7 @@ async function captureGuildStructure(guild, { messagesPerChannel = 0 } = {}) {
   const categories = [];
   for (const c of channels) {
     if (c.type !== ChannelType.GuildCategory) continue;
-    const entry = { name: c.name, overwrites: [], channels: [] };
-    entry.overwrites = (await serializeChannel(c)).overwrites;
+    const entry = { name: c.name, channels: [] };
     categoriesById.set(c.id, entry);
     categories.push(entry);
   }
@@ -175,15 +154,10 @@ async function captureGuildStructure(guild, { messagesPerChannel = 0 } = {}) {
     else uncategorized.push(entry);
   }
 
-  const emojis = [...(guild.emojis?.cache?.values() || [])].map((e) => ({ name: e.name, url: e.imageURL?.({ extension: e.animated ? "gif" : "png" }) || e.url }));
-
   return {
     sourceGuildId: guild.id,
     sourceGuildName: guild.name,
     createdAt: new Date().toISOString(),
-    everyonePermissions,
-    roles,
-    emojis,
     categories,
     uncategorized,
   };
@@ -215,39 +189,13 @@ async function restoreMessages(channel, messages) {
 }
 
 /**
- * Recrée rôles, catégories, salons (avec permissions), emojis et messages
+ * Recrée catégories, salons et messages
  * dans `guild` d'après une sauvegarde. Séquentiel (pas de Promise.all) :
  * les salons d'une catégorie dépendent de l'ID de la catégorie qui vient
  * d'être créée, et Discord limite de toute façon le débit de création.
  */
 async function applyStructure(guild, structure) {
-  const stats = { rolesCreated: 0, categoriesCreated: 0, channelsCreated: 0, emojisCreated: 0, messagesRestored: 0 };
-
-  // Rôles : du plus haut au plus bas (un nouveau rôle se place juste au-dessus
-  // de @everyone, donc créer le plus haut en premier garde l'ordre d'origine).
-  const roleMap = new Map();
-  if (structure.sourceGuildId) roleMap.set(structure.sourceGuildId, guild.id);
-  for (const r of structure.roles || []) {
-    const base = { name: r.name, color: r.color, hoist: r.hoist, mentionable: r.mentionable };
-    const created =
-      (await guild.roles.create({ ...base, permissions: BigInt(r.permissions) }).catch(() => null)) ||
-      // Le bot ne peut pas accorder une permission qu'il n'a pas : on recrée le rôle sans.
-      (await guild.roles.create(base).catch(() => null));
-    if (!created) continue;
-    roleMap.set(r.id, created.id);
-    stats.rolesCreated++;
-  }
-  if (structure.everyonePermissions && guild.roles?.everyone?.setPermissions) {
-    await guild.roles.everyone.setPermissions(BigInt(structure.everyonePermissions)).catch(() => {});
-  }
-
-  const resolveOverwrites = (list = []) =>
-    list
-      .map((o) => {
-        const id = o.type === 0 ? roleMap.get(o.id) : guild.members?.cache?.has(o.id) ? o.id : null;
-        return id ? { id, type: o.type, allow: BigInt(o.allow), deny: BigInt(o.deny) } : null;
-      })
-      .filter(Boolean);
+  const stats = { categoriesCreated: 0, channelsCreated: 0, messagesRestored: 0 };
 
   const createChannel = async (ch, parent) => {
     const created = await guild.channels.create({
@@ -259,7 +207,6 @@ async function applyStructure(guild, structure) {
       ...(ch.rateLimitPerUser ? { rateLimitPerUser: ch.rateLimitPerUser } : {}),
       ...(ch.type === ChannelType.GuildVoice && ch.userLimit ? { userLimit: ch.userLimit } : {}),
       ...(ch.type === ChannelType.GuildVoice && ch.bitrate ? { bitrate: Math.min(ch.bitrate, guild.maximumBitrate || ch.bitrate) } : {}),
-      permissionOverwrites: resolveOverwrites(ch.overwrites),
     });
     stats.channelsCreated++;
     if (ch.messages?.length) stats.messagesRestored += await restoreMessages(created, ch.messages);
@@ -270,17 +217,11 @@ async function applyStructure(guild, structure) {
     const category = await guild.channels.create({
       name: cat.name,
       type: ChannelType.GuildCategory,
-      permissionOverwrites: resolveOverwrites(cat.overwrites),
     });
     stats.categoriesCreated++;
     for (const ch of cat.channels) await createChannel(ch, category.id);
   }
   for (const ch of structure.uncategorized || []) await createChannel(ch, null);
-
-  for (const e of structure.emojis || []) {
-    const created = await guild.emojis?.create({ attachment: e.url, name: e.name }).catch(() => null);
-    if (created) stats.emojisCreated++;
-  }
 
   return stats;
 }
@@ -311,12 +252,12 @@ async function backup(client, message, args, options = {}) {
         buildStatusEmbed(
           "info",
           [
-            "`backup <nom> [messages]` — sauvegarde TOUT le serveur : rôles, catégories, salons, permissions, emojis et les `messages` derniers messages de chaque salon textuel (défaut " + DEFAULT_MESSAGES_PER_CHANNEL + ", max " + MAX_MESSAGES_PER_CHANNEL + ", `0` = sans messages)",
+            "`backup <nom> [messages]` — sauvegarde les catégories, salons et les `messages` derniers messages de chaque salon textuel (défaut " + DEFAULT_MESSAGES_PER_CHANNEL + ", max " + MAX_MESSAGES_PER_CHANNEL + ", `0` = sans messages)",
             "`backup list` — liste les sauvegardes disponibles",
             "`backup delete <nom>` — supprime une sauvegarde",
             "`backup load <nom>` — restaure une sauvegarde dans CE serveur (confirmation obligatoire)",
             "",
-            "Ne sauvegarde PAS : membres et leurs rôles, bans, webhooks, threads, stickers, réglages du serveur (nom, icône...). Les messages sont republiés par webhook (pseudo/avatar d'origine, pas leur vrai auteur).",
+            "Ne sauvegarde PAS : rôles, permissions par salon, emojis, membres, bans, threads. Les messages sont republiés par webhook (pseudo/avatar d'origine, pas leur vrai auteur).",
             presets.length ? `Préréglages intégrés (pas besoin d'avoir été sauvegardés) : ${presets.join(", ")}` : "",
           ]
             .filter(Boolean)
@@ -363,12 +304,12 @@ async function backup(client, message, args, options = {}) {
       const r = await applyStructure(interaction.guild, structure);
       return terminer(
         "Terminé",
-        `**${r.rolesCreated}** rôle(s), **${r.categoriesCreated}** catégorie(s), **${r.channelsCreated}** salon(s), **${r.emojisCreated}** emoji(s) créés, **${r.messagesRestored}** message(s) restauré(s).`
+        `**${r.categoriesCreated}** catégorie(s) et **${r.channelsCreated}** salon(s) créés, **${r.messagesRestored}** message(s) restauré(s).`
       );
     };
     return requestConfirmation(message, {
       title: "Confirmer la restauration",
-      body: `**${total}** salon(s) dans **${structure.categories.length}** catégorie(s) seront créés dans CE serveur, d'après la sauvegarde **${name}** (${structure.sourceGuildName}). Les rôles, permissions par salon, emojis et messages sauvegardés sont aussi recréés. Ça peut prendre plusieurs minutes.`,
+      body: `**${total}** salon(s) dans **${structure.categories.length}** catégorie(s) seront créés dans CE serveur, d'après la sauvegarde **${name}** (${structure.sourceGuildName}). Les messages sauvegardés sont aussi republiés. Ça peut prendre plusieurs minutes.`,
       confirmLabel: "Restaurer",
       permission: "sys",
       execute: options.doubleConfirm
@@ -418,7 +359,7 @@ async function backup(client, message, args, options = {}) {
   const structure = await captureGuildStructure(message.guild, { messagesPerChannel });
   backupStore.saveBackup(name, structure);
   const nbMessages = [...structure.categories.flatMap((c) => c.channels), ...structure.uncategorized].reduce((n, c) => n + (c.messages?.length || 0), 0);
-  const summary = `Sauvegarde **${name}** enregistrée : ${structure.roles.length} rôle(s), ${countChannels(structure)} salon(s) dans ${structure.categories.length} catégorie(s), ${structure.emojis.length} emoji(s), ${nbMessages} message(s).`;
+  const summary = `Sauvegarde **${name}** enregistrée : ${countChannels(structure)} salon(s) dans ${structure.categories.length} catégorie(s), ${nbMessages} message(s).`;
   if (wait?.edit) return wait.edit({ embeds: [buildStatusEmbed("success", summary, { guildId: message.guild.id })] }).catch(() => reply(message, "success", summary));
   return reply(message, "success", summary);
 }
