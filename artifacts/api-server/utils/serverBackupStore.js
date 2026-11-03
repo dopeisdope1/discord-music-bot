@@ -54,6 +54,7 @@ function listBackups() {
     sourceGuildName: data.sourceGuildName,
     createdAt: data.createdAt,
     channelCount: (data.uncategorized?.length || 0) + data.categories.reduce((n, c) => n + c.channels.length, 0),
+    messageCount: [...data.categories.flatMap((c) => c.channels), ...(data.uncategorized || [])].reduce((n, c) => n + (c.messages?.length || 0), 0),
   }));
 }
 

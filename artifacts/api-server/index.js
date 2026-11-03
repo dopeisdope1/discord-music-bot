@@ -75,6 +75,7 @@ const { handleConfessTextCommand, handleConfessInteraction, CUSTOM_ID: CONFESS_C
 // Modération (fusionnée depuis moderation-bot) : panneaux interactifs.
 const { handleBanInteraction, CUSTOM_ID: BAN_CUSTOM_ID } = require("./utils/banPanel");
 const { handleBanAllInteraction, ID: BANALL_CUSTOM_ID } = require("./utils/banAll");
+const { handleBackupPanelInteraction, PANEL_ID: BACKUPPANEL_CUSTOM_ID } = require("./utils/serverBackup");
 const { handleUnbanAllInteraction, ID: UNBANALL_CUSTOM_ID } = require("./utils/unbanAll");
 const { handleBanInfoInteraction, CUSTOM_ID: BANINFO_CUSTOM_ID } = require("./utils/banInfoCard");
 const { handleBlacklistCardInteraction, CUSTOM_ID: BLCARD_CUSTOM_ID } = require("./utils/blacklistCard");
@@ -293,6 +294,10 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.customId?.startsWith(`${BANALL_CUSTOM_ID}:`)) {
     await handleBanAllInteraction(interaction).catch((err) => console.error("[banAll]", err));
+    return;
+  }
+  if (interaction.customId?.startsWith(`${BACKUPPANEL_CUSTOM_ID}:`)) {
+    await handleBackupPanelInteraction(interaction).catch((err) => console.error("[backupPanel]", err));
     return;
   }
   if (interaction.customId?.startsWith(`${UNBANALL_CUSTOM_ID}:`)) {

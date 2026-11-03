@@ -786,10 +786,16 @@ const CATEGORIES = [
         description: "Affiche/masque les photos de profil dans certains affichages",
       },
       {
-        name: "backup <nom>",
+        name: "backup",
         prefix: "mod",
         permission: "sys",
-        description: "Sauvegarde la structure du serveur (catégories, salons, ordre, limites de places vocales — pas les permissions ni les messages)",
+        description: "Ouvre le panel des serveurs sauvegardés (avec restauration)",
+      },
+      {
+        name: "backup <nom> [messages]",
+        prefix: "mod",
+        permission: "sys",
+        description: "Sauvegarde les catégories, salons et les derniers messages de chaque salon (0 = sans messages)",
       },
       { name: "backup list", prefix: "mod", permission: "sys", description: "Liste les sauvegardes disponibles" },
       { name: "backup delete <nom>", prefix: "mod", permission: "sys", description: "Supprime une sauvegarde" },
@@ -797,7 +803,7 @@ const CATEGORIES = [
         name: "backup load <nom>",
         prefix: "mod",
         permission: "sys",
-        description: "Restaure une sauvegarde dans ce serveur (confirmation obligatoire)",
+        description: "Restaure une sauvegarde dans ce serveur : catégories, salons, messages (confirmation obligatoire)",
       },
       {
         name: "autobackup <serveur/emoji> <jours>",
