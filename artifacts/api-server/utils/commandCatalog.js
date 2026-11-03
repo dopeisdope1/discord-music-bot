@@ -786,6 +786,12 @@ const CATEGORIES = [
         description: "Affiche/masque les photos de profil dans certains affichages",
       },
       {
+        name: "backup",
+        prefix: "mod",
+        permission: "sys",
+        description: "Ouvre le panel des serveurs sauvegardés (avec restauration)",
+      },
+      {
         name: "backup <nom> [messages]",
         prefix: "mod",
         permission: "sys",
