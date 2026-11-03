@@ -338,7 +338,9 @@ function askRestore(message, name, structure, options = {}) {
  * inchangée (options omis).
  */
 async function backup(client, message, args, options = {}) {
-  if (!can(message.member, "sys")) return;
+  if (!can(message.member, "sys")) {
+    return reply(message, "error", "`backup` demande le rang **sys** du bot (donné par un owner avec `sys @membre`).");
+  }
   const sub = (args[0] || "").toLowerCase();
 
   if (!sub) return message.reply(buildBackupPanel());
