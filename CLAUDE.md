@@ -17,5 +17,5 @@
 ## Repères
 
 - Le préfixe de gestion est réglable : en production c'est `,` (défaut dans le code : `&`). Le panel s'ouvre avec `,panel`.
-- Le bot en ligne s'appelle **pfp** (pfp#4513).
+- Attention : le bot **pfp** (pfp#4513, préfixe `,`) n'est PAS dans ce dépôt : il est dans le dépôt `dopeisdope1/discord-bots` (dossier `bots/pfp`), qui se met à jour autrement (voir son `CLAUDE.md`). Ce dépôt-ci est le bot de gestion (préfixe `&`).
 - Piste connue si un déploiement ne prend pas : `autodeploy.sh` redémarre l'app pm2 `discord-bot` par défaut, alors que la note de déploiement parle de `discord-music-bot`. Un nom qui ne correspond pas fait échouer `pm2 restart` après le `git reset`, et le script ne réessaie plus.
