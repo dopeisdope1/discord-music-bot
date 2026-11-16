@@ -753,6 +753,21 @@ function regrouperBoutonsEnMenu(container) {
   enfants.splice(premiereRangee, 0, new ActionRowBuilder().addComponents(menu));
 }
 
+/**
+ * Bouton lien "Inviter" : ouvre l'écran Discord d'ajout du bot à un serveur.
+ * Les droits demandés sont ceux d'Administrateur (le bot modère, gère les
+ * rôles et les salons) ; la personne qui invite peut les décocher sur l'écran
+ * Discord. Un bouton lien n'a pas de customId : aucun handler à brancher.
+ */
+function inviteButton(guild) {
+  const id = guild.client?.application?.id || guild.client?.user?.id;
+  if (!id) return null;
+  return new ButtonBuilder()
+    .setLabel("Inviter")
+    .setStyle(ButtonStyle.Link)
+    .setURL(`https://discord.com/oauth2/authorize?client_id=${id}&scope=bot%20applications.commands&permissions=8`);
+}
+
 function buildConfigPanel(guild, current = "home", member, state = {}, { sansImage = false } = {}) {
   const isOwner = accessStore.isOwner(member.id);
   const available = sectionsFor(member, isOwner);
@@ -793,6 +808,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     // dans Sécurité > Vue d'ensemble comme dans `&security scan` — qui les
     // donne en entier plutôt que les deux plus graves.
     container.addActionRowComponents(new ActionRowBuilder().addComponents(buildNav(meta.key, member, isOwner)));
+    const inviter = inviteButton(guild);
+    if (inviter) container.addActionRowComponents(new ActionRowBuilder().addComponents(inviter));
     return { flags: MessageFlags.IsComponentsV2, components: [container] };
   }
 
@@ -1484,7 +1501,8 @@ function buildConfigPanel(guild, current = "home", member, state = {}, { sansIma
     new ActionRowBuilder().addComponents(
       // Sans emoji : l'interface d'administration n'en porte aucun (demande
       // explicite, voir scripts/test-sans-emoji.js).
-      new ButtonBuilder().setCustomId(`${ID}:home`).setLabel("Accueil").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`${ID}:home`).setLabel("Accueil").setStyle(ButtonStyle.Secondary),
+      ...[inviteButton(guild)].filter(Boolean)
     )
   );
 
